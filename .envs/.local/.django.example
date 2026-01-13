@@ -1,0 +1,51 @@
+# Django Settings - Local Development
+# Copy this file to .django and update the values
+
+# General
+DEBUG=True
+SECRET_KEY=your-secret-key-here-change-this-in-production
+ALLOWED_HOSTS=localhost,127.0.0.1,django
+
+# Database
+# Note: DATABASE_URL takes precedence over individual POSTGRES_* variables
+# Uncomment if you want to use DATABASE_URL instead
+# DATABASE_URL=postgres://saas_user:saas_password@postgres:5432/saas_db
+
+# Redis
+REDIS_URL=redis://redis:6379/0
+
+# Celery
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+# Email (Development - Console backend)
+EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+DEFAULT_FROM_EMAIL=noreply@localhost
+SERVER_EMAIL=server@localhost
+
+# CORS Settings
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:80
+CORS_ALLOW_CREDENTIALS=True
+
+# Django Admin
+DJANGO_ADMIN_URL=admin/
+
+# Security (Development - Less strict)
+CSRF_TRUSTED_ORIGINS=http://localhost,http://localhost:3000,http://localhost:3001
+
+# Stripe (Get from https://dashboard.stripe.com/test/apikeys)
+STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
+STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key
+STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret
+
+# JWT Settings
+JWT_ACCESS_TOKEN_LIFETIME=5
+JWT_REFRESH_TOKEN_LIFETIME=1440
+
+# File Storage (Local)
+USE_S3=False
+MEDIA_ROOT=/app/mediafiles
+STATIC_ROOT=/app/staticfiles
+
+# Logging
+LOG_LEVEL=DEBUG

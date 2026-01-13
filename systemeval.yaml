@@ -1,0 +1,7 @@
+adapter: pytest
+project_root: .
+test_directory: tests
+options:
+  # Ignore backend tests that require Django setup
+  ignore: ["backend"]
+categories: {}

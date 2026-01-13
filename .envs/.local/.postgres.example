@@ -1,0 +1,8 @@
+# PostgreSQL Settings - Local Development
+# Copy this file to .postgres and update the values
+
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_DB=saas_db
+POSTGRES_USER=saas_user
+POSTGRES_PASSWORD=saas_password

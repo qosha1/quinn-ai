@@ -1,0 +1,226 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: saas-postgres-prod
+    volumes:
+      - saas-postgres-prod-data:/var/lib/postgresql/data
+      - saas-postgres-prod-backups:/backups
+    env_file:
+      - ./.envs/.production/.postgres
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache and Celery Broker
+  redis:
+    image: redis:7-alpine
+    container_name: saas-redis-prod
+    volumes:
+      - saas-redis-prod-data:/data
+    networks:
+      - backend
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Django Backend API
+  django:
+    build:
+      context: .
+      dockerfile: ./compose/production/django/Dockerfile
+    container_name: saas-django-prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - saas-static-prod:/app/staticfiles
+      - saas-media-prod:/app/mediafiles
+    env_file:
+      - ./.envs/.production/.django
+      - ./.envs/.production/.postgres
+    networks:
+      - backend
+      - traefik
+    command: /start
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.django.rule=Host(`api.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.django.entrypoints=websecure"
+      - "traefik.http.routers.django.tls=true"
+      - "traefik.http.routers.django.tls.certresolver=letsencrypt"
+      - "traefik.http.services.django.loadbalancer.server.port=5000"
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: .
+      dockerfile: ./compose/production/django/Dockerfile
+    container_name: saas-celery-worker-prod
+    depends_on:
+      - redis
+      - postgres
+      - django
+    volumes:
+      - saas-media-prod:/app/mediafiles
+    env_file:
+      - ./.envs/.production/.django
+      - ./.envs/.production/.postgres
+    networks:
+      - backend
+    command: celery -A config worker --loglevel=info --concurrency=4
+    restart: unless-stopped
+
+  # Celery Beat Scheduler
+  celery-beat:
+    build:
+      context: .
+      dockerfile: ./compose/production/django/Dockerfile
+    container_name: saas-celery-beat-prod
+    depends_on:
+      - redis
+      - postgres
+      - django
+    env_file:
+      - ./.envs/.production/.django
+      - ./.envs/.production/.postgres
+    networks:
+      - backend
+    command: celery -A config beat --loglevel=info
+    restart: unless-stopped
+
+  # Landing Page (NextJS)
+  landing:
+    build:
+      context: ./landing
+      dockerfile: ../compose/production/node/Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    container_name: saas-landing-prod
+    networks:
+      - traefik
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.landing.rule=Host(`${DOMAIN_NAME}`) || Host(`www.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.landing.entrypoints=websecure"
+      - "traefik.http.routers.landing.tls=true"
+      - "traefik.http.routers.landing.tls.certresolver=letsencrypt"
+      - "traefik.http.services.landing.loadbalancer.server.port=3000"
+      # Redirect www to non-www
+      - "traefik.http.middlewares.landing-redirect.redirectregex.regex=^https://www.(.+)"
+      - "traefik.http.middlewares.landing-redirect.redirectregex.replacement=https://$${1}"
+      - "traefik.http.middlewares.landing-redirect.redirectregex.permanent=true"
+
+  # App Dashboard (NextJS)
+  app:
+    build:
+      context: ./app
+      dockerfile: ../compose/production/node/Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    container_name: saas-app-prod
+    networks:
+      - traefik
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.app.rule=Host(`app.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.app.entrypoints=websecure"
+      - "traefik.http.routers.app.tls=true"
+      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
+      - "traefik.http.services.app.loadbalancer.server.port=3000"
+
+  # Traefik Reverse Proxy
+  traefik:
+    image: traefik:v3.0
+    container_name: saas-traefik-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./compose/production/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./compose/production/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - saas-traefik-certs:/letsencrypt
+    networks:
+      - traefik
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      # Dashboard
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=dashboard-auth"
+      - "traefik.http.middlewares.dashboard-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
+
+  # Nginx for static/media files
+  nginx:
+    build:
+      context: .
+      dockerfile: ./compose/production/nginx/Dockerfile
+    container_name: saas-nginx-prod
+    depends_on:
+      - django
+    volumes:
+      - saas-static-prod:/usr/share/nginx/html/static:ro
+      - saas-media-prod:/usr/share/nginx/html/media:ro
+    networks:
+      - traefik
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.nginx.rule=Host(`cdn.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.nginx.entrypoints=websecure"
+      - "traefik.http.routers.nginx.tls=true"
+      - "traefik.http.routers.nginx.tls.certresolver=letsencrypt"
+      - "traefik.http.services.nginx.loadbalancer.server.port=80"
+
+volumes:
+  saas-postgres-prod-data:
+    name: saas-postgres-prod-data
+  saas-postgres-prod-backups:
+    name: saas-postgres-prod-backups
+  saas-redis-prod-data:
+    name: saas-redis-prod-data
+  saas-static-prod:
+    name: saas-static-prod
+  saas-media-prod:
+    name: saas-media-prod
+  saas-traefik-certs:
+    name: saas-traefik-certs
+
+networks:
+  backend:
+    name: saas-backend
+    driver: bridge
+  traefik:
+    name: traefik
+    driver: bridge
