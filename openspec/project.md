@@ -185,6 +185,10 @@ Every piece of work connects to the org's goal structure via OKRs (Objectives an
 - **Objective**: What we're trying to achieve (qualitative, inspirational)
 - **Key Results**: How we measure success (quantitative, calculable, NOT subjective)
 
+**Relationship:**
+- One Objective → many KRs
+- One KR → exactly one Objective (no shared KRs)
+
 ```
 board_okr_1: "Establish market presence"
   └── ceo_okr_1: "Create base strategy"
