@@ -128,31 +128,54 @@ When a worker faces a decision:
 
 Top level (CEO) has no one to escalate to except the board (gutterguards). CEO queues questions for board but doesn't block on them.
 
-## Goal Flow (How Work Gets Decided)
+## Work Dynamics (The Physics)
 
-The org decides what to do. Not hardcoded. Not human-driven (except gutterguards).
+Code defines concepts. Config defines behavior. Like physics - gravity exists, but you can build a ball or an airplane within that world.
 
-```
-External Input (metrics, errors, user feedback)
-        ↓
-Team interprets (Product decides feature vs bug, Eng estimates effort)
-        ↓
-Hierarchy prioritizes (CEO allocates resources, Managers assign work)
-        ↓
-Workers execute
-        ↓
-Results flow back up + out
-```
+### Concept: Work Exists
 
-### Real Org Modeling
+Work is a unit of intent that can be:
+- **Created** - by any worker, from any source (external input, internal decision, decomposition of larger work)
+- **Described** - has enough context to be actionable
+- **Owned** - belongs to exactly one worker at a time
+- **Completed** - reaches a terminal state (done, abandoned, merged)
 
-Like a real company:
-- **Product team** decides what to build (input: customers, metrics, strategy)
-- **Engineering team** builds it (input: specs, priorities, resources)
-- **QA team** validates it (input: requirements, code, test plans)
-- **Operations** keeps it running (input: alerts, logs, incidents)
+### Concept: Work Flows
 
-Each team has its own decision-making process. CEO coordinates across teams. Board provides high-level guidance ("focus on stability" or "ship features fast").
+Work moves between workers. Direction, method, triggers - all configurable. The physics:
+- Work can transfer ownership (from worker A to worker B)
+- Transfer requires a request and acceptance (explicit handoff)
+- Work can be split (one piece becomes many)
+- Work can be merged (many pieces become one)
+
+### Concept: Work Is Evaluated
+
+Someone judges work output. Who, when, how - configurable. The physics:
+- Work output can be reviewed
+- Review produces a judgment (accept, reject, revise)
+- Judgment triggers next state (complete, return, escalate)
+- Review is itself work (reviewers are workers)
+
+### Concept: Workers Communicate
+
+Workers exchange information. The physics:
+- Any worker can send a message to any other worker
+- Messages are typed (request, response, notification)
+- Messages can be addressed (direct, broadcast, routed)
+- Disagreement is just a message type (not a special case)
+- Agreement is just a message type
+- Silence is valid (no response required by physics, but config may require it)
+
+### What Config Decides
+
+The physics don't care about:
+- Push vs pull work distribution
+- Who reviews whom
+- How disagreements resolve
+- Escalation paths
+- Required vs optional reviews
+
+That's all org config playing within the physics.
 
 ## Board (Humans) = Gutterguards
 
