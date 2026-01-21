@@ -1,109 +1,141 @@
 # QuinnAI - Project Definition
 
-## Vision
+## What This Is
 
-QuinnAI is a self-managed agentic AI organization.
+An autonomous AI organization that operates like a real company. The org runs itself. Humans are the board - gutterguards that bump it back on track when needed, not required for daily operation.
 
-- **AI CEO** manages day-to-day operations, resource allocation, task prioritization
-- **Humans are the Board** - provide strategic direction, approve major decisions, course-correct
-- **AI Workers** execute tasks autonomously within their domains
+## Core Abstraction: Session = Worker's Brain
 
-This is not a chatbot. This is not an assistant. This is an autonomous organization that happens to be made of AI agents.
-
-## Core Premise
-
-Merge the scattered functionality from previous projects (quinn, brain, dev-hq, bottas) into one cohesive, well-architected system that can:
-
-1. **Observe** - Watch any coding CLI session (terminal-agnostic)
-2. **Understand** - Parse context, detect state, identify needs
-3. **Decide** - CEO determines if/how to act
-4. **Execute** - Workers perform tasks within their capabilities
-5. **Report** - Surface results to the board (humans) when needed
-
-## Organizational Structure
+A **Session** is to a **Worker** what a brain is to a human.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    THE BOARD (Humans)                   │
-│  • Strategic direction                                  │
-│  • Major decision approval                              │
-│  • Course correction                                    │
-│  • Capability expansion approval                        │
-└─────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────┐
-│                      CEO (AI Agent)                     │
-│  • Task prioritization                                  │
-│  • Resource allocation                                  │
-│  • Worker coordination                                  │
-│  • Escalation decisions                                 │
-│  • Organizational memory                                │
-└─────────────────────────────────────────────────────────┘
-                            │
-            ┌───────────────┼───────────────┐
-            ▼               ▼               ▼
-     ┌───────────┐   ┌───────────┐   ┌───────────┐
-     │  Worker   │   │  Worker   │   │  Worker   │
-     │  (domain) │   │  (domain) │   │  (domain) │
-     └───────────┘   └───────────┘   └───────────┘
+Session ON  → Worker AWAKE (ready for work)
+Session OFF → Worker ASLEEP (inactive)
 ```
 
-## Capabilities (from merged projects)
+This is one-to-one. Unbreakable. The most critical abstraction in the system.
 
-### From quinn
-- Session watching and transcript parsing
-- Message queue and processing pipeline
-- Terminal injection via IPC
+- Session interface must be provider-agnostic (terminal, Claude Code, Cursor, vim, whatever)
+- Session capture must be swappable (PTY, log file, socket, API)
+- Session state must be observable (awake/asleep/busy/idle)
 
-### From brain
-- Neural reasoning / lattice computation
-- Memory and context management
-- Learning from interactions
+**If the session abstraction breaks, everything breaks.**
 
-### From dev-hq
-- Project management and task tracking
-- Multi-agent orchestration
-- Activity streaming
+## Every Agent Is A Worker
 
-### From bottas
-- Worker unit protocol
-- Provider abstraction patterns (to be fixed)
-- Queue-based task distribution
+CEO is a worker. Manager is a worker. Junior dev is a worker. Same base unit, different:
 
-## Architecture Principles
+- **Role** - What they do (PM, Engineer, QA, CEO, etc.)
+- **Team** - What group they belong to (Product, Engineering, Operations)
+- **Hierarchy** - Who's above, who's below
 
-See CLAUDE.md for full details. Summary:
+A worker is not defined by its level. It's defined by its capabilities and relationships.
 
-1. **We define interfaces, providers implement our contracts**
-2. **No magic strings/values/numbers - everything in config**
-3. **No provider lock-in - swap via config, not code**
-4. **Explicit injection, no discovery magic**
-5. **No module-level side effects**
-6. **Interface-first design (shaped by our needs, not implementations)**
+## Communication Protocol
 
-## Technology Stack
+All worker-to-worker communication uses the same abstracted interface. No special cases. No "claude hooks" vs "file watches" vs "API calls". One protocol.
 
-TBD - to be decided based on component needs:
-- Core orchestration: ?
-- AI providers: abstracted (Claude, OpenAI, Ollama, etc.)
-- Storage: ?
-- IPC/Communication: ?
-- Frontend (board dashboard): ?
+### Request Types (expandable)
 
-## Success Criteria
+| Type | Direction | Example |
+|------|-----------|---------|
+| `work-handoff` | down/lateral | "Here's a task for you" |
+| `work-request` | up/lateral | "I'm free, give me work" |
+| `information-request` | any | "Who handles auth?" |
+| `resource-request` | up | "I need more workers" |
+| `status-report` | up | "Task complete, here's result" |
+| `guidance-request` | up | "Stuck, need direction" |
+| `review-request` | up/lateral | "Please review this" |
 
-1. **Single entry point** - One command to start the organization
-2. **Provider swappable** - Change AI provider via config only
-3. **Terminal agnostic** - Works with any CLI, not just Claude Code
-4. **Self-managing** - CEO handles routine operations without human intervention
-5. **Board escalation** - Humans only involved for strategic decisions
-6. **Tests pass** - `systemeval test` returns 0 before any milestone
+New types added over time. Protocol is extensible.
 
-## Open Questions
+### Communication Channels
 
-1. What triggers board involvement vs CEO autonomy?
-2. How do workers register capabilities?
-3. What's the memory/state persistence model?
-4. How does the CEO learn and improve?
-5. What are the initial worker domains?
+Each worker can:
+1. **Receive/request from outside the org** (metrics, customer feedback, external APIs)
+2. **Receive/request from boss** (direction, tasks, feedback)
+3. **Delegate/assist subordinates** (tasks, guidance, resources)
+4. **Collaborate with peers** (lateral requests, information sharing)
+
+All through the same interface. Channel is just metadata on the request.
+
+## Goal Flow (How Work Gets Decided)
+
+The org decides what to do. Not hardcoded. Not human-driven (except gutterguards).
+
+```
+External Input (metrics, errors, user feedback)
+        ↓
+Team interprets (Product decides feature vs bug, Eng estimates effort)
+        ↓
+Hierarchy prioritizes (CEO allocates resources, Managers assign work)
+        ↓
+Workers execute
+        ↓
+Results flow back up + out
+```
+
+### Real Org Modeling
+
+Like a real company:
+- **Product team** decides what to build (input: customers, metrics, strategy)
+- **Engineering team** builds it (input: specs, priorities, resources)
+- **QA team** validates it (input: requirements, code, test plans)
+- **Operations** keeps it running (input: alerts, logs, incidents)
+
+Each team has its own decision-making process. CEO coordinates across teams. Board provides high-level guidance ("focus on stability" or "ship features fast").
+
+## Board (Humans) = Gutterguards
+
+The ball keeps rolling no matter what. Board only intervenes when:
+- Org is heading in wrong direction (strategy misalignment)
+- Major decision needs approval (new capability, big resource allocation)
+- Something is fundamentally broken (repeated failures, stuck loops)
+
+Board is NOT:
+- Required for daily operation
+- Approving every task
+- Micromanaging workers
+
+Board IS:
+- Setting high-level direction ("we're focused on testing this quarter")
+- Course-correcting when off track
+- Approving expansion (new teams, new capabilities)
+
+## What We're Building
+
+### From Previous Projects (Concepts Only)
+
+**From quinn:** Session observation patterns, message queue flow
+**From brain:** Memory and context management concepts
+**From dev-hq:** Multi-agent orchestration patterns, activity streaming
+**From bottas:** Worker unit protocol, queue mechanics, hierarchy model
+
+**No code reuse.** Concepts and learnings only. Everything rebuilt clean.
+
+### Core Components Needed
+
+1. **Session Interface** - Abstracted session capture/state (provider-agnostic)
+2. **Worker Runtime** - The execution loop (claim, execute, report)
+3. **Communication Protocol** - Typed requests, unified interface
+4. **Goal Handler** - How org decides what to do
+5. **Hierarchy Model** - Roles, teams, reporting relationships
+6. **Board Interface** - How humans provide gutterguard input
+
+### Success = Process Works
+
+Not "structure is defined." Process works:
+- Worker wakes when session starts
+- Worker receives/requests work through protocol
+- Worker executes and reports through protocol
+- Goals flow from org structure + external input
+- Board intervenes only when gutterguards trigger
+- All communication is abstracted and swappable
+
+## Open Design Questions
+
+1. **Session interface** - What's the minimal abstraction? (start, stop, observe, inject?)
+2. **Request protocol** - Wire format? (YAML? JSON? Protobuf?)
+3. **Goal evaluation** - How does Product team "decide" without human input?
+4. **Team boundaries** - How do teams form and communicate?
+5. **Worker spawning** - How does "I need more workers" actually work?
