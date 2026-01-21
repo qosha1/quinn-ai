@@ -42,35 +42,15 @@ Board: "Establish market presence"
 ### Board = Gutterguards
 The ball keeps rolling. You only bump it back when it's heading for the gutter.
 
-## Quick Start
+## How It Should Feel
 
-### Prerequisites
+### 1. Define Your Org
 
-- Python 3.11+
-- Node.js 18+
-- Docker (optional, for full stack)
-
-### Install
-
-```bash
-# Clone
-git clone <repo-url> quinnai
-cd quinnai
-
-# Python environment
-python -m venv .venv
-source .venv/bin/activate
-pip install systemeval pytest
-
-# Verify setup
-systemeval test
-```
-
-### Define Your Org
-
-Create `org.yaml`:
+One folder = one org. You describe it declaratively:
 
 ```yaml
+# ~/orgs/my-startup/org.yaml
+
 name: my-startup
 
 okrs:
@@ -99,31 +79,29 @@ workers:
     reports_to: eng-lead
 ```
 
-### Start the Org
+### 2. Start the Org
 
-```bash
-# Initialize org from config
-quinnai init org.yaml
+From that folder, start it. Workers wake up, sessions spin up, work begins flowing.
 
-# Start all workers
-quinnai start
+### 3. Be the Board
 
-# Watch activity
-quinnai status
-```
+Watch the dashboard. See work flowing. See OKR progress. When something's off-track, give direction. Otherwise, stay out of the way.
 
-### Be the Board
+---
 
-```bash
-# See what's happening
-quinnai dashboard
+## What Needs Building
 
-# Give high-level direction
-quinnai direct "Focus on stability over features this week"
+The above is aspirational. Here's what we need to figure out:
 
-# Review queued decisions
-quinnai review
-```
+- **Installation**: How does QuinnAI get on your machine? pip? npm? Standalone binary?
+- **Org isolation**: One folder = one org. How do workers, sessions, state stay isolated?
+- **Worker runtime**: What actually runs when a worker "wakes up"? A process? Container?
+- **Session abstraction**: How do we connect to ANY terminal/CLI without hardcoding?
+- **Communication protocol**: How do workers talk? Files? Sockets? Queue?
+- **Board interface**: CLI? Web dashboard? Both?
+- **State persistence**: Where does org state live? SQLite? Postgres? Files?
+
+These questions drive what we build.
 
 ## Project Structure
 
