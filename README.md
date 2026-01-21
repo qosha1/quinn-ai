@@ -25,10 +25,10 @@ Every worker has exactly one session. Session ON = worker awake. Session OFF = a
 CEO is a worker. Manager is a worker. Junior dev is a worker. Same base unit, different role/team/authority.
 
 ### Work = Four Dimensions
-- **Origin**: Why does this exist?
+- **Ask**: Who requested this, what did they request, why? (the trigger)
 - **Flow**: Where is it in lifecycle?
-- **Ownership**: Who's responsible?
-- **OKR**: What goal does it serve?
+- **Ownership**: Who's responsible right now?
+- **OKR**: What strategic goal does it serve? (alignment)
 
 ### OKRs = Cascading Goals
 ```

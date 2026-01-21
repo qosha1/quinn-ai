@@ -24,10 +24,10 @@ Code defines dynamics. Config defines behavior. Like gravity - it exists, but yo
 
 ### Work
 Four independent dimensions:
-- **Origin**: Why does this exist? (source + justification)
+- **Ask**: Who requested, what, why? (the trigger - a related object)
 - **Flow**: Where in lifecycle? (configurable states + transitions)
 - **Ownership**: Who's responsible? (single owner + deadline)
-- **OKR**: What goal does it serve? (links to cascading objectives)
+- **OKR**: What strategic goal does it serve? (alignment to cascading objectives)
 
 ### Communication
 - One protocol for everything (no special cases)
