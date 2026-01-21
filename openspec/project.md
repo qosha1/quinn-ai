@@ -172,6 +172,39 @@ Flow and ownership are independent:
 - Work can change owner without changing state
 - Both can change together
 
+**Dimension 4: OKR Link (What goal does this serve?)**
+
+Every piece of work connects to the org's goal structure via OKRs (Objectives and Key Results). The physics:
+
+- Work has exactly one **OKR link** (the lowest-level OKR it serves)
+- OKRs cascade: Board → CEO → Directors → Managers → Workers
+- Every OKR links to its parent OKR (except top-level)
+- Any work item can be traced upward to company strategy
+
+**OKR Structure:**
+- **Objective**: What we're trying to achieve (qualitative, inspirational)
+- **Key Results**: How we measure success (quantitative, calculable, NOT subjective)
+
+```
+board_okr_1: "Establish market presence"
+  └── ceo_okr_1: "Create base strategy"
+        └── pm_okr_1: "Design 3-month product roadmap"
+              └── vp_pm_okr_1: "Coordinate 4 PM teams to break up roadmap work"
+                    └── [work items link here]
+```
+
+**Key Results must be calculable:**
+- "Improve user experience" ❌ (subjective)
+- "Reduce page load to <2s, increase NPS from 40→60" ✓ (measurable)
+
+**Work without OKR link is orphaned work** - it exists but has no justification in the goal structure. Orphaned work should be rare and questioned.
+
+All four dimensions are independent:
+- Origin: why was this created?
+- Flow: where is it in lifecycle?
+- Ownership: who's pushing it forward?
+- OKR: what goal does it serve?
+
 ### Concept: Work Flows
 
 Work moves between workers. Direction, method, triggers - all configurable. The physics:
