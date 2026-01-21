@@ -46,55 +46,63 @@ The ball keeps rolling. You only bump it back when it's heading for the gutter.
 
 ### 1. Define Your Org
 
-One folder = one org. Separate concerns in separate places:
+One folder = one org. Config separate from live state:
 
 ```
 ~/orgs/my-startup/
-├── org/
-│   ├── structure.yaml      # Who exists, hierarchy, teams
-│   ├── roles/              # Role definitions (what can each role do?)
-│   │   ├── ceo.yaml
-│   │   ├── eng-lead.yaml
-│   │   └── developer.yaml
+├── .git/                   # Org-wide version control
+├── org-chart/              # STATIC CONFIG (version controlled)
+│   ├── structure.yaml      # Hierarchy, teams - human editable
+│   ├── roles/              # Role definitions
 │   └── teams/              # Team definitions
-│       ├── engineering.yaml
-│       └── product.yaml
-├── okrs/
-│   ├── 2024-q1/            # OKRs are time-bound
-│   │   ├── company.yaml    # Top-level objectives
-│   │   ├── engineering.yaml
-│   │   └── product.yaml
-│   └── current -> 2024-q1  # Symlink to active period
-├── work/                   # Where work items live
-├── logs/                   # Activity logs
-└── state/                  # Runtime state
+├── okrs/                   # GOALS (beads-powered, git-tracked)
+│   └── .beads/             # SQLite-based OKR tracking
+├── live/                   # RUNTIME STATE
+│   ├── org.db              # SQLite - queryable from anywhere in org
+│   └── workers/            # Per-worker state
+│       ├── ceo/
+│       ├── eng-lead/
+│       └── dev-1/
+└── storage/                # ABSTRACTED STORAGE
+    ├── permanent/          # Outlives workers (company knowledge)
+    └── temporary/          # Worker lifetime (not just session)
 ```
 
-Org structure and OKRs are separate. Both can grow, change, be versioned independently.
+**Config flow:** YAML → SQLite (YAML inits/overrides, SQLite is source of truth, checks for updates)
+
+**OKRs:** Use [beads](https://github.com/steveyegge/beads) for tracking. Git for version control. Queryable from anywhere.
+
+**Storage abstraction:**
+- **Permanent**: Survives worker death. Company knowledge. Like shared Google Drive.
+- **Temporary**: Lives as long as worker lives (across sessions). Dies when worker is removed.
 
 ### 2. Start the Org
 
-From that folder, start it. Workers wake up based on structure. OKRs drive priorities. Work flows.
+Workers wake based on org-chart. State lives in SQLite. OKRs drive priorities via beads.
 
 ### 3. Be the Board
 
-Watch. See work flowing against OKRs. When off-track, give direction. Otherwise, stay out.
+Query OKRs from anywhere. Watch progress. Intervene when off-track.
 
 ---
 
 ## What Needs Building
 
-The above is aspirational. Here's what we need to figure out:
+### Decided
+- **State persistence**: SQLite (queryable from anywhere in org)
+- **Config format**: YAML inits/overrides → SQLite is source of truth
+- **OKR tracking**: beads + git
+- **Storage model**: Permanent (outlives workers) vs Temporary (worker lifetime)
 
-- **Installation**: How does QuinnAI get on your machine? pip? npm? Standalone binary?
-- **Org isolation**: One folder = one org. How do workers, sessions, state stay isolated?
-- **Worker runtime**: What actually runs when a worker "wakes up"? A process? Container?
-- **Session abstraction**: How do we connect to ANY terminal/CLI without hardcoding?
-- **Communication protocol**: How do workers talk? Files? Sockets? Queue?
+### Still figuring out
+- **Installation**: How does QuinnAI get on your machine?
+- **Worker runtime**: What runs when a worker "wakes up"? Process? Container?
+- **Session abstraction**: How do we connect to ANY terminal/CLI?
+- **Communication protocol**: How do workers talk?
 - **Board interface**: CLI? Web dashboard? Both?
-- **State persistence**: Where does org state live? SQLite? Postgres? Files?
+- **Beads integration**: How do OKRs flow into work prioritization?
 
-These questions drive what we build.
+These drive what we build.
 
 ## Project Structure
 
