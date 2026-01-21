@@ -193,9 +193,13 @@ board_okr_1: "Establish market presence"
                     └── [work items link here]
 ```
 
-**Key Results must be calculable:**
+**Key Results must be calculable and singular:**
 - "Improve user experience" ❌ (subjective)
-- "Reduce page load to <2s, increase NPS from 40→60" ✓ (measurable)
+- "Reduce page load to <2s, increase NPS from 40→60" ❌ (compound - two KRs mushed together)
+- KR1: "Reduce page load to <2s" ✓
+- KR2: "Increase NPS from 40→60" ✓
+
+One KR = one measurable outcome. No compounding.
 
 **Work without OKR link is orphaned work** - it exists but has no justification in the goal structure. Orphaned work should be rare and questioned.
 
