@@ -235,10 +235,10 @@ If you find yourself writing `import OpenAI` or `import Anthropic` anywhere exce
 **Result:** Cannot swap implementations, cannot test in isolation.
 **Fix:** Dependencies passed to constructors. Factories create configured instances.
 
-### 6. Single Implementation "Interfaces"
-**Violation:** `BeadsMemory` is the only memory impl, `WorkerQueue` is the only queue impl.
-**Result:** Interface exists but provides no real abstraction value.
-**Fix:** Don't create interface until you have 2+ implementations. When you do, ensure they're truly swappable.
+### 6. Implementation-Shaped "Interfaces"
+**Violation:** `BeadsMemory` interface shaped around JSONL files, `WorkerQueue` shaped around filesystem.
+**Result:** Interface exists but it's just the implementation with a different name. Can't swap.
+**Fix:** Design interface FIRST as a true contract. Even with one provider, build as if there will be 10. Interface defines OUR needs, not the provider's shape.
 
 ### 7. Cascading Configuration Fallbacks
 **Violation:** Check settings → check overrides → check env vars → check defaults → silent fallback.
