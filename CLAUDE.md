@@ -174,6 +174,40 @@ Check `VERSION` file in project root.
 
 ---
 
+## QuinnAI Product Truth
+**QuinnAI watches coding CLI sessions - NOT "Claude Code sessions".**
+
+This is a CLI-agnostic AI assistant layer. It monitors ANY terminal where a developer is working (vim, nvim, emacs, vscode terminal, raw shell, aider, claude code, cursor, etc).
+
+Do NOT assume or hardcode Claude Code specifics. The architecture must be terminal/editor agnostic.
+
+## CRITICAL: No Provider Lock-in (Architectural Law)
+
+**WE define the interfaces. Providers implement OUR contracts. Never the reverse.**
+
+### Anti-patterns (NEVER do this):
+- "Build AI service" → "Build OpenAI SDK wrapper" ❌
+- "Build workflow system" → "Build Claude-to-Claude handoff" ❌
+- "Build terminal manager" → "Custom scripts for one machine" ❌
+
+### Correct pattern (ALWAYS do this):
+```
+Our Abstract Interface (we define)
+        ↓
+Provider Adapter (they implement our contract)
+        ↓
+[OpenAI, Anthropic, Ollama, etc.] ← swappable via config
+```
+
+**Every external dependency gets wrapped in OUR abstraction:**
+- `AIProvider` base class → `OpenAIProvider`, `AnthropicProvider` subclasses
+- `TerminalCapture` base class → `AllTermCapture`, `PTYCapture`, `LogCapture` subclasses
+- `ResponseInjector` base class → `SocketInjector`, `ClipboardInjector`, `APIInjector` subclasses
+
+**Config-driven provider selection. Zero code changes to swap providers.**
+
+If you find yourself writing `import OpenAI` or `import Anthropic` anywhere except inside a provider adapter, you are doing it wrong.
+
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 
