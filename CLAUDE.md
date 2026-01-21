@@ -279,6 +279,26 @@ B2B SaaS template with Django backend, two NextJS frontends (landing + app), Doc
 - App: NextJS 15, JWT auth, Stripe, Zustand
 - Infrastructure: Docker Compose, Nginx, Traefik (production)
 
+## Template Sync Workflow
+
+This repo was forked from `qosha1/b2b-saas-template`. To pull upstream updates:
+
+```bash
+make template-fetch      # Fetch latest from template
+make template-diff       # See what changed
+make template-merge      # Merge updates (review before committing)
+make template-cherry COMMIT=<sha>  # Cherry-pick specific commit
+```
+
+**Flow:**
+1. `make template-fetch` - Get latest template changes
+2. `make template-diff` - Review what's new
+3. Decide: merge all (`template-merge`) or cherry-pick specific commits
+4. Resolve conflicts if any
+5. Run `systemeval test` before committing
+
+**Remote:** `template` → `https://github.com/qosha1/b2b-saas-template.git`
+
 ## Development Commands
 
 ```bash

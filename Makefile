@@ -1,4 +1,4 @@
-.PHONY: help up down build restart logs shell migrate makemigrations test createsuperuser collectstatic clean
+.PHONY: help up down build restart logs shell migrate makemigrations test createsuperuser collectstatic clean template-fetch template-diff template-merge
 
 # Default environment is local
 ENV ?= local
@@ -184,3 +184,30 @@ security-scan:
 	@echo "Scanning Node images..."
 	trivy image saas-landing-local
 	trivy image saas-app-local
+
+# Template sync commands
+# Remote 'template' points to: https://github.com/qosha1/b2b-saas-template.git
+template-fetch:
+	@echo "Fetching latest from template repo..."
+	git fetch template
+
+template-diff:
+	@echo "Changes in template since last sync:"
+	git log HEAD..template/main --oneline
+	@echo ""
+	@echo "Files changed:"
+	git diff HEAD..template/main --stat
+
+template-merge:
+	@echo "Merging template updates..."
+	@echo "This will open an editor for conflict resolution if needed."
+	git merge template/main --no-commit --no-ff
+	@echo ""
+	@echo "Review changes with 'git status' and 'git diff --staged'"
+	@echo "Then commit with: git commit -m 'Merge template updates'"
+	@echo "Or abort with: git merge --abort"
+
+template-cherry:
+	@echo "Usage: make template-cherry COMMIT=<sha>"
+	@echo "Cherry-pick a specific commit from template"
+	@if [ -n "$(COMMIT)" ]; then git cherry-pick $(COMMIT) --no-commit; fi
