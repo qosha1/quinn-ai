@@ -94,13 +94,46 @@ Query OKRs from anywhere. Watch progress. Intervene when off-track.
 - **OKR tracking**: beads + git
 - **Storage model**: Permanent (outlives workers) vs Temporary (worker lifetime)
 
+### Beads Extensions (in beads-fork)
+
+We're extending beads to support org-aware work tracking:
+
+**New bead types:**
+- `ask` - The request (who, what, why) that spawns work
+- `okr` - Objectives and key results (hierarchical)
+
+**New dependency types:**
+- `spawned-from` - Work → Ask
+- `serves` - Work → OKR
+
+**Lifecycle states (nested in status):**
+```
+status: in_progress
+  └── lifecycle-state: investigation → planning → requirements → implementation → review
+
+status: closed
+  └── lifecycle-state: done | rejected | abandoned
+```
+- Configurable per org (states, transitions, terminal states)
+- Enforced: can't close without reaching terminal state
+- Actionable errors: "Cannot close: in 'review' state. Complete review first."
+
+**Team ownership & permissions:**
+```
+teams (id, name, parent_team_id)
+team_members (team_id, worker_id, role)
+permissions (issue_id, grantee_type, grantee_id, level)
+```
+- Levels: none → read → comment → write → approve → admin
+- Enforced: marketing can't modify engineering beads
+- Inherited from org-chart hierarchy
+
 ### Still figuring out
 - **Installation**: How does QuinnAI get on your machine?
 - **Worker runtime**: What runs when a worker "wakes up"? Process? Container?
 - **Session abstraction**: How do we connect to ANY terminal/CLI?
 - **Communication protocol**: How do workers talk?
 - **Board interface**: CLI? Web dashboard? Both?
-- **Beads integration**: How do OKRs flow into work prioritization?
 
 These drive what we build.
 
