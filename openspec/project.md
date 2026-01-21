@@ -134,11 +134,43 @@ Code defines concepts. Config defines behavior. Like physics - gravity exists, b
 
 ### Concept: Work Exists
 
-Work is a unit of intent that can be:
-- **Created** - by any worker, from any source (external input, internal decision, decomposition of larger work)
-- **Described** - has enough context to be actionable
-- **Owned** - belongs to exactly one worker at a time
-- **Completed** - reaches a terminal state (done, abandoned, merged)
+Work is a unit of intent with two independent dimensions:
+
+**Dimension 1: Origin (Why does this exist?)**
+
+Work originates from a need. The physics:
+- Work has a **source** (user complaint, code failure, missing feature, metrics gap, org dysfunction, etc.)
+- Work has a **justification** (why should anyone spend time on this?)
+- Source and justification are immutable - they explain why work was created
+
+**Dimension 2: Flow (Where is it in lifecycle?)**
+
+Work moves through stages. The physics:
+- Work has a **state** (investigation, planning, requirements, implementation, review, done, rejected, punted, etc.)
+- States are configurable per org (not hardcoded)
+- Transitions between states are configurable (investigation → planning OR investigation → rejected)
+- Some states are terminal (done, rejected, abandoned)
+- Some states are holding (punted = handle later)
+
+Example flow (configurable, not prescribed):
+```
+need identified → investigation → planning → requirements → implementation → review → done
+                       ↓              ↓
+                   rejected        punted
+```
+
+**Dimension 3: Ownership (Who's responsible?)**
+
+Separate from flow. The physics:
+- Work has exactly one **owner** at a time
+- Owner is responsible for pushing work forward
+- Ownership can transfer independent of state changes
+- Ownership has optional **deadline** (by when)
+
+Flow and ownership are independent:
+- Work can change state without changing owner
+- Work can change owner without changing state
+- Both can change together
 
 ### Concept: Work Flows
 
