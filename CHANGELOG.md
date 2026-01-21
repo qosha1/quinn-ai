@@ -7,16 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.2.0] - 2025-01-21
+
 ### Added
 - Code quality commandments verification tests
 - Template sync process for forked repos
-- Versioning and changelog system
+- Versioning and changelog system with bump-version.sh script
+- Release notes template and directory structure
 
 ### Changed
 - Updated CLAUDE.md with agentic tools integration rules
+- Updated systemeval.yaml with test categories
 
 ### Fixed
 - Empty except block in billing services
+
+### Removed
+- Task-specific BILLING_IMPLEMENTATION_COMPLETE.md from root
 
 ---
 
@@ -49,5 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/YOUR_ORG/b2b-saas-template/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/YOUR_ORG/b2b-saas-template/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/YOUR_ORG/b2b-saas-template/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/YOUR_ORG/b2b-saas-template/releases/tag/v0.1.0
