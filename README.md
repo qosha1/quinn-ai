@@ -1,102 +1,172 @@
-# B2B SaaS Template
+# QuinnAI
 
-Production-ready B2B SaaS template with Django backend and NextJS frontends.
+**RollerCoaster Tycoon, but for organizations.**
 
-## Stack
+Design an org. Hire AI workers. Set goals. Watch it run. Intervene only when it's going off the rails.
 
-- **Backend**: Django 5.1+, DRF, Celery, PostgreSQL 16, Redis 7
-- **Landing**: NextJS 15, Tailwind, shadcn/ui
-- **App**: NextJS 15, JWT auth, Stripe, team management
-- **Infrastructure**: Docker Compose, Nginx, Traefik (production)
+## The Idea
+
+You know how in RollerCoaster Tycoon you design a park, hire staff, set prices, and then watch guests walk around having fun (or vomiting)?
+
+QuinnAI is that, but for AI organizations:
+
+1. **Design your org** - Define teams, roles, hierarchy, authority levels
+2. **Hire workers** - Spin up AI agents with specific roles and capabilities
+3. **Set goals** - Define OKRs that cascade from board level down to individual workers
+4. **Watch it run** - The org operates autonomously, workers communicate, work flows
+5. **Be the board** - Intervene only when needed, like gutterguards in bowling
+
+## Core Concepts
+
+### Sessions = Brains
+Every worker has exactly one session. Session ON = worker awake. Session OFF = asleep. This is unbreakable.
+
+### Workers = Everyone
+CEO is a worker. Manager is a worker. Junior dev is a worker. Same base unit, different role/team/authority.
+
+### Work = Four Dimensions
+- **Origin**: Why does this exist?
+- **Flow**: Where is it in lifecycle?
+- **Ownership**: Who's responsible?
+- **OKR**: What goal does it serve?
+
+### OKRs = Cascading Goals
+```
+Board: "Establish market presence"
+  └── CEO: "Create base strategy"
+        └── Product Director: "Design 3-month roadmap"
+              └── PM: "Define feature specs for Q1"
+                    └── [work items link here]
+```
+
+### Board = Gutterguards
+The ball keeps rolling. You only bump it back when it's heading for the gutter.
 
 ## Quick Start
 
-```bash
-# Start all services
-make up
+### Prerequisites
 
-# Or manually
-docker-compose -f docker-compose.local.yml up --build
+- Python 3.11+
+- Node.js 18+
+- Docker (optional, for full stack)
+
+### Install
+
+```bash
+# Clone
+git clone <repo-url> quinnai
+cd quinnai
+
+# Python environment
+python -m venv .venv
+source .venv/bin/activate
+pip install systemeval pytest
+
+# Verify setup
+systemeval test
+```
+
+### Define Your Org
+
+Create `org.yaml`:
+
+```yaml
+name: my-startup
+
+okrs:
+  - id: okr-1
+    objective: "Build MVP"
+    key_results:
+      - "Launch beta to 100 users"
+      - "Achieve 40% weekly retention"
+
+workers:
+  ceo:
+    role: CEO
+    level: 0
+    domain: "*"
+
+  eng-lead:
+    role: Engineering Lead
+    level: 1
+    domain: engineering
+    reports_to: ceo
+
+  dev-1:
+    role: Developer
+    level: 2
+    domain: engineering
+    reports_to: eng-lead
+```
+
+### Start the Org
+
+```bash
+# Initialize org from config
+quinnai init org.yaml
+
+# Start all workers
+quinnai start
+
+# Watch activity
+quinnai status
+```
+
+### Be the Board
+
+```bash
+# See what's happening
+quinnai dashboard
+
+# Give high-level direction
+quinnai direct "Focus on stability over features this week"
+
+# Review queued decisions
+quinnai review
 ```
 
 ## Project Structure
 
 ```
-backend/          # Django API
-landing/          # Marketing landing page
-app/              # Dashboard application
-compose/          # Docker configurations
-openspec/         # Specifications and changes
+quinnai/
+├── backend/          # Django API (org state, work tracking)
+├── app/              # Dashboard UI (board interface)
+├── landing/          # Marketing site
+├── openspec/         # Project specs and proposals
+│   ├── project.md    # Core concepts
+│   └── AGENTS.md     # Agent guidelines
+├── CLAUDE.md         # Development principles
+└── org.yaml          # Your org definition
 ```
 
 ## Development
 
 ```bash
-make up           # Start services
-make down         # Stop services (preserves data)
-make logs         # View logs
-make shell        # Django shell
-make migrate      # Run migrations
-make test         # Run tests
+# Run tests (required before any code change)
+systemeval test
+
+# Start services
+make up
+
+# View logs
+make logs
+
+# Stop services
+make down
 ```
 
-## Testing & Validation
+## Philosophy
 
-This project uses [systemeval](https://pypi.org/project/systemeval/) for deterministic test validation:
+**Code = Physics.** We define dynamics (gravity exists). Config defines behavior (build a ball or airplane).
 
-```bash
-pip install systemeval[pytest]
-systemeval test                    # Run tests (exit 0=PASS, 1=FAIL, 2=ERROR)
-systemeval test --json             # Machine-readable output
-systemeval test --template markdown # Human-readable report
-```
+**No provider lock-in.** We define interfaces. Providers implement our contracts. Swap Claude for GPT via config.
 
-**Required checkpoints:**
-1. Before marking tasks complete
-2. Before requesting proposal approval
-3. Before archiving changes
+**No magic.** All values in config. Explicit initialization. No discovery.
 
-## Environment Variables
+**Interface-first.** Design for 10 providers even if you have 1.
 
-Copy `.envs/.local/.django.example` to `.envs/.local/.django` and configure:
+See `CLAUDE.md` for full architectural principles.
 
-| Variable | Description |
-|----------|-------------|
-| `SECRET_KEY` | Django secret key |
-| `DATABASE_URL` | PostgreSQL connection |
-| `REDIS_URL` | Redis connection |
-| `STRIPE_SECRET_KEY` | Stripe API key |
-| `STRIPE_WEBHOOK_SECRET` | Webhook signature |
+## Status
 
-## Architecture
-
-### Multi-Tenancy Model
-
-```
-Company (root tenant)
-├── Teams (workspaces)
-│   └── TeamMembers (user + role)
-└── Users
-```
-
-Roles: `owner` > `admin` > `member` > `viewer`
-
-### API Conventions
-
-- JWT: `Authorization: Bearer {token}`
-- API keys: `X-API-Key: {key}`
-- Token refresh: `/api/v1/token/refresh/`
-- URLs: kebab-case (`/api/v1/team-members/`)
-
-## OpenSpec Workflow
-
-This project uses OpenSpec for spec-driven development:
-
-```bash
-openspec list              # View active changes
-openspec list --specs      # View existing capabilities
-openspec show <change>     # View change details
-openspec validate --strict # Validate specs
-```
-
-See `openspec/AGENTS.md` for full workflow documentation.
+Early development. Core concepts defined. Implementation in progress.

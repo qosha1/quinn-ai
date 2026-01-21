@@ -1,3 +1,34 @@
+# QuinnAI - Agent Guidelines
+
+## QuinnAI Principles (Read First)
+
+**What is QuinnAI?** RollerCoaster Tycoon for organizations. Design orgs, hire AI workers, set goals, watch it run.
+
+### The Physics
+- **Session = Worker's brain** (1:1, unbreakable)
+- **Every agent is a worker** (CEO, manager, junior - same base unit)
+- **One protocol for everything** (no special cases)
+- **Work has 4 dimensions**: Origin, Flow, Ownership, OKR
+- **OKRs cascade**: Board → CEO → Directors → Managers → Workers
+- **Board = gutterguards** (intervene only when off-track)
+
+### Architectural Laws
+1. Code = physics, config = behavior
+2. We define interfaces, providers implement our contracts
+3. No magic values (all config)
+4. No config discovery (explicit injection)
+5. No module side effects
+6. No string dispatch (use polymorphism)
+7. Interface-first design
+
+### When Building
+- Never hardcode behavioral decisions
+- Never lock to a specific provider
+- Never shape interface around implementation
+- Always: could this work with 10 different providers?
+
+---
+
 # OpenSpec Instructions
 
 Instructions for AI coding assistants using OpenSpec for spec-driven development.
