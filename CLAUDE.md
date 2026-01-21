@@ -208,6 +208,48 @@ Provider Adapter (they implement our contract)
 
 If you find yourself writing `import OpenAI` or `import Anthropic` anywhere except inside a provider adapter, you are doing it wrong.
 
+## Learned Anti-Patterns (from dev-hq & bottas failures)
+
+### 1. Hardcoded Paths & Magic Directories
+**Violation:** `/workspace`, `.beads/`, `aiorg/`, `inbox/`, `outbox/` baked into code.
+**Result:** Cannot deploy anywhere else, cannot test with custom layouts.
+**Fix:** Inject all paths via configuration. Zero hardcoded directory names.
+
+### 2. Configuration Discovery Instead of Explicit Injection
+**Violation:** Searching cwd and parent dirs for config files, env var expansion magic.
+**Result:** Two processes with different cwd get different configs silently.
+**Fix:** Configuration is passed explicitly at startup. No discovery. No magic.
+
+### 3. Module-Level Side Effects
+**Violation:** `_register_builtins()` called at import, global instances created on module load.
+**Result:** Cannot control initialization order, tests pollute each other.
+**Fix:** Explicit `initialize()` calls. No code runs at import time except definitions.
+
+### 4. String-Based Dispatch Instead of Polymorphism
+**Violation:** `if provider == "claude": ... elif provider == "openai": ...` scattered everywhere.
+**Result:** Adding providers means editing core code, typos cause silent failures.
+**Fix:** Provider classes implement interface. Registry returns instance. Zero string matching in business logic.
+
+### 5. Direct Instantiation Instead of Injection
+**Violation:** `WorkerQueue(self.worker_dir)` created inside classes that use them.
+**Result:** Cannot swap implementations, cannot test in isolation.
+**Fix:** Dependencies passed to constructors. Factories create configured instances.
+
+### 6. Single Implementation "Interfaces"
+**Violation:** `BeadsMemory` is the only memory impl, `WorkerQueue` is the only queue impl.
+**Result:** Interface exists but provides no real abstraction value.
+**Fix:** Don't create interface until you have 2+ implementations. When you do, ensure they're truly swappable.
+
+### 7. Cascading Configuration Fallbacks
+**Violation:** Check settings → check overrides → check env vars → check defaults → silent fallback.
+**Result:** Debugging requires tracing 100+ lines of fallback logic.
+**Fix:** Explicit required vs optional. Fail fast on missing required config. One source of truth.
+
+### 8. Infrastructure Leaking Into Business Logic
+**Violation:** Docker container states in session lifecycle, ANSI stripping in agent code.
+**Result:** Business logic cannot run outside specific infrastructure.
+**Fix:** Infrastructure behind adapters. Business logic is pure.
+
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 
