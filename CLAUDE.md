@@ -210,10 +210,10 @@ If you find yourself writing `import OpenAI` or `import Anthropic` anywhere exce
 
 ## Learned Anti-Patterns (from dev-hq & bottas failures)
 
-### 1. Hardcoded Paths & Magic Directories
-**Violation:** `/workspace`, `.beads/`, `aiorg/`, `inbox/`, `outbox/` baked into code.
-**Result:** Cannot deploy anywhere else, cannot test with custom layouts.
-**Fix:** Inject all paths via configuration. Zero hardcoded directory names.
+### 1. No Magic Strings, Values, or Numbers. EVER.
+**Violation:** `/workspace`, `.beads/`, `timeout=30`, `max_retries=3`, port numbers, directory names buried in code.
+**Result:** Cannot configure without code changes, values scattered and inconsistent.
+**Fix:** ALL values go in config. Hierarchy: system-wide config → object/class config → module-level constants (worst case). Zero literals in function bodies.
 
 ### 2. Configuration Discovery Instead of Explicit Injection
 **Violation:** Searching cwd and parent dirs for config files, env var expansion magic.
