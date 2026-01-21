@@ -236,7 +236,8 @@ class UsageService:
             if usage_limit.overage_allowed:
                 return True
         except (UsageType.DoesNotExist, UsageLimit.DoesNotExist):
-            pass
+            # No limit config found - proceed to standard limit check below
+            logger.debug(f"No overage config for {usage_type_slug}, checking standard limit")
 
         # Check current usage
         current_usage = UsageService.get_current_usage(company, usage_type_slug)

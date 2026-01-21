@@ -2,6 +2,178 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## 🚨 Code Quality Commandments (MANDATORY)
+
+### Test Before Respond
+**Before EVERY response that modifies code, run the appropriate test suite:**
+
+```bash
+# Python projects
+systemeval test
+
+# TypeScript/NextJS projects
+npm run test --prefix app
+npm run test --prefix e2e
+```
+
+Do NOT mark tasks complete until tests pass.
+
+### No Magic Strings
+- All configuration values must come from environment variables or config files
+- No hardcoded URLs, API keys, secrets, or environment-specific values in code
+- Use constants for repeated string literals
+
+### No Duplicate Functionality
+- One codebase, one architecture
+- Work within existing structures - extend, don't duplicate
+- No `enhanced-*`, `improved-*`, `new-*`, or `simple-*` file variants
+- Before creating a new file, verify similar functionality doesn't exist
+
+### No Dead Code
+- Remove unused imports, functions, and variables
+- No commented-out code blocks (use git history)
+- No `// TODO` without an associated issue/task
+
+### Type Safety
+- TypeScript: strict mode, no `any` types without justification
+- Python: type hints on all function signatures
+- No implicit type coercion in comparisons
+
+### Error Handling
+- No silent failures - log or propagate errors
+- No empty catch blocks
+- Validate inputs at system boundaries
+
+### File Management
+- Never create task-specific MD files in root (no `ARCHITECTURE_REVIEW.md`, etc.)
+- `docs/*` is for validated, tested documentation only - no planning docs
+- No test output files (logs, snapshots) in root directory
+
+### Commit Discipline
+- No "Co-Authored-By" lines
+- No hyperbolic language ("critical fix", "important update")
+- Atomic commits - one logical change per commit
+
+---
+
+## Template Sync (For Forked Repos)
+
+This project is based on a template. To pull updates from the upstream template:
+
+### Initial Setup (once per fork)
+```bash
+# Add template as upstream remote
+git remote add template https://github.com/YOUR_ORG/b2b-saas-template.git
+git fetch template
+```
+
+### Syncing Updates
+```bash
+# Fetch latest template changes
+git fetch template main
+
+# Create a sync branch
+git checkout -b template-sync
+
+# Merge template changes (resolve conflicts as needed)
+git merge template/main --allow-unrelated-histories
+
+# Review changes, run tests
+systemeval test
+
+# If all passes, merge to main
+git checkout main
+git merge template-sync
+git branch -d template-sync
+```
+
+### What Gets Synced
+- Infrastructure configs (Docker, CI/CD)
+- Base components and utilities
+- Test infrastructure
+- CLAUDE.md rules and conventions
+
+### What Stays Local
+- Business logic in `apps/`
+- Custom components
+- Environment-specific configs
+- `.envs/` contents
+
+---
+
+## Versioning & Releases
+
+This project follows [Semantic Versioning](https://semver.org/):
+- **MAJOR** (x.0.0): Breaking changes, major architecture shifts
+- **MINOR** (0.x.0): New features, backward-compatible additions
+- **PATCH** (0.0.x): Bug fixes, minor improvements
+
+### Current Version
+Check `VERSION` file in project root.
+
+### Version Bump Process
+
+```bash
+# Patch release (bug fixes) - auto-generates from commits
+./scripts/bump-version.sh patch
+
+# Minor release (new features) - requires changelog + release notes
+./scripts/bump-version.sh minor
+
+# Major release (breaking changes) - requires changelog + release notes
+./scripts/bump-version.sh major
+```
+
+### AI Release Documentation Requirements
+
+**For MAJOR and MINOR releases:**
+1. Update `CHANGELOG.md` [Unreleased] section with all changes
+2. Create `release-notes/vX.Y.Z.md` with:
+   - Overview (2-3 sentence summary)
+   - Highlights (key features)
+   - Breaking changes (if any)
+   - Migration guide (if needed)
+   - Detailed feature descriptions
+3. Run `systemeval test` - must pass
+4. Run `./scripts/bump-version.sh [major|minor]`
+
+**For PATCH releases:**
+- Changelog auto-generated from git commit messages
+- No release notes file required
+- Run `./scripts/bump-version.sh patch`
+
+### Changelog Format (Keep a Changelog)
+
+```markdown
+## [Unreleased]
+
+### Added
+- New features
+
+### Changed
+- Changes to existing features
+
+### Deprecated
+- Features to be removed
+
+### Removed
+- Removed features
+
+### Fixed
+- Bug fixes
+
+### Security
+- Security fixes
+```
+
+### Tagging Convention
+- Tags: `v0.1.0`, `v1.0.0`, `v1.2.3`
+- Always use annotated tags: `git tag -a v1.0.0 -m "Release v1.0.0"`
+
+---
+
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 

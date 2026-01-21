@@ -4,4 +4,39 @@ test_directory: tests
 options:
   # Ignore backend tests that require Django setup
   ignore: ["backend"]
-categories: {}
+
+categories:
+  code-quality:
+    name: "Code Quality Commandments"
+    description: "Validates adherence to CLAUDE.md rules"
+    pattern: "test_code_quality_commandments.py"
+
+  structure:
+    name: "Project Structure"
+    description: "Backend and infrastructure structure tests"
+    pattern: "test_backend.py::* test_infrastructure.py::*"
+
+  auth-teams:
+    name: "Auth & Teams"
+    description: "Authentication and team management"
+    pattern: "test_auth_teams.py::*"
+
+  billing:
+    name: "Billing"
+    description: "Stripe billing integration"
+    pattern: "test_billing.py::*"
+
+  frontend:
+    name: "Frontend"
+    description: "App and landing page structure"
+    pattern: "test_frontend_app.py::* test_landing_page.py::*"
+
+  testing-infra:
+    name: "Testing Infrastructure"
+    description: "Test suite configuration"
+    pattern: "test_testing_infrastructure.py::*"
+
+  versioning:
+    name: "Versioning & Releases"
+    description: "Version files, changelog, and release infrastructure"
+    pattern: "test_versioning.py::*"
