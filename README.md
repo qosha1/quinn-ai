@@ -46,46 +46,39 @@ The ball keeps rolling. You only bump it back when it's heading for the gutter.
 
 ### 1. Define Your Org
 
-One folder = one org. You describe it declaratively:
+One folder = one org. Separate concerns in separate places:
 
-```yaml
-# ~/orgs/my-startup/org.yaml
-
-name: my-startup
-
-okrs:
-  - id: okr-1
-    objective: "Build MVP"
-    key_results:
-      - "Launch beta to 100 users"
-      - "Achieve 40% weekly retention"
-
-workers:
-  ceo:
-    role: CEO
-    level: 0
-    domain: "*"
-
-  eng-lead:
-    role: Engineering Lead
-    level: 1
-    domain: engineering
-    reports_to: ceo
-
-  dev-1:
-    role: Developer
-    level: 2
-    domain: engineering
-    reports_to: eng-lead
 ```
+~/orgs/my-startup/
+├── org/
+│   ├── structure.yaml      # Who exists, hierarchy, teams
+│   ├── roles/              # Role definitions (what can each role do?)
+│   │   ├── ceo.yaml
+│   │   ├── eng-lead.yaml
+│   │   └── developer.yaml
+│   └── teams/              # Team definitions
+│       ├── engineering.yaml
+│       └── product.yaml
+├── okrs/
+│   ├── 2024-q1/            # OKRs are time-bound
+│   │   ├── company.yaml    # Top-level objectives
+│   │   ├── engineering.yaml
+│   │   └── product.yaml
+│   └── current -> 2024-q1  # Symlink to active period
+├── work/                   # Where work items live
+├── logs/                   # Activity logs
+└── state/                  # Runtime state
+```
+
+Org structure and OKRs are separate. Both can grow, change, be versioned independently.
 
 ### 2. Start the Org
 
-From that folder, start it. Workers wake up, sessions spin up, work begins flowing.
+From that folder, start it. Workers wake up based on structure. OKRs drive priorities. Work flows.
 
 ### 3. Be the Board
 
-Watch the dashboard. See work flowing. See OKR progress. When something's off-track, give direction. Otherwise, stay out of the way.
+Watch. See work flowing against OKRs. When off-track, give direction. Otherwise, stay out.
 
 ---
 
