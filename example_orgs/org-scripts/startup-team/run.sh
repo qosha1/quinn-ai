@@ -15,6 +15,17 @@ if [[ ! -d "$ORG_DIR" ]]; then
     exit 1
 fi
 
+# Check API key is set (required to spawn CEO session)
+if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+    echo "Error: ANTHROPIC_API_KEY is not set."
+    echo
+    echo "To run this example, you need an Anthropic API key."
+    echo "Set it with: export ANTHROPIC_API_KEY=\"sk-ant-...\""
+    echo
+    echo "Or source your env file: set -a && source .envs/.local/.django && set +a"
+    exit 1
+fi
+
 # Start the org
 echo "Starting org..."
 "$QN" --org-path "$ORG_DIR" org start

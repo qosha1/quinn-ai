@@ -25,7 +25,19 @@ cat "$ORG_DIR/org-chart/current.yaml" 2>/dev/null || echo "(not found)"
 
 echo
 echo "--- Live Sessions ---"
-tmux list-sessions 2>/dev/null | grep -i "hello-world\|alice\|ceo" || echo "(no sessions found)"
+# Get worker IDs from database and find their tmux sessions (named qn-wrkr-<hex>)
+if [[ -f "$ORG_DIR/live/quinn.db" ]]; then
+    worker_ids=$(sqlite3 "$ORG_DIR/live/quinn.db" "SELECT id FROM workers;" 2>/dev/null)
+    if [[ -n "$worker_ids" ]]; then
+        # Build grep pattern from worker IDs (wrkr-xxx -> qn-wrkr-xxx)
+        pattern=$(echo "$worker_ids" | sed 's/wrkr-/qn-wrkr-/' | tr '\n' '|' | sed 's/|$//')
+        tmux list-sessions 2>/dev/null | grep -E "$pattern" || echo "(no sessions found)"
+    else
+        echo "(no workers in database)"
+    fi
+else
+    echo "(database not found)"
+fi
 
 echo
 echo "--- Database Stats ---"

@@ -47,10 +47,22 @@ sqlite3 -header -column "$ORG_DIR/live/quinn.db" \
 
 echo
 echo "--- Live Sessions ---"
-tmux list-sessions 2>/dev/null | grep -iE "okr|alice|ceo" || echo "(no sessions found)"
+# Get worker IDs from database and find their tmux sessions (named qn-wrkr-<hex>)
+if [[ -f "$ORG_DIR/live/quinn.db" ]]; then
+    worker_ids=$(sqlite3 "$ORG_DIR/live/quinn.db" "SELECT id FROM workers;" 2>/dev/null)
+    if [[ -n "$worker_ids" ]]; then
+        # Build grep pattern from worker IDs (wrkr-xxx -> qn-wrkr-xxx)
+        pattern=$(echo "$worker_ids" | sed 's/wrkr-/qn-wrkr-/' | tr '\n' '|' | sed 's/|$//')
+        tmux list-sessions 2>/dev/null | grep -E "$pattern" || echo "(no sessions found)"
+    else
+        echo "(no workers in database)"
+    fi
+else
+    echo "(database not found)"
+fi
 
 echo
 echo "Tip: Check OKR progress with:"
-echo "  cat org/okrs/q1-2025.yaml"
+echo "  cat $ORG_DIR/okrs/q1-2025.yaml"
 echo
 echo "Press Ctrl+C to stop observing"
