@@ -131,6 +131,88 @@ def cost_to_tier(cost: int) -> CostTier:
         return CostTier.PREMIUM
 
 
+def get_model_for_worker(
+    registry: "ProviderRegistry",
+    worker_cost: int,
+    required_capabilities: Optional[list[str]] = None,
+    preferred_provider: Optional[str] = None,
+    org_authorized_providers: Optional[list[str]] = None,
+) -> ModelInfo:
+    """Get best model for a worker based on cost and capabilities.
+
+    This is a simplified interface that returns just the ModelInfo,
+    abstracting away the provider selection details.
+
+    The function:
+    1. Maps worker cost (0-100) to a CostTier
+    2. Filters models by tier and capabilities
+    3. Returns the best matching model
+
+    Cost to tier mapping:
+    - 0-30 → BUDGET
+    - 31-60 → STANDARD
+    - 61-80 → ADVANCED
+    - 81-100 → PREMIUM
+
+    Args:
+        registry: Initialized ProviderRegistry with available providers
+        worker_cost: Worker cost score (0-100)
+        required_capabilities: List of required capability names (e.g., ["coding", "reasoning"])
+        preferred_provider: Optional preferred provider name
+        org_authorized_providers: List of authorized provider names (None = all authorized)
+
+    Returns:
+        ModelInfo for the best matching model
+
+    Raises:
+        ProviderSelectionError: If no model can satisfy the requirements
+    """
+    if required_capabilities is None:
+        required_capabilities = []
+
+    # Convert cost to tier
+    tier = cost_to_tier(worker_cost)
+
+    # Build provider attempt order
+    providers_to_try: list[str] = []
+
+    # Preferred provider first
+    if preferred_provider and _is_authorized(preferred_provider, org_authorized_providers):
+        if registry.has(preferred_provider):
+            providers_to_try.append(preferred_provider)
+
+    # Default provider second
+    default = registry.default_name
+    if default and default not in providers_to_try:
+        if _is_authorized(default, org_authorized_providers):
+            providers_to_try.append(default)
+
+    # Remaining authorized providers
+    for name in registry.list_providers():
+        if name not in providers_to_try:
+            if _is_authorized(name, org_authorized_providers):
+                providers_to_try.append(name)
+
+    # Try each provider
+    errors: list[tuple[str, str]] = []
+    for provider_name in providers_to_try:
+        provider = registry.get(provider_name)
+        try:
+            model = _select_model_for_tier(provider, tier, required_capabilities)
+            return model
+        except (ValueError, ModelNotAvailableError) as e:
+            errors.append((provider_name, str(e)))
+            continue
+
+    # All providers failed
+    raise ProviderSelectionError(
+        cost=worker_cost,
+        capabilities=required_capabilities,
+        attempted=providers_to_try,
+        errors=errors,
+    )
+
+
 def skills_to_capabilities(
     skills: dict[str, int],
     thresholds: Optional[dict[str, int]] = None,

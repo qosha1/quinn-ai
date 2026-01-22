@@ -5,6 +5,7 @@ Tests the tier-based provider selection system including:
 - cost_to_tier() mapping
 - skills_to_capabilities() conversion
 - select_provider_for_worker() function
+- get_model_for_worker() function
 - ProviderSelectionError handling
 - Model upgrade logic
 """
@@ -26,6 +27,7 @@ from cli.core.provider import (
     ProviderSelection,
     ProviderSelectionError,
     cost_to_tier,
+    get_model_for_worker,
     select_provider_for_worker,
     skills_to_capabilities,
 )

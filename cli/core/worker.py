@@ -9,6 +9,7 @@ Workers have dual state machines:
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 from .db import Database
@@ -44,6 +45,7 @@ from .queries import (
     get_workers_by_manager,
     create_worker,
 )
+from .storage import StorageManager, WorkerStorageNotFound, StorageAlreadyFrozen
 
 # Import shared business logic
 from shared import (
@@ -139,6 +141,7 @@ class Worker:
         db: Database,
         worker_id: str,
         session_registry: Optional["SessionRegistry"] = None,
+        org_path: Optional["Path"] = None,
     ):
         """Initialize worker wrapper.
 
@@ -147,6 +150,8 @@ class Worker:
             worker_id: Worker ID to manage
             session_registry: Optional SessionRegistry for creating sessions via spawn().
                              If not provided, spawn() will use the default registry.
+            org_path: Optional path to org folder. Required for terminate() to
+                     freeze storage and update org-chart.
         """
         self.db = db
         self.id = worker_id
@@ -154,6 +159,7 @@ class Worker:
         self._state_data = None
         self._session: Optional["SessionInterface"] = None
         self._session_registry: Optional["SessionRegistry"] = session_registry
+        self._org_path: Optional["Path"] = org_path
 
     def _load_worker(self) -> None:
         """Load worker data from database."""
@@ -169,6 +175,31 @@ class Worker:
         """Refresh data from database."""
         self._load_worker()
         self._load_state()
+
+    def _get_org_path(self) -> Path:
+        """Get the org path from the database path.
+
+        Derives org_path from db.db_path (quinn.db is at org_path/live/quinn.db).
+
+        Returns:
+            Path to the org folder
+
+        Raises:
+            ValueError: If org_path not set and cannot derive from db
+        """
+        if self._org_path is not None:
+            return self._org_path
+        # Derive from db path: org_path/live/quinn.db -> org_path
+        return self.db.db_path.parent.parent
+
+    def _get_storage_manager(self) -> StorageManager:
+        """Get a StorageManager for this worker's org.
+
+        Returns:
+            StorageManager instance configured for this org
+        """
+        org_path = self._get_org_path()
+        return StorageManager(org_path, self.db)
 
     # ==================
     # LIFECYCLE PROPERTIES
@@ -361,9 +392,22 @@ class Worker:
             skills=skills,
         )
 
+        # Create worker storage folder (mirrors org-chart hierarchy)
+        storage = self._get_storage_manager()
+        storage.ensure_worker_storage(worker_data.id, reports_to=self.id)
+
         # Return Worker instance
-        new_worker = Worker(self.db, worker_data.id)
+        new_worker = Worker(self.db, worker_data.id, org_path=self._get_org_path())
         new_worker._worker_data = worker_data
+
+        # Update org-chart to reflect the new hire
+        try:
+            from .org_chart import update_org_chart
+
+            org_path = self._get_org_path()
+            update_org_chart(self.db, org_path)
+        except Exception:
+            pass  # Org-chart update is best-effort
 
         # Publish WORKER_HIRED event if events module is available
         try:
@@ -548,9 +592,59 @@ class Worker:
         self._worker_data = None
 
     def terminate(self) -> None:
-        """Transition from offboarding to terminated."""
+        """Terminate worker - freeze storage, update org-chart, fire event.
+
+        Performs a full termination workflow:
+        1. Stop session if running
+        2. Freeze worker storage
+        3. Update lifecycle status to terminated
+        4. Update org-chart
+        5. Publish WORKER_FIRED event
+
+        Raises:
+            InvalidStateTransition: If not in a state that can transition to terminated
+        """
+        # Stop session first if any
+        self.terminate_session(force=True)
+
+        # Freeze worker storage for review (if exists)
+        try:
+            storage = self._get_storage_manager()
+            storage.freeze_worker(self.id)
+        except (WorkerStorageNotFound, StorageAlreadyFrozen):
+            # Storage doesn't exist or already frozen - OK to continue
+            pass
+
+        # Validate and update lifecycle status
         self._validate_lifecycle_transition("terminated")
         update_worker_status(self.db, self.id, "terminated")
+
+        # Update org-chart
+        try:
+            from .org_chart import update_org_chart
+
+            org_path = self._get_org_path()
+            update_org_chart(self.db, org_path)
+        except Exception:
+            pass  # Org-chart update is best-effort
+
+        # Publish WORKER_FIRED event
+        try:
+            from .events import EventBus, EventType
+
+            bus = EventBus(self.db)
+            bus.publish(
+                EventType.WORKER_FIRED,
+                "worker",
+                self.id,
+                {
+                    "name": self.name,
+                    "role": self.role,
+                },
+            )
+        except Exception:
+            pass  # Event publishing is best-effort
+
         self._worker_data = None
 
     # ==================

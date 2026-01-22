@@ -1147,3 +1147,182 @@ class TestDelegateAuthority:
                 scope=scope,
             )
         assert "exceeding own" in exc_info.value.reason
+
+
+# ===================
+# TERMINATE INTEGRATION TESTS
+# ===================
+
+
+class TestTerminateIntegration:
+    """Test Worker.terminate() integration with storage, org-chart, and events."""
+
+    @pytest.fixture
+    def org_path(self, db):
+        """Get org path from db path (db is at org_path/live/quinn.db)."""
+        return db.db_path.parent.parent
+
+    @pytest.fixture
+    def worker_with_org_path(self, db, worker_data, org_path):
+        """Get Worker instance with org_path configured."""
+        return Worker(db, worker_data.id, org_path=org_path)
+
+    @pytest.fixture
+    def offboarding_worker(self, worker_with_org_path, org_path):
+        """Get worker in offboarding state with storage initialized."""
+        worker = worker_with_org_path
+        # Create storage directory
+        from cli.core.storage import StorageManager
+        storage = StorageManager(org_path, worker.db)
+        storage.ensure_worker_storage(worker.id, reports_to="")
+
+        # Transition to offboarding state
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        worker.start_offboarding()
+        return worker
+
+    def test_terminate_freezes_storage(self, offboarding_worker, org_path):
+        """terminate() should freeze worker storage."""
+        from cli.core.storage import StorageManager, FROZEN_SUFFIX
+
+        worker = offboarding_worker
+
+        # Verify storage exists before termination
+        storage = StorageManager(org_path, worker.db)
+        assert storage.worker_storage_exists(worker.id, reports_to="")
+        assert not storage.is_worker_frozen(worker.id, reports_to="")
+
+        # Terminate
+        worker.terminate()
+
+        # Verify storage is now frozen
+        assert storage.is_worker_frozen(worker.id, reports_to="")
+
+    def test_terminate_updates_org_chart(self, offboarding_worker, org_path):
+        """terminate() should update org-chart/current.yaml."""
+        import yaml
+
+        worker = offboarding_worker
+        chart_path = org_path / "org-chart" / "current.yaml"
+
+        # Create org-chart directory if needed
+        chart_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create initial org-chart with worker
+        initial_chart = {
+            "version": "1.0",
+            "workers": {
+                worker.id: {
+                    "name": worker.name,
+                    "role": worker.role,
+                    "lifecycle": "offboarding",
+                    "manager": None,
+                    "reports": [],
+                }
+            },
+            "hierarchy": {"root": worker.id},
+        }
+        with open(chart_path, "w") as f:
+            yaml.dump(initial_chart, f)
+
+        # Terminate
+        worker.terminate()
+
+        # Verify org-chart was updated with terminated status
+        with open(chart_path) as f:
+            updated_chart = yaml.safe_load(f)
+
+        assert updated_chart["workers"][worker.id]["lifecycle"] == "terminated"
+
+    def test_terminate_publishes_event(self, offboarding_worker):
+        """terminate() should publish WORKER_FIRED event."""
+        from cli.core.events import EventBus, EventType
+
+        worker = offboarding_worker
+
+        # Terminate
+        worker.terminate()
+
+        # Verify event was published
+        bus = EventBus(worker.db)
+        events = bus.get_events_for_entity("worker", worker.id, limit=10)
+
+        fired_events = [e for e in events if e.event_type == EventType.WORKER_FIRED]
+        assert len(fired_events) == 1
+        assert fired_events[0].payload["name"] == worker.name
+        assert fired_events[0].payload["role"] == worker.role
+
+    def test_terminate_stops_session(self, db, team, org_path):
+        """terminate() should stop any running session."""
+        # Create worker with session
+        worker_data = create_worker(db, "SessionWorker", "Developer", team.id, 50)
+        worker = Worker(db, worker_data.id, org_path=org_path)
+
+        # Create mock session
+        session = MockSession()
+        worker.start_onboarding()
+        worker.complete_onboarding()
+
+        # Create budget for session
+        now = datetime.now()
+        period_end = now + timedelta(days=30)
+        pool = create_budget_pool(db, "test-pool", 1000.0, now, period_end)
+        create_budget_allocation(
+            db,
+            worker_id=worker.id,
+            allocated_credits=100.0,
+            period_start=now,
+            period_end=period_end,
+            pool_id=pool.id,
+        )
+
+        # Spawn session
+        worker.spawn_session(session)
+        assert worker.session is not None
+
+        # Transition to offboarding and terminate
+        worker.start_offboarding()
+        worker.terminate()
+
+        # Verify session was stopped
+        assert session.stopped is True
+        assert session.force_stopped is True
+        assert worker.session is None
+
+    def test_terminate_handles_no_storage(self, db, team, org_path):
+        """terminate() should succeed even if worker has no storage."""
+        # Create worker without storage
+        worker_data = create_worker(db, "NoStorageWorker", "Developer", team.id, 50)
+        worker = Worker(db, worker_data.id, org_path=org_path)
+
+        # Transition to offboarding (skip storage creation)
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        worker.start_offboarding()
+
+        # Should not raise - storage operations are best-effort
+        worker.terminate()
+        assert worker.lifecycle_status == "terminated"
+
+    def test_terminate_handles_already_frozen_storage(self, db, team, org_path):
+        """terminate() should succeed even if storage is already frozen."""
+        from cli.core.storage import StorageManager
+
+        # Create worker with storage
+        worker_data = create_worker(db, "FrozenWorker", "Developer", team.id, 50)
+        worker = Worker(db, worker_data.id, org_path=org_path)
+
+        # Create and freeze storage manually
+        storage = StorageManager(org_path, worker.db)
+        storage.ensure_worker_storage(worker.id, reports_to="")
+        storage.freeze_worker(worker.id, reports_to="")
+
+        # Transition to offboarding
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        worker.start_offboarding()
+
+        # Should not raise - already frozen is OK
+        worker.terminate()
+        assert worker.lifecycle_status == "terminated"
