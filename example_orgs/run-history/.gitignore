@@ -1,0 +1,3 @@
+# Keep run history but ignore large files
+# Individual run archives are kept for evaluation
+*.db

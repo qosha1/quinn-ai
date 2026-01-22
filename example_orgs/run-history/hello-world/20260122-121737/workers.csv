@@ -1,0 +1,2 @@
+id,name,role,team_id,manager_id,status,skills,cost,hiring_authority_scope,delegated_budget,max_reports,offboarding_ask_bead_id,created_at,updated_at
+wrkr-6bd0df48,Alice,CEO,team-eba34883,,active,{},100,,0,10,,"2026-01-22 12:17:28.814446","2026-01-22 12:17:29.745332"

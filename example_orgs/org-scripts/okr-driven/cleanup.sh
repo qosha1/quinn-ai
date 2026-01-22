@@ -8,7 +8,8 @@ ORG_DIR="$SCRIPT_DIR/../../generated-orgs/okr-driven"
 echo "=== OKR-Driven: Cleanup ==="
 echo
 
-"$SCRIPT_DIR/../common/cleanup.sh" --force "$ORG_DIR"
+# Pass through any flags (--label, --no-archive, etc.) to common cleanup
+"$SCRIPT_DIR/../common/cleanup.sh" --force "$@" "$ORG_DIR"
 
 echo
 echo "Ready for a fresh start with ./setup.sh"

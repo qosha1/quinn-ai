@@ -1,0 +1,10 @@
+version: '1.0'
+workers:
+  wrkr-52586f34:
+    name: Alice
+    role: CEO
+    lifecycle: active
+    manager: null
+    reports: []
+hierarchy:
+  root: wrkr-52586f34

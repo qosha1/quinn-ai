@@ -1,0 +1,2 @@
+id,status,ceo_worker_id,started_at,stopped_at,created_at,updated_at
+default,running,wrkr-6bd0df48,"2026-01-22 12:17:29.745518",,"2026-01-22 20:17:28","2026-01-22 12:17:29.745518"
