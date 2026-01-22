@@ -1,0 +1,110 @@
+# Worker Templates
+# Defines skill and cost profiles for different worker roles.
+#
+# Skills: 0-100 score for each capability
+#   - coding: Writing and understanding code
+#   - reasoning: Complex problem solving and analysis
+#   - research: Information gathering and synthesis
+#   - management: Coordinating teams and delegating work
+#   - strategy: Long-term planning and decision making
+#
+# Cost: 0-100 score determining model quality
+#   - 0-30: Budget models (fast, cheap, limited capability)
+#   - 31-60: Standard models (balanced)
+#   - 61-80: Advanced models (high capability)
+#   - 81-100: Premium models (best available)
+
+templates:
+  # Executive roles - high cost, strategic focus
+  ceo:
+    description: "Chief Executive Officer - strategic leadership"
+    skills:
+      coding: 40
+      reasoning: 90
+      research: 70
+      management: 95
+      strategy: 100
+    cost: 100
+
+  director:
+    description: "Director level - department leadership"
+    skills:
+      coding: 50
+      reasoning: 85
+      research: 75
+      management: 85
+      strategy: 80
+    cost: 85
+
+  # Management roles - balanced cost, coordination focus
+  manager:
+    description: "Manager - team coordination and delivery"
+    skills:
+      coding: 60
+      reasoning: 75
+      research: 70
+      management: 80
+      strategy: 60
+    cost: 70
+
+  lead:
+    description: "Tech lead - technical leadership"
+    skills:
+      coding: 90
+      reasoning: 85
+      research: 75
+      management: 70
+      strategy: 50
+    cost: 75
+
+  # Individual contributor roles - varied cost based on seniority
+  senior_engineer:
+    description: "Senior engineer - high capability IC"
+    skills:
+      coding: 95
+      reasoning: 85
+      research: 80
+      management: 40
+      strategy: 40
+    cost: 70
+
+  engineer:
+    description: "Engineer - standard IC"
+    skills:
+      coding: 80
+      reasoning: 70
+      research: 65
+      management: 25
+      strategy: 25
+    cost: 50
+
+  junior_engineer:
+    description: "Junior engineer - learning IC"
+    skills:
+      coding: 60
+      reasoning: 55
+      research: 50
+      management: 15
+      strategy: 15
+    cost: 30
+
+  # Specialist roles
+  researcher:
+    description: "Researcher - information synthesis"
+    skills:
+      coding: 50
+      reasoning: 90
+      research: 95
+      management: 30
+      strategy: 60
+    cost: 65
+
+  analyst:
+    description: "Analyst - data and business analysis"
+    skills:
+      coding: 65
+      reasoning: 85
+      research: 85
+      management: 35
+      strategy: 55
+    cost: 55

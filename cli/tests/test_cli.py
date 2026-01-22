@@ -74,10 +74,18 @@ class TestOrgGroup:
         assert result.exit_code == 0
         assert "Initialized organization" in result.output
         assert "Created CEO" in result.output
-        # Verify folder structure created
+        # Verify folder structure created (per README spec)
+        assert (temp_org / "config").exists()
+        assert (temp_org / "org-chart").exists()
         assert (temp_org / "live").exists()
-        assert (temp_org / "shared").exists()
-        assert (temp_org / "workers").exists()
+        assert (temp_org / "live" / "workers").exists()
+        assert (temp_org / "storage" / "shared").exists()
+        assert (temp_org / "storage" / "workers").exists()
+        # Verify config files copied
+        assert (temp_org / "config" / "providers.yaml").exists()
+        assert (temp_org / "config" / "worker-templates.yaml").exists()
+        # Verify org-chart created
+        assert (temp_org / "org-chart" / "current.yaml").exists()
 
     def test_org_init_already_initialized(self, runner, temp_org):
         """qn org init should fail if already initialized."""

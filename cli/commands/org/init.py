@@ -2,6 +2,7 @@
 qn org init command.
 """
 
+import shutil
 from pathlib import Path
 
 import click
@@ -9,6 +10,10 @@ import click
 from commands.main import pass_context, Context
 from core.db import init_database, get_org_db_path
 from core.org import Org
+
+
+# Path to default config templates (relative to this file's package)
+DEFAULT_CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
 
 
 @click.command()
@@ -26,8 +31,8 @@ from core.org import Org
 def init_cmd(ctx: Context, ceo_name: str, ceo_role: str):
     """Initialize a new organization.
 
-    Creates the org folder structure, initializes the database,
-    and creates the CEO worker.
+    Creates the org folder structure, copies default config templates,
+    initializes the database, and creates the CEO worker.
     """
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)
@@ -41,6 +46,9 @@ def init_cmd(ctx: Context, ceo_name: str, ceo_role: str):
     # Create folder structure
     _create_folder_structure(org_path)
 
+    # Copy default config templates
+    _copy_default_configs(org_path)
+
     # Initialize database
     db = init_database(db_path)
 
@@ -49,12 +57,16 @@ def init_cmd(ctx: Context, ceo_name: str, ceo_role: str):
         org = Org(db)
         ceo = org.init(ceo_name, ceo_role)
 
+        # Create initial org-chart
+        _create_org_chart(org_path, ceo)
+
         click.echo(f"Initialized organization at {org_path}")
         click.echo(f"Created CEO: {ceo.name} ({ceo.role})")
         click.echo(f"Database: {db_path}")
         click.echo("")
         click.echo("Next steps:")
-        click.echo("  qn org start    Start the organization")
+        click.echo("  1. Configure providers in config/providers.yaml")
+        click.echo("  2. Run 'qn org start' to start the organization")
 
     finally:
         db.close()
@@ -63,17 +75,73 @@ def init_cmd(ctx: Context, ceo_name: str, ceo_role: str):
 def _create_folder_structure(org_path: Path) -> None:
     """Create the org folder structure.
 
-    Structure:
+    Structure per README spec:
         org_path/
-        ├── live/           # Runtime data (quinn.db, logs)
-        ├── shared/         # Shared knowledge (topics, team docs)
-        └── workers/        # Per-worker storage (mirrors org-chart)
+        ├── config/             # Org config (providers, templates)
+        ├── org-chart/          # Git-tracked hiring decisions output
+        ├── live/               # Runtime state
+        │   ├── quinn.db
+        │   └── workers/        # Per-worker session state
+        └── storage/            # Abstracted storage
+            ├── shared/         # Org lifetime (topics, teams)
+            └── workers/        # Worker lifetime (mirrors org-chart)
     """
-    # Create main directories
-    (org_path / "live").mkdir(parents=True, exist_ok=True)
-    (org_path / "shared").mkdir(parents=True, exist_ok=True)
-    (org_path / "workers").mkdir(parents=True, exist_ok=True)
+    # Config directory
+    (org_path / "config").mkdir(parents=True, exist_ok=True)
 
-    # Create subdirectories
-    (org_path / "shared" / "topics").mkdir(exist_ok=True)
-    (org_path / "shared" / "teams").mkdir(exist_ok=True)
+    # Org-chart output directory
+    (org_path / "org-chart").mkdir(parents=True, exist_ok=True)
+
+    # Runtime state
+    (org_path / "live").mkdir(parents=True, exist_ok=True)
+    (org_path / "live" / "workers").mkdir(exist_ok=True)
+
+    # Storage directories
+    (org_path / "storage" / "shared").mkdir(parents=True, exist_ok=True)
+    (org_path / "storage" / "workers").mkdir(parents=True, exist_ok=True)
+
+
+def _copy_default_configs(org_path: Path) -> None:
+    """Copy default config templates to org config directory.
+
+    Copies providers.yaml and worker-templates.yaml from package defaults.
+    """
+    config_dir = org_path / "config"
+
+    # Copy providers.yaml
+    providers_src = DEFAULT_CONFIG_DIR / "providers.yaml"
+    if providers_src.exists():
+        shutil.copy(providers_src, config_dir / "providers.yaml")
+
+    # Copy worker-templates.yaml
+    templates_src = DEFAULT_CONFIG_DIR / "worker-templates.yaml"
+    if templates_src.exists():
+        shutil.copy(templates_src, config_dir / "worker-templates.yaml")
+
+
+def _create_org_chart(org_path: Path, ceo) -> None:
+    """Create initial org-chart file.
+
+    The org-chart is the git-tracked output of hiring decisions.
+    """
+    import yaml
+
+    org_chart = {
+        "version": "1.0",
+        "workers": {
+            ceo.id: {
+                "name": ceo.name,
+                "role": ceo.role,
+                "lifecycle": ceo.lifecycle_status,
+                "manager": None,
+                "reports": [],
+            }
+        },
+        "hierarchy": {
+            "root": ceo.id,
+        }
+    }
+
+    chart_path = org_path / "org-chart" / "current.yaml"
+    with open(chart_path, "w") as f:
+        yaml.dump(org_chart, f, default_flow_style=False, sort_keys=False)

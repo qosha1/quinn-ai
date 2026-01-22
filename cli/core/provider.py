@@ -16,9 +16,10 @@ from providers.base import (
 )
 
 
-# Skill threshold for requiring a capability
-SKILL_CAPABILITY_THRESHOLD = 80
-REASONING_THRESHOLD = 60  # Lower threshold for reasoning
+# Default thresholds - can be overridden via config
+DEFAULT_CODING_THRESHOLD = 80
+DEFAULT_REASONING_THRESHOLD = 60
+DEFAULT_RESEARCH_THRESHOLD = 80
 
 
 class ProviderRegistry:
@@ -34,6 +35,30 @@ class ProviderRegistry:
         """Initialize empty registry."""
         self._providers: dict[str, Provider] = {}
         self._default_provider: Optional[str] = None
+        # Configurable thresholds with defaults
+        self._coding_threshold = DEFAULT_CODING_THRESHOLD
+        self._reasoning_threshold = DEFAULT_REASONING_THRESHOLD
+        self._research_threshold = DEFAULT_RESEARCH_THRESHOLD
+
+    def set_thresholds(
+        self,
+        coding: Optional[int] = None,
+        reasoning: Optional[int] = None,
+        research: Optional[int] = None,
+    ) -> None:
+        """Set skill thresholds from config.
+
+        Args:
+            coding: Threshold for coding capability requirement
+            reasoning: Threshold for reasoning capability requirement
+            research: Threshold for research capability requirement
+        """
+        if coding is not None:
+            self._coding_threshold = coding
+        if reasoning is not None:
+            self._reasoning_threshold = reasoning
+        if research is not None:
+            self._research_threshold = research
 
     def register(self, provider: Provider) -> None:
         """Register a provider.
@@ -177,6 +202,8 @@ class ProviderRegistry:
     def _skills_to_capabilities(self, skills: dict[str, int]) -> list[str]:
         """Convert worker skills to required capabilities.
 
+        Uses configurable thresholds set via set_thresholds().
+
         Args:
             skills: Worker skills dict
 
@@ -185,11 +212,11 @@ class ProviderRegistry:
         """
         required = []
 
-        if skills.get("coding", 0) >= SKILL_CAPABILITY_THRESHOLD:
+        if skills.get("coding", 0) >= self._coding_threshold:
             required.append("coding")
-        if skills.get("reasoning", 0) >= REASONING_THRESHOLD:
+        if skills.get("reasoning", 0) >= self._reasoning_threshold:
             required.append("reasoning")
-        if skills.get("research", 0) >= SKILL_CAPABILITY_THRESHOLD:
+        if skills.get("research", 0) >= self._research_threshold:
             required.append("research")
 
         return required
@@ -315,6 +342,14 @@ def load_providers_from_config(
     elif len(registry) > 0:
         # Set first provider as default if not specified
         registry.set_default(registry.list_providers()[0])
+
+    # Set thresholds from config if present
+    thresholds = config.get("thresholds", {})
+    registry.set_thresholds(
+        coding=thresholds.get("coding"),
+        reasoning=thresholds.get("reasoning"),
+        research=thresholds.get("research"),
+    )
 
     return registry
 

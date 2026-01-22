@@ -1,0 +1,32 @@
+# Provider Configuration
+# Defines which AI providers are authorized and their settings.
+#
+# Environment variables can be used with ${VAR_NAME} syntax.
+# API keys should never be committed - use environment variables.
+
+# Default provider used when no preference specified
+default: anthropic
+
+# Available providers
+providers:
+  anthropic:
+    enabled: true
+    api_key: ${ANTHROPIC_API_KEY}
+    timeout: 60
+    max_retries: 3
+
+  openai:
+    enabled: false
+    api_key: ${OPENAI_API_KEY}
+    timeout: 60
+    max_retries: 3
+
+# Model selection thresholds
+# These determine when specific capabilities are required based on worker skills
+thresholds:
+  # Skill score above which coding capability is required
+  coding: 80
+  # Skill score above which reasoning capability is required
+  reasoning: 60
+  # Skill score above which research capability is required
+  research: 80
