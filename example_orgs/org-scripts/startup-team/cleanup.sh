@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Clean up the hello-world org
+# Clean up the startup-team org
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ORG_DIR="$SCRIPT_DIR/org"
+ORG_DIR="$SCRIPT_DIR/../../generated-orgs/startup-team"
 
-echo "=== Hello World: Cleanup ==="
+echo "=== Startup Team: Cleanup ==="
 echo
 
 "$SCRIPT_DIR/../common/cleanup.sh" --force "$ORG_DIR"

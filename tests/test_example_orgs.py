@@ -14,7 +14,7 @@ import pytest
 
 
 EXAMPLE_ORGS_DIR = Path(__file__).parent.parent / "example_orgs"
-QN_WRAPPER = EXAMPLE_ORGS_DIR / "common" / "qn"
+QN_WRAPPER = EXAMPLE_ORGS_DIR / "org-scripts" / "common" / "qn"
 
 
 @pytest.fixture

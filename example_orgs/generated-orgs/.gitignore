@@ -1,0 +1,4 @@
+# Ignore all generated org directories
+# These are created at runtime by the example scripts
+*
+!.gitignore

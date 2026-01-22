@@ -2,11 +2,27 @@
 
 Try QuinnAI in 5 minutes with these ready-to-run examples.
 
+## Directory Structure
+
+```
+example_orgs/
+├── org-scripts/          # Example scripts and templates (version controlled)
+│   ├── common/           # Shared utilities
+│   ├── hello-world/      # Beginner example
+│   ├── startup-team/     # Intermediate example
+│   └── okr-driven/       # Advanced example
+├── generated-orgs/       # Runtime org data (gitignored)
+│   ├── hello-world/      # Created by hello-world/setup.sh
+│   ├── startup-team/     # Created by startup-team/setup.sh
+│   └── okr-driven/       # Created by okr-driven/setup.sh
+└── README.md
+```
+
 ## Quick Start
 
 ```bash
 # 1. Go to simplest example
-cd hello-world
+cd org-scripts/hello-world
 
 # 2. Initialize and run
 ./setup.sh
@@ -20,13 +36,13 @@ cd hello-world
 
 | Example | Difficulty | What You'll Learn |
 |---------|------------|-------------------|
-| [hello-world](./hello-world/) | Beginner | Basic org lifecycle: init → start → status → stop |
-| [startup-team](./startup-team/) | Intermediate | CEO hiring workers, task delegation, message passing |
-| [okr-driven](./okr-driven/) | Advanced | Board sets OKRs, goals cascade, work links to objectives |
+| [hello-world](./org-scripts/hello-world/) | Beginner | Basic org lifecycle: init → start → status → stop |
+| [startup-team](./org-scripts/startup-team/) | Intermediate | CEO hiring workers, task delegation, message passing |
+| [okr-driven](./org-scripts/okr-driven/) | Advanced | Board sets OKRs, goals cascade, work links to objectives |
 
-## Example Structure
+## Example Script Structure
 
-Each example contains:
+Each example in `org-scripts/` contains:
 
 ```
 example-name/
@@ -40,10 +56,17 @@ example-name/
     └── worker-templates.yaml   # Worker role definitions
 ```
 
+Generated orgs are created in `generated-orgs/<example-name>/` and contain:
+- `config/` - Provider and worker configs
+- `live/` - Runtime database and session state
+- `org-chart/` - Git-tracked hiring decisions
+- `storage/` - Persistent org and worker storage
+
 ## Common Utilities
 
-The [common/](./common/) folder contains shared scripts:
+The [common/](./org-scripts/common/) folder contains shared scripts:
 
+- `qn` - CLI wrapper for running qn commands
 - `install-cli.sh` - Download and install `qn` CLI
 - `wait-for-org.sh` - Wait until org is in desired state
 - `cleanup.sh` - Generic cleanup for any org
@@ -71,10 +94,10 @@ The [common/](./common/) folder contains shared scripts:
 
 ```bash
 # 1. Check your environment
-./common/check-env.sh
+./org-scripts/common/check-env.sh
 
 # 2. Start with hello-world
-cd hello-world
+cd org-scripts/hello-world
 ./setup.sh
 ./run.sh
 ```
@@ -104,7 +127,7 @@ cd ../startup-team
 
 When you run an example:
 
-1. **setup.sh**: Creates org folder structure
+1. **setup.sh**: Creates org in `generated-orgs/<example>/`
    - `config/` - Provider and worker configs
    - `live/` - Runtime database and session state
    - `org-chart/` - Git-tracked hiring decisions
@@ -122,14 +145,14 @@ When you run an example:
 
 4. **cleanup.sh**: Resets everything
    - Stops all sessions
-   - Removes org folder
+   - Removes org folder from `generated-orgs/`
    - Ready for fresh start
 
 ## Next Steps
 
 After trying these examples:
 
-1. **Create your own org**: Copy `hello-world/` and customize
+1. **Create your own org**: Copy `org-scripts/hello-world/` and customize
 2. **Configure providers**: Edit `config/providers.yaml`
 3. **Define worker roles**: Edit `config/worker-templates.yaml`
 4. **Set strategic goals**: Use OKRs to direct your org

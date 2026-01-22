@@ -3,7 +3,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ORG_DIR="$SCRIPT_DIR/org"
+ORG_DIR="$SCRIPT_DIR/../../generated-orgs/hello-world"
 QN="$SCRIPT_DIR/../common/qn"
 
 echo "=== Hello World: Run ==="
