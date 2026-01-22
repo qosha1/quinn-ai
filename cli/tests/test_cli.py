@@ -178,13 +178,35 @@ class TestWrkrGroup:
         assert result.exit_code != 0
         assert "QUINN_WORKER_ID" in result.output
 
-    def test_wrkr_get_work_with_worker_id(self, runner, temp_org):
-        """qn wrkr get-work should run with QUINN_WORKER_ID."""
+    def test_wrkr_get_work_requires_init(self, runner, temp_org):
+        """qn wrkr get-work should require org to be initialized."""
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
             "wrkr", "get-work"
         ], env={"QUINN_WORKER_ID": "test-worker"})
-        assert "not yet implemented" in result.output
+        assert result.exit_code != 0
+        assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
+
+    def test_wrkr_get_work_with_valid_worker(self, runner, temp_org):
+        """qn wrkr get-work should run with valid worker."""
+        # Initialize and start org (CEO becomes active)
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "start"])
+        # Get CEO worker ID from database
+        from core.db import open_database, get_org_db_path
+        from core.org import Org
+        db = open_database(get_org_db_path(temp_org))
+        org = Org.load(db)
+        ceo_id = org.ceo_worker_id
+        db.close()
+        # Now test get-work with CEO
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "wrkr", "get-work"
+        ], env={"QUINN_WORKER_ID": ceo_id})
+        assert result.exit_code == 0
+        # CEO cannot work because no session is running
+        assert "cannot accept work" in result.output.lower() or "no work" in result.output.lower()
 
     def test_wrkr_inbox_requires_worker_id(self, runner, temp_org):
         """qn wrkr inbox should require QUINN_WORKER_ID."""
@@ -195,13 +217,34 @@ class TestWrkrGroup:
         assert result.exit_code != 0
         assert "QUINN_WORKER_ID" in result.output
 
-    def test_wrkr_inbox_with_worker_id(self, runner, temp_org):
-        """qn wrkr inbox should run with QUINN_WORKER_ID."""
+    def test_wrkr_inbox_requires_init(self, runner, temp_org):
+        """qn wrkr inbox should require org to be initialized."""
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
             "wrkr", "inbox"
         ], env={"QUINN_WORKER_ID": "test-worker"})
-        assert "not yet implemented" in result.output
+        assert result.exit_code != 0
+        assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
+
+    def test_wrkr_inbox_with_valid_worker(self, runner, temp_org):
+        """qn wrkr inbox should show channels for valid worker."""
+        # Initialize org
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # Get CEO worker ID
+        from core.db import open_database, get_org_db_path
+        from core.org import Org
+        db = open_database(get_org_db_path(temp_org))
+        org = Org.load(db)
+        ceo_id = org.ceo_worker_id
+        db.close()
+        # Test inbox
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "wrkr", "inbox"
+        ], env={"QUINN_WORKER_ID": ceo_id})
+        assert result.exit_code == 0
+        # No channels subscribed initially
+        assert "No subscribed channels" in result.output or "No messages" in result.output
 
     def test_wrkr_send_requires_worker_id(self, runner, temp_org):
         """qn wrkr send should require QUINN_WORKER_ID."""
@@ -212,13 +255,33 @@ class TestWrkrGroup:
         assert result.exit_code != 0
         assert "QUINN_WORKER_ID" in result.output
 
-    def test_wrkr_send_with_worker_id(self, runner, temp_org):
-        """qn wrkr send should run with QUINN_WORKER_ID."""
+    def test_wrkr_send_requires_init(self, runner, temp_org):
+        """qn wrkr send should require org to be initialized."""
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
             "wrkr", "send", "--to", "channel", "hello"
         ], env={"QUINN_WORKER_ID": "test-worker"})
-        assert "not yet implemented" in result.output
+        assert result.exit_code != 0
+        assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
+
+    def test_wrkr_send_requires_valid_channel(self, runner, temp_org):
+        """qn wrkr send should require valid channel."""
+        # Initialize org
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # Get CEO worker ID
+        from core.db import open_database, get_org_db_path
+        from core.org import Org
+        db = open_database(get_org_db_path(temp_org))
+        org = Org.load(db)
+        ceo_id = org.ceo_worker_id
+        db.close()
+        # Try to send to non-existent channel
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "wrkr", "send", "--to", "nonexistent", "hello"
+        ], env={"QUINN_WORKER_ID": ceo_id})
+        assert result.exit_code != 0
+        assert "Channel not found" in result.output
 
     def test_wrkr_send_requires_to_option(self, runner, temp_org):
         """qn wrkr send should require --to option."""
@@ -238,13 +301,34 @@ class TestWrkrGroup:
         assert result.exit_code != 0
         assert "QUINN_WORKER_ID" in result.output
 
-    def test_wrkr_status_with_worker_id(self, runner, temp_org):
-        """qn wrkr status should run with QUINN_WORKER_ID."""
+    def test_wrkr_status_requires_init(self, runner, temp_org):
+        """qn wrkr status should require org to be initialized."""
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
             "wrkr", "status"
         ], env={"QUINN_WORKER_ID": "test-worker"})
-        assert "not yet implemented" in result.output
+        assert result.exit_code != 0
+        assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
+
+    def test_wrkr_status_with_valid_worker(self, runner, temp_org):
+        """qn wrkr status should show worker details."""
+        # Initialize org
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # Get CEO worker ID
+        from core.db import open_database, get_org_db_path
+        from core.org import Org
+        db = open_database(get_org_db_path(temp_org))
+        org = Org.load(db)
+        ceo_id = org.ceo_worker_id
+        db.close()
+        # Test status
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "wrkr", "status"
+        ], env={"QUINN_WORKER_ID": ceo_id})
+        assert result.exit_code == 0
+        assert "Worker:" in result.output
+        assert "Lifecycle:" in result.output
 
 
 class TestContext:
