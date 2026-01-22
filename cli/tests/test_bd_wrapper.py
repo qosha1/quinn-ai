@@ -2,6 +2,7 @@
 Unit tests for beads (bd) wrapper.
 """
 
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -10,9 +11,15 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from cli.core.bd_wrapper import (
+    _get_bead_info,
+    check_lifecycle_transition,
     get_bundled_bd_path,
     get_org_beads_dir,
     run_bd,
+)
+from cli.core.lifecycle import (
+    CannotCloseBeadError,
+    InvalidStateTransitionError,
 )
 
 
@@ -174,3 +181,201 @@ class TestWorkerIdOverride:
 
             call_env = mock_run.call_args.kwargs["env"]
             assert "BEADS_ASSIGNEE" not in call_env
+
+
+class TestLifecycleValidation:
+    """Test lifecycle state validation in bd_wrapper."""
+
+    def test_check_lifecycle_transition_skipped_for_list(self, temp_org):
+        """Should skip lifecycle check for list command."""
+        # Should not raise even without mocking bd show
+        check_lifecycle_transition(["list"], temp_org)
+
+    def test_check_lifecycle_transition_skipped_for_create(self, temp_org):
+        """Should skip lifecycle check for create command."""
+        check_lifecycle_transition(["create", "--title", "Test"], temp_org)
+
+    def test_check_lifecycle_transition_skipped_when_flag_set(self, temp_org):
+        """Should skip when skip_check=True."""
+        # This would fail without skip_check since no bead exists
+        check_lifecycle_transition(
+            ["update", "bead-123", "--status", "review"],
+            temp_org,
+            skip_check=True,
+        )
+
+    def test_check_lifecycle_transition_skipped_without_bead_id(self, temp_org):
+        """Should skip when no bead ID in args."""
+        check_lifecycle_transition(["update"], temp_org)
+
+    def test_update_with_invalid_transition_raises(self, temp_org):
+        """Should raise InvalidStateTransitionError for invalid state transition."""
+        # Mock _get_bead_info to return a task bead in investigation state
+        with patch("cli.core.bd_wrapper._get_bead_info") as mock_get_info:
+            mock_get_info.return_value = {
+                "id": "bead-123",
+                "type": "task",
+                "status": "investigation",
+            }
+
+            # Trying to transition directly to review should fail
+            with pytest.raises(InvalidStateTransitionError) as exc:
+                check_lifecycle_transition(
+                    ["update", "bead-123", "--status", "review"],
+                    temp_org,
+                )
+
+            assert exc.value.bead_id == "bead-123"
+            assert exc.value.current_state == "investigation"
+            assert exc.value.target_state == "review"
+
+    def test_update_with_valid_transition_succeeds(self, temp_org):
+        """Should allow valid state transitions."""
+        with patch("cli.core.bd_wrapper._get_bead_info") as mock_get_info:
+            mock_get_info.return_value = {
+                "id": "bead-123",
+                "type": "task",
+                "status": "investigation",
+            }
+
+            # Should not raise - planning is valid from investigation
+            check_lifecycle_transition(
+                ["update", "bead-123", "--status", "planning"],
+                temp_org,
+            )
+
+    def test_close_in_terminal_state_succeeds(self, temp_org):
+        """Should allow closing beads in terminal states."""
+        with patch("cli.core.bd_wrapper._get_bead_info") as mock_get_info:
+            mock_get_info.return_value = {
+                "id": "bead-123",
+                "type": "task",
+                "status": "done",
+            }
+
+            # Should not raise - done is a terminal state
+            check_lifecycle_transition(["close", "bead-123"], temp_org)
+
+    def test_close_in_non_terminal_state_raises(self, temp_org):
+        """Should raise CannotCloseBeadError for non-terminal states."""
+        with patch("cli.core.bd_wrapper._get_bead_info") as mock_get_info:
+            mock_get_info.return_value = {
+                "id": "bead-123",
+                "type": "task",
+                "status": "review",
+            }
+
+            with pytest.raises(CannotCloseBeadError) as exc:
+                check_lifecycle_transition(["close", "bead-123"], temp_org)
+
+            assert exc.value.bead_id == "bead-123"
+            assert exc.value.current_state == "review"
+            assert "Complete the review" in str(exc.value)
+
+    def test_run_bd_validates_lifecycle_by_default(self, temp_org):
+        """Should validate lifecycle transitions by default."""
+        with patch("cli.core.bd_wrapper._get_bead_info") as mock_get_info:
+            mock_get_info.return_value = {
+                "id": "bead-123",
+                "type": "task",
+                "status": "review",
+            }
+
+            # Should raise because close is not allowed in review state
+            with pytest.raises(CannotCloseBeadError):
+                run_bd(["close", "bead-123"], org_path=temp_org)
+
+    def test_run_bd_skips_lifecycle_when_flag_set(self, temp_org):
+        """Should skip lifecycle validation when skip_lifecycle_check=True."""
+        with patch("cli.core.bd_wrapper._get_bead_info") as mock_get_info:
+            mock_get_info.return_value = {
+                "id": "bead-123",
+                "type": "task",
+                "status": "review",
+            }
+
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+
+                # Should not raise despite being in review state
+                run_bd(
+                    ["close", "bead-123"],
+                    org_path=temp_org,
+                    skip_lifecycle_check=True,
+                )
+
+    def test_lifecycle_check_handles_bead_not_found(self, temp_org):
+        """Should gracefully handle when bead info cannot be retrieved."""
+        with patch("cli.core.bd_wrapper._get_bead_info") as mock_get_info:
+            mock_get_info.return_value = None
+
+            # Should not raise - let bd handle the error
+            check_lifecycle_transition(["close", "bead-123"], temp_org)
+
+
+class TestGetBeadInfo:
+    """Test _get_bead_info helper function."""
+
+    def test_parses_json_output(self, temp_org):
+        """Should parse bd show --json output."""
+        bead_json = json.dumps({
+            "id": "bead-123",
+            "type": "task",
+            "status": "planning",
+            "title": "Test bead",
+        })
+
+        with patch("cli.core.bd_wrapper.get_bundled_bd_path") as mock_path:
+            mock_path.return_value = Path("/usr/local/bin/bd")
+
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(
+                    returncode=0,
+                    stdout=bead_json,
+                )
+
+                result = _get_bead_info("bead-123", temp_org)
+
+                assert result["id"] == "bead-123"
+                assert result["type"] == "task"
+                assert result["status"] == "planning"
+
+    def test_returns_none_on_error(self, temp_org):
+        """Should return None when bd show fails."""
+        with patch("cli.core.bd_wrapper.get_bundled_bd_path") as mock_path:
+            mock_path.return_value = Path("/usr/local/bin/bd")
+
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(
+                    returncode=1,
+                    stdout="",
+                    stderr="Bead not found",
+                )
+
+                result = _get_bead_info("bead-123", temp_org)
+
+                assert result is None
+
+    def test_returns_none_on_invalid_json(self, temp_org):
+        """Should return None on invalid JSON output."""
+        with patch("cli.core.bd_wrapper.get_bundled_bd_path") as mock_path:
+            mock_path.return_value = Path("/usr/local/bin/bd")
+
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(
+                    returncode=0,
+                    stdout="not valid json",
+                )
+
+                result = _get_bead_info("bead-123", temp_org)
+
+                assert result is None
+
+    def test_returns_none_when_bd_not_found(self, temp_org):
+        """Should return None when bd binary not found."""
+        with patch("cli.core.bd_wrapper.get_bundled_bd_path") as mock_path:
+            mock_path.side_effect = FileNotFoundError("bd not found")
+
+            result = _get_bead_info("bead-123", temp_org)
+
+            assert result is None

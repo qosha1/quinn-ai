@@ -327,6 +327,7 @@ class BeadsOutbox(BaseOutbox):
         worker_id: str,
         bd_command: str = "bd",
         db_path: str | None = None,
+        bd_client: Any | None = None,
     ):
         """Initialize beads outbox.
 
@@ -334,23 +335,24 @@ class BeadsOutbox(BaseOutbox):
             worker_id: The worker ID this outbox belongs to.
             bd_command: Path to bd command.
             db_path: Optional database path override.
+            bd_client: Optional BdClient instance (preferred over bd_command/db_path).
         """
         super().__init__(worker_id)
-        self._bd_command = bd_command
-        self._db_path = db_path
+        if bd_client is not None:
+            self._bd_client = bd_client
+        else:
+            from shared.bd import BdClient
+
+            self._bd_client = BdClient(bd_command=bd_command, db_path=db_path)
 
     def _run_bd(self, *args: str) -> str:
         """Run a bd command and return output."""
-        import subprocess
+        from shared.bd import BdClientError
 
-        cmd = [self._bd_command] + list(args)
-        if self._db_path:
-            cmd.extend(["--db", self._db_path])
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"bd command failed: {result.stderr}")
-        return result.stdout
+        try:
+            return self._bd_client.run(*args)
+        except BdClientError as e:
+            raise RuntimeError(str(e)) from e
 
     def _store_message(self, message: WorkerMessage) -> str:
         """Create beads issue for the message.

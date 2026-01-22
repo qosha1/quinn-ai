@@ -3,12 +3,13 @@ Unit tests for Worker state machine.
 """
 
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from cli.core.db import init_database
-from cli.core.queries import create_team, create_worker
+from cli.core.queries import create_team, create_worker, create_budget_pool, create_budget_allocation
 from cli.core.worker import Worker
 from shared import (
     InvalidStateTransition,
@@ -434,6 +435,8 @@ class MockSession:
         self.should_fail_start = should_fail_start
         self._state_callbacks = []
         self._state = MockSessionState.STOPPED
+        self.provider_name = "mock"  # For budget recording
+        self.id = "mock-session-001"  # For budget reference
 
     def bind_to_worker(self, worker_id: str) -> None:
         self.worker_id = worker_id
@@ -469,10 +472,22 @@ class TestSessionManagement:
     """Test Worker session management methods."""
 
     @pytest.fixture
-    def active_worker(self, worker):
-        """Get worker in active lifecycle state."""
+    def active_worker(self, db, worker):
+        """Get worker in active lifecycle state with budget allocation."""
         worker.start_onboarding()
         worker.complete_onboarding()
+        # Create budget pool and allocation for spawn_session tests
+        now = datetime.now()
+        period_end = now + timedelta(days=30)
+        pool = create_budget_pool(db, "test-pool", 1000.0, now, period_end)
+        create_budget_allocation(
+            db,
+            worker_id=worker.id,
+            allocated_credits=100.0,
+            period_start=now,
+            period_end=period_end,
+            pool_id=pool.id,
+        )
         return worker
 
     def test_attach_session_sets_field(self, active_worker):

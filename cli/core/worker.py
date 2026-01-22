@@ -7,9 +7,27 @@ Workers have dual state machines:
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from .db import Database
+from .constants import (
+    DEFAULT_HEARTBEAT_THRESHOLD,
+    DEFAULT_SESSION_SPAWN_TOKENS_INPUT,
+    DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT,
+    COST_TIER_BUDGET_MAX,
+    COST_TIER_STANDARD_MAX,
+    COST_TIER_ADVANCED_MAX,
+)
+from .budget import (
+    enforce_budget,
+    record_spend,
+    estimate_cost,
+    BudgetExhaustedError,
+    NoBudgetAllocationError,
+)
+
+if TYPE_CHECKING:
+    from .session import SessionInterface, SessionState
 from .queries import (
     get_worker,
     update_worker_status,
@@ -49,6 +67,7 @@ class Worker:
         self.id = worker_id
         self._worker_data = None
         self._state_data = None
+        self._session: Optional["SessionInterface"] = None
 
     def _load_worker(self) -> None:
         """Load worker data from database."""
@@ -90,6 +109,20 @@ class Worker:
             self._load_worker()
         return self._worker_data.role
 
+    @property
+    def cost(self) -> int:
+        """Get worker cost score (0-100)."""
+        if self._worker_data is None:
+            self._load_worker()
+        return self._worker_data.cost
+
+    @property
+    def skills(self) -> dict[str, int]:
+        """Get worker skills dict."""
+        if self._worker_data is None:
+            self._load_worker()
+        return self._worker_data.skills
+
     # ==================
     # RUNTIME PROPERTIES
     # ==================
@@ -129,6 +162,23 @@ class Worker:
             self.lifecycle_status == "active"
             and self.runtime_status in ("running", "idle")
         )
+
+    @property
+    def cost_tier(self) -> str:
+        """Get worker's cost tier based on cost score.
+
+        Returns:
+            Cost tier: 'budget', 'standard', 'advanced', or 'premium'
+        """
+        cost_score = self.cost
+        if cost_score <= COST_TIER_BUDGET_MAX:
+            return "budget"
+        elif cost_score <= COST_TIER_STANDARD_MAX:
+            return "standard"
+        elif cost_score <= COST_TIER_ADVANCED_MAX:
+            return "advanced"
+        else:
+            return "premium"
 
     @property
     def is_session_active(self) -> bool:
@@ -300,7 +350,7 @@ class Worker:
         record_worker_heartbeat(self.db, self.id)
         self._state_data = None
 
-    def is_heartbeat_stale(self, threshold_seconds: int = 60) -> bool:
+    def is_heartbeat_stale(self, threshold_seconds: int = DEFAULT_HEARTBEAT_THRESHOLD) -> bool:
         """Check if heartbeat is stale.
 
         Args:
@@ -322,6 +372,142 @@ class Worker:
 
         threshold = datetime.now() - timedelta(seconds=threshold_seconds)
         return last_activity < threshold
+
+    # ==================
+    # SESSION MANAGEMENT
+    # ==================
+
+    @property
+    def session(self) -> Optional["SessionInterface"]:
+        """Get the current session instance, if any."""
+        return self._session
+
+    def attach_session(self, session: "SessionInterface") -> None:
+        """Attach a session instance to this worker.
+
+        Binds the session to this worker and sets up state change callbacks
+        to keep the worker's runtime state in sync with the session.
+
+        Args:
+            session: SessionInterface instance to attach
+
+        Raises:
+            InvalidLifecycleState: If lifecycle doesn't allow sessions
+            ValueError: If worker already has an attached session
+        """
+        # Import here to avoid circular imports
+        from .session import SessionState
+
+        self._validate_session_allowed()
+
+        if self._session is not None:
+            raise ValueError(
+                f"Worker {self.id} already has an attached session. "
+                "Call detach_session() first."
+            )
+
+        # Bind session to this worker (enforces 1:1)
+        session.bind_to_worker(self.id)
+
+        # Set up callback to sync session state to worker runtime state
+        def on_session_state_change(old: "SessionState", new: "SessionState") -> None:
+            state_mapping = {
+                SessionState.STARTING: "starting",
+                SessionState.RUNNING: "running",
+                SessionState.IDLE: "idle",
+                SessionState.STOPPED: "stopped",
+                SessionState.CRASHED: "crashed",
+            }
+            runtime_status = state_mapping.get(new)
+            if runtime_status:
+                # Update DB state to match session state
+                update_worker_runtime_status(self.db, self.id, runtime_status)
+                self._state_data = None  # Invalidate cache
+
+        session.on_state_change(on_session_state_change)
+        self._session = session
+
+    def detach_session(self) -> Optional["SessionInterface"]:
+        """Detach the current session from this worker.
+
+        Does NOT stop the session - call terminate_session() for that.
+
+        Returns:
+            The detached session, or None if no session was attached
+        """
+        session = self._session
+        self._session = None
+        return session
+
+    def spawn_session(self, session: "SessionInterface") -> None:
+        """Spawn a session for this worker.
+
+        Attaches the session, starts it, and updates worker state.
+        Enforces budget check before spawning and records spend after.
+
+        Args:
+            session: Configured SessionInterface instance to spawn
+
+        Raises:
+            InvalidLifecycleState: If lifecycle doesn't allow sessions
+            SessionSpawnError: If session fails to start
+            BudgetExhaustedError: If worker has insufficient budget
+            NoBudgetAllocationError: If worker has no budget allocation
+        """
+        # Estimate session spawn cost based on worker's cost tier
+        estimated_cost = estimate_cost(
+            model_tier=self.cost_tier,
+            input_tokens=DEFAULT_SESSION_SPAWN_TOKENS_INPUT,
+            output_tokens=DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT,
+        )
+
+        # Check budget before spawning - raises if insufficient
+        budget_check = enforce_budget(
+            db=self.db,
+            worker_id=self.id,
+            required_amount=estimated_cost,
+        )
+
+        self.attach_session(session)
+
+        try:
+            # Start the session - state callbacks will update our runtime status
+            session.start()
+
+            # Record spend after successful spawn
+            record_spend(
+                db=self.db,
+                worker_id=self.id,
+                allocation_id=budget_check.allocation_id,
+                amount=estimated_cost,
+                provider=session.provider_name,
+                model=f"{self.cost_tier}-tier",
+                input_tokens=DEFAULT_SESSION_SPAWN_TOKENS_INPUT,
+                output_tokens=DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT,
+                reference_type="session",
+                reference_id=str(session.id),
+                description=f"Session spawn for worker {self.name}",
+            )
+        except Exception:
+            # If spawn fails, detach the session
+            self._session = None
+            raise
+
+    def terminate_session(self, force: bool = False) -> None:
+        """Terminate the current session.
+
+        Stops the session and detaches it from this worker.
+
+        Args:
+            force: If True, force kill without cleanup
+        """
+        if self._session is None:
+            return
+
+        try:
+            self._session.stop(force=force)
+        finally:
+            self._session = None
 
     # ==================
     # CLASS METHODS

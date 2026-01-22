@@ -366,6 +366,37 @@ def get_worker(db: Database, worker_id: str) -> Optional[Worker]:
     )
 
 
+def get_worker_by_name(db: Database, name: str) -> Optional[Worker]:
+    """Get a worker by name.
+
+    Args:
+        db: Database instance
+        name: Worker name (case-insensitive)
+
+    Returns:
+        Worker or None
+    """
+    row = db.fetchone(
+        "SELECT * FROM workers WHERE LOWER(name) = LOWER(?)",
+        (name,)
+    )
+    if not row:
+        return None
+
+    return Worker(
+        id=row["id"],
+        name=row["name"],
+        role=row["role"],
+        team_id=row["team_id"],
+        manager_id=row["manager_id"],
+        status=row["status"],
+        skills=json.loads(row["skills"]),
+        cost=row["cost"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
 def update_worker_status(db: Database, worker_id: str, status: str) -> None:
     """Update worker lifecycle status.
 
@@ -585,11 +616,16 @@ def increment_worker_task_count(
         completed: True if completed, False if failed
     """
     now = datetime.now()
-    column = "tasks_completed" if completed else "tasks_failed"
-    db.execute(
-        f"UPDATE worker_state SET {column} = {column} + 1, updated_at = ? WHERE worker_id = ?",
-        (now, worker_id)
-    )
+    if completed:
+        db.execute(
+            "UPDATE worker_state SET tasks_completed = tasks_completed + 1, updated_at = ? WHERE worker_id = ?",
+            (now, worker_id)
+        )
+    else:
+        db.execute(
+            "UPDATE worker_state SET tasks_failed = tasks_failed + 1, updated_at = ? WHERE worker_id = ?",
+            (now, worker_id)
+        )
     db.connection.commit()
 
 
