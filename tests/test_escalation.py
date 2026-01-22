@@ -779,6 +779,95 @@ from shared.escalation.manager import (
 )
 
 
+from shared.escalation.manager import (
+    AutoEscalationSettings,
+    BoardInterventionSettings,
+    EscalationPathLevel,
+    NotificationSettings,
+    RetryPolicy,
+    TimeoutWarningSettings,
+)
+
+
+class TestEscalationPathLevel:
+    """Tests for EscalationPathLevel dataclass."""
+
+    def test_create_path_level(self) -> None:
+        """Can create an escalation path level."""
+        level = EscalationPathLevel(
+            level=1,
+            to="direct_manager",
+            after_minutes=240,
+            priority_bump=1,
+        )
+
+        assert level.level == 1
+        assert level.to == "direct_manager"
+        assert level.after_minutes == 240
+        assert level.priority_bump == 1
+
+    def test_default_priority_bump(self) -> None:
+        """Priority bump defaults to 0."""
+        level = EscalationPathLevel(level=1, to="ceo", after_minutes=60)
+        assert level.priority_bump == 0
+
+
+class TestRetryPolicy:
+    """Tests for RetryPolicy dataclass."""
+
+    def test_default_values(self) -> None:
+        """RetryPolicy has sensible defaults."""
+        policy = RetryPolicy()
+
+        assert policy.max_retries == 3
+        assert policy.backoff == "exponential"
+        assert policy.base_delay_minutes == 15
+        assert policy.max_delay_minutes == 120
+
+    def test_custom_values(self) -> None:
+        """Can customize retry policy."""
+        policy = RetryPolicy(
+            max_retries=5,
+            backoff="linear",
+            base_delay_minutes=10,
+            max_delay_minutes=60,
+        )
+
+        assert policy.max_retries == 5
+        assert policy.backoff == "linear"
+
+
+class TestNotificationSettings:
+    """Tests for NotificationSettings dataclass."""
+
+    def test_default_values(self) -> None:
+        """NotificationSettings has sensible defaults."""
+        settings = NotificationSettings()
+
+        assert settings.notify_original_assignee is True
+        assert settings.notify_escalation_target is True
+        assert settings.create_bead is True
+        assert settings.include_context is True
+        assert settings.channel is None
+        assert settings.notify_escalation_chain is True
+
+
+class TestAutoEscalationSettings:
+    """Tests for AutoEscalationSettings dataclass."""
+
+    def test_default_values(self) -> None:
+        """AutoEscalationSettings has sensible defaults."""
+        settings = AutoEscalationSettings()
+
+        assert settings.enabled is True
+        assert settings.check_interval_minutes == 5
+        assert "open" in settings.escalatable_states
+        assert "in_progress" in settings.escalatable_states
+        assert "blocked" in settings.escalatable_states
+        assert "draft" in settings.exempt_states
+        assert "closed" in settings.exempt_states
+
+
 class TestEscalationConfig:
     """Tests for EscalationConfig defaults and customization."""
 
@@ -813,6 +902,156 @@ class TestEscalationConfig:
         assert config.enable_history is False
         assert config.max_history_size == 100
         assert config.max_queue_size == 50
+
+    def test_extended_config_defaults(self) -> None:
+        """Extended config has sensible defaults."""
+        config = EscalationConfig()
+
+        # Escalation paths default to empty
+        assert config.escalation_paths == {}
+
+        # Nested settings have their defaults
+        assert config.retry_policy.max_retries == 3
+        assert config.notification_settings.create_bead is True
+        assert config.timeout_warning.enabled is True
+        assert config.auto_escalation.enabled is True
+        assert config.board_intervention.consecutive_ceo_escalations == 3
+
+    def test_get_path_returns_empty_for_missing(self) -> None:
+        """get_path returns empty list for unknown path."""
+        config = EscalationConfig()
+        assert config.get_path("nonexistent") == []
+
+    def test_get_path_returns_configured_path(self) -> None:
+        """get_path returns configured escalation levels."""
+        levels = [
+            EscalationPathLevel(level=1, to="direct_manager", after_minutes=60),
+            EscalationPathLevel(level=2, to="ceo", after_minutes=120),
+        ]
+        config = EscalationConfig(escalation_paths={"default": levels})
+
+        path = config.get_path("default")
+        assert len(path) == 2
+        assert path[0].to == "direct_manager"
+        assert path[1].to == "ceo"
+
+    def test_get_timeout_for_level(self) -> None:
+        """get_timeout_for_level returns timeout in seconds."""
+        levels = [
+            EscalationPathLevel(level=1, to="mgr", after_minutes=60),
+            EscalationPathLevel(level=2, to="ceo", after_minutes=120),
+        ]
+        config = EscalationConfig(escalation_paths={"default": levels})
+
+        assert config.get_timeout_for_level("default", 1) == 3600  # 60 * 60
+        assert config.get_timeout_for_level("default", 2) == 7200  # 120 * 60
+        assert config.get_timeout_for_level("default", 3) is None  # Not found
+
+    def test_load_from_yaml(self, tmp_path: Any) -> None:
+        """load_from_yaml loads config from YAML file."""
+        yaml_content = """
+version: 1
+default_timeout_minutes: 30
+
+escalation_paths:
+  default:
+    - level: 1
+      to: direct_manager
+      after_minutes: 240
+      priority_bump: 1
+    - level: 2
+      to: ceo
+      after_minutes: 480
+      priority_bump: 2
+  critical:
+    - level: 1
+      to: ceo
+      after_minutes: 60
+      priority_bump: 2
+
+retry_policy:
+  max_retries: 5
+  backoff: linear
+  base_delay_minutes: 10
+  max_delay_minutes: 60
+
+notification_rules:
+  escalation:
+    notify_original_assignee: true
+    notify_escalation_target: true
+    create_bead: true
+    include_context: true
+    channel: general
+  resolution:
+    notify_escalation_chain: true
+  timeout_warning:
+    enabled: true
+    warning_before_minutes: 30
+    notify_assignee: true
+
+auto_escalation:
+  enabled: true
+  check_interval_minutes: 10
+  escalatable_states:
+    - open
+    - blocked
+  exempt_states:
+    - closed
+
+board_intervention:
+  consecutive_ceo_escalations: 5
+  org_wide_escalation_threshold: 0.30
+  threshold_window_minutes: 720
+"""
+        yaml_file = tmp_path / "escalation.yaml"
+        yaml_file.write_text(yaml_content)
+
+        config = EscalationConfig.load_from_yaml(yaml_file)
+
+        # Basic settings
+        assert config.timeout_seconds == 1800  # 30 minutes
+        assert config.retry_attempts == 5
+
+        # Escalation paths
+        default_path = config.get_path("default")
+        assert len(default_path) == 2
+        assert default_path[0].to == "direct_manager"
+        assert default_path[0].after_minutes == 240
+        assert default_path[0].priority_bump == 1
+
+        critical_path = config.get_path("critical")
+        assert len(critical_path) == 1
+        assert critical_path[0].to == "ceo"
+
+        # Retry policy
+        assert config.retry_policy.max_retries == 5
+        assert config.retry_policy.backoff == "linear"
+        assert config.retry_policy.base_delay_minutes == 10
+
+        # Notification settings
+        assert config.notification_settings.notify_original_assignee is True
+        assert config.notification_settings.channel == "general"
+        assert config.notification_settings.notify_escalation_chain is True
+
+        # Timeout warning
+        assert config.timeout_warning.enabled is True
+        assert config.timeout_warning.warning_before_minutes == 30
+
+        # Auto-escalation
+        assert config.auto_escalation.enabled is True
+        assert config.auto_escalation.check_interval_minutes == 10
+        assert "open" in config.auto_escalation.escalatable_states
+        assert "blocked" in config.auto_escalation.escalatable_states
+        assert "in_progress" not in config.auto_escalation.escalatable_states
+
+        # Board intervention
+        assert config.board_intervention.consecutive_ceo_escalations == 5
+        assert config.board_intervention.org_wide_escalation_threshold == 0.30
+
+    def test_load_from_yaml_file_not_found(self, tmp_path: Any) -> None:
+        """load_from_yaml raises FileNotFoundError for missing file."""
+        with pytest.raises(FileNotFoundError):
+            EscalationConfig.load_from_yaml(tmp_path / "nonexistent.yaml")
 
 
 class TestEscalationManager:

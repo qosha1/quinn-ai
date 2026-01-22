@@ -587,3 +587,290 @@ class TestRequiresPermissionDecorator:
         result = read_issue(db, worker.id, "bead-789")
 
         assert result == "read bead-789"
+
+
+class TestRequiresNamedPermissionDecorator:
+    """Test the @requires_named_permission decorator for capability-based access control."""
+
+    def test_single_permission_allowed(self, db, team):
+        """Should allow function execution when worker has the required permission."""
+        from cli.core.permissions import requires_named_permission
+
+        # Create a worker with 'worker' role - has 'can_create_beads' permission
+        worker = create_worker(db, "Bob", "worker", team.id, 50)
+
+        call_count = [0]
+
+        @requires_named_permission("can_create_beads")
+        def create_bead(db, worker_id, title):
+            call_count[0] += 1
+            return f"created: {title}"
+
+        result = create_bead(db, worker.id, "Test Bead")
+
+        assert result == "created: Test Bead"
+        assert call_count[0] == 1
+
+    def test_single_permission_denied(self, db, team):
+        """Should raise NamedPermissionDenied when worker lacks the required permission."""
+        from cli.core.permissions import requires_named_permission, NamedPermissionDenied
+
+        # Create a worker with 'worker' role - does NOT have 'can_fire' permission
+        worker = create_worker(db, "Bob", "worker", team.id, 50)
+
+        @requires_named_permission("can_fire")
+        def fire_worker(db, worker_id, target_id):
+            return "fired"
+
+        with pytest.raises(NamedPermissionDenied) as exc_info:
+            fire_worker(db, worker.id, "target-123")
+
+        assert exc_info.value.worker_id == worker.id
+        assert exc_info.value.required_permissions == ["can_fire"]
+        assert "can_fire" in exc_info.value.missing_permissions
+
+    def test_multiple_permissions_and_logic_all_granted(self, db, team):
+        """Should allow when worker has ALL required permissions (AND logic)."""
+        from cli.core.permissions import requires_named_permission
+
+        # Create a manager - has both 'can_assign_beads' and 'can_approve'
+        manager = create_worker(db, "Manager", "manager", team.id, 70)
+
+        @requires_named_permission(["can_assign_beads", "can_approve"], require_all=True)
+        def approve_and_assign(db, worker_id, bead_id):
+            return f"approved and assigned: {bead_id}"
+
+        result = approve_and_assign(db, manager.id, "bead-123")
+
+        assert result == "approved and assigned: bead-123"
+
+    def test_multiple_permissions_and_logic_partial_granted(self, db, team):
+        """Should deny when worker has only some permissions (AND logic)."""
+        from cli.core.permissions import requires_named_permission, NamedPermissionDenied
+
+        # Create a lead - has 'can_approve' but NOT 'can_hire'
+        lead = create_worker(db, "Lead", "lead", team.id, 60)
+
+        @requires_named_permission(["can_approve", "can_hire"], require_all=True)
+        def approve_and_hire(db, worker_id):
+            return "success"
+
+        with pytest.raises(NamedPermissionDenied) as exc_info:
+            approve_and_hire(db, lead.id)
+
+        assert "can_hire" in exc_info.value.missing_permissions
+
+    def test_multiple_permissions_or_logic_one_granted(self, db, team):
+        """Should allow when worker has at least ONE permission (OR logic)."""
+        from cli.core.permissions import requires_named_permission
+
+        # Create a lead - has 'is_lead' but NOT 'is_manager'
+        lead = create_worker(db, "Lead", "lead", team.id, 60)
+
+        @requires_named_permission(["is_lead", "is_manager"], require_all=False)
+        def access_dashboard(db, worker_id):
+            return "dashboard access"
+
+        result = access_dashboard(db, lead.id)
+
+        assert result == "dashboard access"
+
+    def test_multiple_permissions_or_logic_none_granted(self, db, team):
+        """Should deny when worker has NONE of the permissions (OR logic)."""
+        from cli.core.permissions import requires_named_permission, NamedPermissionDenied
+
+        # Create a basic worker - has neither 'can_hire' nor 'can_fire'
+        worker = create_worker(db, "Bob", "worker", team.id, 50)
+
+        @requires_named_permission(["can_hire", "can_fire"], require_all=False)
+        def admin_action(db, worker_id):
+            return "admin done"
+
+        with pytest.raises(NamedPermissionDenied) as exc_info:
+            admin_action(db, worker.id)
+
+        assert exc_info.value.require_all is False
+        assert set(exc_info.value.missing_permissions) == {"can_hire", "can_fire"}
+
+    def test_ceo_has_all_permissions(self, db, team):
+        """CEO should have all permissions."""
+        from cli.core.permissions import requires_named_permission
+
+        # Create a CEO
+        ceo = create_worker(db, "CEO", "CEO", team.id, 100)
+
+        @requires_named_permission(["can_hire", "can_fire", "can_admin"])
+        def executive_action(db, worker_id):
+            return "executive done"
+
+        result = executive_action(db, ceo.id)
+
+        assert result == "executive done"
+
+    def test_custom_parameter_names(self, db, team):
+        """Should work with custom parameter names."""
+        from cli.core.permissions import requires_named_permission
+
+        manager = create_worker(db, "Manager", "manager", team.id, 70)
+
+        @requires_named_permission(
+            "can_approve",
+            worker_id_param="approver_id",
+            db_param="database",
+        )
+        def approve_request(database, approver_id, request_id):
+            return f"approved {request_id}"
+
+        result = approve_request(db, manager.id, "req-456")
+
+        assert result == "approved req-456"
+
+    def test_custom_action_name_in_error(self, db, team):
+        """Should use custom action name in error messages."""
+        from cli.core.permissions import requires_named_permission, NamedPermissionDenied
+
+        worker = create_worker(db, "Bob", "worker", team.id, 50)
+
+        @requires_named_permission("can_admin", action="modify_system_config")
+        def modify_config(db, worker_id):
+            return "modified"
+
+        with pytest.raises(NamedPermissionDenied) as exc_info:
+            modify_config(db, worker.id)
+
+        assert exc_info.value.action == "modify_system_config"
+
+    def test_role_hierarchy(self, db, team):
+        """Higher roles should have permissions of lower roles."""
+        from cli.core.permissions import requires_named_permission
+
+        # Director should have lead permissions
+        director = create_worker(db, "Director", "director", team.id, 80)
+
+        @requires_named_permission("is_lead")
+        def lead_action(db, worker_id):
+            return "lead action done"
+
+        result = lead_action(db, director.id)
+
+        assert result == "lead action done"
+
+    def test_missing_worker_id_raises_error(self, db, team):
+        """Should raise ValueError when worker_id parameter is missing."""
+        from cli.core.permissions import requires_named_permission
+
+        @requires_named_permission("can_create_beads")
+        def some_func(db, other_param):
+            return "done"
+
+        with pytest.raises(ValueError) as exc_info:
+            some_func(db, "value")
+
+        assert "worker_id" in str(exc_info.value)
+
+    def test_missing_db_raises_error(self, db, team):
+        """Should raise ValueError when db parameter is missing."""
+        from cli.core.permissions import requires_named_permission
+
+        worker = create_worker(db, "Bob", "worker", team.id, 50)
+
+        @requires_named_permission("can_create_beads")
+        def some_func(other_param, worker_id):
+            return "done"
+
+        with pytest.raises(ValueError) as exc_info:
+            some_func("value", worker.id)
+
+        assert "db" in str(exc_info.value)
+
+
+class TestCheckWorkerNamedPermission:
+    """Test the check_worker_named_permission function directly."""
+
+    def test_role_based_permission(self, db, team):
+        """Should return True for role-derived permissions."""
+        from cli.core.permissions import check_worker_named_permission
+
+        manager = create_worker(db, "Manager", "manager", team.id, 70)
+
+        assert check_worker_named_permission(db, manager.id, "can_hire") is True
+        assert check_worker_named_permission(db, manager.id, "is_manager") is True
+
+    def test_missing_permission(self, db, team):
+        """Should return False for missing permissions."""
+        from cli.core.permissions import check_worker_named_permission
+
+        worker = create_worker(db, "Bob", "worker", team.id, 50)
+
+        assert check_worker_named_permission(db, worker.id, "can_fire") is False
+
+    def test_nonexistent_worker(self, db):
+        """Should return False for non-existent worker."""
+        from cli.core.permissions import check_worker_named_permission
+
+        assert check_worker_named_permission(db, "nonexistent-id", "can_create_beads") is False
+
+    def test_base_permissions(self, db, team):
+        """All workers should have base permissions."""
+        from cli.core.permissions import check_worker_named_permission
+
+        worker = create_worker(db, "Bob", "worker", team.id, 50)
+
+        assert check_worker_named_permission(db, worker.id, "can_view_own_beads") is True
+        assert check_worker_named_permission(db, worker.id, "can_comment") is True
+
+
+class TestCheckWorkerNamedPermissions:
+    """Test the check_worker_named_permissions function (multiple permissions)."""
+
+    def test_all_permissions_granted(self, db, team):
+        """Should return True with empty missing list when all granted."""
+        from cli.core.permissions import check_worker_named_permissions
+
+        manager = create_worker(db, "Manager", "manager", team.id, 70)
+
+        has_perm, missing = check_worker_named_permissions(
+            db, manager.id, ["can_hire", "can_approve"], require_all=True
+        )
+
+        assert has_perm is True
+        assert missing == []
+
+    def test_some_permissions_missing_with_and_logic(self, db, team):
+        """Should return False with missing list when some are missing (AND)."""
+        from cli.core.permissions import check_worker_named_permissions
+
+        lead = create_worker(db, "Lead", "lead", team.id, 60)
+
+        has_perm, missing = check_worker_named_permissions(
+            db, lead.id, ["can_approve", "can_hire"], require_all=True
+        )
+
+        assert has_perm is False
+        assert "can_hire" in missing
+
+    def test_some_permissions_granted_with_or_logic(self, db, team):
+        """Should return True with empty missing when at least one granted (OR)."""
+        from cli.core.permissions import check_worker_named_permissions
+
+        lead = create_worker(db, "Lead", "lead", team.id, 60)
+
+        has_perm, missing = check_worker_named_permissions(
+            db, lead.id, ["can_approve", "can_hire"], require_all=False
+        )
+
+        assert has_perm is True
+        assert missing == []
+
+    def test_no_permissions_granted_with_or_logic(self, db, team):
+        """Should return False with all missing when none granted (OR)."""
+        from cli.core.permissions import check_worker_named_permissions
+
+        worker = create_worker(db, "Bob", "worker", team.id, 50)
+
+        has_perm, missing = check_worker_named_permissions(
+            db, worker.id, ["can_hire", "can_fire"], require_all=False
+        )
+
+        assert has_perm is False
+        assert set(missing) == {"can_hire", "can_fire"}

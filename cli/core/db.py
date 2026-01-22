@@ -21,7 +21,7 @@ from typing import Any, Callable, Generator, Optional
 import weakref
 
 # Current schema version - increment when schema changes
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 # Connection configuration
 DEFAULT_BUSY_TIMEOUT_MS = 5000  # 5 seconds
@@ -897,6 +897,30 @@ CREATE TABLE IF NOT EXISTS work_okr_links (
 );
 CREATE INDEX IF NOT EXISTS idx_work_okr_links_okr ON work_okr_links(okr_id);
 CREATE INDEX IF NOT EXISTS idx_work_okr_links_work ON work_okr_links(work_id);
+
+-- ===================
+-- ESCALATIONS
+-- ===================
+
+-- Escalations track when a worker escalates an issue to another worker
+-- Used for routing problems up the hierarchy or to specialists
+CREATE TABLE IF NOT EXISTS escalations (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL,
+    worker_id TEXT NOT NULL,
+    escalated_to_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending', 'resolved', 'timeout')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME,
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+    FOREIGN KEY (escalated_to_id) REFERENCES workers(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_escalations_issue ON escalations(issue_id);
+CREATE INDEX IF NOT EXISTS idx_escalations_worker ON escalations(worker_id);
+CREATE INDEX IF NOT EXISTS idx_escalations_escalated_to ON escalations(escalated_to_id);
+CREATE INDEX IF NOT EXISTS idx_escalations_state ON escalations(state);
+CREATE INDEX IF NOT EXISTS idx_escalations_created_at ON escalations(created_at);
 """
 
 
@@ -1269,6 +1293,26 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
         # Version 13: Add state_version column to sessions for optimistic locking (race condition fix)
         13: [
             "ALTER TABLE sessions ADD COLUMN state_version INTEGER NOT NULL DEFAULT 0",
+        ],
+        # Version 14: Add escalations table for tracking issue escalations
+        14: [
+            """CREATE TABLE IF NOT EXISTS escalations (
+                id TEXT PRIMARY KEY,
+                issue_id TEXT NOT NULL,
+                worker_id TEXT NOT NULL,
+                escalated_to_id TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending', 'resolved', 'timeout')),
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at DATETIME,
+                FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+                FOREIGN KEY (escalated_to_id) REFERENCES workers(id) ON DELETE CASCADE
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_escalations_issue ON escalations(issue_id)",
+            "CREATE INDEX IF NOT EXISTS idx_escalations_worker ON escalations(worker_id)",
+            "CREATE INDEX IF NOT EXISTS idx_escalations_escalated_to ON escalations(escalated_to_id)",
+            "CREATE INDEX IF NOT EXISTS idx_escalations_state ON escalations(state)",
+            "CREATE INDEX IF NOT EXISTS idx_escalations_created_at ON escalations(created_at)",
         ],
     }
 

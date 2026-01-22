@@ -20,13 +20,19 @@ from shared.escalation.hierarchical import (
     create_simple_topology,
 )
 from shared.escalation.manager import (
+    AutoEscalationSettings,
+    BoardInterventionSettings,
     EscalationConfig,
     EscalationEntry,
     EscalationHistoryEntry,
     EscalationManager,
+    EscalationPathLevel,
     EscalationState,
     InMemoryNotificationHandler,
     NotificationHandler,
+    NotificationSettings,
+    RetryPolicy,
+    TimeoutWarningSettings,
 )
 
 __all__ = [
@@ -48,4 +54,11 @@ __all__ = [
     "EscalationState",
     "InMemoryNotificationHandler",
     "NotificationHandler",
+    # Config types
+    "AutoEscalationSettings",
+    "BoardInterventionSettings",
+    "EscalationPathLevel",
+    "NotificationSettings",
+    "RetryPolicy",
+    "TimeoutWarningSettings",
 ]
