@@ -227,3 +227,97 @@ def is_worker_awake(worker_state: WorkerState) -> bool:
 def is_worker_responsive(worker_state: WorkerState) -> bool:
     """Check if worker can accept new work."""
     return worker_state in (WorkerState.ACTIVE, WorkerState.WORKING)
+
+
+# =============================================================================
+# WorkState - Work Item Lifecycle (Beads)
+# =============================================================================
+
+
+class WorkState(Enum):
+    """Work item (bead) lifecycle states.
+
+    Per CLAUDE.md: "Lifecycles = State Determines Behavior. Everything has
+    state (org, worker, work). State determines behavior, not commands."
+
+    Work items progress through a lifecycle from creation to completion:
+        DRAFT -> OPEN -> IN_PROGRESS -> REVIEW -> CLOSED
+
+    Additional states handle exceptional cases:
+        BLOCKED: Waiting on external dependency
+        CANCELLED: Work was abandoned
+    """
+
+    DRAFT = "draft"
+    """Work item created but not yet ready for work."""
+
+    OPEN = "open"
+    """Work item is ready to be picked up by a worker."""
+
+    IN_PROGRESS = "in_progress"
+    """Work item is actively being worked on."""
+
+    REVIEW = "review"
+    """Work is complete, awaiting review/approval."""
+
+    BLOCKED = "blocked"
+    """Work is paused, waiting on external dependency."""
+
+    CLOSED = "closed"
+    """Work is complete and accepted."""
+
+    CANCELLED = "cancelled"
+    """Work was abandoned before completion."""
+
+
+# Valid state transitions for work items
+WORK_STATE_TRANSITIONS: Dict[WorkState, List[WorkState]] = {
+    WorkState.DRAFT: [WorkState.OPEN, WorkState.CANCELLED],
+    WorkState.OPEN: [WorkState.IN_PROGRESS, WorkState.BLOCKED, WorkState.CANCELLED],
+    WorkState.IN_PROGRESS: [
+        WorkState.REVIEW,
+        WorkState.BLOCKED,
+        WorkState.OPEN,  # Return to queue
+        WorkState.CANCELLED,
+    ],
+    WorkState.REVIEW: [
+        WorkState.CLOSED,
+        WorkState.IN_PROGRESS,  # Needs more work
+        WorkState.CANCELLED,
+    ],
+    WorkState.BLOCKED: [
+        WorkState.OPEN,  # Unblocked, back to queue
+        WorkState.IN_PROGRESS,  # Unblocked, continue work
+        WorkState.CANCELLED,
+    ],
+    WorkState.CLOSED: [],  # Final state - no transitions
+    WorkState.CANCELLED: [],  # Final state - no transitions
+}
+
+
+def can_transition_work(from_state: WorkState, to_state: WorkState) -> bool:
+    """Check if a work state transition is valid."""
+    valid = WORK_STATE_TRANSITIONS.get(from_state, [])
+    return to_state in valid
+
+
+def transition_work(from_state: WorkState, to_state: WorkState) -> WorkState:
+    """Perform a work state transition if valid.
+
+    Raises:
+        InvalidStateTransition: If the transition is not allowed.
+    """
+    if not can_transition_work(from_state, to_state):
+        valid = WORK_STATE_TRANSITIONS.get(from_state, [])
+        raise InvalidStateTransition(from_state, to_state, valid)
+    return to_state
+
+
+def is_work_terminal(work_state: WorkState) -> bool:
+    """Check if work is in a terminal state (no further transitions)."""
+    return work_state in (WorkState.CLOSED, WorkState.CANCELLED)
+
+
+def is_work_active(work_state: WorkState) -> bool:
+    """Check if work is in an active state (being worked on)."""
+    return work_state in (WorkState.IN_PROGRESS, WorkState.REVIEW)

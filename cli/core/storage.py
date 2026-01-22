@@ -20,6 +20,7 @@ STORAGE_DIR = "storage"
 SHARED_DIR = "shared"
 WORKERS_DIR = "workers"
 FROZEN_SUFFIX = ".frozen"
+ARCHIVE_DIR = "archive"
 
 # Default shared topics
 DEFAULT_SHARED_TOPICS = ["engineering", "legal", "company"]
@@ -348,6 +349,118 @@ class StorageManager:
 
         frozen_path.rename(path)
         return path
+
+    def get_archive_path(self, worker_id: str) -> Path:
+        """Get shared archive path for a terminated worker.
+
+        Per CLAUDE.md: "On fire: freeze -> ask bead for review -> teammate
+        saves useful to shared/ -> delete."
+
+        Args:
+            worker_id: Worker ID
+
+        Returns:
+            Path to shared/archive/{worker_id}/
+        """
+        return self.storage_root / SHARED_DIR / ARCHIVE_DIR / worker_id
+
+    def archive_worker_files(
+        self,
+        worker_id: str,
+        files: Optional[list[Path]] = None,
+        reports_to: Optional[str] = None,
+    ) -> Path:
+        """Archive worker files to shared/archive/{worker_id}/.
+
+        Copies specified files (or all files if none specified) from worker
+        storage to the shared archive. Used during termination cleanup.
+
+        Args:
+            worker_id: Worker ID
+            files: List of file paths to archive. If None, archives all files.
+                  Paths should be relative to worker storage root.
+            reports_to: Optional manager worker ID
+
+        Returns:
+            Path to the archive directory
+
+        Raises:
+            WorkerStorageNotFound: If worker storage doesn't exist
+        """
+        path = self.get_worker_path(worker_id, reports_to)
+
+        # Check both normal and frozen paths
+        frozen_path = path.parent / f"{path.name}{FROZEN_SUFFIX}"
+        actual_path = frozen_path if frozen_path.exists() else path
+
+        if not actual_path.exists():
+            raise WorkerStorageNotFound(worker_id)
+
+        # Create archive directory
+        archive_path = self.get_archive_path(worker_id)
+        archive_path.mkdir(parents=True, exist_ok=True)
+
+        # Get files to archive
+        if files is None:
+            files = self.list_worker_files(worker_id, reports_to)
+
+        # Copy files to archive
+        for file_path in files:
+            if file_path.is_absolute():
+                source = file_path
+                rel_path = file_path.name
+            else:
+                source = actual_path / file_path
+                rel_path = file_path
+
+            if source.exists() and source.is_file():
+                dest = archive_path / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+
+                # Handle name conflicts
+                if dest.exists():
+                    counter = 1
+                    stem = dest.stem
+                    suffix = dest.suffix
+                    parent = dest.parent
+                    while dest.exists():
+                        dest = parent / f"{stem}_{counter}{suffix}"
+                        counter += 1
+
+                shutil.copy2(source, dest)
+
+        return archive_path
+
+    def delete_worker_storage(
+        self,
+        worker_id: str,
+        reports_to: Optional[str] = None,
+    ) -> bool:
+        """Delete worker storage directory.
+
+        Removes the worker's storage directory (frozen or unfrozen).
+        Used after archiving useful files during termination cleanup.
+
+        Args:
+            worker_id: Worker ID
+            reports_to: Optional manager worker ID
+
+        Returns:
+            True if deleted, False if storage didn't exist
+        """
+        path = self.get_worker_path(worker_id, reports_to)
+
+        # Check both normal and frozen paths
+        frozen_path = path.parent / f"{path.name}{FROZEN_SUFFIX}"
+
+        if frozen_path.exists():
+            shutil.rmtree(frozen_path)
+            return True
+        elif path.exists():
+            shutil.rmtree(path)
+            return True
+
+        return False
 
     def cleanup_worker(
         self,

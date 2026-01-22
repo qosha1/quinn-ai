@@ -14,8 +14,11 @@ Usage:
         # States
         WorkerState,
         SessionState,
+        WorkState,
         worker_state_to_session,
         session_state_to_worker,
+        can_transition_work,
+        transition_work,
 
         # Worker types
         WorkerConfig,
@@ -44,14 +47,18 @@ from .state import (
     # Enums
     WorkerState,
     SessionState,
+    WorkState,
     # Transitions
     WORKER_STATE_TRANSITIONS,
     SESSION_STATE_TRANSITIONS,
+    WORK_STATE_TRANSITIONS,
     InvalidStateTransition,
     can_transition_worker,
     can_transition_session,
+    can_transition_work,
     transition_worker,
     transition_session,
+    transition_work,
     # Mapping
     WORKER_TO_SESSION_STATE,
     SESSION_TO_WORKER_STATE,
@@ -59,6 +66,9 @@ from .state import (
     session_state_to_worker,
     is_worker_awake,
     is_worker_responsive,
+    # Work state helpers
+    is_work_terminal,
+    is_work_active,
 )
 
 # Worker types
@@ -98,14 +108,18 @@ __all__ = [
     # State enums
     "WorkerState",
     "SessionState",
+    "WorkState",
     # State transitions
     "WORKER_STATE_TRANSITIONS",
     "SESSION_STATE_TRANSITIONS",
+    "WORK_STATE_TRANSITIONS",
     "InvalidStateTransition",
     "can_transition_worker",
     "can_transition_session",
+    "can_transition_work",
     "transition_worker",
     "transition_session",
+    "transition_work",
     # State mapping
     "WORKER_TO_SESSION_STATE",
     "SESSION_TO_WORKER_STATE",
@@ -113,6 +127,9 @@ __all__ = [
     "session_state_to_worker",
     "is_worker_awake",
     "is_worker_responsive",
+    # Work state helpers
+    "is_work_terminal",
+    "is_work_active",
     # Worker types
     "WorkerConfig",
     "WorkerInfo",
