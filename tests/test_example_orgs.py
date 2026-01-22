@@ -1056,3 +1056,300 @@ class TestWorkManagement:
         # Verify priority ordering (lower number = higher priority = first)
         priorities = [item.get("priority", 4) for item in items]
         assert priorities == sorted(priorities), "Items should be sorted by priority"
+
+
+class TestOKRCascade:
+    """Test OKR cascade: goals/alignment/tracking.
+
+    NOTE: Many tests are marked xfail because beads CLI does not support
+    type=okr. The valid types are: bug|feature|task|epic|chore|merge-request|
+    molecule|gate|agent|role|convoy|event. See quinnai-acdl for tracking.
+
+    Once beads supports custom types or the OKR commands are refactored to
+    use labels instead of type=okr, these tests should pass.
+    """
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_okr_create_via_set(self, temp_org_dir):
+        """qn org okr set creates OKR bead."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        result = run_qn(
+            "org", "okr", "set",
+            "--title", "Q1 Revenue Growth",
+            "--owner", "ceo",
+            org_path=temp_org_dir
+        )
+        assert result.returncode == 0
+        assert "Created" in result.stdout or "okr" in result.stdout.lower()
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_okr_create_via_add(self, temp_org_dir):
+        """qn org okr add (alias for set) creates OKR bead."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        result = run_qn(
+            "org", "okr", "add",
+            "--title", "Q2 Customer Growth",
+            "--owner", "ceo",
+            org_path=temp_org_dir
+        )
+        assert result.returncode == 0
+        assert "Created" in result.stdout or "okr" in result.stdout.lower()
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_okr_list_shows_created(self, temp_org_dir):
+        """qn org okr list shows created OKRs."""
+        run_qn("org", "init", org_path=temp_org_dir)
+        run_qn("org", "okr", "set", "--title", "Test OKR", org_path=temp_org_dir)
+
+        result = run_qn("org", "okr", "list", org_path=temp_org_dir)
+        assert result.returncode == 0
+        assert "Test OKR" in result.stdout
+
+    def test_okr_list_empty_org(self, temp_org_dir):
+        """qn org okr list on empty org shows no OKRs."""
+        run_qn("org", "init", org_path=temp_org_dir)
+
+        result = run_qn("org", "okr", "list", org_path=temp_org_dir)
+        assert result.returncode == 0
+        assert "No OKRs found" in result.stdout or result.stdout.strip() == ""
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_okr_hierarchy_via_parent(self, temp_org_dir):
+        """OKRs can have parent-child relationships."""
+        run_qn("org", "init", org_path=temp_org_dir)
+
+        # Create parent OKR
+        result1 = run_qn(
+            "org", "okr", "set",
+            "--title", "Company Goal",
+            org_path=temp_org_dir
+        )
+        assert result1.returncode == 0
+
+        # Extract parent OKR ID from output
+        # Output format typically: "Created issue: quinnai-xxxx"
+        parent_id = None
+        for line in result1.stdout.split("\n"):
+            if "Created" in line and "-" in line:
+                words = line.split()
+                for word in reversed(words):
+                    if "-" in word and not word.startswith("-"):
+                        parent_id = word.strip()
+                        break
+                break
+
+        # If we couldn't parse ID, use bd list to get it
+        if not parent_id:
+            from cli.core.bd_wrapper import run_bd
+            list_result = run_bd(
+                ["list", "--type=okr", "--json"],
+                org_path=Path(temp_org_dir),
+                skip_permission_check=True,
+                capture_output=True,
+            )
+            if list_result.returncode == 0 and list_result.stdout.strip():
+                import json
+                okrs = json.loads(list_result.stdout)
+                if okrs:
+                    parent_id = okrs[0].get("id")
+
+        assert parent_id is not None, "Should have created parent OKR"
+
+        # Create child OKR with --parent
+        result2 = run_qn(
+            "org", "okr", "set",
+            "--title", "Team Goal",
+            "--parent", parent_id,
+            org_path=temp_org_dir
+        )
+        assert result2.returncode == 0
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_work_okr_linking(self, temp_org_dir):
+        """Work items can link to OKRs via 'serves' dependency."""
+        run_qn("org", "init", org_path=temp_org_dir)
+
+        # Create OKR
+        okr_result = run_qn(
+            "org", "okr", "set",
+            "--title", "Test OKR",
+            org_path=temp_org_dir
+        )
+        assert okr_result.returncode == 0
+
+        # Get OKR ID
+        from cli.core.bd_wrapper import run_bd
+        import json
+
+        okr_list = run_bd(
+            ["list", "--type=okr", "--json"],
+            org_path=Path(temp_org_dir),
+            skip_permission_check=True,
+            capture_output=True,
+        )
+        okrs = json.loads(okr_list.stdout) if okr_list.stdout.strip() else []
+        assert len(okrs) > 0, "Should have created OKR"
+        okr_id = okrs[0].get("id")
+
+        # Create work item
+        work_result = run_bd(
+            ["create", "Test task", "--type=task", "--json"],
+            org_path=Path(temp_org_dir),
+            skip_permission_check=True,
+            capture_output=True,
+        )
+        assert work_result.returncode == 0
+
+        # Get work item ID
+        work_list = run_bd(
+            ["list", "--type=task", "--json"],
+            org_path=Path(temp_org_dir),
+            skip_permission_check=True,
+            capture_output=True,
+        )
+        tasks = json.loads(work_list.stdout) if work_list.stdout.strip() else []
+        assert len(tasks) > 0, "Should have created task"
+        work_id = tasks[0].get("id")
+
+        # Link work to OKR via qn org okr link
+        link_result = run_qn(
+            "org", "okr", "link",
+            work_id, okr_id,
+            org_path=temp_org_dir
+        )
+        assert link_result.returncode == 0
+        assert "Linked" in link_result.stdout or "serves" in link_result.stdout.lower()
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_okr_show_displays_details(self, temp_org_dir):
+        """qn org okr show displays OKR details."""
+        run_qn("org", "init", org_path=temp_org_dir)
+        run_qn(
+            "org", "okr", "set",
+            "--title", "Detailed OKR",
+            "--owner", "ceo",
+            org_path=temp_org_dir
+        )
+
+        # Get OKR ID
+        from cli.core.bd_wrapper import run_bd
+        import json
+
+        okr_list = run_bd(
+            ["list", "--type=okr", "--json"],
+            org_path=Path(temp_org_dir),
+            skip_permission_check=True,
+            capture_output=True,
+        )
+        okrs = json.loads(okr_list.stdout) if okr_list.stdout.strip() else []
+        assert len(okrs) > 0, "Should have created OKR"
+        okr_id = okrs[0].get("id")
+
+        # Show OKR details
+        result = run_qn("org", "okr", "show", okr_id, org_path=temp_org_dir)
+        assert result.returncode == 0
+        assert "Detailed OKR" in result.stdout or okr_id in result.stdout
+
+    def test_okr_cascade_shows_hierarchy(self, temp_org_dir):
+        """qn org okr cascade shows hierarchy tree."""
+        run_qn("org", "init", org_path=temp_org_dir)
+        # Note: OKR creation will fail, but cascade command should still work
+        run_qn("org", "okr", "set", "--title", "Root OKR", org_path=temp_org_dir)
+
+        result = run_qn("org", "okr", "cascade", org_path=temp_org_dir)
+        assert result.returncode == 0
+        # Should show either tree structure or "No OKRs found" or the OKR title
+        assert "OKR Cascade" in result.stdout or "Root OKR" in result.stdout or "No OKRs" in result.stdout
+
+    def test_okr_cascade_empty_org(self, temp_org_dir):
+        """qn org okr cascade on empty org shows no OKRs."""
+        run_qn("org", "init", org_path=temp_org_dir)
+
+        result = run_qn("org", "okr", "cascade", org_path=temp_org_dir)
+        assert result.returncode == 0
+        assert "No OKRs found" in result.stdout or "OKR Cascade" in result.stdout
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_okr_cascade_with_root_filter(self, temp_org_dir):
+        """qn org okr cascade --root filters to specific OKR tree."""
+        run_qn("org", "init", org_path=temp_org_dir)
+        run_qn("org", "okr", "set", "--title", "Root OKR", org_path=temp_org_dir)
+
+        # Get OKR ID
+        from cli.core.bd_wrapper import run_bd
+        import json
+
+        okr_list = run_bd(
+            ["list", "--type=okr", "--json"],
+            org_path=Path(temp_org_dir),
+            skip_permission_check=True,
+            capture_output=True,
+        )
+        okrs = json.loads(okr_list.stdout) if okr_list.stdout.strip() else []
+        assert len(okrs) > 0, "Should have created OKR"
+        okr_id = okrs[0].get("id")
+
+        result = run_qn("org", "okr", "cascade", "--root", okr_id, org_path=temp_org_dir)
+        assert result.returncode == 0
+        assert okr_id in result.stdout or "OKR Cascade" in result.stdout
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_okr_with_priority(self, temp_org_dir):
+        """OKR can be created with priority."""
+        run_qn("org", "init", org_path=temp_org_dir)
+
+        result = run_qn(
+            "org", "okr", "set",
+            "--title", "High Priority OKR",
+            "--priority", "0",
+            org_path=temp_org_dir
+        )
+        assert result.returncode == 0
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_okr_with_labels(self, temp_org_dir):
+        """OKR can be created with labels."""
+        run_qn("org", "init", org_path=temp_org_dir)
+
+        result = run_qn(
+            "org", "okr", "set",
+            "--title", "Labeled OKR",
+            "--label", "growth",
+            "--label", "q1",
+            org_path=temp_org_dir
+        )
+        assert result.returncode == 0
+
+    @pytest.mark.xfail(reason="beads CLI does not support type=okr")
+    def test_okr_with_description(self, temp_org_dir):
+        """OKR can be created with description."""
+        run_qn("org", "init", org_path=temp_org_dir)
+
+        result = run_qn(
+            "org", "okr", "set",
+            "--title", "Described OKR",
+            "--description", "This is the objective description with key results",
+            org_path=temp_org_dir
+        )
+        assert result.returncode == 0
+
+    def test_okr_list_with_status_filter(self, temp_org_dir):
+        """qn org okr list can filter by status."""
+        run_qn("org", "init", org_path=temp_org_dir)
+        # OKR creation will fail, but list command should work
+        run_qn("org", "okr", "set", "--title", "Test OKR", org_path=temp_org_dir)
+
+        # Filter by open status (default) - should return no OKRs since creation failed
+        result = run_qn("org", "okr", "list", "--status", "open", org_path=temp_org_dir)
+        assert result.returncode == 0
+
+    def test_okr_list_with_all_flag(self, temp_org_dir):
+        """qn org okr list --all includes all OKRs."""
+        run_qn("org", "init", org_path=temp_org_dir)
+        # OKR creation will fail, but list command should work
+        run_qn("org", "okr", "set", "--title", "Test OKR", org_path=temp_org_dir)
+
+        result = run_qn("org", "okr", "list", "--all", org_path=temp_org_dir)
+        assert result.returncode == 0

@@ -2,7 +2,7 @@
 qn org okr command group.
 
 Commands for managing OKRs (Objectives and Key Results) via beads.
-OKRs are beads issues with type=okr.
+OKRs are beads epic issues with the 'okr' label.
 """
 
 import json
@@ -63,8 +63,8 @@ def list_cmd(ctx: Context, status: Optional[str], assignee: Optional[str], show_
             "Run 'qn org init' first."
         )
 
-    # Build bd list command
-    args = ["list", "--type=okr", "--json"]
+    # Build bd list command - use label since 'okr' is not a valid beads type
+    args = ["list", "--label=okr", "--json"]
 
     if status:
         args.append(f"--status={status}")
@@ -157,7 +157,8 @@ def _create_okr(
         )
 
     # Build bd create command
-    args = ["create", title, "--type=okr", f"--priority={priority}"]
+    # Use epic type with okr label since 'okr' is not a valid beads type
+    args = ["create", title, "--type=epic", f"--priority={priority}", "--label=okr"]
 
     if description:
         args.extend(["--description", description])
@@ -297,7 +298,7 @@ def cascade_cmd(ctx: Context, root: Optional[str]):
     else:
         # List all OKRs and show hierarchy
         result = run_bd(
-            ["list", "--type=okr", "--json", "--all"],
+            ["list", "--label=okr", "--json", "--all"],
             org_path=org_path,
             capture_output=True,
             skip_permission_check=True,

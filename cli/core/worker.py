@@ -664,7 +664,7 @@ class Worker:
                     f"Use: cleanup_terminated_worker(db, '{self.id}', storage_manager)"
                 ),
                 priority=1,  # High priority
-                time_sensitivity="today",
+                time_sensitivity="hours",  # Needs attention soon
             )
 
             # Create notification bead for manager

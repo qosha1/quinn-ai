@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Generator, Optional
 
 # Current schema version - increment when schema changes
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 class Database:
@@ -589,6 +589,41 @@ CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor_id);
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
+
+-- ===================
+-- OKR TABLES
+-- ===================
+
+-- OKRs cascade: Board -> CEO -> Directors -> Managers -> Workers
+-- Every OKR has an owner and optional parent for hierarchy
+CREATE TABLE IF NOT EXISTS okrs (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    owner_worker_id TEXT NOT NULL,
+    parent_okr_id TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('draft', 'active', 'completed', 'cancelled')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_okr_id) REFERENCES okrs(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_okrs_owner ON okrs(owner_worker_id);
+CREATE INDEX IF NOT EXISTS idx_okrs_parent ON okrs(parent_okr_id);
+CREATE INDEX IF NOT EXISTS idx_okrs_status ON okrs(status);
+
+-- Link work items to OKRs
+-- Every work item should link to an objective for strategic alignment
+CREATE TABLE IF NOT EXISTS work_okr_links (
+    work_id TEXT NOT NULL,
+    okr_id TEXT NOT NULL,
+    link_type TEXT NOT NULL DEFAULT 'contributes' CHECK(link_type IN ('contributes', 'blocks', 'depends_on')),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (work_id, okr_id),
+    FOREIGN KEY (okr_id) REFERENCES okrs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_work_okr_links_okr ON work_okr_links(okr_id);
+CREATE INDEX IF NOT EXISTS idx_work_okr_links_work ON work_okr_links(work_id);
 """
 
 
@@ -896,6 +931,34 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
         8: [
             "ALTER TABLE notification_beads ADD COLUMN expires_at DATETIME",
             "CREATE INDEX IF NOT EXISTS idx_notif_beads_expires_at ON notification_beads(expires_at)",
+        ],
+        # Version 9: Add OKR tables for cascade objectives
+        9: [
+            """CREATE TABLE IF NOT EXISTS okrs (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT,
+                owner_worker_id TEXT NOT NULL,
+                parent_okr_id TEXT,
+                status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('draft', 'active', 'completed', 'cancelled')),
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (owner_worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_okr_id) REFERENCES okrs(id) ON DELETE SET NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_okrs_owner ON okrs(owner_worker_id)",
+            "CREATE INDEX IF NOT EXISTS idx_okrs_parent ON okrs(parent_okr_id)",
+            "CREATE INDEX IF NOT EXISTS idx_okrs_status ON okrs(status)",
+            """CREATE TABLE IF NOT EXISTS work_okr_links (
+                work_id TEXT NOT NULL,
+                okr_id TEXT NOT NULL,
+                link_type TEXT NOT NULL DEFAULT 'contributes' CHECK(link_type IN ('contributes', 'blocks', 'depends_on')),
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (work_id, okr_id),
+                FOREIGN KEY (okr_id) REFERENCES okrs(id) ON DELETE CASCADE
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_work_okr_links_okr ON work_okr_links(okr_id)",
+            "CREATE INDEX IF NOT EXISTS idx_work_okr_links_work ON work_okr_links(work_id)",
         ],
     }
 

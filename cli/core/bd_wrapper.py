@@ -428,7 +428,9 @@ def run_bd(
         env["BEADS_ASSIGNEE"] = worker_id
 
     # Run bd command
-    cmd = [str(bd_path)] + args
+    # Use --sandbox mode to bypass daemon and respect BEADS_DIR environment variable
+    # This is necessary for isolated testing and when using custom org paths
+    cmd = [str(bd_path), "--sandbox"] + args
 
     if capture_output:
         return subprocess.run(
