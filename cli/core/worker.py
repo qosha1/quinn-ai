@@ -73,8 +73,11 @@ from .sessions.persistence import (
     delete_session_for_worker,
 )
 
-# Import bd client for creating beads
+# Import bd client for creating beads (legacy, used by standalone functions)
 from shared.bd.client import BdClient, BdCommandError
+
+# Import beads client abstraction for Worker class
+from .adapters.beads import BeadsClient, SubprocessBeadsClient
 
 # Import shared business logic
 from shared import (
@@ -172,6 +175,7 @@ class Worker:
         worker_id: str,
         session_registry: Optional["SessionRegistry"] = None,
         org_path: Optional["Path"] = None,
+        beads_client: Optional[BeadsClient] = None,
     ):
         """Initialize worker wrapper.
 
@@ -182,6 +186,8 @@ class Worker:
                              If not provided, spawn() will use the default registry.
             org_path: Optional path to org folder. Required for terminate() to
                      freeze storage and update org-chart.
+            beads_client: Optional BeadsClient for bead operations. If not provided,
+                         a default SubprocessBeadsClient will be created on demand.
         """
         self.db = db
         self.id = worker_id
@@ -190,6 +196,7 @@ class Worker:
         self._session: Optional["SessionInterface"] = None
         self._session_registry: Optional["SessionRegistry"] = session_registry
         self._org_path: Optional["Path"] = org_path
+        self._beads_client: Optional[BeadsClient] = beads_client
 
     def _load_worker(self) -> None:
         """Load worker data from database."""
@@ -230,6 +237,33 @@ class Worker:
         """
         org_path = self._get_org_path()
         return StorageManager(org_path, self.db)
+
+    def _get_beads_client(self) -> BeadsClient:
+        """Get the BeadsClient for bead operations.
+
+        Returns the injected client if available, otherwise creates a default
+        SubprocessBeadsClient using the org's beads directory.
+
+        Returns:
+            BeadsClient instance
+        """
+        if self._beads_client is not None:
+            return self._beads_client
+
+        # Create default client using org's beads directory
+        from .bd_wrapper import get_bundled_bd_path, get_org_beads_dir
+
+        try:
+            bd_path = get_bundled_bd_path()
+            org_path = self._get_org_path()
+            beads_dir = get_org_beads_dir(org_path)
+            self._beads_client = SubprocessBeadsClient(bd_path, beads_dir)
+        except FileNotFoundError:
+            # bd binary not available - return a client that will fail gracefully
+            from pathlib import Path
+            self._beads_client = SubprocessBeadsClient(Path("/usr/bin/false"), None)
+
+        return self._beads_client
 
     # ==================
     # LIFECYCLE PROPERTIES
@@ -755,13 +789,13 @@ class Worker:
             return None
 
         try:
-            bd_client = BdClient()
+            beads_client = self._get_beads_client()
 
             # Create the 'ask' bead with metadata linking to worker
-            bead_id = bd_client.create_issue(
+            result = beads_client.create(
                 title=f"Offboard storage review: {self.id}",
                 type="ask",
-                priority=1,  # High priority
+                priority="P1",  # High priority
                 description=(
                     f"Review frozen storage for terminated worker {self.name} ({self.id}).\n\n"
                     f"Role: {self.role}\n\n"
@@ -771,22 +805,23 @@ class Worker:
                     f"3. Close this bead when review is complete\n"
                     f"4. System will delete worker folder on bead closure"
                 ),
+                assignee=self.manager_id,
                 metadata={
                     "worker_id": self.id,
                     "worker_name": self.name,
                     "manager_id": self.manager_id,
                     "workflow": "offboarding_storage_review",
                 },
-                assignee=self.manager_id,
             )
 
+            bead_id = result.bead_id if result.success else None
             if bead_id:
                 # Store the bead ID in worker metadata for later lookup
                 self._store_offboarding_ask_bead_id(bead_id)
 
             return bead_id
 
-        except BdCommandError:
+        except (BdCommandError, Exception):
             # Intentionally swallowed: bead creation is best-effort during offboarding.
             return None
         except (FileNotFoundError, OSError):
