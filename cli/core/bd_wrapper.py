@@ -419,7 +419,9 @@ def run_bd(
 
     # Point beads to org's .beads directory
     beads_dir = get_org_beads_dir(org_path)
+    beads_db = beads_dir / "beads.db"
     env["BEADS_DIR"] = str(beads_dir)
+    env["BEADS_DB"] = str(beads_db)
 
     # Add worker context if available
     if worker_id:
@@ -428,9 +430,9 @@ def run_bd(
         env["BEADS_ASSIGNEE"] = worker_id
 
     # Run bd command
-    # Use --sandbox mode to bypass daemon and respect BEADS_DIR environment variable
+    # Use --sandbox mode to bypass daemon and --db to explicitly specify database
     # This is necessary for isolated testing and when using custom org paths
-    cmd = [str(bd_path), "--sandbox"] + args
+    cmd = [str(bd_path), "--sandbox", f"--db={beads_db}"] + args
 
     if capture_output:
         return subprocess.run(

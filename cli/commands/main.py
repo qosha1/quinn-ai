@@ -23,11 +23,12 @@ from cli.commands.context import Context, pass_context
 def qn(ctx, org_path: Optional[Path]):
     """QuinnAI organization management CLI.
 
-    Two command groups for two actors:
+    Three command groups for three actors:
 
     \b
     qn org   - Organization management (human operator)
     qn wrkr  - Worker operations (AI worker in session)
+    qn board - Board oversight (human intervention when off-track)
     """
     ctx.ensure_object(Context)
     if org_path:
@@ -82,6 +83,27 @@ wrkr.add_command(get_work_cmd, name="get-work")
 wrkr.add_command(inbox_cmd, name="inbox")
 wrkr.add_command(send_cmd, name="send")
 wrkr.add_command(wrkr_status_cmd, name="status")
+
+
+# Board commands - human oversight when org is off-track
+@qn.group()
+def board():
+    """Board oversight commands.
+
+    Commands for human intervention when the org is off-track.
+    Per CLAUDE.md: "Board = Gutterguards. Humans intervene only when
+    org is off-track. Not required for daily operation."
+    """
+    pass
+
+
+from cli.commands.board import status_cmd as board_status_cmd, alerts_cmd, pause_cmd, resume_cmd, fire_cmd
+
+board.add_command(board_status_cmd, name="status")
+board.add_command(alerts_cmd, name="alerts")
+board.add_command(pause_cmd, name="pause")
+board.add_command(resume_cmd, name="resume")
+board.add_command(fire_cmd, name="fire")
 
 
 if __name__ == "__main__":
