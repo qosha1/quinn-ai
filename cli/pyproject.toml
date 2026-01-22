@@ -25,9 +25,13 @@ dev = [
 
 [project.scripts]
 qn = "commands.main:qn"
+qn-bd = "core.bd_wrapper:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["core", "providers", "commands"]
+packages = ["core", "providers", "commands", "bin", "config"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"bin" = "quinnai/bin"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
