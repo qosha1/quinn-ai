@@ -412,3 +412,159 @@ class TestTransitionMaps:
     def test_terminated_is_terminal(self):
         """Terminated should have no outgoing transitions."""
         assert LIFECYCLE_TRANSITIONS["terminated"] == []
+
+
+class MockSessionState:
+    """Mock session state enum for testing."""
+    STARTING = "starting"
+    RUNNING = "running"
+    IDLE = "idle"
+    STOPPED = "stopped"
+    CRASHED = "crashed"
+
+
+class MockSession:
+    """Mock session for testing Worker session management."""
+
+    def __init__(self, should_fail_start: bool = False):
+        self.worker_id = None
+        self.started = False
+        self.stopped = False
+        self.force_stopped = False
+        self.should_fail_start = should_fail_start
+        self._state_callbacks = []
+        self._state = MockSessionState.STOPPED
+
+    def bind_to_worker(self, worker_id: str) -> None:
+        self.worker_id = worker_id
+
+    def start(self) -> None:
+        if self.should_fail_start:
+            raise RuntimeError("Session failed to start")
+        self.started = True
+        self._state = MockSessionState.STARTING
+        self._notify_state_change(MockSessionState.STOPPED, MockSessionState.STARTING)
+
+    def stop(self, force: bool = False) -> None:
+        self.stopped = True
+        self.force_stopped = force
+        old_state = self._state
+        self._state = MockSessionState.STOPPED
+        self._notify_state_change(old_state, MockSessionState.STOPPED)
+
+    def on_state_change(self, callback) -> None:
+        self._state_callbacks.append(callback)
+
+    def _notify_state_change(self, old, new):
+        for cb in self._state_callbacks:
+            cb(old, new)
+
+    def simulate_state_change(self, new_state):
+        old_state = self._state
+        self._state = new_state
+        self._notify_state_change(old_state, new_state)
+
+
+class TestSessionManagement:
+    """Test Worker session management methods."""
+
+    @pytest.fixture
+    def active_worker(self, worker):
+        """Get worker in active lifecycle state."""
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        return worker
+
+    def test_attach_session_sets_field(self, active_worker):
+        """Attach should set _session field."""
+        session = MockSession()
+        active_worker.attach_session(session)
+        assert active_worker._session is session
+
+    def test_attach_session_binds_worker_id(self, active_worker):
+        """Attach should bind worker ID to session."""
+        session = MockSession()
+        active_worker.attach_session(session)
+        assert session.worker_id == active_worker.id
+
+    def test_attach_already_attached_raises(self, active_worker):
+        """Attach to already-attached worker raises ValueError."""
+        session1 = MockSession()
+        session2 = MockSession()
+        active_worker.attach_session(session1)
+        with pytest.raises(ValueError) as exc_info:
+            active_worker.attach_session(session2)
+        assert "already has an attached session" in str(exc_info.value)
+
+    def test_attach_pending_raises(self, worker):
+        """Attach to pending worker raises InvalidLifecycleState."""
+        session = MockSession()
+        with pytest.raises(InvalidLifecycleState):
+            worker.attach_session(session)
+
+    def test_detach_returns_session(self, active_worker):
+        """Detach should return the detached session."""
+        session = MockSession()
+        active_worker.attach_session(session)
+        detached = active_worker.detach_session()
+        assert detached is session
+
+    def test_detach_clears_field(self, active_worker):
+        """Detach should clear _session field."""
+        session = MockSession()
+        active_worker.attach_session(session)
+        active_worker.detach_session()
+        assert active_worker._session is None
+
+    def test_detach_no_session_returns_none(self, active_worker):
+        """Detach with no session returns None."""
+        result = active_worker.detach_session()
+        assert result is None
+
+    def test_spawn_attaches_and_starts(self, active_worker):
+        """Spawn should attach session and start it."""
+        session = MockSession()
+        active_worker.spawn_session(session)
+        assert active_worker._session is session
+        assert session.started is True
+        assert session.worker_id == active_worker.id
+
+    def test_spawn_failure_detaches(self, active_worker):
+        """Spawn failure should detach the session."""
+        session = MockSession(should_fail_start=True)
+        with pytest.raises(RuntimeError):
+            active_worker.spawn_session(session)
+        assert active_worker._session is None
+
+    def test_terminate_stops_session(self, active_worker):
+        """Terminate should stop the session."""
+        session = MockSession()
+        active_worker.spawn_session(session)
+        active_worker.terminate_session()
+        assert session.stopped is True
+
+    def test_terminate_detaches(self, active_worker):
+        """Terminate should detach the session."""
+        session = MockSession()
+        active_worker.spawn_session(session)
+        active_worker.terminate_session()
+        assert active_worker._session is None
+
+    def test_terminate_force(self, active_worker):
+        """Terminate with force=True should force stop."""
+        session = MockSession()
+        active_worker.spawn_session(session)
+        active_worker.terminate_session(force=True)
+        assert session.force_stopped is True
+
+    def test_terminate_no_session_is_noop(self, active_worker):
+        """Terminate with no session is a no-op."""
+        # Should not raise
+        active_worker.terminate_session()
+
+    def test_session_property(self, active_worker):
+        """Session property should return attached session."""
+        session = MockSession()
+        assert active_worker.session is None
+        active_worker.attach_session(session)
+        assert active_worker.session is session
