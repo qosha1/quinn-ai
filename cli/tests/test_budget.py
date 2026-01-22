@@ -652,3 +652,284 @@ class TestBudgetAllocationConstraints:
                  period["start"], period["end"])
             )
             db.connection.commit()
+
+
+# ============================================================================
+# Budget Enforcement Tests
+# ============================================================================
+
+
+class TestBudgetEnforcementFunctions:
+    """Test budget enforcement functions from budget.py."""
+
+    @pytest.fixture
+    def allocation_with_balance(self, db, pool, developer):
+        """Create allocation with balance for testing."""
+        allocation = create_budget_allocation(
+            db,
+            worker_id=developer.id,
+            allocated_credits=1000.0,  # $1000 budget
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+            pool_id=pool.id,
+        )
+        from cli.core.queries import create_budget_balance
+        create_budget_balance(
+            db,
+            allocation_id=allocation.id,
+            worker_id=developer.id,
+            allocated=1000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+        )
+        return allocation
+
+    def test_estimate_cost_budget_tier(self):
+        """Should estimate cost for budget tier models."""
+        from cli.core.budget import estimate_cost
+
+        # Budget tier: ~$0.00025/1K input, ~$0.00125/1K output
+        cost = estimate_cost("budget", input_tokens=1000, output_tokens=1000)
+
+        # Should be around $0.00025 + $0.00125 = $0.0015
+        assert cost == pytest.approx(0.0015, rel=0.01)
+
+    def test_estimate_cost_standard_tier(self):
+        """Should estimate cost for standard tier models."""
+        from cli.core.budget import estimate_cost
+
+        # Standard tier: ~$0.003/1K input, ~$0.015/1K output
+        cost = estimate_cost("standard", input_tokens=1000, output_tokens=1000)
+
+        # Should be around $0.003 + $0.015 = $0.018
+        assert cost == pytest.approx(0.018, rel=0.01)
+
+    def test_estimate_cost_premium_tier(self):
+        """Should estimate cost for premium tier models."""
+        from cli.core.budget import estimate_cost
+
+        # Premium tier: ~$0.015/1K input, ~$0.075/1K output
+        cost = estimate_cost("premium", input_tokens=1000, output_tokens=1000)
+
+        # Should be around $0.015 + $0.075 = $0.09
+        assert cost == pytest.approx(0.09, rel=0.01)
+
+    def test_check_budget_sufficient(self, db, allocation_with_balance, developer):
+        """Should approve when budget is sufficient."""
+        from cli.core.budget import check_budget
+
+        result = check_budget(db, developer.id, required_amount=100.0)
+
+        assert result.allowed is True
+        assert result.worker_id == developer.id
+        assert result.available == 1000.0
+        assert result.required == 100.0
+        assert result.remaining_after == 900.0
+        assert "approved" in result.message.lower()
+
+    def test_check_budget_insufficient(self, db, allocation_with_balance, developer):
+        """Should reject when budget is insufficient."""
+        from cli.core.budget import check_budget
+
+        result = check_budget(db, developer.id, required_amount=1500.0)
+
+        assert result.allowed is False
+        assert result.available == 1000.0
+        assert result.required == 1500.0
+        assert result.remaining_after == 0.0
+        assert "insufficient" in result.message.lower()
+
+    def test_check_budget_no_allocation(self, db, team):
+        """Should raise when worker has no allocation."""
+        from cli.core.budget import check_budget, NoBudgetAllocationError
+
+        worker = create_worker(db, "No Budget Worker", "Dev", team.id, 50)
+
+        with pytest.raises(NoBudgetAllocationError) as exc_info:
+            check_budget(db, worker.id, required_amount=1.0)
+
+        assert worker.id in str(exc_info.value)
+        assert "no budget allocation" in str(exc_info.value).lower()
+
+    def test_enforce_budget_sufficient(self, db, allocation_with_balance, developer):
+        """Should return result when budget is sufficient."""
+        from cli.core.budget import enforce_budget
+
+        result = enforce_budget(db, developer.id, required_amount=100.0)
+
+        assert result.allowed is True
+
+    def test_enforce_budget_insufficient_raises(self, db, allocation_with_balance, developer):
+        """Should raise BudgetExhaustedError when insufficient."""
+        from cli.core.budget import enforce_budget, BudgetExhaustedError
+
+        with pytest.raises(BudgetExhaustedError) as exc_info:
+            enforce_budget(db, developer.id, required_amount=1500.0)
+
+        assert exc_info.value.worker_id == developer.id
+        assert exc_info.value.required == 1500.0
+        assert exc_info.value.available == 1000.0
+
+    def test_record_spend(self, db, allocation_with_balance, developer):
+        """Should record spend transaction."""
+        from cli.core.budget import record_spend
+
+        txn = record_spend(
+            db=db,
+            worker_id=developer.id,
+            allocation_id=allocation_with_balance.id,
+            amount=5.0,
+            provider="anthropic",
+            model="claude-3-5-sonnet",
+            input_tokens=1000,
+            output_tokens=500,
+            reference_type="task",
+            reference_id="task-123",
+        )
+
+        assert txn.amount == -5.0  # Negative for spend
+        assert txn.provider == "anthropic"
+        assert txn.model == "claude-3-5-sonnet"
+        assert txn.input_tokens == 1000
+        assert txn.output_tokens == 500
+
+    def test_get_remaining_budget(self, db, allocation_with_balance, developer):
+        """Should return remaining budget."""
+        from cli.core.budget import get_remaining_budget
+
+        remaining = get_remaining_budget(db, developer.id)
+        assert remaining == 1000.0
+
+    def test_get_remaining_budget_no_allocation(self, db, team):
+        """Should return 0 for worker without allocation."""
+        from cli.core.budget import get_remaining_budget
+
+        worker = create_worker(db, "No Budget Worker", "Dev", team.id, 50)
+        remaining = get_remaining_budget(db, worker.id)
+
+        assert remaining == 0.0
+
+
+class TestBudgetEnforcer:
+    """Test BudgetEnforcer context manager."""
+
+    @pytest.fixture
+    def allocation_with_balance(self, db, pool, developer):
+        """Create allocation with balance for testing."""
+        allocation = create_budget_allocation(
+            db,
+            worker_id=developer.id,
+            allocated_credits=1000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+            pool_id=pool.id,
+        )
+        from cli.core.queries import create_budget_balance
+        create_budget_balance(
+            db,
+            allocation_id=allocation.id,
+            worker_id=developer.id,
+            allocated=1000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+        )
+        return allocation
+
+    def test_enforcer_context_manager_allows_when_sufficient(
+        self, db, allocation_with_balance, developer
+    ):
+        """Should allow operation when budget is sufficient."""
+        from cli.core.budget import BudgetEnforcer
+
+        with BudgetEnforcer(db, developer.id, estimated_cost=10.0) as enforcer:
+            # Simulate successful provider call
+            enforcer.record(
+                actual_cost=10.0,
+                provider="anthropic",
+                model="claude-3-5-sonnet",
+                input_tokens=1000,
+                output_tokens=500,
+            )
+
+        # Should have recorded transaction
+        txns = get_transactions_by_worker(db, developer.id)
+        assert len(txns) == 1
+        assert txns[0].amount == -10.0
+
+    def test_enforcer_raises_when_insufficient(
+        self, db, allocation_with_balance, developer
+    ):
+        """Should raise before entering context when budget insufficient."""
+        from cli.core.budget import BudgetEnforcer, BudgetExhaustedError
+
+        with pytest.raises(BudgetExhaustedError):
+            with BudgetEnforcer(db, developer.id, estimated_cost=2000.0):
+                pass  # Should not reach here
+
+    def test_enforcer_allocation_id_property(
+        self, db, allocation_with_balance, developer
+    ):
+        """Should expose allocation_id from check result."""
+        from cli.core.budget import BudgetEnforcer
+
+        with BudgetEnforcer(db, developer.id, estimated_cost=10.0) as enforcer:
+            assert enforcer.allocation_id == allocation_with_balance.id
+            enforcer.record(
+                actual_cost=10.0,
+                provider="anthropic",
+                model="claude-3-5-sonnet",
+                input_tokens=1000,
+                output_tokens=500,
+            )
+
+    def test_enforcer_warns_if_not_recorded(
+        self, db, allocation_with_balance, developer
+    ):
+        """Should warn if context exits without recording spend."""
+        from cli.core.budget import BudgetEnforcer
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            with BudgetEnforcer(db, developer.id, estimated_cost=10.0):
+                pass  # Don't call record()
+
+            # Should have emitted warning
+            assert len(w) == 1
+            assert "without recording spend" in str(w[0].message)
+
+    def test_enforcer_no_warning_on_exception(
+        self, db, allocation_with_balance, developer
+    ):
+        """Should not warn if context exits due to exception."""
+        from cli.core.budget import BudgetEnforcer
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            with pytest.raises(ValueError):
+                with BudgetEnforcer(db, developer.id, estimated_cost=10.0):
+                    raise ValueError("Simulated failure")
+
+            # Should NOT have emitted warning (exception occurred)
+            assert len(w) == 0
+
+    def test_enforcer_with_reference(self, db, allocation_with_balance, developer):
+        """Should record reference type and ID."""
+        from cli.core.budget import BudgetEnforcer
+
+        with BudgetEnforcer(db, developer.id, estimated_cost=10.0) as enforcer:
+            enforcer.record(
+                actual_cost=10.0,
+                provider="anthropic",
+                model="claude-3-5-sonnet",
+                input_tokens=1000,
+                output_tokens=500,
+                reference_type="task",
+                reference_id="task-abc-123",
+                description="Processing customer request",
+            )
+
+        txns = get_transactions_by_worker(db, developer.id)
+        assert txns[0].reference_type == "task"
+        assert txns[0].reference_id == "task-abc-123"
