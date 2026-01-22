@@ -1,8 +1,9 @@
 """
 qn wrkr send command.
-"""
 
-import os
+Worker ID is passed explicitly through CLI context (via --worker-id option
+on the wrkr group or QUINN_WORKER_ID envvar).
+"""
 
 import click
 
@@ -38,10 +39,10 @@ def send_cmd(ctx: Context, to_channel: str, priority: int, message: str):
 
     Sends a message to the specified channel.
     """
-    worker_id = os.environ.get("QUINN_WORKER_ID")
+    worker_id = ctx.worker_id
     if not worker_id:
         raise click.ClickException(
-            "QUINN_WORKER_ID environment variable not set"
+            "Worker ID not specified. Use --worker-id or set QUINN_WORKER_ID."
         )
 
     org_path = ctx.org_path

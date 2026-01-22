@@ -321,3 +321,64 @@ class TestRefresh:
         # Refresh updates it
         org.refresh()
         assert org.status == "running"
+
+
+class TestOrgChannelAutoCreation:
+    """Test automatic channel creation during org init."""
+
+    def test_init_creates_general_channel(self, org):
+        """Init should create general channel for org-wide announcements."""
+        org.init("Alice")
+        channel = org.db.fetchone(
+            "SELECT * FROM channels WHERE name = 'general'"
+        )
+        assert channel is not None
+        assert channel["type"] == "topic"
+        assert channel["team_id"] is None  # org-wide
+
+    def test_init_creates_escalations_channel(self, org):
+        """Init should create escalations channel for escalation messages."""
+        org.init("Alice")
+        channel = org.db.fetchone(
+            "SELECT * FROM channels WHERE name = 'escalations'"
+        )
+        assert channel is not None
+        assert channel["type"] == "topic"
+        assert channel["team_id"] is None  # org-wide
+
+    def test_init_subscribes_ceo_to_general(self, org):
+        """Init should subscribe CEO to general channel."""
+        ceo = org.init("Alice")
+        general = org.db.fetchone(
+            "SELECT * FROM channels WHERE name = 'general'"
+        )
+        subscription = org.db.fetchone(
+            "SELECT * FROM channel_subscriptions WHERE channel_id = ? AND worker_id = ?",
+            (general["id"], ceo.id)
+        )
+        assert subscription is not None
+
+    def test_init_subscribes_ceo_to_escalations(self, org):
+        """Init should subscribe CEO to escalations channel."""
+        ceo = org.init("Alice")
+        escalations = org.db.fetchone(
+            "SELECT * FROM channels WHERE name = 'escalations'"
+        )
+        subscription = org.db.fetchone(
+            "SELECT * FROM channel_subscriptions WHERE channel_id = ? AND worker_id = ?",
+            (escalations["id"], ceo.id)
+        )
+        assert subscription is not None
+
+    def test_init_creates_executive_team_channel(self, org):
+        """Init should create channel for Executive team."""
+        org.init("Alice")
+        team = org.db.fetchone(
+            "SELECT * FROM teams WHERE name = 'Executive'"
+        )
+        channel = org.db.fetchone(
+            "SELECT * FROM channels WHERE team_id = ? AND type = 'team'",
+            (team["id"],)
+        )
+        assert channel is not None
+        assert channel["name"] == "executive"  # lowercase team name

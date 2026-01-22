@@ -1,8 +1,9 @@
 """
 qn wrkr status command.
-"""
 
-import os
+Worker ID is passed explicitly through CLI context (via --worker-id option
+on the wrkr group or QUINN_WORKER_ID envvar).
+"""
 
 import click
 
@@ -19,10 +20,10 @@ def status_cmd(ctx: Context):
 
     Displays lifecycle status, runtime status, and current task.
     """
-    worker_id = os.environ.get("QUINN_WORKER_ID")
+    worker_id = ctx.worker_id
     if not worker_id:
         raise click.ClickException(
-            "QUINN_WORKER_ID environment variable not set"
+            "Worker ID not specified. Use --worker-id or set QUINN_WORKER_ID."
         )
 
     org_path = ctx.org_path

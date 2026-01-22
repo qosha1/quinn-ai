@@ -564,3 +564,195 @@ class TestMultipleProviderFallback:
         # Should stay with primary, upgrading to premium
         assert selection.provider.name == "primary"
         assert selection.model.id == "premium-only"
+
+
+class TestGetModelForWorker:
+    """Test get_model_for_worker() function.
+
+    This tests the simplified interface that returns just ModelInfo
+    based on worker cost and required capabilities.
+    """
+
+    @pytest.fixture
+    def registry(self):
+        """Create registry with mock providers."""
+        reg = ProviderRegistry()
+        config = ProviderConfig(api_key="test")
+        reg.register(MockTieredProvider(config, "provider1"))
+        reg.register(MockTieredProvider(config, "provider2"))
+        reg.set_default("provider1")
+        return reg
+
+    def test_basic_model_selection(self, registry):
+        """Should return ModelInfo for the given cost tier."""
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=50,
+        )
+        assert isinstance(model, ModelInfo)
+        assert model.tier == CostTier.STANDARD
+
+    def test_budget_tier_model(self, registry):
+        """Cost 0-30 should return budget tier model."""
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=20,
+        )
+        assert model.id == "mock-budget"
+        assert model.tier == CostTier.BUDGET
+
+    def test_standard_tier_model(self, registry):
+        """Cost 31-60 should return standard tier model."""
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=45,
+        )
+        assert model.id == "mock-standard"
+        assert model.tier == CostTier.STANDARD
+
+    def test_advanced_tier_model(self, registry):
+        """Cost 61-80 should return advanced tier model."""
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=70,
+        )
+        assert model.id == "mock-advanced"
+        assert model.tier == CostTier.ADVANCED
+
+    def test_premium_tier_model(self, registry):
+        """Cost 81-100 should return premium tier model."""
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=95,
+        )
+        assert model.id == "mock-premium"
+        assert model.tier == CostTier.PREMIUM
+
+    def test_tier_boundary_at_30(self, registry):
+        """Cost 30 should be budget, 31 should be standard."""
+        budget_model = get_model_for_worker(registry=registry, worker_cost=30)
+        standard_model = get_model_for_worker(registry=registry, worker_cost=31)
+        assert budget_model.tier == CostTier.BUDGET
+        assert standard_model.tier == CostTier.STANDARD
+
+    def test_tier_boundary_at_60(self, registry):
+        """Cost 60 should be standard, 61 should be advanced."""
+        standard_model = get_model_for_worker(registry=registry, worker_cost=60)
+        advanced_model = get_model_for_worker(registry=registry, worker_cost=61)
+        assert standard_model.tier == CostTier.STANDARD
+        assert advanced_model.tier == CostTier.ADVANCED
+
+    def test_tier_boundary_at_80(self, registry):
+        """Cost 80 should be advanced, 81 should be premium."""
+        advanced_model = get_model_for_worker(registry=registry, worker_cost=80)
+        premium_model = get_model_for_worker(registry=registry, worker_cost=81)
+        assert advanced_model.tier == CostTier.ADVANCED
+        assert premium_model.tier == CostTier.PREMIUM
+
+    def test_with_required_capabilities(self, registry):
+        """Should filter models by required capabilities."""
+        # Request coding capability at budget tier
+        # Budget model doesn't have coding, should upgrade
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=20,
+            required_capabilities=["coding"],
+        )
+        # Should get a model that has coding capability
+        assert model.capabilities.coding
+
+    def test_multiple_capabilities(self, registry):
+        """Should handle multiple required capabilities."""
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=70,
+            required_capabilities=["coding", "reasoning"],
+        )
+        assert model.capabilities.coding
+        assert model.capabilities.reasoning
+
+    def test_preferred_provider(self, registry):
+        """Should use preferred provider when available."""
+        # Both providers have the same models, but we should get from provider2
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=50,
+            preferred_provider="provider2",
+        )
+        assert isinstance(model, ModelInfo)
+        assert model.tier == CostTier.STANDARD
+
+    def test_authorized_providers_filter(self, registry):
+        """Should only use authorized providers."""
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=50,
+            org_authorized_providers=["provider2"],
+        )
+        assert isinstance(model, ModelInfo)
+
+    def test_no_providers_raises_error(self):
+        """Should raise ProviderSelectionError when no providers available."""
+        empty_registry = ProviderRegistry()
+        with pytest.raises(ProviderSelectionError) as exc_info:
+            get_model_for_worker(
+                registry=empty_registry,
+                worker_cost=50,
+            )
+        assert exc_info.value.cost == 50
+        assert exc_info.value.attempted == []
+
+    def test_empty_capabilities_list(self, registry):
+        """Empty capabilities list should work like None."""
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=50,
+            required_capabilities=[],
+        )
+        assert model.tier == CostTier.STANDARD
+
+    def test_none_capabilities(self, registry):
+        """None capabilities should work like empty list."""
+        model = get_model_for_worker(
+            registry=registry,
+            worker_cost=50,
+            required_capabilities=None,
+        )
+        assert model.tier == CostTier.STANDARD
+
+    def test_model_upgrade_preserves_capability_match(self):
+        """When upgrading tier for capabilities, result should have those capabilities."""
+        reg = ProviderRegistry()
+        config = ProviderConfig(api_key="test")
+        # Provider with budget (no coding) and advanced (has coding)
+        provider = MockTieredProvider(
+            config,
+            "limited",
+            models=[
+                ModelInfo(
+                    id="budget-basic",
+                    name="Budget Basic",
+                    tier=CostTier.BUDGET,
+                    cost_tier=(0, 30),
+                    capabilities=ModelCapabilities(tool_use=True),
+                ),
+                ModelInfo(
+                    id="advanced-coding",
+                    name="Advanced Coding",
+                    tier=CostTier.ADVANCED,
+                    cost_tier=(61, 80),
+                    capabilities=ModelCapabilities(coding=True, reasoning=True),
+                ),
+            ],
+        )
+        reg.register(provider)
+        reg.set_default("limited")
+
+        # Request coding at budget cost - should upgrade to advanced
+        model = get_model_for_worker(
+            registry=reg,
+            worker_cost=20,  # Budget tier
+            required_capabilities=["coding"],
+        )
+        assert model.id == "advanced-coding"
+        assert model.capabilities.coding

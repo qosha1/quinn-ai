@@ -44,6 +44,9 @@ from .queries import (
     increment_worker_task_count,
     get_workers_by_manager,
     create_worker,
+    get_team_channel,
+    subscribe_to_channel,
+    unsubscribe_from_all_channels,
 )
 from .storage import StorageManager, WorkerStorageNotFound, StorageAlreadyFrozen
 
@@ -396,6 +399,11 @@ class Worker:
         storage = self._get_storage_manager()
         storage.ensure_worker_storage(worker_data.id, reports_to=self.id)
 
+        # Subscribe new worker to team channel
+        team_channel = get_team_channel(self.db, self.team_id)
+        if team_channel:
+            subscribe_to_channel(self.db, team_channel.id, worker_data.id)
+
         # Return Worker instance
         new_worker = Worker(self.db, worker_data.id, org_path=self._get_org_path())
         new_worker._worker_data = worker_data
@@ -597,9 +605,10 @@ class Worker:
         Performs a full termination workflow:
         1. Stop session if running
         2. Freeze worker storage
-        3. Update lifecycle status to terminated
-        4. Update org-chart
-        5. Publish WORKER_FIRED event
+        3. Unsubscribe from all channels
+        4. Update lifecycle status to terminated
+        5. Update org-chart
+        6. Publish WORKER_FIRED event
 
         Raises:
             InvalidStateTransition: If not in a state that can transition to terminated
@@ -614,6 +623,9 @@ class Worker:
         except (WorkerStorageNotFound, StorageAlreadyFrozen):
             # Storage doesn't exist or already frozen - OK to continue
             pass
+
+        # Unsubscribe from all channels
+        unsubscribe_from_all_channels(self.db, self.id)
 
         # Validate and update lifecycle status
         self._validate_lifecycle_transition("terminated")

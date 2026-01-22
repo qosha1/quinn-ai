@@ -36,6 +36,7 @@ class NotificationBead:
     read_at: Optional[datetime]
     actioned_at: Optional[datetime]
     closed_at: Optional[datetime]
+    expires_at: Optional[datetime] = None
 
 
 # ===================
@@ -49,6 +50,7 @@ def create_notification_bead(
     channel_id: str,
     priority: int = 2,
     notification_id: Optional[str] = None,
+    expires_at: Optional[datetime] = None,
 ) -> NotificationBead:
     """Create a notification bead for a worker.
 
@@ -59,6 +61,7 @@ def create_notification_bead(
         channel_id: Channel the message is in
         priority: Notification priority (0-4)
         notification_id: Optional custom ID
+        expires_at: Optional expiration datetime for auto-cleanup
 
     Returns:
         Created NotificationBead
@@ -69,9 +72,9 @@ def create_notification_bead(
     now = datetime.now()
     db.execute(
         """INSERT INTO notification_beads
-           (id, worker_id, message_id, channel_id, status, priority, created_at)
-           VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
-        (notification_id, worker_id, message_id, channel_id, priority, now)
+           (id, worker_id, message_id, channel_id, status, priority, created_at, expires_at)
+           VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)""",
+        (notification_id, worker_id, message_id, channel_id, priority, now, expires_at)
     )
     db.connection.commit()
 
@@ -86,6 +89,7 @@ def create_notification_bead(
         read_at=None,
         actioned_at=None,
         closed_at=None,
+        expires_at=expires_at,
     )
 
 
@@ -162,6 +166,7 @@ def get_notification_bead(db: Database, notification_id: str) -> Optional[Notifi
         read_at=row["read_at"],
         actioned_at=row["actioned_at"],
         closed_at=row["closed_at"],
+        expires_at=row["expires_at"],
     )
 
 
@@ -213,6 +218,7 @@ def get_worker_notifications(
             read_at=row["read_at"],
             actioned_at=row["actioned_at"],
             closed_at=row["closed_at"],
+            expires_at=row["expires_at"],
         )
         for row in rows
     ]
@@ -356,6 +362,26 @@ def close_notifications_for_message(
     return cursor.rowcount
 
 
+def acknowledge_notification(db: Database, notification_id: str) -> bool:
+    """Acknowledge a notification, marking it as closed.
+
+    This is the primary function for workers to dismiss notifications after
+    processing them. Per CLAUDE.md: "Notifications = ephemeral tasks (beads
+    pointing to messages). Single central SQLite for everything."
+
+    Acknowledged notifications are closed and will be cleaned up during the
+    next cleanup cycle.
+
+    Args:
+        db: Database instance
+        notification_id: Notification ID to acknowledge
+
+    Returns:
+        True if acknowledged, False if not found or already closed
+    """
+    return close_notification(db, notification_id)
+
+
 # ===================
 # CLEANUP
 # ===================
@@ -381,6 +407,32 @@ def cleanup_old_notifications(
         """DELETE FROM notification_beads
            WHERE status = 'closed' AND closed_at < ?""",
         (cutoff,)
+    )
+    db.connection.commit()
+    return cursor.rowcount
+
+
+def cleanup_expired_notifications(db: Database) -> int:
+    """Delete notifications that have passed their expiration time.
+
+    Per CLAUDE.md: "Notifications = ephemeral tasks (beads pointing to messages)."
+    Notifications with an expires_at timestamp that has passed are automatically
+    removed during cleanup, regardless of their status.
+
+    Note: The underlying messages are NOT deleted - only the ephemeral notification
+    beads are removed. Messages are permanent knowledge.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        Number of expired notifications deleted
+    """
+    now = datetime.now()
+    cursor = db.execute(
+        """DELETE FROM notification_beads
+           WHERE expires_at IS NOT NULL AND expires_at < ?""",
+        (now,)
     )
     db.connection.commit()
     return cursor.rowcount
@@ -422,6 +474,15 @@ def run_notification_cleanup(
     """Run full notification cleanup.
 
     This is the main cleanup entry point that runs all cleanup operations.
+    Per CLAUDE.md: "Notifications = ephemeral tasks (beads pointing to messages)."
+
+    Cleanup includes:
+    - Closed notifications older than retention period
+    - Expired notifications (past their expires_at time)
+    - Orphaned notifications (message or worker deleted)
+
+    Note: Messages are NEVER deleted - they are permanent knowledge.
+    Only the ephemeral notification beads are cleaned up.
 
     Args:
         db: Database instance
@@ -431,10 +492,12 @@ def run_notification_cleanup(
         Dict with counts of cleaned up notifications by type
     """
     old_count = cleanup_old_notifications(db, retention_days)
+    expired_count = cleanup_expired_notifications(db)
     orphan_count = cleanup_orphaned_notifications(db)
 
     return {
         "old_notifications_purged": old_count,
+        "expired_notifications_purged": expired_count,
         "orphaned_notifications_purged": orphan_count,
-        "total_purged": old_count + orphan_count,
+        "total_purged": old_count + expired_count + orphan_count,
     }

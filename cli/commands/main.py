@@ -47,13 +47,21 @@ def org():
 
 
 @qn.group()
-def wrkr():
+@click.option(
+    "--worker-id",
+    envvar="QUINN_WORKER_ID",
+    help="Worker ID. Defaults to QUINN_WORKER_ID env var.",
+)
+@click.pass_context
+def wrkr(ctx, worker_id: Optional[str]):
     """Worker operations.
 
     Commands for AI workers running in sessions.
-    Requires QUINN_WORKER_ID environment variable.
+    Requires --worker-id option or QUINN_WORKER_ID environment variable.
     """
-    pass
+    ctx.ensure_object(Context)
+    if worker_id:
+        ctx.obj.worker_id = worker_id
 
 
 # Import and register subcommands

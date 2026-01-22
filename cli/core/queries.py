@@ -183,6 +183,7 @@ def create_team(
     name: str,
     parent_team_id: Optional[str] = None,
     team_id: Optional[str] = None,
+    auto_create_channel: bool = True,
 ) -> Team:
     """Create a new team.
 
@@ -191,6 +192,7 @@ def create_team(
         name: Team name
         parent_team_id: Optional parent team for hierarchy
         team_id: Optional custom ID (generated if not provided)
+        auto_create_channel: Create a team channel automatically (default True)
 
     Returns:
         Created Team
@@ -205,12 +207,24 @@ def create_team(
     )
     db.connection.commit()
 
-    return Team(
+    team = Team(
         id=team_id,
         name=name,
         parent_team_id=parent_team_id,
         created_at=now,
     )
+
+    # Auto-create a channel for the team
+    if auto_create_channel:
+        channel_name = name.lower().replace(" ", "-")
+        create_channel(
+            db,
+            name=channel_name,
+            channel_type="team",
+            team_id=team_id,
+        )
+
+    return team
 
 
 def get_team(db: Database, team_id: str) -> Optional[Team]:
@@ -231,6 +245,32 @@ def get_team(db: Database, team_id: str) -> Optional[Team]:
         id=row["id"],
         name=row["name"],
         parent_team_id=row["parent_team_id"],
+        created_at=row["created_at"],
+    )
+
+
+def get_team_channel(db: Database, team_id: str) -> Optional[Channel]:
+    """Get the channel for a team.
+
+    Args:
+        db: Database instance
+        team_id: Team ID
+
+    Returns:
+        Channel or None if no channel exists for team
+    """
+    row = db.fetchone(
+        "SELECT * FROM channels WHERE team_id = ? AND type = 'team'",
+        (team_id,)
+    )
+    if not row:
+        return None
+
+    return Channel(
+        id=row["id"],
+        name=row["name"],
+        type=row["type"],
+        team_id=row["team_id"],
         created_at=row["created_at"],
     )
 
@@ -753,6 +793,60 @@ def get_channel(db: Database, channel_id: str) -> Optional[Channel]:
     )
 
 
+def get_channel_by_name(db: Database, name: str) -> Optional[Channel]:
+    """Get a channel by name.
+
+    Args:
+        db: Database instance
+        name: Channel name (case-insensitive)
+
+    Returns:
+        Channel or None
+    """
+    row = db.fetchone(
+        "SELECT * FROM channels WHERE LOWER(name) = LOWER(?)",
+        (name,)
+    )
+    if not row:
+        return None
+
+    return Channel(
+        id=row["id"],
+        name=row["name"],
+        type=row["type"],
+        team_id=row["team_id"],
+        created_at=row["created_at"],
+    )
+
+
+def create_default_org_channels(db: Database) -> list[Channel]:
+    """Create default org-wide channels.
+
+    Creates 'general' for org-wide announcements and 'escalations'
+    for escalation messages. Skips channels that already exist.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        List of created channels
+    """
+    default_channels = [
+        ("general", "topic"),      # org-wide announcements
+        ("escalations", "topic"),  # for escalation messages
+    ]
+
+    created = []
+    for name, channel_type in default_channels:
+        # Check if channel already exists
+        existing = get_channel_by_name(db, name)
+        if existing is None:
+            channel = create_channel(db, name, channel_type)
+            created.append(channel)
+
+    return created
+
+
 def subscribe_to_channel(db: Database, channel_id: str, worker_id: str) -> None:
     """Subscribe a worker to a channel.
 
@@ -827,6 +921,26 @@ def get_worker_channels(db: Database, worker_id: str) -> list[Channel]:
         )
         for row in rows
     ]
+
+
+def unsubscribe_from_all_channels(db: Database, worker_id: str) -> int:
+    """Unsubscribe a worker from all channels.
+
+    Used during worker termination to clean up channel subscriptions.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+
+    Returns:
+        Number of channels unsubscribed from
+    """
+    cursor = db.execute(
+        "DELETE FROM channel_subscriptions WHERE worker_id = ?",
+        (worker_id,)
+    )
+    db.connection.commit()
+    return cursor.rowcount
 
 
 # ===================

@@ -35,11 +35,14 @@ from cli.core.notifications import (
     mark_notification_actioned,
     close_notification,
     close_notifications_for_message,
+    acknowledge_notification,
     cleanup_old_notifications,
+    cleanup_expired_notifications,
     cleanup_orphaned_notifications,
     run_notification_cleanup,
     DEFAULT_RETENTION_DAYS,
 )
+from cli.core.queries import get_message
 
 
 @pytest.fixture
@@ -529,3 +532,232 @@ class TestNotificationIntegration:
         pending = get_pending_notifications(db, worker2.id)
         priorities = [n.priority for n in pending]
         assert priorities == [0, 2, 4]  # Highest priority (lowest number) first
+
+
+class TestAcknowledgeNotification:
+    """Test notification acknowledgment functionality."""
+
+    def test_acknowledge_notification_closes_it(self, db, channel, worker, worker2):
+        """Should close notification when acknowledged."""
+        msg = create_message(db, channel.id, worker.id, "Hello")
+        notif = create_notification_bead(db, worker2.id, msg.id, channel.id)
+
+        result = acknowledge_notification(db, notif.id)
+        assert result is True
+
+        updated = get_notification_bead(db, notif.id)
+        assert updated.status == "closed"
+        assert updated.closed_at is not None
+
+    def test_acknowledge_nonexistent_notification(self, db):
+        """Should return False for nonexistent notification."""
+        result = acknowledge_notification(db, "nonexistent-id")
+        assert result is False
+
+    def test_acknowledge_already_closed_notification(self, db, channel, worker, worker2):
+        """Should return False when acknowledging already-closed notification."""
+        msg = create_message(db, channel.id, worker.id, "Hello")
+        notif = create_notification_bead(db, worker2.id, msg.id, channel.id)
+
+        # Acknowledge once
+        acknowledge_notification(db, notif.id)
+        # Try to acknowledge again
+        result = acknowledge_notification(db, notif.id)
+        assert result is False
+
+
+class TestNotificationExpiration:
+    """Test notification expiration and cleanup functionality."""
+
+    def test_create_notification_with_expiration(self, db, channel, worker, worker2):
+        """Should create notification with expiration time."""
+        msg = create_message(db, channel.id, worker.id, "Hello")
+        expires = datetime.now() + timedelta(hours=24)
+        notif = create_notification_bead(
+            db, worker2.id, msg.id, channel.id, expires_at=expires
+        )
+
+        assert notif.expires_at is not None
+        # Compare timestamps (allowing small delta for test execution time)
+        assert abs((notif.expires_at - expires).total_seconds()) < 1
+
+    def test_cleanup_expired_notifications(self, db, channel, worker, worker2):
+        """Should delete notifications that have expired."""
+        msg = create_message(db, channel.id, worker.id, "Hello")
+        # Create notification that expired an hour ago
+        expired_time = datetime.now() - timedelta(hours=1)
+        notif = create_notification_bead(
+            db, worker2.id, msg.id, channel.id, expires_at=expired_time
+        )
+
+        purged = cleanup_expired_notifications(db)
+        assert purged == 1
+
+        # Notification should be gone
+        assert get_notification_bead(db, notif.id) is None
+
+    def test_cleanup_preserves_unexpired_notifications(self, db, channel, worker, worker2):
+        """Should not delete notifications that haven't expired yet."""
+        msg = create_message(db, channel.id, worker.id, "Hello")
+        future_time = datetime.now() + timedelta(hours=24)
+        notif = create_notification_bead(
+            db, worker2.id, msg.id, channel.id, expires_at=future_time
+        )
+
+        purged = cleanup_expired_notifications(db)
+        assert purged == 0
+
+        # Notification should still exist
+        assert get_notification_bead(db, notif.id) is not None
+
+    def test_cleanup_preserves_notifications_without_expiration(self, db, channel, worker, worker2):
+        """Should not delete notifications without expiration."""
+        msg = create_message(db, channel.id, worker.id, "Hello")
+        notif = create_notification_bead(db, worker2.id, msg.id, channel.id)
+        assert notif.expires_at is None
+
+        purged = cleanup_expired_notifications(db)
+        assert purged == 0
+
+        # Notification should still exist
+        assert get_notification_bead(db, notif.id) is not None
+
+    def test_run_cleanup_includes_expired(self, db, channel, worker, worker2):
+        """Should include expired notifications in full cleanup."""
+        msg = create_message(db, channel.id, worker.id, "Hello")
+        expired_time = datetime.now() - timedelta(hours=1)
+        notif = create_notification_bead(
+            db, worker2.id, msg.id, channel.id, expires_at=expired_time
+        )
+
+        result = run_notification_cleanup(db)
+        assert result["expired_notifications_purged"] == 1
+        assert result["total_purged"] >= 1
+
+
+class TestMessagesPermanentAfterNotificationCleanup:
+    """Test that messages remain permanent after notification cleanup.
+
+    Per CLAUDE.md: "Messages = permanent knowledge (searchable forever).
+    Notifications = ephemeral tasks (beads pointing to messages)."
+    """
+
+    def test_messages_persist_after_notification_cleanup(self, db, channel, worker, worker2):
+        """Messages should persist after their notifications are cleaned up."""
+        # Create a message with notifications
+        subscribe_to_channel(db, channel.id, worker.id)
+        subscribe_to_channel(db, channel.id, worker2.id)
+
+        msg = create_message_with_notifications(
+            db, channel.id, worker.id, "Permanent knowledge"
+        )
+
+        # Verify notification exists
+        pending = get_pending_notifications(db, worker2.id)
+        assert len(pending) == 1
+
+        # Acknowledge and close the notification
+        acknowledge_notification(db, pending[0].id)
+
+        # Backdate the closed_at to trigger cleanup
+        old_date = datetime.now() - timedelta(days=DEFAULT_RETENTION_DAYS + 1)
+        db.execute(
+            "UPDATE notification_beads SET closed_at = ? WHERE id = ?",
+            (old_date, pending[0].id)
+        )
+        db.connection.commit()
+
+        # Run cleanup
+        result = run_notification_cleanup(db)
+        assert result["old_notifications_purged"] == 1
+
+        # Message should still exist
+        fetched_msg = get_message(db, msg.id)
+        assert fetched_msg is not None
+        assert fetched_msg.content == "Permanent knowledge"
+
+    def test_messages_persist_after_expired_notification_cleanup(self, db, channel, worker, worker2):
+        """Messages should persist after their expired notifications are removed."""
+        msg = create_message(db, channel.id, worker.id, "Important data")
+
+        # Create an expired notification
+        expired_time = datetime.now() - timedelta(hours=1)
+        notif = create_notification_bead(
+            db, worker2.id, msg.id, channel.id, expires_at=expired_time
+        )
+
+        # Run cleanup
+        purged = cleanup_expired_notifications(db)
+        assert purged == 1
+
+        # Notification should be gone
+        assert get_notification_bead(db, notif.id) is None
+
+        # Message should still exist
+        fetched_msg = get_message(db, msg.id)
+        assert fetched_msg is not None
+        assert fetched_msg.content == "Important data"
+
+    def test_messages_persist_after_acknowledged_notification_cleanup(self, db, channel, worker, worker2):
+        """Messages should persist after acknowledged notifications are cleaned."""
+        msg = create_message(db, channel.id, worker.id, "Knowledge forever")
+        notif = create_notification_bead(db, worker2.id, msg.id, channel.id)
+
+        # Acknowledge the notification
+        acknowledge_notification(db, notif.id)
+
+        # Force immediate cleanup by backdating
+        old_date = datetime.now() - timedelta(days=DEFAULT_RETENTION_DAYS + 1)
+        db.execute(
+            "UPDATE notification_beads SET closed_at = ? WHERE id = ?",
+            (old_date, notif.id)
+        )
+        db.connection.commit()
+
+        # Run cleanup
+        cleanup_old_notifications(db)
+
+        # Notification should be gone
+        assert get_notification_bead(db, notif.id) is None
+
+        # Message should still exist
+        fetched_msg = get_message(db, msg.id)
+        assert fetched_msg is not None
+        assert fetched_msg.content == "Knowledge forever"
+
+    def test_multiple_notifications_same_message(self, db, channel, worker, worker2, worker3):
+        """Messages should persist even after all notifications are cleaned."""
+        subscribe_to_channel(db, channel.id, worker.id)
+        subscribe_to_channel(db, channel.id, worker2.id)
+        subscribe_to_channel(db, channel.id, worker3.id)
+
+        msg = create_message_with_notifications(
+            db, channel.id, worker.id, "Shared knowledge"
+        )
+
+        # Get all notifications
+        notifs_w2 = get_pending_notifications(db, worker2.id)
+        notifs_w3 = get_pending_notifications(db, worker3.id)
+        assert len(notifs_w2) == 1
+        assert len(notifs_w3) == 1
+
+        # Acknowledge all notifications
+        acknowledge_notification(db, notifs_w2[0].id)
+        acknowledge_notification(db, notifs_w3[0].id)
+
+        # Backdate for cleanup
+        old_date = datetime.now() - timedelta(days=DEFAULT_RETENTION_DAYS + 1)
+        db.execute(
+            "UPDATE notification_beads SET closed_at = ?",
+            (old_date,)
+        )
+        db.connection.commit()
+
+        # Run cleanup
+        result = run_notification_cleanup(db)
+        assert result["old_notifications_purged"] == 2
+
+        # Message should still exist
+        fetched_msg = get_message(db, msg.id)
+        assert fetched_msg is not None
+        assert fetched_msg.content == "Shared knowledge"

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Generator, Optional
 
 # Current schema version - increment when schema changes
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 class Database:
@@ -351,7 +351,7 @@ CREATE INDEX IF NOT EXISTS idx_perm_audit_time ON permission_audit(created_at);
 -- Notification beads - ephemeral work units pointing to messages
 -- Created when message sent to channel, one per subscriber
 -- Closed when worker reads/actions the notification
--- Purged after configurable days when closed
+-- Purged after configurable days when closed or when expires_at is reached
 CREATE TABLE IF NOT EXISTS notification_beads (
     id TEXT PRIMARY KEY,
     worker_id TEXT NOT NULL,
@@ -363,6 +363,7 @@ CREATE TABLE IF NOT EXISTS notification_beads (
     read_at DATETIME,
     actioned_at DATETIME,
     closed_at DATETIME,
+    expires_at DATETIME,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
     FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
     FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
@@ -373,6 +374,7 @@ CREATE INDEX IF NOT EXISTS idx_notif_beads_status ON notification_beads(status);
 CREATE INDEX IF NOT EXISTS idx_notif_beads_worker_status ON notification_beads(worker_id, status);
 CREATE INDEX IF NOT EXISTS idx_notif_beads_priority ON notification_beads(priority);
 CREATE INDEX IF NOT EXISTS idx_notif_beads_closed_at ON notification_beads(closed_at);
+CREATE INDEX IF NOT EXISTS idx_notif_beads_expires_at ON notification_beads(expires_at);
 
 -- ===================
 -- BUDGET TABLES
@@ -889,6 +891,11 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
             "ALTER TABLE workers ADD COLUMN hiring_authority_scope TEXT",
             "ALTER TABLE workers ADD COLUMN delegated_budget INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE workers ADD COLUMN max_reports INTEGER NOT NULL DEFAULT 10",
+        ],
+        # Version 8: Add expires_at column to notification_beads for ephemeral cleanup
+        8: [
+            "ALTER TABLE notification_beads ADD COLUMN expires_at DATETIME",
+            "CREATE INDEX IF NOT EXISTS idx_notif_beads_expires_at ON notification_beads(expires_at)",
         ],
     }
 

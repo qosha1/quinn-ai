@@ -528,12 +528,10 @@ class TestKnownIssues:
     Each test links to a bead tracking the issue.
     """
 
-    @pytest.mark.xfail(reason="quinnai-uekq: No channels created during init")
     def test_init_creates_channels(self, temp_org_dir):
         """qn org init should create default channels.
 
-        BUG: Currently no channels are created. Workers need channels
-        to communicate. See quinnai-uekq.
+        Fixed: quinnai-uekq - Channels are now created during init.
         """
         run_qn("org", "init", org_path=temp_org_dir)
 
@@ -569,3 +567,394 @@ class TestKnownIssues:
 
         assert ceo_entry["lifecycle"] == "active", \
             f"Expected 'active', got '{ceo_entry['lifecycle']}'"
+
+
+class TestCommunication:
+    """Test inter-worker communication: messages/inbox/channels."""
+
+    def test_init_creates_general_channel(self, temp_org_dir):
+        """Org init should create a #general channel."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        # Check DB for #general channel
+        from cli.core.db import open_database
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            row = db.fetchone(
+                "SELECT * FROM channels WHERE name = 'general'"
+            )
+            assert row is not None, "Expected #general channel to exist"
+            assert row["type"] == "topic", "Expected #general to be a topic channel"
+        finally:
+            db.close()
+
+    def test_init_creates_escalations_channel(self, temp_org_dir):
+        """Org init should create a #escalations channel for escalation handling."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        # Check DB for #escalations channel
+        from cli.core.db import open_database
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            row = db.fetchone(
+                "SELECT * FROM channels WHERE name = 'escalations'"
+            )
+            assert row is not None, "Expected #escalations channel to exist"
+            assert row["type"] == "topic", "Expected #escalations to be a topic channel"
+        finally:
+            db.close()
+
+    def test_ceo_subscribed_to_general(self, temp_org_dir):
+        """CEO should be auto-subscribed to #general."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        from cli.core.db import open_database
+        from cli.core.queries import get_worker_by_name, get_worker_channels
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            ceo = get_worker_by_name(db, "Alice")
+            assert ceo is not None, "CEO should exist"
+
+            channels = get_worker_channels(db, ceo.id)
+            channel_names = [ch.name for ch in channels]
+
+            assert "general" in channel_names, \
+                f"CEO should be subscribed to #general, got: {channel_names}"
+        finally:
+            db.close()
+
+    def test_ceo_subscribed_to_escalations(self, temp_org_dir):
+        """CEO should be auto-subscribed to #escalations."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        from cli.core.db import open_database
+        from cli.core.queries import get_worker_by_name, get_worker_channels
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            ceo = get_worker_by_name(db, "Alice")
+            assert ceo is not None, "CEO should exist"
+
+            channels = get_worker_channels(db, ceo.id)
+            channel_names = [ch.name for ch in channels]
+
+            assert "escalations" in channel_names, \
+                f"CEO should be subscribed to #escalations, got: {channel_names}"
+        finally:
+            db.close()
+
+    def test_ceo_subscribed_to_team_channel(self, temp_org_dir):
+        """CEO should be auto-subscribed to their team channel."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        from cli.core.db import open_database
+        from cli.core.queries import get_worker_by_name, get_worker_channels
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            ceo = get_worker_by_name(db, "Alice")
+            assert ceo is not None, "CEO should exist"
+
+            channels = get_worker_channels(db, ceo.id)
+            channel_names = [ch.name for ch in channels]
+            channel_types = {ch.name: ch.type for ch in channels}
+
+            # Team channel is named after team (lowercase, dash-separated)
+            team_channels = [name for name, ctype in channel_types.items() if ctype == "team"]
+            assert len(team_channels) > 0, \
+                f"CEO should be subscribed to team channel, got: {channel_names}"
+        finally:
+            db.close()
+
+    def test_hired_worker_subscribed_to_team_channel(self, temp_org_dir):
+        """Workers hired by a manager should be subscribed to the team channel."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+        run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+
+        from cli.core.db import open_database
+        from cli.core.queries import get_worker_by_name, get_worker_channels
+        from cli.core.worker import Worker, HiringScope
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            ceo = Worker.get(db, get_worker_by_name(db, "Alice").id)
+            ceo._org_path = temp_org_dir
+
+            # Give CEO hiring authority
+            from datetime import datetime
+            db.execute(
+                """UPDATE workers
+                   SET hiring_authority_scope = ?,
+                       delegated_budget = 1000,
+                       updated_at = ?
+                   WHERE id = ?""",
+                (HiringScope(allowed_roles={"engineer"}, max_cost=50).to_json(),
+                 datetime.now(), ceo.id)
+            )
+            db.connection.commit()
+            ceo._worker_data = None  # Invalidate cache
+
+            # Hire a worker
+            bob = ceo.hire("Bob", "engineer", {}, 30)
+
+            # Check Bob's channel subscriptions
+            channels = get_worker_channels(db, bob.id)
+            channel_types = {ch.name: ch.type for ch in channels}
+
+            team_channels = [name for name, ctype in channel_types.items() if ctype == "team"]
+            assert len(team_channels) > 0, \
+                f"Hired worker should be subscribed to team channel, got: {[ch.name for ch in channels]}"
+        finally:
+            db.close()
+
+    def test_terminated_worker_unsubscribed_from_channels(self, temp_org_dir):
+        """Terminated workers should be unsubscribed from all channels."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+        run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+
+        from cli.core.db import open_database
+        from cli.core.queries import get_worker_by_name, get_worker_channels
+        from cli.core.worker import Worker, HiringScope
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            ceo = Worker.get(db, get_worker_by_name(db, "Alice").id)
+            ceo._org_path = temp_org_dir
+
+            # Give CEO hiring authority
+            from datetime import datetime
+            db.execute(
+                """UPDATE workers
+                   SET hiring_authority_scope = ?,
+                       delegated_budget = 1000,
+                       updated_at = ?
+                   WHERE id = ?""",
+                (HiringScope(allowed_roles={"engineer"}, max_cost=50).to_json(),
+                 datetime.now(), ceo.id)
+            )
+            db.connection.commit()
+            ceo._worker_data = None
+
+            # Hire and then terminate a worker
+            bob = ceo.hire("Bob", "engineer", {}, 30)
+
+            # Verify Bob has channel subscriptions
+            channels_before = get_worker_channels(db, bob.id)
+            assert len(channels_before) > 0, "Worker should have channel subscriptions after hire"
+
+            # Start onboarding, complete it, then terminate
+            bob.start_onboarding()
+            bob.complete_onboarding()
+            bob.start_offboarding()
+            bob.terminate()
+
+            # Check Bob's channel subscriptions after termination
+            channels_after = get_worker_channels(db, bob.id)
+            assert len(channels_after) == 0, \
+                f"Terminated worker should have no channel subscriptions, got: {[ch.name for ch in channels_after]}"
+        finally:
+            db.close()
+
+    def test_send_message_to_channel(self, temp_org_dir):
+        """Workers can send messages to channels."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        from cli.core.db import open_database
+        from cli.core.queries import (
+            get_worker_by_name,
+            create_message,
+            get_channel_messages,
+        )
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            ceo = get_worker_by_name(db, "Alice")
+            assert ceo is not None
+
+            # Get the general channel
+            row = db.fetchone("SELECT id FROM channels WHERE name = 'general'")
+            assert row is not None
+            channel_id = row["id"]
+
+            # Send a message
+            message = create_message(
+                db,
+                channel_id=channel_id,
+                from_worker_id=ceo.id,
+                content="Hello, organization!",
+            )
+
+            assert message.id is not None
+            assert message.content == "Hello, organization!"
+
+            # Verify message is in channel
+            messages = get_channel_messages(db, channel_id)
+            assert len(messages) == 1
+            assert messages[0].content == "Hello, organization!"
+        finally:
+            db.close()
+
+    def test_message_creates_notifications(self, temp_org_dir):
+        """Sending a message should create notifications for subscribers."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        from cli.core.db import open_database
+        from cli.core.queries import (
+            get_worker_by_name,
+            create_message_with_notifications,
+            create_worker,
+            subscribe_to_channel,
+        )
+        from cli.core.notifications import get_pending_notifications
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            ceo = get_worker_by_name(db, "Alice")
+            assert ceo is not None
+
+            # Get the general channel
+            row = db.fetchone("SELECT id FROM channels WHERE name = 'general'")
+            channel_id = row["id"]
+
+            # Create another worker and subscribe them to #general
+            team_row = db.fetchone("SELECT id FROM teams LIMIT 1")
+            team_id = team_row["id"]
+            bob = create_worker(db, "Bob", "engineer", team_id, 50, manager_id=ceo.id)
+            subscribe_to_channel(db, channel_id, bob.id)
+
+            # CEO sends a message (Bob should get notified)
+            create_message_with_notifications(
+                db,
+                channel_id=channel_id,
+                from_worker_id=ceo.id,
+                content="Team update: new project starting!",
+            )
+
+            # Bob should have a pending notification
+            bob_notifications = get_pending_notifications(db, bob.id)
+            assert len(bob_notifications) == 1
+            assert bob_notifications[0].channel_id == channel_id
+
+            # CEO should NOT have a notification (sender doesn't get notified)
+            ceo_notifications = get_pending_notifications(db, ceo.id)
+            assert len(ceo_notifications) == 0
+        finally:
+            db.close()
+
+    def test_inbox_shows_pending_notifications(self, temp_org_dir):
+        """Inbox should show pending notifications for a worker."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        from cli.core.db import open_database
+        from cli.core.queries import (
+            get_worker_by_name,
+            create_message_with_notifications,
+            create_worker,
+            subscribe_to_channel,
+        )
+        from cli.core.notifications import (
+            get_pending_notifications,
+            count_pending_notifications,
+        )
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            ceo = get_worker_by_name(db, "Alice")
+
+            # Get the general channel
+            row = db.fetchone("SELECT id FROM channels WHERE name = 'general'")
+            channel_id = row["id"]
+
+            # Create another worker and subscribe them
+            team_row = db.fetchone("SELECT id FROM teams LIMIT 1")
+            team_id = team_row["id"]
+            bob = create_worker(db, "Bob", "engineer", team_id, 50, manager_id=ceo.id)
+            subscribe_to_channel(db, channel_id, bob.id)
+
+            # Send multiple messages
+            for i in range(3):
+                create_message_with_notifications(
+                    db,
+                    channel_id=channel_id,
+                    from_worker_id=ceo.id,
+                    content=f"Message {i + 1}",
+                )
+
+            # Bob should have 3 pending notifications
+            count = count_pending_notifications(db, bob.id)
+            assert count == 3, f"Expected 3 notifications, got {count}"
+
+            # Get the actual notifications
+            notifications = get_pending_notifications(db, bob.id)
+            assert len(notifications) == 3
+        finally:
+            db.close()
+
+    def test_notification_can_be_marked_read(self, temp_org_dir):
+        """Notifications can be marked as read."""
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        from cli.core.db import open_database
+        from cli.core.queries import (
+            get_worker_by_name,
+            create_message_with_notifications,
+            create_worker,
+            subscribe_to_channel,
+        )
+        from cli.core.notifications import (
+            get_pending_notifications,
+            mark_notification_read,
+            get_notification_bead,
+        )
+        db_path = temp_org_dir / "live" / "quinn.db"
+        db = open_database(db_path)
+
+        try:
+            ceo = get_worker_by_name(db, "Alice")
+
+            # Get the general channel
+            row = db.fetchone("SELECT id FROM channels WHERE name = 'general'")
+            channel_id = row["id"]
+
+            # Create another worker and subscribe them
+            team_row = db.fetchone("SELECT id FROM teams LIMIT 1")
+            team_id = team_row["id"]
+            bob = create_worker(db, "Bob", "engineer", team_id, 50, manager_id=ceo.id)
+            subscribe_to_channel(db, channel_id, bob.id)
+
+            # Send a message
+            create_message_with_notifications(
+                db,
+                channel_id=channel_id,
+                from_worker_id=ceo.id,
+                content="Important announcement",
+            )
+
+            # Get Bob's notification
+            notifications = get_pending_notifications(db, bob.id)
+            assert len(notifications) == 1
+            notif_id = notifications[0].id
+
+            # Mark as read
+            result = mark_notification_read(db, notif_id)
+            assert result is True
+
+            # Verify status changed
+            updated_notif = get_notification_bead(db, notif_id)
+            assert updated_notif.status == "read"
+            assert updated_notif.read_at is not None
+        finally:
+            db.close()

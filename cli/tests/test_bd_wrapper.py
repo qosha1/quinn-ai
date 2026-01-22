@@ -72,27 +72,18 @@ class TestRunBd:
     """Test running bd command."""
 
     def test_requires_org_path(self, monkeypatch):
-        """Should raise ValueError if org_path not provided."""
+        """Should require org_path as explicit argument (no env var fallback).
+
+        Follows "No Config Discovery" principle - configuration must be
+        passed explicitly at startup, not discovered via environment.
+        """
         monkeypatch.delenv("QUINN_ORG_PATH", raising=False)
 
-        with pytest.raises(ValueError) as exc:
+        # org_path is now a required positional argument
+        with pytest.raises(TypeError) as exc:
             run_bd(["list"])
 
-        assert "org_path not provided" in str(exc.value)
-
-    def test_uses_env_org_path(self, temp_org, monkeypatch):
-        """Should use QUINN_ORG_PATH from environment."""
-        monkeypatch.setenv("QUINN_ORG_PATH", str(temp_org))
-
-        # Mock subprocess.run to avoid actually running bd
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0)
-
-            run_bd(["list"])
-
-            # Verify BEADS_DIR was set correctly
-            call_env = mock_run.call_args.kwargs["env"]
-            assert call_env["BEADS_DIR"] == str(temp_org / ".beads")
+        assert "org_path" in str(exc.value)
 
     def test_sets_beads_dir(self, temp_org):
         """Should set BEADS_DIR to org's .beads directory."""
@@ -104,14 +95,12 @@ class TestRunBd:
             call_env = mock_run.call_args.kwargs["env"]
             assert call_env["BEADS_DIR"] == str(temp_org / ".beads")
 
-    def test_sets_worker_context(self, temp_org, monkeypatch):
-        """Should set worker context from QUINN_WORKER_ID."""
-        monkeypatch.setenv("QUINN_WORKER_ID", "worker-123")
-
+    def test_sets_worker_context(self, temp_org):
+        """Should set worker context when worker_id is provided explicitly."""
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
 
-            run_bd(["list"], org_path=temp_org)
+            run_bd(["list"], org_path=temp_org, worker_id="worker-123")
 
             call_env = mock_run.call_args.kwargs["env"]
             assert call_env["QUINN_WORKER_ID"] == "worker-123"

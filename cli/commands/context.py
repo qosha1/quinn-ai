@@ -1,5 +1,9 @@
 """
 CLI context shared across all commands.
+
+Follows "No Config Discovery" principle - all values are passed explicitly
+through CLI options, which may use envvar as a convenience but the flow
+is still explicit (CLI option -> Context -> command).
 """
 
 from pathlib import Path
@@ -11,10 +15,19 @@ from cli.core.db import open_database, get_org_db_path
 
 
 class Context:
-    """CLI context holding shared state."""
+    """CLI context holding shared state.
 
-    def __init__(self, org_path: Optional[Path] = None):
+    Values are set from CLI options (which may use envvar), not from
+    direct environment variable reads in command implementations.
+    """
+
+    def __init__(
+        self,
+        org_path: Optional[Path] = None,
+        worker_id: Optional[str] = None,
+    ):
         self.org_path = org_path
+        self.worker_id = worker_id
         self._db = None
 
     @property

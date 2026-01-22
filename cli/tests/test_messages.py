@@ -18,6 +18,9 @@ from cli.core.queries import (
     # Channels
     create_channel,
     get_channel,
+    get_channel_by_name,
+    get_team_channel,
+    create_default_org_channels,
     subscribe_to_channel,
     unsubscribe_from_channel,
     get_channel_subscribers,
@@ -99,6 +102,90 @@ class TestChannelCreation:
         """Should allow custom channel ID."""
         channel = create_channel(db, "custom", "topic", channel_id="chan-custom-123")
         assert channel.id == "chan-custom-123"
+
+
+class TestTeamChannelAutoCreation:
+    """Test automatic channel creation when teams are created."""
+
+    def test_create_team_auto_creates_channel(self, db):
+        """Creating a team should auto-create a team channel."""
+        team = create_team(db, "Engineering")
+        channel = get_team_channel(db, team.id)
+        assert channel is not None
+        assert channel.type == "team"
+        assert channel.team_id == team.id
+
+    def test_team_channel_name_is_lowercase(self, db):
+        """Team channel name should be lowercase version of team name."""
+        team = create_team(db, "Marketing")
+        channel = get_team_channel(db, team.id)
+        assert channel.name == "marketing"
+
+    def test_team_channel_name_replaces_spaces(self, db):
+        """Team channel name should replace spaces with hyphens."""
+        team = create_team(db, "Data Science")
+        channel = get_team_channel(db, team.id)
+        assert channel.name == "data-science"
+
+    def test_create_team_without_auto_channel(self, db):
+        """Should be able to create team without auto channel."""
+        team = create_team(db, "NoChannel", auto_create_channel=False)
+        channel = get_team_channel(db, team.id)
+        assert channel is None
+
+
+class TestGetChannelByName:
+    """Test channel retrieval by name."""
+
+    def test_get_channel_by_name(self, db):
+        """Should retrieve channel by name."""
+        created = create_channel(db, "my-channel", "topic")
+        fetched = get_channel_by_name(db, "my-channel")
+        assert fetched is not None
+        assert fetched.id == created.id
+
+    def test_get_channel_by_name_case_insensitive(self, db):
+        """Should retrieve channel by name case-insensitively."""
+        created = create_channel(db, "MyChannel", "topic")
+        fetched = get_channel_by_name(db, "mychannel")
+        assert fetched is not None
+        assert fetched.id == created.id
+
+    def test_get_nonexistent_channel_by_name(self, db):
+        """Should return None for missing channel name."""
+        result = get_channel_by_name(db, "nonexistent")
+        assert result is None
+
+
+class TestDefaultOrgChannels:
+    """Test default org-wide channel creation."""
+
+    def test_create_default_channels(self, db):
+        """Should create general and escalations channels."""
+        channels = create_default_org_channels(db)
+        names = {c.name for c in channels}
+        assert "general" in names
+        assert "escalations" in names
+
+    def test_default_channels_are_topic_type(self, db):
+        """Default channels should be topic type."""
+        channels = create_default_org_channels(db)
+        for channel in channels:
+            assert channel.type == "topic"
+
+    def test_default_channels_have_no_team(self, db):
+        """Default channels should be org-wide (no team_id)."""
+        channels = create_default_org_channels(db)
+        for channel in channels:
+            assert channel.team_id is None
+
+    def test_create_default_channels_idempotent(self, db):
+        """Creating default channels twice should not duplicate."""
+        channels1 = create_default_org_channels(db)
+        channels2 = create_default_org_channels(db)
+        # First call creates 2, second call creates 0 (already exist)
+        assert len(channels1) == 2
+        assert len(channels2) == 0
 
 
 class TestChannelRetrieval:

@@ -18,6 +18,9 @@ from .queries import (
     get_worker,
     create_budget_pool,
     create_budget_allocation,
+    create_channel,
+    subscribe_to_channel,
+    get_team_channel,
 )
 from .worker import Worker
 
@@ -172,6 +175,30 @@ class Org:
             can_delegate=True,  # CEO can delegate budget to reports
             delegation_limit=initial_budget * 0.5,  # Max 50% to single subordinate
         )
+
+        # Subscribe CEO to their team channel (created automatically by create_team)
+        team_channel = get_team_channel(self.db, team.id)
+        if team_channel:
+            subscribe_to_channel(self.db, team_channel.id, ceo_data.id)
+
+        # Create default org-wide channels
+        # #general - org-wide topic channel for announcements
+        general_channel = create_channel(
+            self.db,
+            name="general",
+            channel_type="topic",
+            team_id=None,  # Org-wide, not tied to a specific team
+        )
+        subscribe_to_channel(self.db, general_channel.id, ceo_data.id)
+
+        # #escalations - channel for escalation messages
+        escalations_channel = create_channel(
+            self.db,
+            name="escalations",
+            channel_type="topic",
+            team_id=None,  # Org-wide for escalations
+        )
+        subscribe_to_channel(self.db, escalations_channel.id, ceo_data.id)
 
         # Update org status
         update_org_status(self.db, "initialized", ceo_data.id)

@@ -328,7 +328,7 @@ def get_org_beads_dir(org_path: Path) -> Path:
 
 def run_bd(
     args: list[str],
-    org_path: Optional[Path] = None,
+    org_path: Path,
     worker_id: Optional[str] = None,
     capture_output: bool = False,
     skip_permission_check: bool = False,
@@ -339,10 +339,13 @@ def run_bd(
     Sets up environment for org-aware beads operation and executes
     the bd binary with the given arguments.
 
+    Follows "No Config Discovery" principle - org_path must be passed
+    explicitly, not discovered from environment variables.
+
     Args:
         args: Arguments to pass to bd command
-        org_path: Path to org folder (uses QUINN_ORG_PATH if not provided)
-        worker_id: Worker ID (uses QUINN_WORKER_ID if not provided)
+        org_path: Path to org folder (required, no env var fallback)
+        worker_id: Worker ID for permission checking (optional)
         capture_output: If True, capture stdout/stderr
         skip_permission_check: If True, skip permission check (admin use only)
         skip_lifecycle_check: If True, skip lifecycle validation (admin use only)
@@ -352,23 +355,10 @@ def run_bd(
 
     Raises:
         FileNotFoundError: If bd binary not found
-        ValueError: If org_path not provided and QUINN_ORG_PATH not set
         BeadPermissionError: If worker lacks required permission
         InvalidStateTransitionError: If state transition is not allowed
         CannotCloseBeadError: If closing bead not in terminal state
     """
-    # Get org path
-    if org_path is None:
-        org_path_str = os.environ.get("QUINN_ORG_PATH")
-        if not org_path_str:
-            raise ValueError(
-                "org_path not provided and QUINN_ORG_PATH not set"
-            )
-        org_path = Path(org_path_str)
-
-    # Get worker ID
-    if worker_id is None:
-        worker_id = os.environ.get("QUINN_WORKER_ID")
 
     # Check permissions before executing
     if worker_id and not skip_permission_check:
@@ -415,21 +405,47 @@ def main():
     """Entry point for qn-bd command.
 
     Passes all arguments to bd with org context.
+    Uses explicit CLI arguments for configuration, with env var fallback.
     """
+    import argparse
     import sys
 
-    # Get args (skip script name)
-    args = sys.argv[1:]
+    # Parse our arguments separately from bd arguments
+    parser = argparse.ArgumentParser(
+        description="Run beads with org context",
+        add_help=False,  # Don't intercept --help, pass to bd
+    )
+    parser.add_argument(
+        "--org-path",
+        type=Path,
+        default=os.environ.get("QUINN_ORG_PATH"),
+        help="Path to org folder. Falls back to QUINN_ORG_PATH env var.",
+    )
+    parser.add_argument(
+        "--worker-id",
+        default=os.environ.get("QUINN_WORKER_ID"),
+        help="Worker ID. Falls back to QUINN_WORKER_ID env var.",
+    )
+
+    # Parse known args, pass rest to bd
+    our_args, bd_args = parser.parse_known_args()
+
+    # Validate org_path
+    if not our_args.org_path:
+        print("Error: org_path required. Use --org-path or set QUINN_ORG_PATH.", file=sys.stderr)
+        sys.exit(1)
+
+    org_path = Path(our_args.org_path)
 
     try:
-        result = run_bd(args)
+        result = run_bd(
+            args=bd_args,
+            org_path=org_path,
+            worker_id=our_args.worker_id,
+        )
         sys.exit(result.returncode)
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        print("Set QUINN_ORG_PATH or use --org-path option", file=sys.stderr)
         sys.exit(1)
     except BeadPermissionError as e:
         print(f"Permission denied: {e}", file=sys.stderr)

@@ -1,8 +1,10 @@
 """
 qn wrkr inbox command.
+
+Worker ID is passed explicitly through CLI context (via --worker-id option
+on the wrkr group or QUINN_WORKER_ID envvar).
 """
 
-import os
 from collections import defaultdict
 
 import click
@@ -57,10 +59,10 @@ def inbox_cmd(ctx: Context, pending_only: bool, show_all: bool, mark_read: bool,
     By default, shows only pending (unread) notifications. Use --all to see
     all notifications including read/actioned ones.
     """
-    worker_id = os.environ.get("QUINN_WORKER_ID")
+    worker_id = ctx.worker_id
     if not worker_id:
         raise click.ClickException(
-            "QUINN_WORKER_ID environment variable not set"
+            "Worker ID not specified. Use --worker-id or set QUINN_WORKER_ID."
         )
 
     org_path = ctx.org_path
