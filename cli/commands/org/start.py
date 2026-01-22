@@ -41,8 +41,8 @@ from shared.enums import OrgStatus
 @click.option(
     "--args",
     "session_args",
-    default="",
-    help="Additional args for session command (space-separated)",
+    default="--dangerously-skip-permissions",
+    help="Additional args for session command (default: --dangerously-skip-permissions)",
 )
 @click.option(
     "--skip-config-validation",
