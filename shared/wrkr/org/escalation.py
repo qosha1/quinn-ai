@@ -7,18 +7,23 @@ beads for tracking and notifying the board for human oversight.
 
 from __future__ import annotations
 
+import json
+import logging
+import subprocess
+from collections import deque
 from datetime import datetime
 from typing import Any, Callable
-import json
-import subprocess
 
-from shared.wrkr.core.task import Task
+from shared.wrkr.beads.client import BdClient
+from shared.wrkr.beads.types import BeadsPriority, BeadsType
 from shared.wrkr.escalation.interface import EscalationInterface, EscalationResponse
 from shared.wrkr.escalation.hierarchical import (
     HierarchicalRouter,
     OrgTopology,
 )
 from shared.wrkr.org.topology import BeadsOrgLoader, OrgWorker
+
+logger = logging.getLogger(__name__)
 
 
 class OrgEscalation:
@@ -45,6 +50,7 @@ class OrgEscalation:
         board_notifier: BoardNotifier | None = None,
         bd_command: str = "bd",
         db_path: str | None = None,
+        client: BdClient | None = None,
     ):
         """
         Initialize the org escalation handler.
@@ -57,30 +63,19 @@ class OrgEscalation:
             board_notifier: Optional notifier for board escalations.
             bd_command: Path to bd command for creating escalation beads.
             db_path: Optional database path override.
+            client: Optional BdClient instance (for dependency injection).
         """
         self._worker_id = worker_id
         self._topology = topology
         self._router = HierarchicalRouter(topology)
         self._worker_handlers = worker_handlers or {}
         self._board_notifier = board_notifier
-        self._bd_command = bd_command
-        self._db_path = db_path
+        self._client = client or BdClient(bd_command=bd_command, db_path=db_path)
 
     @property
     def worker_id(self) -> str:
         """The worker ID this handler serves."""
         return self._worker_id
-
-    def _run_bd(self, *args: str) -> str:
-        """Run a bd command and return output."""
-        cmd = [self._bd_command] + list(args)
-        if self._db_path:
-            cmd.extend(["--db", self._db_path])
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"bd command failed: {result.stderr}")
-        return result.stdout
 
     def _create_escalation_bead(
         self,
@@ -107,22 +102,20 @@ class OrgEscalation:
             "escalated_at": datetime.now().isoformat(),
         }
 
-        try:
-            output = self._run_bd(
-                "create",
-                f"--title=Escalation: {issue[:80]}",
-                "--type=escalation",
-                "--priority=1",  # High priority
-                f"--metadata={json.dumps(metadata)}",
+        issue_id = self._client.create_issue(
+            title=f"Escalation: {issue[:80]}",
+            type=BeadsType.ESCALATION,
+            priority=BeadsPriority.HIGH,
+            metadata=metadata,
+        )
+        if not issue_id:
+            logger.warning(
+                "Failed to create escalation bead for %s -> %s",
+                self._worker_id,
+                escalated_to,
             )
-            # Extract issue ID from output (format: "Created: beads-xxx")
-            for line in output.strip().split("\n"):
-                if line.startswith("Created:"):
-                    return line.split(":")[-1].strip()
-        except RuntimeError:
-            pass
 
-        return None
+        return issue_id
 
     def ask(self, issue: str, context: dict[str, Any]) -> EscalationResponse:
         """
@@ -175,17 +168,15 @@ class OrgEscalation:
             **(metadata or {}),
         }
 
-        try:
-            self._run_bd(
-                "create",
-                f"--title=Report: {summary[:80]}",
-                "--type=report",
-                "--priority=4",  # Low priority (informational)
-                "--ephemeral",  # Auto-cleanup
-                f"--metadata={json.dumps(report_metadata)}",
-            )
-        except RuntimeError:
-            pass
+        issue_id = self._client.create_issue(
+            title=f"Report: {summary[:80]}",
+            type=BeadsType.REPORT,
+            priority=BeadsPriority.BACKLOG,
+            metadata=report_metadata,
+            ephemeral=True,
+        )
+        if not issue_id:
+            logger.warning("Failed to create report bead from %s", self._worker_id)
 
     def can_handle(self, issue: str) -> bool:
         """
@@ -222,11 +213,15 @@ class BoardNotifier:
     the org cannot resolve an issue autonomously.
     """
 
+    DEFAULT_MAX_NOTIFICATIONS = 1000
+
     def __init__(
         self,
         notification_callback: Callable[[str, dict[str, Any]], None] | None = None,
         bd_command: str = "bd",
         db_path: str | None = None,
+        client: BdClient | None = None,
+        max_notifications: int | None = None,
     ):
         """
         Initialize the board notifier.
@@ -236,22 +231,14 @@ class BoardNotifier:
                 Called with (issue, context) when board escalation occurs.
             bd_command: Path to bd command.
             db_path: Optional database path override.
+            client: Optional BdClient instance (for dependency injection).
+            max_notifications: Max notifications to keep in memory (prevents leak).
+                Defaults to 1000. Older notifications are discarded.
         """
         self._callback = notification_callback
-        self._bd_command = bd_command
-        self._db_path = db_path
-        self._notifications: list[dict[str, Any]] = []
-
-    def _run_bd(self, *args: str) -> str:
-        """Run a bd command and return output."""
-        cmd = [self._bd_command] + list(args)
-        if self._db_path:
-            cmd.extend(["--db", self._db_path])
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"bd command failed: {result.stderr}")
-        return result.stdout
+        self._client = client or BdClient(bd_command=bd_command, db_path=db_path)
+        max_size = max_notifications or self.DEFAULT_MAX_NOTIFICATIONS
+        self._notifications: deque[dict[str, Any]] = deque(maxlen=max_size)
 
     def notify(self, issue: str, context: dict[str, Any]) -> str | None:
         """
@@ -282,20 +269,14 @@ class BoardNotifier:
             "notified_at": notification["notified_at"],
         }
 
-        bead_id = None
-        try:
-            output = self._run_bd(
-                "create",
-                f"--title=BOARD: {issue[:70]}",
-                "--type=board-escalation",
-                "--priority=0",  # Critical priority
-                f"--metadata={json.dumps(metadata)}",
-            )
-            for line in output.strip().split("\n"):
-                if line.startswith("Created:"):
-                    bead_id = line.split(":")[-1].strip()
-        except RuntimeError:
-            pass
+        bead_id = self._client.create_issue(
+            title=f"BOARD: {issue[:70]}",
+            type=BeadsType.BOARD_ESCALATION,
+            priority=BeadsPriority.CRITICAL,
+            metadata=metadata,
+        )
+        if not bead_id:
+            logger.warning("Failed to create board escalation bead for: %s", issue[:50])
 
         # Invoke callback for immediate notification
         if self._callback:
