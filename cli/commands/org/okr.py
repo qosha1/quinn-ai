@@ -437,6 +437,144 @@ def show_cmd(ctx: Context, okr_id: str):
         click.echo("  No linked work items yet.")
 
 
+@okr_cmd.command("progress")
+@click.argument("okr_id")
+@pass_context
+def progress_cmd(ctx: Context, okr_id: str):
+    """Show OKR progress including key results.
+
+    Displays progress percentage and status of each key result.
+
+    \b
+    Example:
+      qn org okr progress okr-abc
+    """
+    from cli.core.db import open_database
+    from cli.core.queries import get_okr
+
+    org_path = ctx.org_path
+    db_path = get_org_db_path(org_path)
+
+    if not db_path.exists():
+        raise click.ClickException(
+            f"Organization not initialized at {org_path}\n"
+            "Run 'qn org init' first."
+        )
+
+    db = open_database(db_path)
+    try:
+        okr = get_okr(db, okr_id)
+        if not okr:
+            raise click.ClickException(
+                f"OKR '{okr_id}' not found.\n"
+                "Run 'qn org okr list' to see available OKRs."
+            )
+
+        click.echo(f"OKR: {okr.title}")
+        click.echo(f"ID: {okr.id}")
+        click.echo(f"Status: {okr.status}")
+        click.echo(f"Owner: {okr.owner_worker_id}")
+        if okr.due_date:
+            click.echo(f"Due: {okr.due_date}")
+        click.echo("")
+
+        if okr.key_results:
+            click.echo("Key Results:")
+            click.echo("-" * 50)
+            for kr in okr.key_results:
+                progress_pct = kr.progress()
+                status_icon = "✓" if kr.is_met() else "○"
+                click.echo(
+                    f"  {status_icon} {kr.metric}: {kr.current}/{kr.target} {kr.unit} "
+                    f"({progress_pct:.0f}%)"
+                )
+            click.echo("")
+            click.echo(f"Overall Progress: {okr.progress():.0f}%")
+            if okr.all_key_results_met():
+                click.echo("All key results met!")
+        else:
+            click.echo("No key results defined for this OKR.")
+            click.echo("Add key results with: qn org okr update-kr <okr-id> --metric=... --target=...")
+
+    finally:
+        db.close()
+
+
+@okr_cmd.command("update-kr")
+@click.argument("okr_id")
+@click.option("--metric", "-m", required=True, help="Key result metric name")
+@click.option("--current", "-c", type=float, help="Current value (updates existing)")
+@click.option("--target", "-t", type=float, help="Target value (for new key result)")
+@click.option("--unit", "-u", default="count", help="Unit of measurement (default: count)")
+@pass_context
+def update_kr_cmd(ctx: Context, okr_id: str, metric: str, current: Optional[float],
+                  target: Optional[float], unit: str):
+    """Update or add a key result for an OKR.
+
+    To add a new key result, specify --metric, --target, and optionally --current.
+    To update an existing key result, specify --metric and --current.
+
+    \b
+    Examples:
+      # Add new key result
+      qn org okr update-kr okr-abc --metric="test_coverage" --target=80 --unit="%"
+
+      # Update existing key result progress
+      qn org okr update-kr okr-abc --metric="test_coverage" --current=72
+
+      # Add with initial value
+      qn org okr update-kr okr-abc --metric="bugs_fixed" --target=10 --current=3 --unit="count"
+    """
+    from cli.core.db import open_database
+    from cli.core.queries import get_okr, update_okr_key_result, add_okr_key_result
+
+    org_path = ctx.org_path
+    db_path = get_org_db_path(org_path)
+
+    if not db_path.exists():
+        raise click.ClickException(
+            f"Organization not initialized at {org_path}\n"
+            "Run 'qn org init' first."
+        )
+
+    db = open_database(db_path)
+    try:
+        okr = get_okr(db, okr_id)
+        if not okr:
+            raise click.ClickException(
+                f"OKR '{okr_id}' not found.\n"
+                "Run 'qn org okr list' to see available OKRs."
+            )
+
+        # Check if key result exists
+        existing_kr = next((kr for kr in okr.key_results if kr.metric == metric), None)
+
+        if existing_kr:
+            # Update existing
+            if current is None:
+                raise click.ClickException(
+                    f"Key result '{metric}' exists. Use --current to update its value."
+                )
+            update_okr_key_result(db, okr_id, metric, current)
+            click.echo(f"Updated {metric}: {current}/{existing_kr.target} {existing_kr.unit}")
+        else:
+            # Add new
+            if target is None:
+                raise click.ClickException(
+                    f"Key result '{metric}' does not exist. Use --target to create it."
+                )
+            initial = current if current is not None else 0.0
+            add_okr_key_result(db, okr_id, metric, target, unit, initial)
+            click.echo(f"Added key result: {metric} (target: {target} {unit})")
+
+        # Show updated progress
+        okr = get_okr(db, okr_id)
+        click.echo(f"OKR Progress: {okr.progress():.0f}%")
+
+    finally:
+        db.close()
+
+
 @okr_cmd.command("link")
 @click.argument("work_id")
 @click.argument("okr_id")

@@ -99,10 +99,11 @@ org.add_command(okr_cmd, name="okr")
 org.add_command(budget_cmd, name="budget")
 org.add_command(chart_cmd, name="chart")
 
-from cli.commands.wrkr import get_work_cmd, inbox_cmd, send_cmd, status_cmd as wrkr_status_cmd
+from cli.commands.wrkr import get_work_cmd, inbox_cmd, search_cmd, send_cmd, status_cmd as wrkr_status_cmd
 
 wrkr.add_command(get_work_cmd, name="get-work")
 wrkr.add_command(inbox_cmd, name="inbox")
+wrkr.add_command(search_cmd, name="search")
 wrkr.add_command(send_cmd, name="send")
 wrkr.add_command(wrkr_status_cmd, name="status")
 
