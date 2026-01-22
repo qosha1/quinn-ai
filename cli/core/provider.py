@@ -3,23 +3,350 @@ Provider registry and selection logic.
 
 Manages registered providers and handles worker-to-model selection
 based on cost and skill requirements.
+
+Key components:
+- CostTier: Enum mapping cost scores to model quality tiers
+- cost_to_tier(): Maps cost score (0-100) to tier name
+- skills_to_capabilities(): Derives required capabilities from worker skills
+- select_provider_for_worker(): Main selection algorithm
+- ProviderRegistry: Registry for managing providers
 """
 
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Type
 
-from providers.base import (
+from cli.providers.base import (
+    CostTier,
     ModelInfo,
+    ModelNotAvailableError,
     Provider,
     ProviderConfig,
 )
 
 
 # Default thresholds - can be overridden via config
-DEFAULT_CODING_THRESHOLD = 80
-DEFAULT_REASONING_THRESHOLD = 60
-DEFAULT_RESEARCH_THRESHOLD = 80
+DEFAULT_THRESHOLDS: dict[str, int] = {
+    "coding": 80,
+    "reasoning": 60,
+    "research": 80,
+    "management": 70,
+    "strategy": 90,
+}
+
+# Skill to capability mapping
+SKILL_TO_CAPABILITY: dict[str, str] = {
+    "coding": "coding",
+    "reasoning": "reasoning",
+    "research": "research",
+    "management": "tool_use",
+    "strategy": "long_context",
+}
+
+# For backward compatibility
+DEFAULT_CODING_THRESHOLD = DEFAULT_THRESHOLDS["coding"]
+DEFAULT_REASONING_THRESHOLD = DEFAULT_THRESHOLDS["reasoning"]
+DEFAULT_RESEARCH_THRESHOLD = DEFAULT_THRESHOLDS["research"]
+
+
+class ProviderSelectionError(Exception):
+    """Raised when no provider can satisfy requirements.
+
+    Contains detailed information about the selection attempt
+    to aid debugging and fallback handling.
+    """
+
+    def __init__(
+        self,
+        cost: int,
+        capabilities: list[str],
+        attempted: list[str],
+        errors: list[tuple[str, str]],
+    ):
+        self.cost = cost
+        self.capabilities = capabilities
+        self.attempted = attempted
+        self.errors = errors
+
+        error_summary = "; ".join(f"{p}: {e}" for p, e in errors) if errors else "none"
+        super().__init__(
+            f"No provider satisfies cost={cost}, capabilities={capabilities}. "
+            f"Tried: {attempted}. Errors: {error_summary}"
+        )
+
+
+@dataclass
+class ProviderSelection:
+    """Result of provider selection.
+
+    Contains the selected provider and model along with
+    metadata about the selection process.
+    """
+
+    provider: Provider
+    """Selected provider instance."""
+
+    model: ModelInfo
+    """Selected model info."""
+
+    tier: CostTier
+    """Derived tier from cost score."""
+
+    required_capabilities: list[str]
+    """Capabilities derived from worker skills."""
+
+    was_fallback: bool = False
+    """True if primary provider failed and fallback was used."""
+
+    fallback_reason: Optional[str] = None
+    """Reason for fallback if was_fallback is True."""
+
+    original_provider: Optional[str] = None
+    """Original provider name if fallback occurred."""
+
+
+def cost_to_tier(cost: int) -> CostTier:
+    """Map cost score to tier name.
+
+    Tier boundaries (from design):
+    - Budget: 0-30
+    - Standard: 31-60
+    - Advanced: 61-80
+    - Premium: 81-100
+
+    Args:
+        cost: Worker cost score (0-100)
+
+    Returns:
+        CostTier enum value
+    """
+    if cost <= 30:
+        return CostTier.BUDGET
+    elif cost <= 60:
+        return CostTier.STANDARD
+    elif cost <= 80:
+        return CostTier.ADVANCED
+    else:
+        return CostTier.PREMIUM
+
+
+def skills_to_capabilities(
+    skills: dict[str, int],
+    thresholds: Optional[dict[str, int]] = None,
+) -> list[str]:
+    """Convert worker skills to required capabilities.
+
+    Each skill above its threshold unlocks a capability requirement:
+    - coding >= 80 -> coding capability
+    - reasoning >= 60 -> reasoning capability
+    - research >= 80 -> research capability
+    - management >= 70 -> tool_use capability
+    - strategy >= 90 -> long_context capability
+
+    Args:
+        skills: Worker skills dict {skill_name: score}
+        thresholds: Optional custom thresholds {skill_name: threshold}
+
+    Returns:
+        List of required capability names
+    """
+    if thresholds is None:
+        thresholds = DEFAULT_THRESHOLDS
+
+    required = []
+    for skill_name, capability_name in SKILL_TO_CAPABILITY.items():
+        threshold = thresholds.get(skill_name, 100)  # Default: never required
+        if skills.get(skill_name, 0) >= threshold:
+            required.append(capability_name)
+
+    return required
+
+
+def _is_authorized(provider_name: str, authorized: Optional[list[str]]) -> bool:
+    """Check if provider is authorized for this org.
+
+    Args:
+        provider_name: Name of provider to check
+        authorized: List of authorized provider names (None = all authorized)
+
+    Returns:
+        True if provider is authorized
+    """
+    if authorized is None:
+        return True  # No restrictions
+    return provider_name in authorized
+
+
+def select_provider_for_worker(
+    registry: "ProviderRegistry",
+    worker_cost: int,
+    worker_skills: dict[str, int],
+    preferred_provider: Optional[str] = None,
+    org_authorized_providers: Optional[list[str]] = None,
+) -> ProviderSelection:
+    """Select optimal provider and model for a worker.
+
+    Selection priority:
+    1. Preferred provider (if specified and authorized)
+    2. Default provider
+    3. Other authorized providers in registration order
+
+    The algorithm:
+    1. Derives tier from worker cost score
+    2. Derives required capabilities from worker skills
+    3. Tries providers in priority order
+    4. For each provider, attempts to select a model matching tier + capabilities
+    5. If capabilities cannot be met at current tier, tries upgrading
+
+    Args:
+        registry: Initialized ProviderRegistry
+        worker_cost: Worker cost score (0-100)
+        worker_skills: Worker skills dict
+        preferred_provider: Optional provider preference
+        org_authorized_providers: List of authorized provider names (None = all)
+
+    Returns:
+        ProviderSelection with provider, model, and metadata
+
+    Raises:
+        ProviderSelectionError: If no provider can satisfy requirements
+    """
+    # Step 1: Derive requirements from worker profile
+    tier = cost_to_tier(worker_cost)
+    required_capabilities = skills_to_capabilities(
+        worker_skills,
+        registry.thresholds
+    )
+
+    # Step 2: Build provider attempt order
+    providers_to_try: list[str] = []
+
+    # Preferred provider first
+    if preferred_provider and _is_authorized(preferred_provider, org_authorized_providers):
+        if registry.has(preferred_provider):
+            providers_to_try.append(preferred_provider)
+
+    # Default provider second
+    default = registry.default_name
+    if default and default not in providers_to_try:
+        if _is_authorized(default, org_authorized_providers):
+            providers_to_try.append(default)
+
+    # Remaining authorized providers
+    for name in registry.list_providers():
+        if name not in providers_to_try:
+            if _is_authorized(name, org_authorized_providers):
+                providers_to_try.append(name)
+
+    # Step 3: Try each provider
+    errors: list[tuple[str, str]] = []
+    for provider_name in providers_to_try:
+        provider = registry.get(provider_name)
+        try:
+            model = _select_model_for_tier(provider, tier, required_capabilities)
+            return ProviderSelection(
+                provider=provider,
+                model=model,
+                tier=tier,
+                required_capabilities=required_capabilities,
+            )
+        except (ValueError, ModelNotAvailableError) as e:
+            errors.append((provider_name, str(e)))
+            continue
+
+    # Step 4: All providers failed
+    raise ProviderSelectionError(
+        cost=worker_cost,
+        capabilities=required_capabilities,
+        attempted=providers_to_try,
+        errors=errors,
+    )
+
+
+def _select_model_for_tier(
+    provider: Provider,
+    tier: CostTier,
+    required_capabilities: list[str],
+) -> ModelInfo:
+    """Select best model for tier and capabilities from a provider.
+
+    If no model at the requested tier satisfies capabilities,
+    attempts to upgrade to a higher tier.
+
+    Args:
+        provider: Provider to select from
+        tier: Target tier
+        required_capabilities: Required capability names
+
+    Returns:
+        ModelInfo for selected model
+
+    Raises:
+        ValueError: If no suitable model available
+    """
+    # Get models for this tier
+    tier_models = [m for m in provider.models if m.matches_tier(tier)]
+
+    if not tier_models:
+        # Try upgrading if no models at this tier
+        upgraded = _try_upgrade_tier(provider, tier, required_capabilities)
+        if upgraded:
+            return upgraded
+        raise ValueError(
+            f"No {tier.value} tier models available from {provider.name}"
+        )
+
+    # Filter by capabilities if required
+    if required_capabilities:
+        capable = [
+            m for m in tier_models
+            if m.capabilities.has_capabilities(required_capabilities)
+        ]
+        if capable:
+            return capable[0]
+        else:
+            # Try upgrading tier if capabilities not met
+            upgraded = _try_upgrade_tier(provider, tier, required_capabilities)
+            if upgraded:
+                return upgraded
+            # Proceed with best available at current tier
+            return tier_models[0]
+
+    return tier_models[0]
+
+
+def _try_upgrade_tier(
+    provider: Provider,
+    current_tier: CostTier,
+    required_capabilities: list[str],
+) -> Optional[ModelInfo]:
+    """Try to find a higher tier model with required capabilities.
+
+    This allows capability requirements to "pull up" the tier
+    when necessary (e.g., coding requires sonnet even at budget tier).
+
+    Args:
+        provider: Provider to search
+        current_tier: Starting tier
+        required_capabilities: Required capability names
+
+    Returns:
+        ModelInfo if found, None otherwise
+    """
+    tier_order = [CostTier.BUDGET, CostTier.STANDARD, CostTier.ADVANCED, CostTier.PREMIUM]
+    current_idx = tier_order.index(current_tier)
+
+    for higher_tier in tier_order[current_idx + 1:]:
+        higher_models = [m for m in provider.models if m.matches_tier(higher_tier)]
+        capable = [
+            m for m in higher_models
+            if m.capabilities.has_capabilities(required_capabilities)
+        ]
+        if capable:
+            return capable[0]
+
+    return None
 
 
 class ProviderRegistry:
@@ -35,16 +362,25 @@ class ProviderRegistry:
         """Initialize empty registry."""
         self._providers: dict[str, Provider] = {}
         self._default_provider: Optional[str] = None
-        # Configurable thresholds with defaults
-        self._coding_threshold = DEFAULT_CODING_THRESHOLD
-        self._reasoning_threshold = DEFAULT_REASONING_THRESHOLD
-        self._research_threshold = DEFAULT_RESEARCH_THRESHOLD
+        # Configurable thresholds with defaults (copy to avoid mutation)
+        self._thresholds: dict[str, int] = dict(DEFAULT_THRESHOLDS)
+
+    @property
+    def thresholds(self) -> dict[str, int]:
+        """Get current skill thresholds.
+
+        Returns:
+            Dict mapping skill names to threshold values
+        """
+        return self._thresholds
 
     def set_thresholds(
         self,
         coding: Optional[int] = None,
         reasoning: Optional[int] = None,
         research: Optional[int] = None,
+        management: Optional[int] = None,
+        strategy: Optional[int] = None,
     ) -> None:
         """Set skill thresholds from config.
 
@@ -52,13 +388,19 @@ class ProviderRegistry:
             coding: Threshold for coding capability requirement
             reasoning: Threshold for reasoning capability requirement
             research: Threshold for research capability requirement
+            management: Threshold for tool_use capability requirement
+            strategy: Threshold for long_context capability requirement
         """
         if coding is not None:
-            self._coding_threshold = coding
+            self._thresholds["coding"] = coding
         if reasoning is not None:
-            self._reasoning_threshold = reasoning
+            self._thresholds["reasoning"] = reasoning
         if research is not None:
-            self._research_threshold = research
+            self._thresholds["research"] = research
+        if management is not None:
+            self._thresholds["management"] = management
+        if strategy is not None:
+            self._thresholds["strategy"] = strategy
 
     def register(self, provider: Provider) -> None:
         """Register a provider.
@@ -210,16 +552,7 @@ class ProviderRegistry:
         Returns:
             List of required capability names
         """
-        required = []
-
-        if skills.get("coding", 0) >= self._coding_threshold:
-            required.append("coding")
-        if skills.get("reasoning", 0) >= self._reasoning_threshold:
-            required.append("reasoning")
-        if skills.get("research", 0) >= self._research_threshold:
-            required.append("research")
-
-        return required
+        return skills_to_capabilities(skills, self._thresholds)
 
     def list_providers(self) -> list[str]:
         """List registered provider names.
@@ -367,13 +700,13 @@ def _get_default_provider_classes() -> dict[str, Type[Provider]]:
 
     # Only import if the module exists and is implemented
     try:
-        from providers.anthropic import AnthropicProvider
+        from cli.providers.anthropic import AnthropicProvider
         classes["anthropic"] = AnthropicProvider
     except ImportError:
         pass
 
     try:
-        from providers.openai import OpenAIProvider
+        from cli.providers.openai import OpenAIProvider
         classes["openai"] = OpenAIProvider
     except ImportError:
         pass

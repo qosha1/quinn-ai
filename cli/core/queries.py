@@ -822,6 +822,65 @@ def create_message(
     )
 
 
+def create_message_with_notifications(
+    db: Database,
+    channel_id: str,
+    from_worker_id: str,
+    content: str,
+    thread_id: Optional[str] = None,
+    parent_id: Optional[str] = None,
+    priority: int = 2,
+    time_sensitivity: str = "whenever",
+    message_id: Optional[str] = None,
+) -> Message:
+    """Create a new message and notify all channel subscribers.
+
+    This is the recommended way to send messages when you want subscribers
+    to be notified. It creates the message and then creates notification
+    beads for all channel subscribers (except the sender).
+
+    Args:
+        db: Database instance
+        channel_id: Channel ID
+        from_worker_id: Sender worker ID
+        content: Message content
+        thread_id: Optional thread ID
+        parent_id: Optional parent message ID
+        priority: Priority 0-4 (default 2)
+        time_sensitivity: Urgency level
+        message_id: Optional custom ID
+
+    Returns:
+        Created Message
+    """
+    # Import here to avoid circular imports
+    from .notifications import create_notifications_for_message
+
+    # Create the message first
+    message = create_message(
+        db=db,
+        channel_id=channel_id,
+        from_worker_id=from_worker_id,
+        content=content,
+        thread_id=thread_id,
+        parent_id=parent_id,
+        priority=priority,
+        time_sensitivity=time_sensitivity,
+        message_id=message_id,
+    )
+
+    # Create notifications for all subscribers
+    create_notifications_for_message(
+        db=db,
+        message_id=message.id,
+        channel_id=channel_id,
+        from_worker_id=from_worker_id,
+        priority=priority,
+    )
+
+    return message
+
+
 def get_message(db: Database, message_id: str) -> Optional[Message]:
     """Get a message by ID.
 
@@ -917,6 +976,58 @@ def get_thread_messages(db: Database, thread_id: str) -> list[Message]:
     ]
 
 
+def search_messages(
+    db: Database,
+    query: str,
+    channel_id: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[Message]:
+    """Search messages using full-text search.
+
+    Args:
+        db: Database instance
+        query: Search query (supports FTS5 syntax: AND, OR, NOT, phrases "like this")
+        channel_id: Optional filter to specific channel
+        limit: Max messages to return
+        offset: Offset for pagination
+
+    Returns:
+        List of matching messages, ranked by relevance
+    """
+    if channel_id:
+        rows = db.fetchall(
+            """SELECT m.* FROM messages m
+               JOIN messages_fts fts ON m.rowid = fts.rowid
+               WHERE messages_fts MATCH ? AND m.channel_id = ?
+               ORDER BY rank LIMIT ? OFFSET ?""",
+            (query, channel_id, limit, offset)
+        )
+    else:
+        rows = db.fetchall(
+            """SELECT m.* FROM messages m
+               JOIN messages_fts fts ON m.rowid = fts.rowid
+               WHERE messages_fts MATCH ?
+               ORDER BY rank LIMIT ? OFFSET ?""",
+            (query, limit, offset)
+        )
+
+    return [
+        Message(
+            id=row["id"],
+            channel_id=row["channel_id"],
+            thread_id=row["thread_id"],
+            parent_id=row["parent_id"],
+            from_worker_id=row["from_worker_id"],
+            content=row["content"],
+            priority=row["priority"],
+            time_sensitivity=row["time_sensitivity"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
 def add_message_ref(
     db: Database,
     message_id: str,
@@ -986,3 +1097,1584 @@ def set_config(db: Database, key: str, value: str) -> None:
         (key, value)
     )
     db.connection.commit()
+
+
+# ===================
+# TEAM MEMBER QUERIES
+# ===================
+
+@dataclass
+class TeamMember:
+    """Team membership record."""
+    team_id: str
+    worker_id: str
+    role: str
+    joined_at: datetime
+
+
+def add_team_member(
+    db: Database,
+    team_id: str,
+    worker_id: str,
+    role: str = "member",
+) -> TeamMember:
+    """Add a worker to a team with a role.
+
+    Args:
+        db: Database instance
+        team_id: Team ID
+        worker_id: Worker ID
+        role: Role in team ('member', 'lead', 'admin')
+
+    Returns:
+        Created TeamMember
+    """
+    now = datetime.now()
+    db.execute(
+        "INSERT INTO team_members (team_id, worker_id, role, joined_at) VALUES (?, ?, ?, ?)",
+        (team_id, worker_id, role, now)
+    )
+    db.connection.commit()
+
+    return TeamMember(
+        team_id=team_id,
+        worker_id=worker_id,
+        role=role,
+        joined_at=now,
+    )
+
+
+def get_team_member(db: Database, team_id: str, worker_id: str) -> Optional[TeamMember]:
+    """Get a team membership record.
+
+    Args:
+        db: Database instance
+        team_id: Team ID
+        worker_id: Worker ID
+
+    Returns:
+        TeamMember or None
+    """
+    row = db.fetchone(
+        "SELECT * FROM team_members WHERE team_id = ? AND worker_id = ?",
+        (team_id, worker_id)
+    )
+    if not row:
+        return None
+
+    return TeamMember(
+        team_id=row["team_id"],
+        worker_id=row["worker_id"],
+        role=row["role"],
+        joined_at=row["joined_at"],
+    )
+
+
+def update_team_member_role(db: Database, team_id: str, worker_id: str, role: str) -> None:
+    """Update a worker's role in a team.
+
+    Args:
+        db: Database instance
+        team_id: Team ID
+        worker_id: Worker ID
+        role: New role
+    """
+    db.execute(
+        "UPDATE team_members SET role = ? WHERE team_id = ? AND worker_id = ?",
+        (role, team_id, worker_id)
+    )
+    db.connection.commit()
+
+
+def remove_team_member(db: Database, team_id: str, worker_id: str) -> bool:
+    """Remove a worker from a team.
+
+    Args:
+        db: Database instance
+        team_id: Team ID
+        worker_id: Worker ID
+
+    Returns:
+        True if removed, False if not found
+    """
+    cursor = db.execute(
+        "DELETE FROM team_members WHERE team_id = ? AND worker_id = ?",
+        (team_id, worker_id)
+    )
+    db.connection.commit()
+    return cursor.rowcount > 0
+
+
+def get_team_members_list(db: Database, team_id: str) -> list[TeamMember]:
+    """Get all members of a team.
+
+    Args:
+        db: Database instance
+        team_id: Team ID
+
+    Returns:
+        List of TeamMember records
+    """
+    rows = db.fetchall(
+        "SELECT * FROM team_members WHERE team_id = ?",
+        (team_id,)
+    )
+    return [
+        TeamMember(
+            team_id=row["team_id"],
+            worker_id=row["worker_id"],
+            role=row["role"],
+            joined_at=row["joined_at"],
+        )
+        for row in rows
+    ]
+
+
+def get_worker_team_memberships(db: Database, worker_id: str) -> list[TeamMember]:
+    """Get all team memberships for a worker.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+
+    Returns:
+        List of TeamMember records
+    """
+    rows = db.fetchall(
+        "SELECT * FROM team_members WHERE worker_id = ?",
+        (worker_id,)
+    )
+    return [
+        TeamMember(
+            team_id=row["team_id"],
+            worker_id=row["worker_id"],
+            role=row["role"],
+            joined_at=row["joined_at"],
+        )
+        for row in rows
+    ]
+
+
+def get_team_members_by_role(db: Database, team_id: str, role: str) -> list[TeamMember]:
+    """Get team members with a specific role.
+
+    Args:
+        db: Database instance
+        team_id: Team ID
+        role: Role to filter by
+
+    Returns:
+        List of TeamMember records
+    """
+    rows = db.fetchall(
+        "SELECT * FROM team_members WHERE team_id = ? AND role = ?",
+        (team_id, role)
+    )
+    return [
+        TeamMember(
+            team_id=row["team_id"],
+            worker_id=row["worker_id"],
+            role=row["role"],
+            joined_at=row["joined_at"],
+        )
+        for row in rows
+    ]
+
+
+# ===================
+# PERMISSION QUERIES
+# ===================
+
+@dataclass
+class Permission:
+    """Permission grant record."""
+    id: str
+    bead_id: Optional[str]
+    grantee_type: str
+    grantee_id: str
+    level: int
+    granted_by: Optional[str]
+    granted_at: datetime
+
+
+def grant_permission(
+    db: Database,
+    grantee_type: str,
+    grantee_id: str,
+    level: int,
+    bead_id: Optional[str] = None,
+    granted_by: Optional[str] = None,
+    permission_id: Optional[str] = None,
+) -> Permission:
+    """Grant a permission.
+
+    Args:
+        db: Database instance
+        grantee_type: 'worker' or 'team'
+        grantee_id: Worker or team ID
+        level: Permission level (0-5)
+        bead_id: Optional bead ID (None for global permissions)
+        granted_by: Worker ID who granted this
+        permission_id: Optional custom ID
+
+    Returns:
+        Created Permission
+    """
+    if permission_id is None:
+        permission_id = generate_id("perm")
+
+    now = datetime.now()
+    db.execute(
+        """INSERT OR REPLACE INTO permissions
+           (id, bead_id, grantee_type, grantee_id, level, granted_by, granted_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (permission_id, bead_id, grantee_type, grantee_id, level, granted_by, now)
+    )
+    db.connection.commit()
+
+    return Permission(
+        id=permission_id,
+        bead_id=bead_id,
+        grantee_type=grantee_type,
+        grantee_id=grantee_id,
+        level=level,
+        granted_by=granted_by,
+        granted_at=now,
+    )
+
+
+def get_permission(db: Database, permission_id: str) -> Optional[Permission]:
+    """Get a permission by ID.
+
+    Args:
+        db: Database instance
+        permission_id: Permission ID
+
+    Returns:
+        Permission or None
+    """
+    row = db.fetchone("SELECT * FROM permissions WHERE id = ?", (permission_id,))
+    if not row:
+        return None
+
+    return Permission(
+        id=row["id"],
+        bead_id=row["bead_id"],
+        grantee_type=row["grantee_type"],
+        grantee_id=row["grantee_id"],
+        level=row["level"],
+        granted_by=row["granted_by"],
+        granted_at=row["granted_at"],
+    )
+
+
+def get_permission_for_grantee(
+    db: Database,
+    bead_id: Optional[str],
+    grantee_type: str,
+    grantee_id: str,
+) -> Optional[Permission]:
+    """Get a permission for a specific grantee on a bead.
+
+    Args:
+        db: Database instance
+        bead_id: Bead ID (or None for global)
+        grantee_type: 'worker' or 'team'
+        grantee_id: Worker or team ID
+
+    Returns:
+        Permission or None
+    """
+    if bead_id is None:
+        row = db.fetchone(
+            """SELECT * FROM permissions
+               WHERE bead_id IS NULL AND grantee_type = ? AND grantee_id = ?""",
+            (grantee_type, grantee_id)
+        )
+    else:
+        row = db.fetchone(
+            """SELECT * FROM permissions
+               WHERE bead_id = ? AND grantee_type = ? AND grantee_id = ?""",
+            (bead_id, grantee_type, grantee_id)
+        )
+
+    if not row:
+        return None
+
+    return Permission(
+        id=row["id"],
+        bead_id=row["bead_id"],
+        grantee_type=row["grantee_type"],
+        grantee_id=row["grantee_id"],
+        level=row["level"],
+        granted_by=row["granted_by"],
+        granted_at=row["granted_at"],
+    )
+
+
+def revoke_permission(db: Database, permission_id: str) -> bool:
+    """Revoke a permission by ID.
+
+    Args:
+        db: Database instance
+        permission_id: Permission ID
+
+    Returns:
+        True if revoked, False if not found
+    """
+    cursor = db.execute("DELETE FROM permissions WHERE id = ?", (permission_id,))
+    db.connection.commit()
+    return cursor.rowcount > 0
+
+
+def revoke_permission_for_grantee(
+    db: Database,
+    bead_id: Optional[str],
+    grantee_type: str,
+    grantee_id: str,
+) -> bool:
+    """Revoke a permission for a specific grantee on a bead.
+
+    Args:
+        db: Database instance
+        bead_id: Bead ID (or None for global)
+        grantee_type: 'worker' or 'team'
+        grantee_id: Worker or team ID
+
+    Returns:
+        True if revoked, False if not found
+    """
+    if bead_id is None:
+        cursor = db.execute(
+            """DELETE FROM permissions
+               WHERE bead_id IS NULL AND grantee_type = ? AND grantee_id = ?""",
+            (grantee_type, grantee_id)
+        )
+    else:
+        cursor = db.execute(
+            """DELETE FROM permissions
+               WHERE bead_id = ? AND grantee_type = ? AND grantee_id = ?""",
+            (bead_id, grantee_type, grantee_id)
+        )
+    db.connection.commit()
+    return cursor.rowcount > 0
+
+
+def get_permissions_for_bead(db: Database, bead_id: str) -> list[Permission]:
+    """Get all permissions for a bead.
+
+    Args:
+        db: Database instance
+        bead_id: Bead ID
+
+    Returns:
+        List of Permission records
+    """
+    rows = db.fetchall("SELECT * FROM permissions WHERE bead_id = ?", (bead_id,))
+    return [
+        Permission(
+            id=row["id"],
+            bead_id=row["bead_id"],
+            grantee_type=row["grantee_type"],
+            grantee_id=row["grantee_id"],
+            level=row["level"],
+            granted_by=row["granted_by"],
+            granted_at=row["granted_at"],
+        )
+        for row in rows
+    ]
+
+
+def get_permissions_for_worker(db: Database, worker_id: str) -> list[Permission]:
+    """Get all direct permissions for a worker.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+
+    Returns:
+        List of Permission records
+    """
+    rows = db.fetchall(
+        "SELECT * FROM permissions WHERE grantee_type = 'worker' AND grantee_id = ?",
+        (worker_id,)
+    )
+    return [
+        Permission(
+            id=row["id"],
+            bead_id=row["bead_id"],
+            grantee_type=row["grantee_type"],
+            grantee_id=row["grantee_id"],
+            level=row["level"],
+            granted_by=row["granted_by"],
+            granted_at=row["granted_at"],
+        )
+        for row in rows
+    ]
+
+
+def get_permissions_for_team(db: Database, team_id: str) -> list[Permission]:
+    """Get all permissions for a team.
+
+    Args:
+        db: Database instance
+        team_id: Team ID
+
+    Returns:
+        List of Permission records
+    """
+    rows = db.fetchall(
+        "SELECT * FROM permissions WHERE grantee_type = 'team' AND grantee_id = ?",
+        (team_id,)
+    )
+    return [
+        Permission(
+            id=row["id"],
+            bead_id=row["bead_id"],
+            grantee_type=row["grantee_type"],
+            grantee_id=row["grantee_id"],
+            level=row["level"],
+            granted_by=row["granted_by"],
+            granted_at=row["granted_at"],
+        )
+        for row in rows
+    ]
+
+
+# ===================
+# EFFECTIVE PERMISSION QUERIES
+# ===================
+
+@dataclass
+class EffectivePermission:
+    """Computed effective permission record."""
+    worker_id: str
+    bead_id: str
+    level: int
+    computed_at: datetime
+
+
+def set_effective_permission(
+    db: Database,
+    worker_id: str,
+    bead_id: str,
+    level: int,
+) -> EffectivePermission:
+    """Set or update effective permission for a worker on a bead.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+        bead_id: Bead ID
+        level: Computed permission level
+
+    Returns:
+        EffectivePermission record
+    """
+    now = datetime.now()
+    db.execute(
+        """INSERT OR REPLACE INTO effective_permissions
+           (worker_id, bead_id, level, computed_at)
+           VALUES (?, ?, ?, ?)""",
+        (worker_id, bead_id, level, now)
+    )
+    db.connection.commit()
+
+    return EffectivePermission(
+        worker_id=worker_id,
+        bead_id=bead_id,
+        level=level,
+        computed_at=now,
+    )
+
+
+def get_effective_permission(
+    db: Database,
+    worker_id: str,
+    bead_id: str,
+) -> Optional[EffectivePermission]:
+    """Get effective permission for a worker on a bead.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+        bead_id: Bead ID
+
+    Returns:
+        EffectivePermission or None
+    """
+    row = db.fetchone(
+        "SELECT * FROM effective_permissions WHERE worker_id = ? AND bead_id = ?",
+        (worker_id, bead_id)
+    )
+    if not row:
+        return None
+
+    return EffectivePermission(
+        worker_id=row["worker_id"],
+        bead_id=row["bead_id"],
+        level=row["level"],
+        computed_at=row["computed_at"],
+    )
+
+
+def delete_effective_permission(db: Database, worker_id: str, bead_id: str) -> bool:
+    """Delete effective permission for a worker on a bead.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+        bead_id: Bead ID
+
+    Returns:
+        True if deleted, False if not found
+    """
+    cursor = db.execute(
+        "DELETE FROM effective_permissions WHERE worker_id = ? AND bead_id = ?",
+        (worker_id, bead_id)
+    )
+    db.connection.commit()
+    return cursor.rowcount > 0
+
+
+def delete_effective_permissions_for_bead(db: Database, bead_id: str) -> int:
+    """Delete all effective permissions for a bead.
+
+    Args:
+        db: Database instance
+        bead_id: Bead ID
+
+    Returns:
+        Number of records deleted
+    """
+    cursor = db.execute(
+        "DELETE FROM effective_permissions WHERE bead_id = ?",
+        (bead_id,)
+    )
+    db.connection.commit()
+    return cursor.rowcount
+
+
+# ===================
+# PERMISSION AUDIT QUERIES
+# ===================
+
+@dataclass
+class PermissionAudit:
+    """Permission audit log entry."""
+    id: str
+    action: str
+    bead_id: str
+    worker_id: str
+    level: Optional[int]
+    details: Optional[str]
+    created_at: datetime
+
+
+def log_permission_audit(
+    db: Database,
+    action: str,
+    bead_id: str,
+    worker_id: str,
+    level: Optional[int] = None,
+    details: Optional[str] = None,
+    audit_id: Optional[str] = None,
+) -> PermissionAudit:
+    """Log a permission audit entry.
+
+    Args:
+        db: Database instance
+        action: 'grant', 'revoke', 'check', or 'deny'
+        bead_id: Bead ID
+        worker_id: Worker ID
+        level: Permission level (optional)
+        details: Additional details as JSON string
+        audit_id: Optional custom ID
+
+    Returns:
+        Created PermissionAudit
+    """
+    if audit_id is None:
+        audit_id = generate_id("audit")
+
+    now = datetime.now()
+    db.execute(
+        """INSERT INTO permission_audit
+           (id, action, bead_id, worker_id, level, details, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (audit_id, action, bead_id, worker_id, level, details, now)
+    )
+    db.connection.commit()
+
+    return PermissionAudit(
+        id=audit_id,
+        action=action,
+        bead_id=bead_id,
+        worker_id=worker_id,
+        level=level,
+        details=details,
+        created_at=now,
+    )
+
+
+def get_permission_audit_for_bead(
+    db: Database,
+    bead_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[PermissionAudit]:
+    """Get audit log entries for a bead.
+
+    Args:
+        db: Database instance
+        bead_id: Bead ID
+        limit: Max entries to return
+        offset: Offset for pagination
+
+    Returns:
+        List of PermissionAudit records
+    """
+    rows = db.fetchall(
+        """SELECT * FROM permission_audit
+           WHERE bead_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+        (bead_id, limit, offset)
+    )
+    return [
+        PermissionAudit(
+            id=row["id"],
+            action=row["action"],
+            bead_id=row["bead_id"],
+            worker_id=row["worker_id"],
+            level=row["level"],
+            details=row["details"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+def get_permission_audit_for_worker(
+    db: Database,
+    worker_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[PermissionAudit]:
+    """Get audit log entries for a worker.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+        limit: Max entries to return
+        offset: Offset for pagination
+
+    Returns:
+        List of PermissionAudit records
+    """
+    rows = db.fetchall(
+        """SELECT * FROM permission_audit
+           WHERE worker_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+        (worker_id, limit, offset)
+    )
+    return [
+        PermissionAudit(
+            id=row["id"],
+            action=row["action"],
+            bead_id=row["bead_id"],
+            worker_id=row["worker_id"],
+            level=row["level"],
+            details=row["details"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+def get_permission_denials(
+    db: Database,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[PermissionAudit]:
+    """Get recent permission denials.
+
+    Args:
+        db: Database instance
+        limit: Max entries to return
+        offset: Offset for pagination
+
+    Returns:
+        List of PermissionAudit records with action='deny'
+    """
+    rows = db.fetchall(
+        """SELECT * FROM permission_audit
+           WHERE action = 'deny' ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+        (limit, offset)
+    )
+    return [
+        PermissionAudit(
+            id=row["id"],
+            action=row["action"],
+            bead_id=row["bead_id"],
+            worker_id=row["worker_id"],
+            level=row["level"],
+            details=row["details"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+# ===================
+# BUDGET DATA CLASSES
+# ===================
+
+@dataclass
+class BudgetPool:
+    """Organization budget pool."""
+    id: str
+    name: str
+    total_credits: float
+    period_start: datetime
+    period_end: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
+class BudgetAllocation:
+    """Budget allocation for a worker."""
+    id: str
+    worker_id: str
+    source_worker_id: Optional[str]
+    pool_id: Optional[str]
+    allocated_credits: float
+    spent_credits: float
+    reserved_credits: float
+    period_start: datetime
+    period_end: datetime
+    can_delegate: bool
+    delegation_limit: Optional[float]
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
+class BudgetTransaction:
+    """Budget transaction record."""
+    id: str
+    allocation_id: str
+    worker_id: str
+    type: str
+    amount: float
+    provider: Optional[str]
+    model: Optional[str]
+    input_tokens: Optional[int]
+    output_tokens: Optional[int]
+    reference_type: Optional[str]
+    reference_id: Optional[str]
+    description: Optional[str]
+    metadata: Optional[str]
+    created_at: datetime
+
+
+@dataclass
+class BudgetBalance:
+    """Materialized budget balance."""
+    allocation_id: str
+    worker_id: str
+    allocated: float
+    spent: float
+    reserved: float
+    available: float
+    delegated: float
+    period_start: datetime
+    period_end: datetime
+    updated_at: datetime
+
+
+# ===================
+# BUDGET POOL QUERIES
+# ===================
+
+def create_budget_pool(
+    db: Database,
+    name: str,
+    total_credits: float,
+    period_start: datetime,
+    period_end: datetime,
+    pool_id: Optional[str] = None,
+) -> BudgetPool:
+    """Create a new budget pool.
+
+    Args:
+        db: Database instance
+        name: Pool name
+        total_credits: Total credits in pool
+        period_start: Period start datetime
+        period_end: Period end datetime
+        pool_id: Optional custom ID
+
+    Returns:
+        Created BudgetPool
+    """
+    if pool_id is None:
+        pool_id = generate_id("pool")
+
+    now = datetime.now()
+    db.execute(
+        """INSERT INTO budget_pools
+           (id, name, total_credits, period_start, period_end, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (pool_id, name, total_credits, period_start, period_end, now, now)
+    )
+    db.connection.commit()
+
+    return BudgetPool(
+        id=pool_id,
+        name=name,
+        total_credits=total_credits,
+        period_start=period_start,
+        period_end=period_end,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def get_budget_pool(db: Database, pool_id: str) -> Optional[BudgetPool]:
+    """Get a budget pool by ID.
+
+    Args:
+        db: Database instance
+        pool_id: Pool ID
+
+    Returns:
+        BudgetPool or None
+    """
+    row = db.fetchone("SELECT * FROM budget_pools WHERE id = ?", (pool_id,))
+    if not row:
+        return None
+
+    return BudgetPool(
+        id=row["id"],
+        name=row["name"],
+        total_credits=float(row["total_credits"]),
+        period_start=row["period_start"],
+        period_end=row["period_end"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def get_all_budget_pools(db: Database) -> list[BudgetPool]:
+    """Get all budget pools.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        List of all budget pools
+    """
+    rows = db.fetchall("SELECT * FROM budget_pools ORDER BY created_at DESC")
+    return [
+        BudgetPool(
+            id=row["id"],
+            name=row["name"],
+            total_credits=float(row["total_credits"]),
+            period_start=row["period_start"],
+            period_end=row["period_end"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+        for row in rows
+    ]
+
+
+def update_budget_pool(
+    db: Database,
+    pool_id: str,
+    total_credits: Optional[float] = None,
+    name: Optional[str] = None,
+) -> None:
+    """Update a budget pool.
+
+    Args:
+        db: Database instance
+        pool_id: Pool ID
+        total_credits: Optional new total credits
+        name: Optional new name
+    """
+    now = datetime.now()
+    updates = ["updated_at = ?"]
+    params: list = [now]
+
+    if total_credits is not None:
+        updates.append("total_credits = ?")
+        params.append(total_credits)
+    if name is not None:
+        updates.append("name = ?")
+        params.append(name)
+
+    params.append(pool_id)
+    db.execute(
+        f"UPDATE budget_pools SET {', '.join(updates)} WHERE id = ?",
+        tuple(params)
+    )
+    db.connection.commit()
+
+
+def delete_budget_pool(db: Database, pool_id: str) -> None:
+    """Delete a budget pool.
+
+    Args:
+        db: Database instance
+        pool_id: Pool ID to delete
+    """
+    db.execute("DELETE FROM budget_pools WHERE id = ?", (pool_id,))
+    db.connection.commit()
+
+
+# ===================
+# BUDGET ALLOCATION QUERIES
+# ===================
+
+def create_budget_allocation(
+    db: Database,
+    worker_id: str,
+    allocated_credits: float,
+    period_start: datetime,
+    period_end: datetime,
+    source_worker_id: Optional[str] = None,
+    pool_id: Optional[str] = None,
+    can_delegate: bool = False,
+    delegation_limit: Optional[float] = None,
+    allocation_id: Optional[str] = None,
+) -> BudgetAllocation:
+    """Create a budget allocation.
+
+    Either source_worker_id or pool_id must be provided, but not both.
+
+    Args:
+        db: Database instance
+        worker_id: Worker receiving the allocation
+        allocated_credits: Credits being allocated
+        period_start: Period start datetime
+        period_end: Period end datetime
+        source_worker_id: Manager delegating budget (mutually exclusive with pool_id)
+        pool_id: Pool providing budget (mutually exclusive with source_worker_id)
+        can_delegate: Whether worker can delegate to subordinates
+        delegation_limit: Max credits delegatable to single subordinate
+        allocation_id: Optional custom ID
+
+    Returns:
+        Created BudgetAllocation
+    """
+    if allocation_id is None:
+        allocation_id = generate_id("alloc")
+
+    now = datetime.now()
+    db.execute(
+        """INSERT INTO budget_allocations
+           (id, worker_id, source_worker_id, pool_id, allocated_credits,
+            spent_credits, reserved_credits, period_start, period_end,
+            can_delegate, delegation_limit, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)""",
+        (allocation_id, worker_id, source_worker_id, pool_id, allocated_credits,
+         period_start, period_end, can_delegate, delegation_limit, now, now)
+    )
+    db.connection.commit()
+
+    return BudgetAllocation(
+        id=allocation_id,
+        worker_id=worker_id,
+        source_worker_id=source_worker_id,
+        pool_id=pool_id,
+        allocated_credits=allocated_credits,
+        spent_credits=0.0,
+        reserved_credits=0.0,
+        period_start=period_start,
+        period_end=period_end,
+        can_delegate=can_delegate,
+        delegation_limit=delegation_limit,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def get_budget_allocation(db: Database, allocation_id: str) -> Optional[BudgetAllocation]:
+    """Get a budget allocation by ID.
+
+    Args:
+        db: Database instance
+        allocation_id: Allocation ID
+
+    Returns:
+        BudgetAllocation or None
+    """
+    row = db.fetchone("SELECT * FROM budget_allocations WHERE id = ?", (allocation_id,))
+    if not row:
+        return None
+
+    return BudgetAllocation(
+        id=row["id"],
+        worker_id=row["worker_id"],
+        source_worker_id=row["source_worker_id"],
+        pool_id=row["pool_id"],
+        allocated_credits=float(row["allocated_credits"]),
+        spent_credits=float(row["spent_credits"]),
+        reserved_credits=float(row["reserved_credits"]),
+        period_start=row["period_start"],
+        period_end=row["period_end"],
+        can_delegate=bool(row["can_delegate"]),
+        delegation_limit=float(row["delegation_limit"]) if row["delegation_limit"] else None,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def get_worker_allocations(db: Database, worker_id: str) -> list[BudgetAllocation]:
+    """Get all allocations for a worker.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+
+    Returns:
+        List of allocations for the worker
+    """
+    rows = db.fetchall(
+        "SELECT * FROM budget_allocations WHERE worker_id = ? ORDER BY period_start DESC",
+        (worker_id,)
+    )
+    return [
+        BudgetAllocation(
+            id=row["id"],
+            worker_id=row["worker_id"],
+            source_worker_id=row["source_worker_id"],
+            pool_id=row["pool_id"],
+            allocated_credits=float(row["allocated_credits"]),
+            spent_credits=float(row["spent_credits"]),
+            reserved_credits=float(row["reserved_credits"]),
+            period_start=row["period_start"],
+            period_end=row["period_end"],
+            can_delegate=bool(row["can_delegate"]),
+            delegation_limit=float(row["delegation_limit"]) if row["delegation_limit"] else None,
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+        for row in rows
+    ]
+
+
+def get_current_allocation(
+    db: Database,
+    worker_id: str,
+    as_of: Optional[datetime] = None,
+) -> Optional[BudgetAllocation]:
+    """Get the current allocation for a worker.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+        as_of: Optional datetime to check (defaults to now)
+
+    Returns:
+        Current BudgetAllocation or None
+    """
+    if as_of is None:
+        as_of = datetime.now()
+
+    row = db.fetchone(
+        """SELECT * FROM budget_allocations
+           WHERE worker_id = ? AND period_start <= ? AND period_end >= ?
+           ORDER BY period_start DESC LIMIT 1""",
+        (worker_id, as_of, as_of)
+    )
+    if not row:
+        return None
+
+    return BudgetAllocation(
+        id=row["id"],
+        worker_id=row["worker_id"],
+        source_worker_id=row["source_worker_id"],
+        pool_id=row["pool_id"],
+        allocated_credits=float(row["allocated_credits"]),
+        spent_credits=float(row["spent_credits"]),
+        reserved_credits=float(row["reserved_credits"]),
+        period_start=row["period_start"],
+        period_end=row["period_end"],
+        can_delegate=bool(row["can_delegate"]),
+        delegation_limit=float(row["delegation_limit"]) if row["delegation_limit"] else None,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def get_allocations_by_pool(db: Database, pool_id: str) -> list[BudgetAllocation]:
+    """Get all allocations from a pool.
+
+    Args:
+        db: Database instance
+        pool_id: Pool ID
+
+    Returns:
+        List of allocations from the pool
+    """
+    rows = db.fetchall(
+        "SELECT * FROM budget_allocations WHERE pool_id = ?",
+        (pool_id,)
+    )
+    return [
+        BudgetAllocation(
+            id=row["id"],
+            worker_id=row["worker_id"],
+            source_worker_id=row["source_worker_id"],
+            pool_id=row["pool_id"],
+            allocated_credits=float(row["allocated_credits"]),
+            spent_credits=float(row["spent_credits"]),
+            reserved_credits=float(row["reserved_credits"]),
+            period_start=row["period_start"],
+            period_end=row["period_end"],
+            can_delegate=bool(row["can_delegate"]),
+            delegation_limit=float(row["delegation_limit"]) if row["delegation_limit"] else None,
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+        for row in rows
+    ]
+
+
+def update_allocation_spend(
+    db: Database,
+    allocation_id: str,
+    spent_credits: float,
+    reserved_credits: float,
+) -> None:
+    """Update spend and reserve amounts on an allocation.
+
+    Args:
+        db: Database instance
+        allocation_id: Allocation ID
+        spent_credits: New spent amount
+        reserved_credits: New reserved amount
+    """
+    now = datetime.now()
+    db.execute(
+        """UPDATE budget_allocations
+           SET spent_credits = ?, reserved_credits = ?, updated_at = ?
+           WHERE id = ?""",
+        (spent_credits, reserved_credits, now, allocation_id)
+    )
+    db.connection.commit()
+
+
+def delete_budget_allocation(db: Database, allocation_id: str) -> None:
+    """Delete a budget allocation.
+
+    Args:
+        db: Database instance
+        allocation_id: Allocation ID to delete
+    """
+    db.execute("DELETE FROM budget_allocations WHERE id = ?", (allocation_id,))
+    db.connection.commit()
+
+
+# ===================
+# BUDGET TRANSACTION QUERIES
+# ===================
+
+def create_budget_transaction(
+    db: Database,
+    allocation_id: str,
+    worker_id: str,
+    transaction_type: str,
+    amount: float,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    input_tokens: Optional[int] = None,
+    output_tokens: Optional[int] = None,
+    reference_type: Optional[str] = None,
+    reference_id: Optional[str] = None,
+    description: Optional[str] = None,
+    metadata: Optional[str] = None,
+    transaction_id: Optional[str] = None,
+) -> BudgetTransaction:
+    """Create a budget transaction.
+
+    Args:
+        db: Database instance
+        allocation_id: Allocation ID
+        worker_id: Worker ID
+        transaction_type: Type ('allocation', 'spend', 'reserve', etc.)
+        amount: Transaction amount (positive in, negative out)
+        provider: Optional provider name (for spend)
+        model: Optional model name (for spend)
+        input_tokens: Optional input token count
+        output_tokens: Optional output token count
+        reference_type: Optional reference type ('task', 'message')
+        reference_id: Optional reference ID
+        description: Optional description
+        metadata: Optional JSON metadata
+        transaction_id: Optional custom ID
+
+    Returns:
+        Created BudgetTransaction
+    """
+    if transaction_id is None:
+        transaction_id = generate_id("txn")
+
+    now = datetime.now()
+    db.execute(
+        """INSERT INTO budget_transactions
+           (id, allocation_id, worker_id, type, amount, provider, model,
+            input_tokens, output_tokens, reference_type, reference_id,
+            description, metadata, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (transaction_id, allocation_id, worker_id, transaction_type, amount,
+         provider, model, input_tokens, output_tokens, reference_type,
+         reference_id, description, metadata, now)
+    )
+    db.connection.commit()
+
+    return BudgetTransaction(
+        id=transaction_id,
+        allocation_id=allocation_id,
+        worker_id=worker_id,
+        type=transaction_type,
+        amount=amount,
+        provider=provider,
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        description=description,
+        metadata=metadata,
+        created_at=now,
+    )
+
+
+def get_budget_transaction(db: Database, transaction_id: str) -> Optional[BudgetTransaction]:
+    """Get a budget transaction by ID.
+
+    Args:
+        db: Database instance
+        transaction_id: Transaction ID
+
+    Returns:
+        BudgetTransaction or None
+    """
+    row = db.fetchone("SELECT * FROM budget_transactions WHERE id = ?", (transaction_id,))
+    if not row:
+        return None
+
+    return BudgetTransaction(
+        id=row["id"],
+        allocation_id=row["allocation_id"],
+        worker_id=row["worker_id"],
+        type=row["type"],
+        amount=float(row["amount"]),
+        provider=row["provider"],
+        model=row["model"],
+        input_tokens=row["input_tokens"],
+        output_tokens=row["output_tokens"],
+        reference_type=row["reference_type"],
+        reference_id=row["reference_id"],
+        description=row["description"],
+        metadata=row["metadata"],
+        created_at=row["created_at"],
+    )
+
+
+def get_transactions_by_allocation(
+    db: Database,
+    allocation_id: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[BudgetTransaction]:
+    """Get transactions for an allocation.
+
+    Args:
+        db: Database instance
+        allocation_id: Allocation ID
+        limit: Max transactions to return
+        offset: Offset for pagination
+
+    Returns:
+        List of transactions, newest first
+    """
+    rows = db.fetchall(
+        """SELECT * FROM budget_transactions
+           WHERE allocation_id = ?
+           ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+        (allocation_id, limit, offset)
+    )
+    return [
+        BudgetTransaction(
+            id=row["id"],
+            allocation_id=row["allocation_id"],
+            worker_id=row["worker_id"],
+            type=row["type"],
+            amount=float(row["amount"]),
+            provider=row["provider"],
+            model=row["model"],
+            input_tokens=row["input_tokens"],
+            output_tokens=row["output_tokens"],
+            reference_type=row["reference_type"],
+            reference_id=row["reference_id"],
+            description=row["description"],
+            metadata=row["metadata"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+def get_transactions_by_worker(
+    db: Database,
+    worker_id: str,
+    transaction_type: Optional[str] = None,
+    since: Optional[datetime] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[BudgetTransaction]:
+    """Get transactions for a worker.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+        transaction_type: Optional filter by type
+        since: Optional filter by time
+        limit: Max transactions to return
+        offset: Offset for pagination
+
+    Returns:
+        List of transactions, newest first
+    """
+    query = "SELECT * FROM budget_transactions WHERE worker_id = ?"
+    params: list = [worker_id]
+
+    if transaction_type:
+        query += " AND type = ?"
+        params.append(transaction_type)
+    if since:
+        query += " AND created_at >= ?"
+        params.append(since)
+
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+
+    rows = db.fetchall(query, tuple(params))
+    return [
+        BudgetTransaction(
+            id=row["id"],
+            allocation_id=row["allocation_id"],
+            worker_id=row["worker_id"],
+            type=row["type"],
+            amount=float(row["amount"]),
+            provider=row["provider"],
+            model=row["model"],
+            input_tokens=row["input_tokens"],
+            output_tokens=row["output_tokens"],
+            reference_type=row["reference_type"],
+            reference_id=row["reference_id"],
+            description=row["description"],
+            metadata=row["metadata"],
+            created_at=row["created_at"],
+        )
+        for row in rows
+    ]
+
+
+# ===================
+# BUDGET BALANCE QUERIES
+# ===================
+
+def create_budget_balance(
+    db: Database,
+    allocation_id: str,
+    worker_id: str,
+    allocated: float,
+    period_start: datetime,
+    period_end: datetime,
+) -> BudgetBalance:
+    """Create a budget balance record.
+
+    Args:
+        db: Database instance
+        allocation_id: Allocation ID
+        worker_id: Worker ID
+        allocated: Initial allocated amount
+        period_start: Period start
+        period_end: Period end
+
+    Returns:
+        Created BudgetBalance
+    """
+    now = datetime.now()
+    db.execute(
+        """INSERT INTO budget_balances
+           (allocation_id, worker_id, allocated, spent, reserved, available,
+            delegated, period_start, period_end, updated_at)
+           VALUES (?, ?, ?, 0, 0, ?, 0, ?, ?, ?)""",
+        (allocation_id, worker_id, allocated, allocated, period_start, period_end, now)
+    )
+    db.connection.commit()
+
+    return BudgetBalance(
+        allocation_id=allocation_id,
+        worker_id=worker_id,
+        allocated=allocated,
+        spent=0.0,
+        reserved=0.0,
+        available=allocated,
+        delegated=0.0,
+        period_start=period_start,
+        period_end=period_end,
+        updated_at=now,
+    )
+
+
+def get_budget_balance(db: Database, allocation_id: str) -> Optional[BudgetBalance]:
+    """Get budget balance for an allocation.
+
+    Args:
+        db: Database instance
+        allocation_id: Allocation ID
+
+    Returns:
+        BudgetBalance or None
+    """
+    row = db.fetchone("SELECT * FROM budget_balances WHERE allocation_id = ?", (allocation_id,))
+    if not row:
+        return None
+
+    return BudgetBalance(
+        allocation_id=row["allocation_id"],
+        worker_id=row["worker_id"],
+        allocated=float(row["allocated"]),
+        spent=float(row["spent"]),
+        reserved=float(row["reserved"]),
+        available=float(row["available"]),
+        delegated=float(row["delegated"]),
+        period_start=row["period_start"],
+        period_end=row["period_end"],
+        updated_at=row["updated_at"],
+    )
+
+
+def get_worker_balance(
+    db: Database,
+    worker_id: str,
+    as_of: Optional[datetime] = None,
+) -> Optional[BudgetBalance]:
+    """Get current budget balance for a worker.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+        as_of: Optional datetime (defaults to now)
+
+    Returns:
+        Current BudgetBalance or None
+    """
+    if as_of is None:
+        as_of = datetime.now()
+
+    row = db.fetchone(
+        """SELECT * FROM budget_balances
+           WHERE worker_id = ? AND period_start <= ? AND period_end >= ?
+           ORDER BY period_start DESC LIMIT 1""",
+        (worker_id, as_of, as_of)
+    )
+    if not row:
+        return None
+
+    return BudgetBalance(
+        allocation_id=row["allocation_id"],
+        worker_id=row["worker_id"],
+        allocated=float(row["allocated"]),
+        spent=float(row["spent"]),
+        reserved=float(row["reserved"]),
+        available=float(row["available"]),
+        delegated=float(row["delegated"]),
+        period_start=row["period_start"],
+        period_end=row["period_end"],
+        updated_at=row["updated_at"],
+    )
+
+
+def get_all_worker_balances(db: Database) -> list[BudgetBalance]:
+    """Get all current budget balances.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        List of all budget balances
+    """
+    now = datetime.now()
+    rows = db.fetchall(
+        """SELECT * FROM budget_balances
+           WHERE period_start <= ? AND period_end >= ?
+           ORDER BY worker_id""",
+        (now, now)
+    )
+    return [
+        BudgetBalance(
+            allocation_id=row["allocation_id"],
+            worker_id=row["worker_id"],
+            allocated=float(row["allocated"]),
+            spent=float(row["spent"]),
+            reserved=float(row["reserved"]),
+            available=float(row["available"]),
+            delegated=float(row["delegated"]),
+            period_start=row["period_start"],
+            period_end=row["period_end"],
+            updated_at=row["updated_at"],
+        )
+        for row in rows
+    ]
+
+
+def delete_budget_balance(db: Database, allocation_id: str) -> None:
+    """Delete a budget balance.
+
+    Args:
+        db: Database instance
+        allocation_id: Allocation ID
+    """
+    db.execute("DELETE FROM budget_balances WHERE allocation_id = ?", (allocation_id,))
+    db.connection.commit()
+
+
+def get_pool_allocated_total(db: Database, pool_id: str) -> float:
+    """Get total allocated credits from a pool.
+
+    Args:
+        db: Database instance
+        pool_id: Pool ID
+
+    Returns:
+        Total allocated credits
+    """
+    row = db.fetchone(
+        "SELECT COALESCE(SUM(allocated_credits), 0) as total FROM budget_allocations WHERE pool_id = ?",
+        (pool_id,)
+    )
+    return float(row["total"]) if row else 0.0
+
+
+def is_worker_manager(db: Database, worker_id: str) -> bool:
+    """Check if worker has any direct reports.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to check
+
+    Returns:
+        True if worker has direct reports
+    """
+    row = db.fetchone(
+        "SELECT 1 FROM workers WHERE manager_id = ? LIMIT 1",
+        (worker_id,)
+    )
+    return row is not None

@@ -1,0 +1,81 @@
+# Q1 2025 Strategic OKRs
+# This file defines the board-level objectives for the organization
+
+objective:
+  id: obj-q1-market
+  title: "Establish market presence in Q1"
+  description: |
+    Get our product into users' hands and prove value.
+    Success means: shipped product, real users, positive feedback.
+  owner: ceo
+  timeframe:
+    start: 2025-01-01
+    end: 2025-03-31
+  status: active
+  budget:
+    monthly: 10000
+    currency: USD
+
+key_results:
+  - id: kr-mvp-launch
+    title: "Launch MVP to public"
+    description: "Ship a working product that users can sign up for and use"
+    type: milestone
+    target_date: 2025-02-15
+    status: not_started
+    owner: ceo
+    progress: 0
+    dependencies: []
+
+  - id: kr-beta-users
+    title: "100 active beta users"
+    description: "Users who have signed up and used the product at least once"
+    type: metric
+    metric_name: active_users
+    target_value: 100
+    current_value: 0
+    status: not_started
+    owner: marketing
+    progress: 0
+    dependencies:
+      - kr-mvp-launch
+
+  - id: kr-nps
+    title: "NPS score > 40"
+    description: "Net Promoter Score from user surveys"
+    type: metric
+    metric_name: nps_score
+    target_value: 40
+    current_value: null
+    status: not_started
+    owner: product
+    progress: 0
+    dependencies:
+      - kr-beta-users
+
+# Work breakdown (CEO will create these as beads)
+suggested_initiatives:
+  - title: "Backend API Development"
+    serves: kr-mvp-launch
+    estimated_effort: 2_weeks
+    skills_needed: [coding, api_design]
+
+  - title: "Frontend UI Development"
+    serves: kr-mvp-launch
+    estimated_effort: 2_weeks
+    skills_needed: [coding, ui_design]
+
+  - title: "Landing Page & Marketing Site"
+    serves: kr-beta-users
+    estimated_effort: 1_week
+    skills_needed: [coding, copywriting]
+
+  - title: "User Outreach Campaign"
+    serves: kr-beta-users
+    estimated_effort: ongoing
+    skills_needed: [marketing, communication]
+
+  - title: "User Feedback Collection"
+    serves: kr-nps
+    estimated_effort: ongoing
+    skills_needed: [research, communication]

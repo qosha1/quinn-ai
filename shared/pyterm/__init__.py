@@ -39,7 +39,7 @@ from shared.pyterm.conversation import (
     Turn,
     Transcript,
 )
-from shared.pyterm.persistence import TranscriptStore
+from shared.pyterm.persistence import TranscriptStore, TranscriptRepository, TRANSCRIPT_SCHEMA_SQL
 from shared.pyterm.tools import (
     TrackedCall,
     ToolCallTracker,
@@ -122,6 +122,8 @@ __all__ = [
     "Transcript",
     # Persistence
     "TranscriptStore",
+    "TranscriptRepository",
+    "TRANSCRIPT_SCHEMA_SQL",
     # Tools
     "TrackedCall",
     "ToolCallTracker",

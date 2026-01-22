@@ -4,9 +4,9 @@ qn org stop command.
 
 import click
 
-from commands.main import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.org import Org
+from cli.commands.main import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.org import Org
 from shared import InvalidOrgTransition
 
 

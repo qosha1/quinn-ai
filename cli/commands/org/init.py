@@ -7,9 +7,9 @@ from pathlib import Path
 
 import click
 
-from commands.main import pass_context, Context
-from core.db import init_database, get_org_db_path
-from core.org import Org
+from cli.commands.main import pass_context, Context
+from cli.core.db import init_database, get_org_db_path
+from cli.core.org import Org
 
 
 # Path to default config templates (relative to this file's package)

@@ -1,0 +1,226 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+env:
+  PYTHON_VERSION_MIN: '3.11'
+  PYTHON_VERSION_MAX: '3.12'
+  GO_VERSION: '1.21'
+
+jobs:
+  # Test job runs on all triggers (PR, push to main, release tags)
+  test:
+    name: Test (Python ${{ matrix.python-version }} on ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "cli/[dev]"
+
+      - name: Run tests
+        run: |
+          cd cli
+          python -m pytest tests/ -v --tb=short
+        env:
+          PYTHONPATH: ${{ github.workspace }}/cli
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: cli/pytest_output.txt
+          retention-days: 7
+
+  # Build beads binaries (only on main branch or release tags)
+  build-beads:
+    name: Build Beads (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            runner: macos-latest
+            os: darwin
+            arch: arm64
+          - platform: darwin-amd64
+            runner: macos-latest
+            os: darwin
+            arch: amd64
+          - platform: linux-amd64
+            runner: ubuntu-latest
+            os: linux
+            arch: amd64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build beads binary
+        run: |
+          chmod +x ./scripts/build-beads.sh
+          PLATFORM=${{ matrix.os }} ARCH=${{ matrix.arch }} ./scripts/build-beads.sh
+        env:
+          BEADS_VERSION: '0.46.0'
+
+      - name: Verify binary
+        run: |
+          if [ -f cli/bin/bd ]; then
+            chmod +x cli/bin/bd
+            file cli/bin/bd
+            ls -lh cli/bin/bd
+          else
+            echo "Binary not found"
+            exit 1
+          fi
+
+      - name: Upload beads artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: beads-${{ matrix.platform }}
+          path: cli/bin/bd
+          retention-days: 7
+          if-no-files-found: error
+
+  # Build Python wheel (only on main branch or release tags)
+  build-python:
+    name: Build Python Package
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: build-beads
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION_MAX }}
+          cache: 'pip'
+
+      - name: Download beads artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: beads-*
+          path: cli/bin/
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded beads binaries:"
+          ls -lh cli/bin/
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel hatchling
+
+      - name: Build wheel
+        run: |
+          cd cli
+          python -m build --wheel
+
+      - name: List built wheels
+        run: |
+          ls -lh cli/dist/
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel
+          path: cli/dist/*.whl
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Test wheel installation
+        run: |
+          python -m pip install cli/dist/*.whl
+          qn --version || echo "qn command not found in PATH"
+
+  # Publish release (only on version tags)
+  publish-release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [test, build-python]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Python wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: python-wheel
+          path: dist/
+
+      - name: Download beads binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: beads-*
+          path: beads-binaries/
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release v${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/*.whl
+            beads-binaries/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to PyPI
+        if: success()
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages-dir: dist/
+          skip-existing: true
+          verbose: true

@@ -1,0 +1,5 @@
+# Install shared package in editable mode
+-e ./shared
+
+# Install CLI package in editable mode
+-e ./cli[dev]

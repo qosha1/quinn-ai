@@ -6,10 +6,10 @@ import os
 
 import click
 
-from commands.main import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.worker import Worker
-from core.queries import get_channel, create_message
+from cli.commands.main import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.worker import Worker
+from cli.core.queries import get_channel, create_message
 from shared import WorkerNotFound
 
 

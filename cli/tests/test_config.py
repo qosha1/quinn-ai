@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.config import (
+from cli.core.config import (
     load_providers_config,
     load_worker_templates_config,
     load_org_config,

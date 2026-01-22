@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from core.db import (
+from cli.core.db import (
     Database,
     init_database,
     open_database,
     get_org_db_path,
     SCHEMA_VERSION,
 )
-from core.queries import (
+from cli.core.queries import (
     # Org
     get_org_state,
     update_org_status,

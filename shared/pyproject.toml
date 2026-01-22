@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "quinnai-shared"
+version = "0.1.0"
+description = "QuinnAI shared business logic and state machines"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "QuinnAI Team" }
+]
+dependencies = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

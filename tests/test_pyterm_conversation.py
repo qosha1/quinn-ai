@@ -314,3 +314,111 @@ class TestIntegration:
         assert "tool_calls" in turn_dict
         assert "tool_results" in turn_dict
         assert turn_dict["is_complete"] is True
+
+
+class TestTurnWorkDimensions:
+    """Tests for Work dimensions (ask_id, okr_id) on Turn."""
+
+    def test_turn_default_work_dimensions(self):
+        """Test that work dimensions default to None."""
+        turn = Turn(id="turn-1", prompt=Message.user("Hello"))
+        assert turn.ask_id is None
+        assert turn.okr_id is None
+
+    def test_turn_with_ask_id(self):
+        """Test creating a turn with ask_id."""
+        turn = Turn(
+            id="turn-1",
+            prompt=Message.user("Do this task"),
+            ask_id="ask-123"
+        )
+        assert turn.ask_id == "ask-123"
+        assert turn.okr_id is None
+
+    def test_turn_with_okr_id(self):
+        """Test creating a turn with okr_id."""
+        turn = Turn(
+            id="turn-1",
+            prompt=Message.user("Work on revenue goal"),
+            okr_id="okr-revenue-q4"
+        )
+        assert turn.ask_id is None
+        assert turn.okr_id == "okr-revenue-q4"
+
+    def test_turn_with_both_dimensions(self):
+        """Test creating a turn with both work dimensions."""
+        turn = Turn(
+            id="turn-1",
+            prompt=Message.user("Complete task for OKR"),
+            ask_id="ask-456",
+            okr_id="okr-growth"
+        )
+        assert turn.ask_id == "ask-456"
+        assert turn.okr_id == "okr-growth"
+
+    def test_turn_to_dict_includes_work_dimensions(self):
+        """Test that to_dict includes work dimensions."""
+        turn = Turn(
+            id="turn-1",
+            prompt=Message.user("Task"),
+            ask_id="ask-1",
+            okr_id="okr-1"
+        )
+        turn.complete(Message.assistant("Done"))
+
+        d = turn.to_dict()
+        assert "ask_id" in d
+        assert "okr_id" in d
+        assert d["ask_id"] == "ask-1"
+        assert d["okr_id"] == "okr-1"
+
+    def test_turn_to_dict_null_work_dimensions(self):
+        """Test that to_dict handles null work dimensions."""
+        turn = Turn(id="turn-1", prompt=Message.user("Task"))
+        turn.complete(Message.assistant("Done"))
+
+        d = turn.to_dict()
+        assert d["ask_id"] is None
+        assert d["okr_id"] is None
+
+    def test_transcript_new_turn_with_ask_id(self):
+        """Test creating turn via transcript with ask_id."""
+        transcript = Transcript()
+        turn = transcript.new_turn("Do task", ask_id="ask-789")
+
+        assert turn.ask_id == "ask-789"
+
+    def test_transcript_new_turn_with_okr_id(self):
+        """Test creating turn via transcript with okr_id."""
+        transcript = Transcript()
+        turn = transcript.new_turn("Work on OKR", okr_id="okr-team-goal")
+
+        assert turn.okr_id == "okr-team-goal"
+
+    def test_transcript_new_turn_with_both_dimensions(self):
+        """Test creating turn via transcript with both dimensions."""
+        transcript = Transcript()
+        turn = transcript.new_turn(
+            "Complete task for quarterly OKR",
+            ask_id="ask-100",
+            okr_id="okr-q4-2026"
+        )
+
+        assert turn.ask_id == "ask-100"
+        assert turn.okr_id == "okr-q4-2026"
+
+    def test_transcript_new_turn_with_dimensions_and_metadata(self):
+        """Test that work dimensions work alongside metadata."""
+        transcript = Transcript()
+        turn = transcript.new_turn(
+            "Task with everything",
+            ask_id="ask-500",
+            okr_id="okr-revenue",
+            priority="high",
+            source="escalation"
+        )
+
+        assert turn.ask_id == "ask-500"
+        assert turn.okr_id == "okr-revenue"
+        assert turn.metadata["priority"] == "high"
+        assert turn.metadata["source"] == "escalation"

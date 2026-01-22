@@ -1,0 +1,57 @@
+# Worker templates for startup-team example
+# Defines the roles that can be hired in this org
+
+templates:
+  ceo:
+    name: CEO
+    description: Chief Executive Officer - strategic leadership and team building
+    skills:
+      strategy: 90
+      management: 85
+      reasoning: 80
+      communication: 85
+    cost: 75  # Mid-tier model for leadership
+    capabilities:
+      - hire_workers
+      - set_okrs
+      - delegate_work
+      - approve_budgets
+    default_channels:
+      - board-channel
+      - all-hands
+
+  engineer:
+    name: Engineer
+    description: Software engineer - builds and ships code
+    skills:
+      coding: 85
+      reasoning: 70
+      research: 60
+    cost: 50  # Efficient model for coding tasks
+    capabilities:
+      - write_code
+      - run_tests
+      - submit_pr
+    default_channels:
+      - engineering
+
+  researcher:
+    name: Researcher
+    description: Research specialist - gathers and analyzes information
+    skills:
+      research: 90
+      reasoning: 80
+      writing: 75
+    cost: 40  # Lower cost for research tasks
+    capabilities:
+      - web_search
+      - analyze_data
+      - write_reports
+    default_channels:
+      - research
+
+# Cost tier mapping (0-100)
+# 0-25:   Budget models (haiku, gpt-4o-mini)
+# 26-50:  Standard models (sonnet, gpt-4o)
+# 51-75:  Mid-tier (sonnet with more context)
+# 76-100: Premium models (opus, gpt-5)

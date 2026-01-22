@@ -123,6 +123,10 @@ class Turn:
 
     A turn represents one exchange: user prompt -> assistant response.
     May include multiple tool calls/results within the assistant's response.
+
+    Work Dimensions:
+        ask_id: Links to Ask bead (who requested, what, why)
+        okr_id: Links to OKR for strategic alignment
     """
 
     id: str
@@ -133,6 +137,9 @@ class Turn:
     started_at: datetime = field(default_factory=datetime.now)
     completed_at: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Work dimensions
+    ask_id: str | None = None  # Link to Ask bead
+    okr_id: str | None = None  # Link to OKR for alignment
 
     @property
     def is_complete(self) -> bool:
@@ -172,6 +179,9 @@ class Turn:
             "is_complete": self.is_complete,
             "duration_ms": self.duration_ms,
             "metadata": self.metadata,
+            # Work dimensions
+            "ask_id": self.ask_id,
+            "okr_id": self.okr_id,
         }
 
     def get_messages(self) -> list[Message]:
@@ -205,13 +215,31 @@ class Transcript:
         self._turns: list[Turn] = []
         self._turn_counter = 0
 
-    def new_turn(self, prompt: str, **metadata) -> Turn:
-        """Start a new turn with a user prompt."""
+    def new_turn(
+        self,
+        prompt: str,
+        ask_id: str | None = None,
+        okr_id: str | None = None,
+        **metadata,
+    ) -> Turn:
+        """Start a new turn with a user prompt.
+
+        Args:
+            prompt: The user's prompt text.
+            ask_id: Optional link to Ask bead (work dimension).
+            okr_id: Optional link to OKR (work dimension).
+            **metadata: Additional metadata for the turn.
+
+        Returns:
+            The new Turn instance.
+        """
         self._turn_counter += 1
         turn = Turn(
             id=f"turn-{self._turn_counter}",
             prompt=Message.user(prompt),
             metadata=metadata,
+            ask_id=ask_id,
+            okr_id=okr_id,
         )
         self._turns.append(turn)
         return turn

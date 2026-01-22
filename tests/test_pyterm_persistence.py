@@ -3,6 +3,7 @@ Tests for pyterm SQLite persistence.
 """
 
 import pytest
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -15,7 +16,7 @@ from shared.pyterm.conversation import (
     Turn,
     Transcript,
 )
-from shared.pyterm.persistence import TranscriptStore
+from shared.pyterm.persistence import TranscriptStore, TranscriptRepository, TRANSCRIPT_SCHEMA_SQL
 
 
 class TestTranscriptStore:
@@ -609,3 +610,363 @@ class TestIntegration:
         assert loaded.turns[0].prompt.content == "Hello"
 
         store2.close()
+
+
+class TestWorkDimensions:
+    """Tests for Work dimensions (ask_id, okr_id) in Turn persistence."""
+
+    def test_save_and_load_with_ask_id(self, tmp_path: Path):
+        """Test that ask_id is persisted correctly."""
+        db_path = tmp_path / "test.db"
+        store = TranscriptStore(str(db_path))
+
+        transcript = Transcript()
+        turn = transcript.new_turn("Do this task", ask_id="ask-123")
+        turn.complete(Message.assistant("Done!"))
+
+        store.save_transcript("session-1", transcript)
+        loaded = store.load_transcript("session-1")
+
+        assert loaded.turns[0].ask_id == "ask-123"
+        store.close()
+
+    def test_save_and_load_with_okr_id(self, tmp_path: Path):
+        """Test that okr_id is persisted correctly."""
+        db_path = tmp_path / "test.db"
+        store = TranscriptStore(str(db_path))
+
+        transcript = Transcript()
+        turn = transcript.new_turn("Improve conversion rate", okr_id="okr-456")
+        turn.complete(Message.assistant("Implementing optimization"))
+
+        store.save_transcript("session-1", transcript)
+        loaded = store.load_transcript("session-1")
+
+        assert loaded.turns[0].okr_id == "okr-456"
+        store.close()
+
+    def test_save_and_load_with_both_dimensions(self, tmp_path: Path):
+        """Test that both ask_id and okr_id are persisted together."""
+        db_path = tmp_path / "test.db"
+        store = TranscriptStore(str(db_path))
+
+        transcript = Transcript()
+        turn = transcript.new_turn(
+            "Complete quarterly goal task",
+            ask_id="ask-789",
+            okr_id="okr-q4-revenue"
+        )
+        turn.complete(Message.assistant("Working on it"))
+
+        store.save_transcript("session-1", transcript)
+        loaded = store.load_transcript("session-1")
+
+        assert loaded.turns[0].ask_id == "ask-789"
+        assert loaded.turns[0].okr_id == "okr-q4-revenue"
+        store.close()
+
+    def test_null_work_dimensions(self, tmp_path: Path):
+        """Test that null work dimensions are handled correctly."""
+        db_path = tmp_path / "test.db"
+        store = TranscriptStore(str(db_path))
+
+        transcript = Transcript()
+        turn = transcript.new_turn("Just a regular task")
+        turn.complete(Message.assistant("Done"))
+
+        store.save_transcript("session-1", transcript)
+        loaded = store.load_transcript("session-1")
+
+        assert loaded.turns[0].ask_id is None
+        assert loaded.turns[0].okr_id is None
+        store.close()
+
+    def test_work_dimensions_in_to_dict(self, tmp_path: Path):
+        """Test that work dimensions appear in to_dict output."""
+        transcript = Transcript()
+        turn = transcript.new_turn("Task", ask_id="ask-1", okr_id="okr-1")
+        turn.complete(Message.assistant("Done"))
+
+        d = turn.to_dict()
+        assert d["ask_id"] == "ask-1"
+        assert d["okr_id"] == "okr-1"
+
+
+class MockDatabase:
+    """Mock Database class for testing TranscriptRepository."""
+
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self._connection = None
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        if self._connection is None:
+            self._connection = sqlite3.connect(
+                str(self.db_path),
+                detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
+            )
+            self._connection.row_factory = sqlite3.Row
+            self._connection.execute("PRAGMA foreign_keys = ON")
+            # Create minimal workers table for foreign key
+            self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS workers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    team_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    skills TEXT NOT NULL DEFAULT '{}',
+                    cost INTEGER NOT NULL DEFAULT 50
+                )
+            """)
+            self._connection.commit()
+        return self._connection
+
+    def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
+        return self.connection.execute(sql, params)
+
+    def fetchone(self, sql: str, params: tuple = ()):
+        cursor = self.execute(sql, params)
+        return cursor.fetchone()
+
+    def fetchall(self, sql: str, params: tuple = ()) -> list:
+        cursor = self.execute(sql, params)
+        return cursor.fetchall()
+
+    def transaction(self):
+        return TransactionContext(self.connection)
+
+    def close(self):
+        if self._connection:
+            self._connection.close()
+            self._connection = None
+
+
+class TransactionContext:
+    """Context manager for mock database transactions."""
+
+    def __init__(self, conn):
+        self.conn = conn
+        self.cursor = None
+
+    def __enter__(self):
+        self.cursor = self.conn.cursor()
+        return self.cursor
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self.conn.commit()
+        else:
+            self.conn.rollback()
+        self.cursor.close()
+
+
+class TestTranscriptRepository:
+    """Tests for TranscriptRepository integrated with quinn.db."""
+
+    def _create_worker(self, db: MockDatabase, worker_id: str):
+        """Helper to create a worker for foreign key constraints."""
+        db.execute(
+            "INSERT OR IGNORE INTO workers (id, name, role, team_id, status) VALUES (?, ?, ?, ?, ?)",
+            (worker_id, "Test Worker", "developer", "team-1", "active")
+        )
+        db.connection.commit()
+
+    def test_init_creates_tables(self, tmp_path: Path):
+        """Test that initialization creates transcript tables."""
+        db_path = tmp_path / "quinn.db"
+        db = MockDatabase(db_path)
+        repo = TranscriptRepository(db)
+
+        # Check tables exist
+        tables = db.fetchall(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'transcript_%'"
+        )
+        table_names = [t['name'] for t in tables]
+
+        assert 'transcript_sessions' in table_names
+        assert 'transcript_turns' in table_names
+        assert 'transcript_tool_calls' in table_names
+        assert 'transcript_tool_results' in table_names
+
+        db.close()
+
+    def test_save_and_load_transcript(self, tmp_path: Path):
+        """Test basic save/load round-trip with TranscriptRepository."""
+        db_path = tmp_path / "quinn.db"
+        db = MockDatabase(db_path)
+        self._create_worker(db, "worker-1")
+        repo = TranscriptRepository(db)
+
+        transcript = Transcript()
+        turn = transcript.new_turn("Hello from repository!")
+        turn.complete(Message.assistant("Hi back!"))
+
+        repo.save_transcript("session-1", transcript, worker_id="worker-1")
+        loaded = repo.load_transcript("session-1")
+
+        assert loaded is not None
+        assert len(loaded) == 1
+        assert loaded.turns[0].prompt.content == "Hello from repository!"
+        assert loaded.turns[0].response.content == "Hi back!"
+
+        db.close()
+
+    def test_save_with_work_dimensions(self, tmp_path: Path):
+        """Test saving and loading transcripts with work dimensions."""
+        db_path = tmp_path / "quinn.db"
+        db = MockDatabase(db_path)
+        self._create_worker(db, "worker-1")
+        repo = TranscriptRepository(db)
+
+        transcript = Transcript()
+        turn = transcript.new_turn(
+            "Complete OKR task",
+            ask_id="ask-999",
+            okr_id="okr-revenue"
+        )
+        turn.complete(Message.assistant("Working on revenue goal"))
+
+        repo.save_transcript("session-1", transcript, worker_id="worker-1")
+        loaded = repo.load_transcript("session-1")
+
+        assert loaded.turns[0].ask_id == "ask-999"
+        assert loaded.turns[0].okr_id == "okr-revenue"
+
+        db.close()
+
+    def test_list_sessions_by_worker(self, tmp_path: Path):
+        """Test listing sessions filtered by worker."""
+        db_path = tmp_path / "quinn.db"
+        db = MockDatabase(db_path)
+        self._create_worker(db, "worker-1")
+        self._create_worker(db, "worker-2")
+        repo = TranscriptRepository(db)
+
+        # Create sessions for different workers
+        for i in range(3):
+            t = Transcript()
+            t.new_turn(f"Prompt {i}")
+            repo.save_transcript(f"w1-session-{i}", t, worker_id="worker-1")
+
+        for i in range(2):
+            t = Transcript()
+            t.new_turn(f"Prompt {i}")
+            repo.save_transcript(f"w2-session-{i}", t, worker_id="worker-2")
+
+        # List all
+        all_sessions = repo.list_sessions()
+        assert len(all_sessions) == 5
+
+        # List by worker
+        w1_sessions = repo.list_sessions(worker_id="worker-1")
+        assert len(w1_sessions) == 3
+        assert all(s.startswith("w1-") for s in w1_sessions)
+
+        w2_sessions = repo.list_sessions(worker_id="worker-2")
+        assert len(w2_sessions) == 2
+
+        db.close()
+
+    def test_get_turns_by_ask(self, tmp_path: Path):
+        """Test querying turns by ask_id."""
+        db_path = tmp_path / "quinn.db"
+        db = MockDatabase(db_path)
+        self._create_worker(db, "worker-1")
+        repo = TranscriptRepository(db)
+
+        # Create transcripts with different ask_ids
+        t1 = Transcript()
+        t1.new_turn("Task for ask-1", ask_id="ask-1").complete(Message.assistant("Done"))
+        t1.new_turn("Another task for ask-1", ask_id="ask-1").complete(Message.assistant("Also done"))
+        repo.save_transcript("session-1", t1, worker_id="worker-1")
+
+        t2 = Transcript()
+        t2.new_turn("Task for ask-2", ask_id="ask-2").complete(Message.assistant("Done"))
+        repo.save_transcript("session-2", t2, worker_id="worker-1")
+
+        # Query by ask_id
+        ask1_turns = repo.get_turns_by_ask("ask-1")
+        assert len(ask1_turns) == 2
+
+        ask2_turns = repo.get_turns_by_ask("ask-2")
+        assert len(ask2_turns) == 1
+
+        db.close()
+
+    def test_get_turns_by_okr(self, tmp_path: Path):
+        """Test querying turns by okr_id."""
+        db_path = tmp_path / "quinn.db"
+        db = MockDatabase(db_path)
+        self._create_worker(db, "worker-1")
+        repo = TranscriptRepository(db)
+
+        t1 = Transcript()
+        t1.new_turn("Revenue task", okr_id="okr-revenue").complete(Message.assistant("Done"))
+        repo.save_transcript("session-1", t1, worker_id="worker-1")
+
+        t2 = Transcript()
+        t2.new_turn("Growth task", okr_id="okr-growth").complete(Message.assistant("Done"))
+        t2.new_turn("Another growth task", okr_id="okr-growth").complete(Message.assistant("Also done"))
+        repo.save_transcript("session-2", t2, worker_id="worker-1")
+
+        revenue_turns = repo.get_turns_by_okr("okr-revenue")
+        assert len(revenue_turns) == 1
+
+        growth_turns = repo.get_turns_by_okr("okr-growth")
+        assert len(growth_turns) == 2
+
+        db.close()
+
+    def test_delete_transcript(self, tmp_path: Path):
+        """Test deleting a transcript from quinn.db."""
+        db_path = tmp_path / "quinn.db"
+        db = MockDatabase(db_path)
+        self._create_worker(db, "worker-1")
+        repo = TranscriptRepository(db)
+
+        transcript = Transcript()
+        turn = transcript.new_turn("Hello")
+        turn.add_tool_call(ToolCall(id="tc-1", name="test", arguments={}))
+        turn.add_tool_result(ToolResult(tool_call_id="tc-1", output="ok"))
+        turn.complete(Message.assistant("Hi"))
+        repo.save_transcript("session-1", transcript, worker_id="worker-1")
+
+        assert repo.load_transcript("session-1") is not None
+        assert repo.delete_transcript("session-1") is True
+        assert repo.load_transcript("session-1") is None
+
+        db.close()
+
+    def test_session_metadata(self, tmp_path: Path):
+        """Test getting session metadata from TranscriptRepository."""
+        db_path = tmp_path / "quinn.db"
+        db = MockDatabase(db_path)
+        self._create_worker(db, "worker-1")
+        repo = TranscriptRepository(db)
+
+        transcript = Transcript()
+        turn = transcript.new_turn("Hello")
+        turn.add_tool_call(ToolCall(id="tc-1", name="bash", arguments={}))
+        turn.add_tool_result(ToolResult(tool_call_id="tc-1", output="done"))
+        turn.complete(Message.assistant("Hi"))
+
+        repo.save_transcript(
+            "session-1",
+            transcript,
+            worker_id="worker-1",
+            metadata={"project": "test"}
+        )
+
+        meta = repo.get_session_metadata("session-1")
+
+        assert meta is not None
+        assert meta['session_id'] == "session-1"
+        assert meta['worker_id'] == "worker-1"
+        assert meta['turn_count'] == 1
+        assert meta['tool_call_count'] == 1
+        assert meta['tool_result_count'] == 1
+        assert meta['metadata'] == {"project": "test"}
+
+        db.close()

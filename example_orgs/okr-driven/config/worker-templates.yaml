@@ -1,0 +1,103 @@
+# Worker templates for okr-driven example
+# Includes roles needed for OKR execution
+
+templates:
+  ceo:
+    name: CEO
+    description: Chief Executive Officer - owns objectives, hires team
+    skills:
+      strategy: 95
+      management: 90
+      reasoning: 85
+      communication: 90
+    cost: 80  # Premium for strategic decisions
+    capabilities:
+      - hire_workers
+      - set_okrs
+      - delegate_work
+      - approve_budgets
+      - fire_workers
+    default_channels:
+      - board-channel
+      - all-hands
+      - leadership
+
+  product_lead:
+    name: Product Lead
+    description: Product leadership - owns product KRs
+    skills:
+      strategy: 75
+      reasoning: 80
+      research: 70
+      communication: 75
+    cost: 60
+    capabilities:
+      - define_features
+      - prioritize_backlog
+      - delegate_work
+    default_channels:
+      - product
+      - all-hands
+
+  marketing_lead:
+    name: Marketing Lead
+    description: Marketing leadership - owns growth KRs
+    skills:
+      communication: 85
+      research: 75
+      strategy: 70
+      writing: 80
+    cost: 55
+    capabilities:
+      - run_campaigns
+      - analyze_metrics
+      - delegate_work
+    default_channels:
+      - marketing
+      - all-hands
+
+  engineer:
+    name: Engineer
+    description: Software engineer - builds product
+    skills:
+      coding: 85
+      reasoning: 70
+      research: 60
+    cost: 50
+    capabilities:
+      - write_code
+      - run_tests
+      - submit_pr
+    default_channels:
+      - engineering
+
+  designer:
+    name: Designer
+    description: Product designer - UI/UX
+    skills:
+      design: 85
+      communication: 70
+      research: 65
+    cost: 45
+    capabilities:
+      - create_designs
+      - user_research
+    default_channels:
+      - design
+      - product
+
+  researcher:
+    name: Researcher
+    description: User researcher - feedback collection
+    skills:
+      research: 90
+      communication: 80
+      writing: 75
+    cost: 40
+    capabilities:
+      - conduct_interviews
+      - analyze_feedback
+      - write_reports
+    default_channels:
+      - research
+      - product

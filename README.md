@@ -4,6 +4,26 @@
 
 Design an org. Hire AI workers. Set goals. Watch it run. Intervene only when it's going off the rails.
 
+## Try It Now
+
+```bash
+# 1. Go to examples
+cd example_orgs/hello-world
+
+# 2. Set your API key
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# 3. Run it
+./setup.sh    # Initialize org
+./run.sh      # Start org
+./observe.sh  # Watch the CEO
+```
+
+See [example_orgs/](./example_orgs/) for more examples:
+- **hello-world** - Basic org lifecycle (5 min)
+- **startup-team** - CEO hires and delegates (10 min)
+- **okr-driven** - Strategic goals cascade through org (15 min)
+
 ## The Idea
 
 You know how in RollerCoaster Tycoon you design a park, hire staff, set prices, and then watch guests walk around having fun (or vomiting)?
@@ -247,6 +267,24 @@ permissions (issue_id, grantee_type, grantee_id, level)
 | Board interface | CLI? Web dashboard? Both? |
 
 These drive what we build.
+
+## Prerequisites
+
+**Required:**
+- **Python 3.11+** - Core runtime for QuinnAI CLI
+- **tmux** - Worker session management (each worker runs in a tmux session)
+- **API Key** - At least one provider API key (see below)
+
+**API Keys (set one or more):**
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."   # Required for Claude-based workers
+export OPENAI_API_KEY="sk-..."          # Optional, for OpenAI provider
+```
+
+**Verify prerequisites:**
+```bash
+cd example_orgs && ./common/check-env.sh
+```
 
 ## Installation
 

@@ -2,13 +2,6 @@
 Pytest configuration for CLI tests.
 """
 
-import sys
-from pathlib import Path
-
-# Add cli to Python path
-cli_path = Path(__file__).parent.parent
-sys.path.insert(0, str(cli_path))
-
-# Add project root to Python path (for shared/)
-project_root = cli_path.parent
-sys.path.insert(0, str(project_root))
+# No sys.path manipulation needed - packages are installed via pyproject.toml
+# Tests should be run from the quinnai directory with: pytest cli/tests/
+# Or with the package installed: pip install -e . && pytest

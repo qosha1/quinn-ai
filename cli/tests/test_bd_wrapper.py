@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from core.bd_wrapper import (
+from cli.core.bd_wrapper import (
     get_bundled_bd_path,
     get_org_beads_dir,
     run_bd,

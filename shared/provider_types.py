@@ -7,7 +7,24 @@ that all AI provider implementations must use.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional
+
+
+class CostTier(str, Enum):
+    """Model cost/quality tiers.
+
+    Maps worker cost scores to model quality tiers:
+    - BUDGET (0-30): Fast, cheap models for simple tasks
+    - STANDARD (31-60): Balanced models for general purpose
+    - ADVANCED (61-80): High capability for complex reasoning
+    - PREMIUM (81-100): Best available for strategic decisions
+    """
+
+    BUDGET = "budget"
+    STANDARD = "standard"
+    ADVANCED = "advanced"
+    PREMIUM = "premium"
 
 
 @dataclass
@@ -53,6 +70,7 @@ class ModelInfo:
     """Information about a specific model.
 
     Describes a model's identity, cost tier, capabilities, and limits.
+    Supports both the legacy cost_tier tuple and the new tier-based selection.
     """
 
     id: str
@@ -61,14 +79,23 @@ class ModelInfo:
     name: str
     """Human-readable model name (e.g., 'Claude 3.5 Sonnet')."""
 
-    cost_tier: tuple[int, int]
-    """Min and max cost scores (0-100) this model serves."""
+    cost_tier: tuple[int, int] = (0, 100)
+    """Min and max cost scores (0-100) this model serves (legacy)."""
 
     capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
     """What tasks this model can perform."""
 
     max_tokens: int = 4096
     """Maximum tokens for generation."""
+
+    tier: Optional[CostTier] = None
+    """Explicit tier assignment (preferred over cost_tier)."""
+
+    tiers: Optional[list[CostTier]] = None
+    """Multiple tiers this model can serve (e.g., sonnet serves standard and advanced)."""
+
+    temperature: Optional[float] = None
+    """Override default temperature (e.g., gpt-5 requires 1.0)."""
 
     def matches_cost(self, cost: int) -> bool:
         """Check if this model serves the given cost tier.
@@ -80,6 +107,34 @@ class ModelInfo:
             True if cost falls within this model's tier
         """
         return self.cost_tier[0] <= cost <= self.cost_tier[1]
+
+    def matches_tier(self, tier: CostTier) -> bool:
+        """Check if this model serves the given tier.
+
+        Args:
+            tier: CostTier to check
+
+        Returns:
+            True if model serves this tier
+        """
+        if self.tiers:
+            return tier in self.tiers
+        if self.tier:
+            return self.tier == tier
+        # Fall back to cost_tier mapping
+        return self._tier_from_cost_range() == tier
+
+    def _tier_from_cost_range(self) -> CostTier:
+        """Derive tier from legacy cost_tier range."""
+        min_cost = self.cost_tier[0]
+        if min_cost <= 30:
+            return CostTier.BUDGET
+        elif min_cost <= 60:
+            return CostTier.STANDARD
+        elif min_cost <= 80:
+            return CostTier.ADVANCED
+        else:
+            return CostTier.PREMIUM
 
 
 @dataclass

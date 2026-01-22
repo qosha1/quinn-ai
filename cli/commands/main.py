@@ -10,7 +10,7 @@ from typing import Optional
 
 import click
 
-from core.db import open_database, init_database, get_org_db_path
+from cli.core.db import open_database, init_database, get_org_db_path
 
 
 # Context object passed to all commands
@@ -90,14 +90,14 @@ def wrkr():
 
 
 # Import and register subcommands
-from commands.org import init_cmd, start_cmd, stop_cmd, status_cmd
+from cli.commands.org import init_cmd, start_cmd, stop_cmd, status_cmd
 
 org.add_command(init_cmd, name="init")
 org.add_command(start_cmd, name="start")
 org.add_command(stop_cmd, name="stop")
 org.add_command(status_cmd, name="status")
 
-from commands.wrkr import get_work_cmd, inbox_cmd, send_cmd, status_cmd as wrkr_status_cmd
+from cli.commands.wrkr import get_work_cmd, inbox_cmd, send_cmd, status_cmd as wrkr_status_cmd
 
 wrkr.add_command(get_work_cmd, name="get-work")
 wrkr.add_command(inbox_cmd, name="inbox")

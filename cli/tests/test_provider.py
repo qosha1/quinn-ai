@@ -8,7 +8,7 @@ from typing import Optional
 
 import pytest
 
-from providers.base import (
+from cli.providers.base import (
     CompletionResult,
     Message,
     ModelCapabilities,
@@ -17,7 +17,7 @@ from providers.base import (
     ProviderConfig,
     ProviderError,
 )
-from core.provider import (
+from cli.core.provider import (
     ProviderRegistry,
     load_providers_from_config,
     _expand_env_vars,
