@@ -390,3 +390,148 @@ def can_worker_access_bead(
     """
     actual = check_bead_permission(db, worker_id, bead_id)
     return actual >= level
+
+
+# =========================================================================
+# Permission Decorators
+# =========================================================================
+
+
+def requires_permission(
+    resource_type: str,
+    level: PermissionLevel,
+    resource_id_param: str = "bead_id",
+    worker_id_param: str = "worker_id",
+    db_param: str = "db",
+    action: Optional[str] = None,
+):
+    """Decorator to enforce permission checks on functions.
+
+    Extracts resource_id, worker_id, and db from function parameters and
+    checks if the worker has the required permission level before executing.
+
+    Args:
+        resource_type: Type of resource ("bead" or "channel")
+        level: Required permission level
+        resource_id_param: Name of parameter containing resource ID
+        worker_id_param: Name of parameter containing worker ID
+        db_param: Name of parameter containing Database instance
+        action: Action name for audit (defaults to function name)
+
+    Returns:
+        Decorator function
+
+    Example:
+        @requires_permission("bead", PermissionLevel.WRITE)
+        def update_bead(db: Database, worker_id: str, bead_id: str, **data):
+            # Only runs if worker has WRITE permission on bead
+            pass
+
+        @requires_permission("channel", PermissionLevel.COMMENT, resource_id_param="channel_id")
+        def post_message(db: Database, worker_id: str, channel_id: str, content: str):
+            # Only runs if worker has COMMENT permission on channel
+            pass
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            import inspect
+
+            # Get function signature to map args to kwargs
+            sig = inspect.signature(func)
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+            all_params = bound.arguments
+
+            # Extract required parameters
+            db = all_params.get(db_param)
+            worker_id = all_params.get(worker_id_param)
+            resource_id = all_params.get(resource_id_param)
+
+            if db is None:
+                raise ValueError(f"Missing required parameter: {db_param}")
+            if worker_id is None:
+                raise ValueError(f"Missing required parameter: {worker_id_param}")
+            if resource_id is None:
+                raise ValueError(f"Missing required parameter: {resource_id_param}")
+
+            # Determine action name
+            action_name = action or func.__name__
+
+            # Check permission based on resource type
+            if resource_type == "bead":
+                require_bead_permission(
+                    db=db,
+                    worker_id=worker_id,
+                    bead_id=resource_id,
+                    required_level=level,
+                    action=action_name,
+                )
+            elif resource_type == "channel":
+                require_channel_permission(
+                    db=db,
+                    worker_id=worker_id,
+                    channel_id=resource_id,
+                    required_level=level,
+                    action=action_name,
+                )
+            else:
+                raise ValueError(f"Unknown resource type: {resource_type}")
+
+            # Permission check passed - execute the function
+            return func(*args, **kwargs)
+
+        return wrapper
+    return decorator
+
+
+def requires_bead_permission(
+    level: PermissionLevel,
+    bead_id_param: str = "bead_id",
+    worker_id_param: str = "worker_id",
+    db_param: str = "db",
+    action: Optional[str] = None,
+):
+    """Convenience decorator for bead permission checks.
+
+    Equivalent to @requires_permission("bead", level, ...).
+
+    Example:
+        @requires_bead_permission(PermissionLevel.APPROVE)
+        def close_bead(db: Database, worker_id: str, bead_id: str):
+            pass
+    """
+    return requires_permission(
+        resource_type="bead",
+        level=level,
+        resource_id_param=bead_id_param,
+        worker_id_param=worker_id_param,
+        db_param=db_param,
+        action=action,
+    )
+
+
+def requires_channel_permission(
+    level: PermissionLevel,
+    channel_id_param: str = "channel_id",
+    worker_id_param: str = "worker_id",
+    db_param: str = "db",
+    action: Optional[str] = None,
+):
+    """Convenience decorator for channel permission checks.
+
+    Equivalent to @requires_permission("channel", level, ...).
+
+    Example:
+        @requires_channel_permission(PermissionLevel.WRITE)
+        def delete_message(db: Database, worker_id: str, channel_id: str, message_id: str):
+            pass
+    """
+    return requires_permission(
+        resource_type="channel",
+        level=level,
+        resource_id_param=channel_id_param,
+        worker_id_param=worker_id_param,
+        db_param=db_param,
+        action=action,
+    )

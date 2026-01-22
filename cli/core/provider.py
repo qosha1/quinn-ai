@@ -860,3 +860,125 @@ def create_session_for_worker(
 
     # Create session instance
     return ClaudeCodeSession(config)
+
+
+def complete_with_budget(
+    registry: "ProviderRegistry",
+    db: "Database",
+    worker_id: str,
+    worker_cost: int,
+    worker_skills: dict[str, int],
+    messages: list[dict],
+    max_tokens: int = 4096,
+    preferred_provider: Optional[str] = None,
+    reference_type: Optional[str] = None,
+    reference_id: Optional[str] = None,
+) -> dict:
+    """Execute a completion request with budget enforcement.
+
+    This is the main entry point for budget-controlled LLM calls.
+    It:
+    1. Selects the appropriate provider/model for the worker
+    2. Estimates the cost and checks budget
+    3. Makes the API call
+    4. Records actual spend
+
+    Args:
+        registry: Initialized ProviderRegistry
+        db: Database instance for budget operations
+        worker_id: Worker making the request
+        worker_cost: Worker cost score (0-100)
+        worker_skills: Worker skills dict
+        messages: List of message dicts for the completion
+        max_tokens: Maximum output tokens
+        preferred_provider: Optional provider preference
+        reference_type: Optional reference type for transaction (e.g., 'task', 'message')
+        reference_id: Optional reference ID for transaction
+
+    Returns:
+        Dict with completion result including:
+        - content: The completion text
+        - model: Model used
+        - input_tokens: Actual input tokens
+        - output_tokens: Actual output tokens
+        - cost: Actual cost in credits
+        - budget_remaining: Remaining budget after this call
+
+    Raises:
+        BudgetExhaustedError: If insufficient budget
+        NoBudgetAllocationError: If no budget allocation exists
+        ProviderSelectionError: If no provider can satisfy requirements
+    """
+    # Import here to avoid circular imports
+    from cli.core.budget import (
+        BudgetEnforcer,
+        estimate_cost,
+        get_remaining_budget,
+    )
+    from cli.core.db import Database
+
+    # Step 1: Select provider and model
+    selection = select_provider_for_worker(
+        registry=registry,
+        worker_cost=worker_cost,
+        worker_skills=worker_skills,
+        preferred_provider=preferred_provider,
+    )
+
+    # Step 2: Estimate input tokens (rough approximation)
+    # Count characters and estimate ~4 chars per token
+    total_chars = sum(len(str(m.get("content", ""))) for m in messages)
+    estimated_input_tokens = total_chars // 4
+
+    # Step 3: Estimate cost
+    model_tier = selection.tier.value  # budget, standard, advanced, premium
+    estimated_cost = estimate_cost(
+        model_tier=model_tier,
+        input_tokens=estimated_input_tokens,
+        output_tokens=max_tokens,
+    )
+
+    # Step 4: Enforce budget and make completion
+    with BudgetEnforcer(db, worker_id, estimated_cost) as enforcer:
+        # Make the actual provider call
+        # Note: This is a simplified implementation. Real providers
+        # would have their own complete() method.
+        result = selection.provider.complete(
+            messages=messages,
+            model=selection.model.id,
+            max_tokens=max_tokens,
+        )
+
+        # Get actual token counts from result
+        actual_input = result.get("usage", {}).get("input_tokens", estimated_input_tokens)
+        actual_output = result.get("usage", {}).get("output_tokens", 0)
+
+        # Calculate actual cost
+        actual_cost = estimate_cost(
+            model_tier=model_tier,
+            input_tokens=actual_input,
+            output_tokens=actual_output,
+        )
+
+        # Record the spend
+        enforcer.record(
+            actual_cost=actual_cost,
+            provider=selection.provider.name,
+            model=selection.model.id,
+            input_tokens=actual_input,
+            output_tokens=actual_output,
+            reference_type=reference_type,
+            reference_id=reference_id,
+            description=f"Completion via {selection.provider.name}/{selection.model.id}",
+        )
+
+    # Return enhanced result
+    return {
+        "content": result.get("content", ""),
+        "model": selection.model.id,
+        "provider": selection.provider.name,
+        "input_tokens": actual_input,
+        "output_tokens": actual_output,
+        "cost": actual_cost,
+        "budget_remaining": get_remaining_budget(db, worker_id),
+    }

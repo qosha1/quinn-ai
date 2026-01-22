@@ -66,7 +66,7 @@ def wrkr(ctx, worker_id: Optional[str]):
 
 
 # Import and register subcommands
-from cli.commands.org import init_cmd, start_cmd, stop_cmd, status_cmd, cleanup_cmd, logs_cmd, observe_cmd, okr_cmd
+from cli.commands.org import init_cmd, start_cmd, stop_cmd, status_cmd, cleanup_cmd, logs_cmd, observe_cmd, okr_cmd, budget_cmd
 
 org.add_command(init_cmd, name="init")
 org.add_command(start_cmd, name="start")
@@ -76,6 +76,7 @@ org.add_command(cleanup_cmd, name="cleanup")
 org.add_command(logs_cmd, name="logs")
 org.add_command(observe_cmd, name="observe")
 org.add_command(okr_cmd, name="okr")
+org.add_command(budget_cmd, name="budget")
 
 from cli.commands.wrkr import get_work_cmd, inbox_cmd, send_cmd, status_cmd as wrkr_status_cmd
 

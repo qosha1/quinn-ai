@@ -446,3 +446,144 @@ class TestPermissionAuditQueries:
         page1_ids = {a.id for a in page1}
         page2_ids = {a.id for a in page2}
         assert page1_ids.isdisjoint(page2_ids)
+
+
+class TestRequiresPermissionDecorator:
+    """Test the @requires_permission decorator."""
+
+    def test_decorator_allows_authorized_access(self, db, worker):
+        """Should allow function execution when worker has permission."""
+        from cli.core.permissions import (
+            requires_bead_permission,
+            PermissionLevel,
+        )
+
+        # Grant worker WRITE permission
+        grant_permission(
+            db,
+            grantee_type="worker",
+            grantee_id=worker.id,
+            level=PermissionLevel.WRITE,
+            bead_id="bead-123",
+        )
+
+        call_count = [0]
+
+        @requires_bead_permission(PermissionLevel.WRITE)
+        def update_bead(db, worker_id, bead_id, data):
+            call_count[0] += 1
+            return "success"
+
+        result = update_bead(db, worker.id, "bead-123", {"title": "new"})
+
+        assert result == "success"
+        assert call_count[0] == 1
+
+    def test_decorator_denies_unauthorized_access(self, db, worker):
+        """Should raise PermissionDenied when worker lacks permission."""
+        from cli.core.permissions import (
+            requires_bead_permission,
+            PermissionLevel,
+            PermissionDenied,
+        )
+
+        # No permission granted
+
+        @requires_bead_permission(PermissionLevel.WRITE)
+        def update_bead(db, worker_id, bead_id, data):
+            return "success"
+
+        with pytest.raises(PermissionDenied) as exc_info:
+            update_bead(db, worker.id, "bead-123", {"title": "new"})
+
+        assert exc_info.value.required == PermissionLevel.WRITE
+        assert exc_info.value.worker_id == worker.id
+
+    def test_decorator_with_channel(self, db, worker, team):
+        """Should work with channel permission checks."""
+        from cli.core.permissions import (
+            requires_channel_permission,
+            PermissionLevel,
+            PermissionDenied,
+        )
+        from cli.core.queries import create_channel, subscribe_to_channel
+
+        # Create channel and subscribe worker (gives COMMENT permission)
+        channel = create_channel(db, "general", "team", team.id)
+        subscribe_to_channel(db, channel.id, worker.id)
+
+        @requires_channel_permission(PermissionLevel.COMMENT)
+        def post_message(db, worker_id, channel_id, content):
+            return f"posted: {content}"
+
+        result = post_message(db, worker.id, channel.id, "hello")
+
+        assert result == "posted: hello"
+
+    def test_decorator_custom_action_name(self, db, worker):
+        """Should use custom action name in audit."""
+        from cli.core.permissions import (
+            requires_bead_permission,
+            PermissionLevel,
+            PermissionDenied,
+        )
+
+        @requires_bead_permission(PermissionLevel.ADMIN, action="custom_action")
+        def some_function(db, worker_id, bead_id):
+            return "success"
+
+        with pytest.raises(PermissionDenied) as exc_info:
+            some_function(db, worker.id, "bead-123")
+
+        assert exc_info.value.action == "custom_action"
+
+    def test_decorator_with_kwargs(self, db, worker):
+        """Should work when parameters are passed as kwargs."""
+        from cli.core.permissions import (
+            requires_bead_permission,
+            PermissionLevel,
+        )
+
+        grant_permission(
+            db,
+            grantee_type="worker",
+            grantee_id=worker.id,
+            level=PermissionLevel.READ,
+            bead_id="bead-456",
+        )
+
+        @requires_bead_permission(PermissionLevel.READ)
+        def read_bead(db, worker_id, bead_id):
+            return f"read {bead_id}"
+
+        result = read_bead(db=db, worker_id=worker.id, bead_id="bead-456")
+
+        assert result == "read bead-456"
+
+    def test_decorator_custom_param_names(self, db, worker):
+        """Should work with custom parameter names."""
+        from cli.core.permissions import (
+            requires_bead_permission,
+            PermissionLevel,
+        )
+
+        grant_permission(
+            db,
+            grantee_type="worker",
+            grantee_id=worker.id,
+            level=PermissionLevel.READ,
+            bead_id="bead-789",
+        )
+
+        @requires_bead_permission(
+            PermissionLevel.READ,
+            bead_id_param="issue_id",
+            worker_id_param="actor_id",
+            db_param="database",
+        )
+        def read_issue(database, actor_id, issue_id):
+            return f"read {issue_id}"
+
+        result = read_issue(db, worker.id, "bead-789")
+
+        assert result == "read bead-789"
