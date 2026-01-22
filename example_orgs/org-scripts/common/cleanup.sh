@@ -74,13 +74,22 @@ if [[ -f "$ORG_PATH/live/quinn.db" ]]; then
     "$QN" --org-path "$ORG_PATH" org stop 2>/dev/null || true
 fi
 
-# Kill any tmux sessions for this org
+# Kill any tmux sessions for this org's workers
 org_name=$(basename "$ORG_PATH")
 echo "Killing tmux sessions for $org_name..."
-tmux list-sessions 2>/dev/null | grep "$org_name" | cut -d: -f1 | while read session; do
-    echo "  Killing session: $session"
-    tmux kill-session -t "$session" 2>/dev/null || true
-done
+if [[ -f "$ORG_PATH/live/quinn.db" ]]; then
+    # Get worker IDs from database and kill their sessions
+    # Worker IDs are like 'wrkr-87561a3a', session names are 'qn-wrkr-87561a3a'
+    sqlite3 "$ORG_PATH/live/quinn.db" "SELECT id FROM workers;" 2>/dev/null | while read worker_id; do
+        # Extract the hex part after 'wrkr-'
+        hex_id="${worker_id#wrkr-}"
+        session_name="qn-wrkr-$hex_id"
+        if tmux has-session -t "$session_name" 2>/dev/null; then
+            echo "  Killing session: $session_name"
+            tmux kill-session -t "$session_name" 2>/dev/null || true
+        fi
+    done
+fi
 
 # Remove folder unless --keep
 if [[ "$KEEP" != "true" ]]; then

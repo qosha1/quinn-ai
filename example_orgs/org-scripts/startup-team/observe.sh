@@ -26,12 +26,12 @@ cat "$ORG_DIR/org-chart/current.yaml" 2>/dev/null || echo "(not found)"
 echo
 echo "--- Workers ---"
 sqlite3 -header -column "$ORG_DIR/live/quinn.db" \
-    "SELECT id, name, role, lifecycle_status, runtime_status FROM workers;" 2>/dev/null || echo "(no workers)"
+    "SELECT w.id, w.name, w.role, w.status, ws.runtime_status FROM workers w LEFT JOIN worker_state ws ON w.id = ws.worker_id;" 2>/dev/null || echo "(no workers)"
 
 echo
 echo "--- Recent Messages ---"
 sqlite3 -header -column "$ORG_DIR/live/quinn.db" \
-    "SELECT substr(id, 1, 12) as id, channel_id, sender_id, substr(content, 1, 50) as content FROM messages ORDER BY created_at DESC LIMIT 10;" 2>/dev/null || echo "(no messages)"
+    "SELECT substr(id, 1, 12) as id, channel_id, from_worker_id, substr(content, 1, 50) as content FROM messages ORDER BY created_at DESC LIMIT 10;" 2>/dev/null || echo "(no messages)"
 
 echo
 echo "--- Live Sessions ---"
