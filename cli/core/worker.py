@@ -79,6 +79,9 @@ from shared.bd.client import BdClient, BdCommandError
 # Import beads client abstraction for Worker class
 from .adapters.beads import BeadsClient, SubprocessBeadsClient
 
+# Import messaging service
+from .messaging import MessagingService
+
 # Import shared business logic
 from shared import (
     LIFECYCLE_TRANSITIONS,
@@ -176,6 +179,7 @@ class Worker:
         session_registry: Optional["SessionRegistry"] = None,
         org_path: Optional["Path"] = None,
         beads_client: Optional[BeadsClient] = None,
+        messaging_service: Optional[MessagingService] = None,
     ):
         """Initialize worker wrapper.
 
@@ -188,6 +192,8 @@ class Worker:
                      freeze storage and update org-chart.
             beads_client: Optional BeadsClient for bead operations. If not provided,
                          a default SubprocessBeadsClient will be created on demand.
+            messaging_service: Optional MessagingService for messaging operations.
+                              If not provided, a default will be created on demand.
         """
         self.db = db
         self.id = worker_id
@@ -197,6 +203,7 @@ class Worker:
         self._session_registry: Optional["SessionRegistry"] = session_registry
         self._org_path: Optional["Path"] = org_path
         self._beads_client: Optional[BeadsClient] = beads_client
+        self._messaging_service: Optional[MessagingService] = messaging_service
 
     def _load_worker(self) -> None:
         """Load worker data from database."""
@@ -264,6 +271,20 @@ class Worker:
             self._beads_client = SubprocessBeadsClient(Path("/usr/bin/false"), None)
 
         return self._beads_client
+
+    def _get_messaging_service(self) -> MessagingService:
+        """Get the MessagingService for messaging operations.
+
+        Returns the injected service if available, otherwise creates a default one.
+
+        Returns:
+            MessagingService instance
+        """
+        if self._messaging_service is not None:
+            return self._messaging_service
+
+        self._messaging_service = MessagingService(self.db)
+        return self._messaging_service
 
     # ==================
     # LIFECYCLE PROPERTIES
@@ -719,52 +740,25 @@ class Worker:
     def _create_offboarding_review_bead(self) -> None:
         """Create a review notification bead for the manager.
 
-        Creates a direct channel between the offboarding worker and their
-        manager, sends a handoff message, and creates a notification bead
-        for the manager to review the worker's frozen storage.
+        Uses MessagingService to create a direct channel between the
+        offboarding worker and their manager, send a handoff message,
+        and create a notification bead for the review.
         """
         if not self.manager_id:
             return
 
         try:
-            # Create or get direct channel for handoff
-            channel_name = f"handoff-{self.id}"
-            channel = create_channel(
-                self.db,
-                name=channel_name,
-                channel_type="direct",
+            messaging = self._get_messaging_service()
+            result = messaging.send_offboarding_notification(
+                worker_id=self.id,
+                worker_name=self.name,
+                worker_role=self.role,
+                manager_id=self.manager_id,
             )
-
-            # Subscribe both workers to the channel
-            subscribe_to_channel(self.db, channel.id, self.id)
-            subscribe_to_channel(self.db, channel.id, self.manager_id)
-
-            # Create handoff message
-            message = create_message(
-                self.db,
-                channel_id=channel.id,
-                from_worker_id=self.id,
-                content=(
-                    f"OFFBOARDING REVIEW REQUIRED\n\n"
-                    f"Worker {self.name} ({self.id}) is being terminated.\n"
-                    f"Role: {self.role}\n\n"
-                    f"Please review their frozen storage and archive any useful files "
-                    f"to shared/archive/{self.id}/ before completing termination.\n\n"
-                    f"Use: cleanup_terminated_worker(db, '{self.id}', storage_manager)"
-                ),
-                priority=1,  # High priority
-                time_sensitivity="hours",  # Needs attention soon
-            )
-
-            # Create notification bead for manager
-            create_notification_bead(
-                self.db,
-                worker_id=self.manager_id,
-                message_id=message.id,
-                channel_id=channel.id,
-                priority=1,  # High priority
-            )
-        except (ImportError, sqlite3.Error, ValueError):
+            # Result is best-effort - we don't raise on failure
+            if not result.success:
+                _logger.debug(f"Offboarding notification failed: {result.error}")
+        except Exception:
             # Intentionally swallowed: notification is best-effort during offboarding.
             # ImportError: messaging module not available
             # sqlite3.Error: database issues, ValueError: invalid data
