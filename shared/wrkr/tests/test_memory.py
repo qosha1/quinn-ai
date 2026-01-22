@@ -5,9 +5,9 @@ Tests record, recent, search, and get_context functionality.
 
 import pytest
 
-from wrkr.core.result import WorkerResult
-from wrkr.core.task import Task
-from wrkr.memory.interface import MockMemory
+from shared.wrkr.core.result import WorkerResult
+from shared.wrkr.core.task import Task
+from shared.wrkr.memory.interface import MockMemory
 
 
 class TestMockMemoryCreation:

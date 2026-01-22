@@ -5,7 +5,7 @@ Tests configuration creation, tier property, reports_to_human, skill methods, an
 
 import pytest
 
-from wrkr.core.config import WorkerConfig
+from shared.wrkr.core.config import WorkerConfig
 
 
 class TestWorkerConfigCreation:

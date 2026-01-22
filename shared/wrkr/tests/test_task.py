@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from wrkr.core.task import Task
+from shared.wrkr.core.task import Task
 
 
 class TestTaskCreation:

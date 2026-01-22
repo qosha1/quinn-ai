@@ -8,7 +8,7 @@ different queue backends (in-memory, SQLite, Redis, etc.).
 
 from typing import Protocol
 
-from ..core.task import Task
+from shared.wrkr.core.task import Task
 
 
 class QueueInterface(Protocol):

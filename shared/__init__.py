@@ -7,6 +7,8 @@ shared across all QuinnAI components (CLI, backend, etc.).
 - state_machines: State transition definitions
 - exceptions: Business logic exceptions
 - provider_types: Provider interfaces and data classes
+- wrkr: Pure state machine worker abstraction (import via `from shared.wrkr import ...`)
+- pyterm: Terminal session management (import via `from shared.pyterm import ...`)
 """
 
 from .state_machines import (

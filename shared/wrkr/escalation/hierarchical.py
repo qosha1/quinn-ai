@@ -11,8 +11,8 @@ implementations passed to the router - this module only handles routing logic.
 
 from dataclasses import dataclass
 
-from ..core.task import Task
-from .interface import EscalationInterface, EscalationResponse
+from shared.wrkr.core.task import Task
+from shared.wrkr.escalation.interface import EscalationInterface, EscalationResponse
 
 
 @dataclass

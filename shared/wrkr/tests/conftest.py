@@ -9,12 +9,12 @@ from typing import Any
 
 import pytest
 
-from wrkr.core.config import WorkerConfig
-from wrkr.core.result import WorkerResult
-from wrkr.core.task import Task
-from wrkr.escalation.interface import EscalationResponse, MockEscalation
-from wrkr.memory.interface import MockMemory
-from wrkr.queue.interface import MockQueue
+from shared.wrkr.core.config import WorkerConfig
+from shared.wrkr.core.result import WorkerResult
+from shared.wrkr.core.task import Task
+from shared.wrkr.escalation.interface import EscalationResponse, MockEscalation
+from shared.wrkr.memory.interface import MockMemory
+from shared.wrkr.queue.interface import MockQueue
 
 
 @pytest.fixture

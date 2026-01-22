@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from ..core.task import Task
-from ..core.result import WorkerResult
+from shared.wrkr.core.task import Task
+from shared.wrkr.core.result import WorkerResult
 
 
 class MemoryInterface(Protocol):

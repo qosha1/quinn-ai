@@ -8,7 +8,7 @@ or external systems when they encounter problems they cannot resolve independent
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from ..core.task import Task
+from shared.wrkr.core.task import Task
 
 
 @dataclass

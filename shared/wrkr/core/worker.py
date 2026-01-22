@@ -1,4 +1,4 @@
-"""BaseWorker: Pure state machine for worker lifecycle management.
+r"""BaseWorker: Pure state machine for worker lifecycle management.
 
 This module implements the core worker abstraction as a state machine.
 Workers have ZERO knowledge of providers (Claude, Codex, etc.) - the execute()
@@ -16,10 +16,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .config import WorkerConfig
-from .result import WorkerResult
-from .state import InvalidTransition, WorkerState, transition
-from .task import Task
+from shared.wrkr.core.config import WorkerConfig
+from shared.wrkr.core.result import WorkerResult
+from shared.wrkr.core.state import InvalidTransition, WorkerState, transition
+from shared.wrkr.core.task import Task
 
 
 # =============================================================================

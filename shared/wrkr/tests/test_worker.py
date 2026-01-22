@@ -6,14 +6,14 @@ Uses a concrete SimpleWorker subclass that implements execute().
 
 import pytest
 
-from wrkr.core.config import WorkerConfig
-from wrkr.core.result import WorkerResult
-from wrkr.core.state import InvalidTransition, WorkerState
-from wrkr.core.task import Task
-from wrkr.core.worker import BaseWorker, EscalationResponse
-from wrkr.escalation.interface import MockEscalation
-from wrkr.memory.interface import MockMemory
-from wrkr.queue.interface import MockQueue
+from shared.wrkr.core.config import WorkerConfig
+from shared.wrkr.core.result import WorkerResult
+from shared.wrkr.core.state import InvalidTransition, WorkerState
+from shared.wrkr.core.task import Task
+from shared.wrkr.core.worker import BaseWorker, EscalationResponse
+from shared.wrkr.escalation.interface import MockEscalation
+from shared.wrkr.memory.interface import MockMemory
+from shared.wrkr.queue.interface import MockQueue
 
 
 class SimpleWorker(BaseWorker):

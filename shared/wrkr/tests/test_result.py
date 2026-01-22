@@ -5,7 +5,7 @@ Tests result creation, factory methods, and all field behaviors.
 
 import pytest
 
-from wrkr.core.result import WorkerResult
+from shared.wrkr.core.result import WorkerResult
 
 
 class TestWorkerResultCreation:

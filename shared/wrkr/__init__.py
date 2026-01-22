@@ -10,20 +10,20 @@ NO provider dependencies (Claude, OpenAI, etc.) belong here.
 Provider integration happens in the session/provider layer above.
 """
 
-from .core.state import WorkerState, can_transition, transition, InvalidTransition
-from .core.task import Task
-from .core.result import WorkerResult
-from .core.config import WorkerConfig
-from .core.worker import BaseWorker
-from .queue.interface import QueueInterface, MockQueue
-from .memory.interface import MemoryInterface, MockMemory
-from .escalation.interface import (
+from shared.wrkr.core.state import WorkerState, can_transition, transition, InvalidTransition
+from shared.wrkr.core.task import Task
+from shared.wrkr.core.result import WorkerResult
+from shared.wrkr.core.config import WorkerConfig
+from shared.wrkr.core.worker import BaseWorker
+from shared.wrkr.queue.interface import QueueInterface, MockQueue
+from shared.wrkr.memory.interface import MemoryInterface, MockMemory
+from shared.wrkr.escalation.interface import (
     EscalationInterface,
     EscalationResponse,
     MockEscalation,
     NoopEscalation,
 )
-from .escalation.hierarchical import (
+from shared.wrkr.escalation.hierarchical import (
     OrgTopology,
     WorkerNode,
     HierarchicalRouter,

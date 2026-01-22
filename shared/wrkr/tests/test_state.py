@@ -5,7 +5,7 @@ Tests the WorkerState enum, state transitions, and InvalidTransition exception.
 
 import pytest
 
-from wrkr.core.state import (
+from shared.wrkr.core.state import (
     VALID_TRANSITIONS,
     InvalidTransition,
     WorkerState,
