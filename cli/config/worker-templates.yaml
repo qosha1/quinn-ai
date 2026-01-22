@@ -1,5 +1,5 @@
 # Worker Templates
-# Defines skill and cost profiles for different worker roles.
+# Defines skill, cost, and authority profiles for different worker roles.
 #
 # Skills: 0-100 score for each capability
 #   - coding: Writing and understanding code
@@ -13,6 +13,13 @@
 #   - 31-60: Standard models (balanced)
 #   - 61-80: Advanced models (high capability)
 #   - 81-100: Premium models (best available)
+#
+# Authority: Organizational permissions
+#   - can_hire: Can create new worker positions
+#   - can_fire: Can terminate workers
+#   - can_delegate: Can delegate budget to reports
+#   - budget_limit: Maximum budget that can be held (null = unlimited)
+#   - escalation_path: Default escalation chain
 
 templates:
   # Executive roles - high cost, strategic focus
@@ -25,6 +32,12 @@ templates:
       management: 95
       strategy: 100
     cost: 100
+    authority:
+      can_hire: true
+      can_fire: true
+      can_delegate: true
+      budget_limit: null  # Unlimited
+      escalation_path: [board]
 
   director:
     description: "Director level - department leadership"
@@ -35,6 +48,12 @@ templates:
       management: 85
       strategy: 80
     cost: 85
+    authority:
+      can_hire: true
+      can_fire: true
+      can_delegate: true
+      budget_limit: 10000
+      escalation_path: [ceo, board]
 
   # Management roles - balanced cost, coordination focus
   manager:
@@ -46,6 +65,12 @@ templates:
       management: 80
       strategy: 60
     cost: 70
+    authority:
+      can_hire: true
+      can_fire: false
+      can_delegate: true
+      budget_limit: 5000
+      escalation_path: [director, ceo, board]
 
   lead:
     description: "Tech lead - technical leadership"
@@ -56,6 +81,12 @@ templates:
       management: 70
       strategy: 50
     cost: 75
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: true
+      budget_limit: 2000
+      escalation_path: [manager, director, ceo, board]
 
   # Individual contributor roles - varied cost based on seniority
   senior_engineer:
@@ -67,6 +98,12 @@ templates:
       management: 40
       strategy: 40
     cost: 70
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 1000
+      escalation_path: [lead, manager, director, ceo, board]
 
   engineer:
     description: "Engineer - standard IC"
@@ -77,6 +114,12 @@ templates:
       management: 25
       strategy: 25
     cost: 50
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 500
+      escalation_path: [senior_engineer, lead, manager, director, ceo, board]
 
   junior_engineer:
     description: "Junior engineer - learning IC"
@@ -87,6 +130,12 @@ templates:
       management: 15
       strategy: 15
     cost: 30
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 200
+      escalation_path: [engineer, senior_engineer, lead, manager, director, ceo, board]
 
   # Specialist roles
   researcher:
@@ -98,6 +147,12 @@ templates:
       management: 30
       strategy: 60
     cost: 65
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 1000
+      escalation_path: [lead, manager, director, ceo, board]
 
   analyst:
     description: "Analyst - data and business analysis"
@@ -108,3 +163,9 @@ templates:
       management: 35
       strategy: 55
     cost: 55
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 500
+      escalation_path: [manager, director, ceo, board]
