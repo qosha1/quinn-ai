@@ -61,7 +61,7 @@ class SessionManager:
                 raise ValueError(f"Worker {worker_id} already has a session")
 
             # Create tmux session with worker-specific name
-            name = session_name or f"worker-{worker_id}"
+            name = session_name or f"qn-{worker_id}"
             session = TmuxSession(session_name=name)
 
             # Create lifecycle hooks

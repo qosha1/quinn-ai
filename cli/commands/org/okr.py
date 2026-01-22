@@ -136,38 +136,7 @@ def list_cmd(ctx: Context, status: Optional[str], assignee: Optional[str], show_
     click.echo("")
 
 
-@okr_cmd.command("add")
-@click.option(
-    "--title",
-    required=True,
-    help="OKR objective title",
-)
-@click.option(
-    "--description", "-d",
-    help="OKR description with objective and key results",
-)
-@click.option(
-    "--owner",
-    default="ceo",
-    help="Owner/assignee of the OKR (default: ceo)",
-)
-@click.option(
-    "--priority", "-p",
-    type=click.Choice(["0", "1", "2", "3", "4"]),
-    default="1",
-    help="Priority (0=critical, 1=high, 2=medium, 3=low, 4=backlog)",
-)
-@click.option(
-    "--label", "-l",
-    multiple=True,
-    help="Labels to apply (can be used multiple times)",
-)
-@click.option(
-    "--due",
-    help="Due date (e.g., +3m, 2025-03-31, 'end of Q1')",
-)
-@pass_context
-def add_cmd(
+def _create_okr(
     ctx: Context,
     title: str,
     description: Optional[str],
@@ -175,26 +144,9 @@ def add_cmd(
     priority: str,
     label: tuple,
     due: Optional[str],
+    parent: Optional[str],
 ):
-    """Create a new OKR as a beads issue.
-
-    Creates an OKR bead that work items can link to via 'serves' dependency.
-
-    \b
-    Examples:
-      qn org okr add --title "Q1 Revenue Growth" --owner ceo
-      qn org okr add --title "Launch MVP" -d "## Objective\\nLaunch by March" --due=+3m
-      qn org okr add --title "Scale Team" -p 1 -l hiring -l growth
-
-    \b
-    OKR Description Format:
-      ## Objective
-      The qualitative goal being pursued
-
-      ## Key Results
-      - Singular, calculable metrics
-      - Not subjective measures
-    """
+    """Shared implementation for set/add commands."""
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)
 
@@ -219,6 +171,9 @@ def add_cmd(
     if due:
         args.extend(["--due", due])
 
+    if parent:
+        args.extend(["--parent", parent])
+
     # Run bd create
     result = run_bd(
         args,
@@ -234,30 +189,176 @@ def add_cmd(
     output = result.stdout.strip()
     click.echo(output)
 
-    # Parse ID if in JSON mode or from text
-    if "--json" in args:
-        try:
-            data = json.loads(output)
-            okr_id = data.get("id")
-        except json.JSONDecodeError:
-            okr_id = None
-    else:
-        # Try to extract ID from "Created issue: xxx" output
-        okr_id = None
-        for line in output.split("\n"):
-            if "Created" in line and "-" in line:
-                # Find the ID (last word with a dash)
-                words = line.split()
-                for word in reversed(words):
-                    if "-" in word and not word.startswith("-"):
-                        okr_id = word.strip()
-                        break
-                break
+    # Try to extract ID from "Created issue: xxx" output
+    okr_id = None
+    for line in output.split("\n"):
+        if "Created" in line and "-" in line:
+            words = line.split()
+            for word in reversed(words):
+                if "-" in word and not word.startswith("-"):
+                    okr_id = word.strip()
+                    break
+            break
 
     if okr_id:
         click.echo("")
         click.echo(f"Link work items to this OKR with:")
         click.echo(f"  bd dep add <work-id> {okr_id} --type serves")
+
+
+@okr_cmd.command("set")
+@click.option("--title", required=True, help="OKR objective title")
+@click.option("--description", "-d", help="OKR description with objective and key results")
+@click.option("--owner", default="ceo", help="Owner/assignee of the OKR (default: ceo)")
+@click.option("--priority", "-p", type=click.Choice(["0", "1", "2", "3", "4"]), default="1",
+              help="Priority (0=critical, 1=high, 2=medium, 3=low, 4=backlog)")
+@click.option("--label", "-l", multiple=True, help="Labels to apply (can be used multiple times)")
+@click.option("--due", help="Due date (e.g., +3m, 2025-03-31)")
+@click.option("--parent", help="Parent OKR ID for hierarchy (creates child OKR)")
+@pass_context
+def set_cmd(ctx: Context, title: str, description: Optional[str], owner: str,
+            priority: str, label: tuple, due: Optional[str], parent: Optional[str]):
+    """Create or update an OKR.
+
+    Creates an OKR bead that work items can link to via 'serves' dependency.
+
+    \b
+    Examples:
+      qn org okr set --title "Q1 Revenue Growth" --owner ceo
+      qn org okr set --title "Launch MVP" --due=+3m --parent=okr-abc
+      qn org okr set --title "Scale Team" -p 1 -l hiring -l growth
+
+    \b
+    OKR Description Format:
+      ## Objective
+      The qualitative goal being pursued
+
+      ## Key Results
+      - Singular, calculable metrics
+      - Not subjective measures
+    """
+    _create_okr(ctx, title, description, owner, priority, label, due, parent)
+
+
+# Alias: 'add' -> 'set'
+@okr_cmd.command("add")
+@click.option("--title", required=True, help="OKR objective title")
+@click.option("--description", "-d", help="OKR description")
+@click.option("--owner", default="ceo", help="Owner (default: ceo)")
+@click.option("--priority", "-p", type=click.Choice(["0", "1", "2", "3", "4"]), default="1")
+@click.option("--label", "-l", multiple=True, help="Labels")
+@click.option("--due", help="Due date")
+@click.option("--parent", help="Parent OKR ID")
+@pass_context
+def add_cmd(ctx: Context, title: str, description: Optional[str], owner: str,
+            priority: str, label: tuple, due: Optional[str], parent: Optional[str]):
+    """Alias for 'set'. Create a new OKR."""
+    _create_okr(ctx, title, description, owner, priority, label, due, parent)
+
+
+@okr_cmd.command("cascade")
+@click.option("--root", help="Root OKR ID to start from (default: show all)")
+@pass_context
+def cascade_cmd(ctx: Context, root: Optional[str]):
+    """Show OKR hierarchy tree.
+
+    Displays OKRs in a tree structure showing parent-child relationships.
+    Board -> CEO -> Directors -> Managers -> Workers
+
+    \b
+    Examples:
+      qn org okr cascade              # Show full OKR tree
+      qn org okr cascade --root=okr-abc  # Start from specific OKR
+    """
+    org_path = ctx.org_path
+    db_path = get_org_db_path(org_path)
+
+    if not db_path.exists():
+        raise click.ClickException(
+            f"Organization not initialized at {org_path}\n"
+            "Run 'qn org init' first."
+        )
+
+    if root:
+        # Show tree from specific OKR
+        result = run_bd(
+            ["dep", "tree", root],
+            org_path=org_path,
+            capture_output=True,
+            skip_permission_check=True,
+        )
+
+        if result.returncode != 0:
+            raise click.ClickException(f"Failed to show OKR tree: {result.stderr}")
+
+        click.echo(f"OKR Cascade from {root}:")
+        click.echo("=" * 50)
+        click.echo(result.stdout)
+    else:
+        # List all OKRs and show hierarchy
+        result = run_bd(
+            ["list", "--type=okr", "--json", "--all"],
+            org_path=org_path,
+            capture_output=True,
+            skip_permission_check=True,
+        )
+
+        if result.returncode != 0:
+            if not result.stdout.strip():
+                click.echo("No OKRs found.")
+                return
+            raise click.ClickException(f"Failed to list OKRs: {result.stderr}")
+
+        try:
+            okrs = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            click.echo("No OKRs found.")
+            return
+
+        if not okrs:
+            click.echo("No OKRs found.")
+            return
+
+        click.echo("OKR Cascade:")
+        click.echo("=" * 50)
+
+        # Build parent-child map
+        children_map: dict[str, list] = {}
+        roots = []
+
+        for okr in okrs:
+            okr_id = okr.get("id", "")
+            parent_id = okr.get("parent_id")
+
+            if parent_id:
+                if parent_id not in children_map:
+                    children_map[parent_id] = []
+                children_map[parent_id].append(okr)
+            else:
+                roots.append(okr)
+
+        def print_okr(okr: dict, indent: int = 0):
+            """Recursively print OKR and children."""
+            prefix = "  " * indent
+            status = okr.get("status", "open")
+            title = okr.get("title", "Untitled")
+            okr_id = okr.get("id", "?")
+            assignee = okr.get("assignee", "")
+
+            status_icon = "✓" if status == "closed" else "○" if status == "open" else "▶"
+            owner_str = f" ({assignee})" if assignee else ""
+
+            click.echo(f"{prefix}{status_icon} {okr_id}: {title}{owner_str}")
+
+            # Print children
+            for child in children_map.get(okr_id, []):
+                print_okr(child, indent + 1)
+
+        # Print from roots
+        for root_okr in roots:
+            print_okr(root_okr)
+
+        click.echo("")
 
 
 @okr_cmd.command("show")
