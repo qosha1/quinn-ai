@@ -66,37 +66,95 @@ class TestOrgGroup:
         assert "--ceo-name" in result.output
 
     def test_org_init_runs(self, runner, temp_org):
-        """qn org init should run without error."""
+        """qn org init should initialize organization."""
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
             "org", "init"
         ])
-        # Not yet implemented returns 0 with message
-        assert "not yet implemented" in result.output
+        assert result.exit_code == 0
+        assert "Initialized organization" in result.output
+        assert "Created CEO" in result.output
+        # Verify folder structure created
+        assert (temp_org / "live").exists()
+        assert (temp_org / "shared").exists()
+        assert (temp_org / "workers").exists()
+
+    def test_org_init_already_initialized(self, runner, temp_org):
+        """qn org init should fail if already initialized."""
+        # First init
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # Second init should fail
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "init"
+        ])
+        assert result.exit_code != 0
+        assert "already initialized" in result.output
 
     def test_org_start_runs(self, runner, temp_org):
-        """qn org start should run."""
+        """qn org start should start initialized organization."""
+        # First init
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # Then start
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
             "org", "start"
         ])
-        assert "not yet implemented" in result.output
+        assert result.exit_code == 0
+        assert "Organization started" in result.output
+
+    def test_org_start_requires_init(self, runner, temp_org):
+        """qn org start should require org to be initialized."""
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "start"
+        ])
+        assert result.exit_code != 0
+        assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
 
     def test_org_stop_runs(self, runner, temp_org):
-        """qn org stop should run."""
+        """qn org stop should stop running organization."""
+        # Init and start first
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "start"])
+        # Then stop
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
             "org", "stop"
         ])
-        assert "not yet implemented" in result.output
+        assert result.exit_code == 0
+        assert "Organization stopped" in result.output
+
+    def test_org_stop_requires_init(self, runner, temp_org):
+        """qn org stop should require org to be initialized."""
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "stop"
+        ])
+        assert result.exit_code != 0
+        assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
 
     def test_org_status_runs(self, runner, temp_org):
-        """qn org status should run."""
+        """qn org status should show organization status."""
+        # First init
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # Then check status
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
             "org", "status"
         ])
-        assert "not yet implemented" in result.output
+        assert result.exit_code == 0
+        assert "Status:" in result.output
+        assert "Workers:" in result.output
+
+    def test_org_status_requires_init(self, runner, temp_org):
+        """qn org status should require org to be initialized."""
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "status"
+        ])
+        assert result.exit_code != 0
+        assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
 
 
 class TestWrkrGroup:
