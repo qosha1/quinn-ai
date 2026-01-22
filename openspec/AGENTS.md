@@ -7,10 +7,15 @@
 ### The Physics
 - **Session = Worker's brain** (1:1, unbreakable)
 - **Every agent is a worker** (CEO, manager, junior - same base unit)
-- **One protocol for everything** (no special cases)
-- **Work has 4 dimensions**: Origin, Flow, Ownership, OKR
+- **One protocol for everything** (Messages = permanent knowledge. Notifications = ephemeral beads. Single central DB.)
+- **Work has 4 dimensions**: Ask, Flow, Ownership, OKR
 - **OKRs cascade**: Board → CEO → Directors → Managers → Workers
 - **Board = gutterguards** (intervene only when off-track)
+- **Storage mirrors org-chart**: shared/ (org lifetime) + workers/ (worker lifetime, path = org path)
+- **Lifecycles = state determines behavior** (org, worker, work all have states)
+- **Organic growth**: CEO-driven hiring, authority cascades down, org-chart is output not input
+- **Skills & cost are relative** (0-100 scores, system maps to providers, templates pulled on init)
+- **CLI = two actors** (`qn org` = we run, `qn wrkr` = workers run from sessions)
 
 ### Architectural Laws
 1. Code = physics, config = behavior

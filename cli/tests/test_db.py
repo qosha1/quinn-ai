@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from quinnai.core.db import (
+from core.db import (
     Database,
     init_database,
     open_database,
     get_org_db_path,
     SCHEMA_VERSION,
 )
-from quinnai.core.queries import (
+from core.queries import (
     # Org
     get_org_state,
     update_org_status,

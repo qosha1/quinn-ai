@@ -8,7 +8,7 @@ from typing import Optional
 
 import pytest
 
-from quinnai.providers.base import (
+from providers.base import (
     CompletionResult,
     Message,
     ModelCapabilities,
@@ -17,7 +17,7 @@ from quinnai.providers.base import (
     ProviderConfig,
     ProviderError,
 )
-from quinnai.core.provider import (
+from core.provider import (
     ProviderRegistry,
     load_providers_from_config,
     _expand_env_vars,

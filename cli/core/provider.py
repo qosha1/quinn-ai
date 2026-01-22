@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Optional, Type
 
-from ..providers.base import (
+from providers.base import (
     ModelInfo,
     Provider,
     ProviderConfig,
@@ -332,13 +332,13 @@ def _get_default_provider_classes() -> dict[str, Type[Provider]]:
 
     # Only import if the module exists and is implemented
     try:
-        from ..providers.anthropic import AnthropicProvider
+        from providers.anthropic import AnthropicProvider
         classes["anthropic"] = AnthropicProvider
     except ImportError:
         pass
 
     try:
-        from ..providers.openai import OpenAIProvider
+        from providers.openai import OpenAIProvider
         classes["openai"] = OpenAIProvider
     except ImportError:
         pass
