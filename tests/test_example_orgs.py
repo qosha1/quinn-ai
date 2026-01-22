@@ -90,7 +90,7 @@ class TestOrgStart:
     def test_start_changes_status_to_running(self, temp_org_dir):
         """qn org start should transition org to running."""
         run_qn("org", "init", org_path=temp_org_dir)
-        result = run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+        result = run_qn("org", "start", "--no-spawn-ceo", "--skip-config-validation", org_path=temp_org_dir)
 
         assert result.returncode == 0
         assert "running" in result.stdout.lower()
@@ -98,7 +98,7 @@ class TestOrgStart:
     def test_start_activates_ceo(self, temp_org_dir):
         """qn org start should activate the CEO worker."""
         run_qn("org", "init", org_path=temp_org_dir)
-        run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+        run_qn("org", "start", "--no-spawn-ceo", "--skip-config-validation", org_path=temp_org_dir)
 
         result = run_qn("org", "status", org_path=temp_org_dir)
         assert "active" in result.stdout.lower()
@@ -109,7 +109,7 @@ class TestOrgStart:
         Fixed: quinnai-qi2r - Sessions now tracked in database.
         """
         run_qn("org", "init", org_path=temp_org_dir)
-        run_qn("org", "start", org_path=temp_org_dir)  # Default spawns CEO session
+        run_qn("org", "start", "--skip-config-validation", org_path=temp_org_dir)  # Default spawns CEO session
 
         result = run_qn("org", "status", org_path=temp_org_dir)
         # Should show at least 1 session
@@ -136,7 +136,7 @@ class TestOrgStop:
     def test_stop_changes_status_to_stopped(self, temp_org_dir):
         """qn org stop should transition org to stopped."""
         run_qn("org", "init", org_path=temp_org_dir)
-        run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+        run_qn("org", "start", "--no-spawn-ceo", "--skip-config-validation", org_path=temp_org_dir)
         result = run_qn("org", "stop", org_path=temp_org_dir)
 
         assert result.returncode == 0
@@ -153,7 +153,7 @@ class TestHelloWorldExample:
         assert result.returncode == 0, f"Init failed: {result.stderr}"
 
         # Start
-        result = run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+        result = run_qn("org", "start", "--no-spawn-ceo", "--skip-config-validation", org_path=temp_org_dir)
         assert result.returncode == 0, f"Start failed: {result.stderr}"
 
         # Check status
@@ -551,7 +551,7 @@ class TestKnownIssues:
         import yaml
 
         run_qn("org", "init", org_path=temp_org_dir)
-        run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+        run_qn("org", "start", "--no-spawn-ceo", "--skip-config-validation", org_path=temp_org_dir)
 
         org_chart_path = temp_org_dir / "org-chart" / "current.yaml"
         with open(org_chart_path) as f:
@@ -673,7 +673,7 @@ class TestCommunication:
     def test_hired_worker_subscribed_to_team_channel(self, temp_org_dir):
         """Workers hired by a manager should be subscribed to the team channel."""
         run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
-        run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+        run_qn("org", "start", "--no-spawn-ceo", "--skip-config-validation", org_path=temp_org_dir)
 
         from cli.core.db import open_database
         from cli.core.queries import get_worker_by_name, get_worker_channels
@@ -715,7 +715,7 @@ class TestCommunication:
     def test_terminated_worker_unsubscribed_from_channels(self, temp_org_dir):
         """Terminated workers should be unsubscribed from all channels."""
         run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
-        run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+        run_qn("org", "start", "--no-spawn-ceo", "--skip-config-validation", org_path=temp_org_dir)
 
         from cli.core.db import open_database
         from cli.core.queries import get_worker_by_name, get_worker_channels

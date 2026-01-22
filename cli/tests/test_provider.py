@@ -15,7 +15,16 @@ from cli.providers.base import (
     ModelInfo,
     Provider,
     ProviderConfig,
+    RetryConfig,
     ProviderError,
+    AuthenticationError,
+    RateLimitError,
+    ProviderConnectionError,
+    ProviderTimeoutError,
+    APIError,
+    is_retryable_error,
+    calculate_retry_delay,
+    with_retry,
 )
 from cli.core.provider import (
     ProviderRegistry,
@@ -389,7 +398,7 @@ providers:
 
 
 class TestProviderError:
-    """Test ProviderError."""
+    """Test ProviderError and subclasses."""
 
     def test_provider_error(self):
         """Should store provider and cause."""
@@ -398,3 +407,373 @@ class TestProviderError:
         assert str(error) == "Failed"
         assert error.provider == "mock"
         assert error.cause is cause
+
+    def test_authentication_error(self):
+        """AuthenticationError should inherit from ProviderError."""
+        error = AuthenticationError("Invalid API key", "anthropic")
+        assert isinstance(error, ProviderError)
+        assert str(error) == "Invalid API key"
+        assert error.provider == "anthropic"
+
+    def test_rate_limit_error(self):
+        """RateLimitError should inherit from ProviderError."""
+        error = RateLimitError("Rate limit exceeded", "openai")
+        assert isinstance(error, ProviderError)
+        assert str(error) == "Rate limit exceeded"
+        assert error.provider == "openai"
+
+    def test_provider_connection_error(self):
+        """ProviderConnectionError should inherit from ProviderError."""
+        cause = ConnectionError("DNS resolution failed")
+        error = ProviderConnectionError(
+            "Failed to connect to API", "anthropic", cause
+        )
+        assert isinstance(error, ProviderError)
+        assert str(error) == "Failed to connect to API"
+        assert error.provider == "anthropic"
+        assert error.cause is cause
+
+    def test_provider_timeout_error(self):
+        """ProviderTimeoutError should store timeout duration."""
+        error = ProviderTimeoutError(
+            "Request timed out after 30s",
+            "openai",
+            timeout_seconds=30.0,
+        )
+        assert isinstance(error, ProviderError)
+        assert str(error) == "Request timed out after 30s"
+        assert error.provider == "openai"
+        assert error.timeout_seconds == 30.0
+
+    def test_api_error(self):
+        """APIError should store status code."""
+        error = APIError(
+            "Internal server error",
+            "anthropic",
+            status_code=500,
+        )
+        assert isinstance(error, ProviderError)
+        assert str(error) == "Internal server error"
+        assert error.provider == "anthropic"
+        assert error.status_code == 500
+
+    def test_api_error_without_status_code(self):
+        """APIError should work without status code."""
+        error = APIError("Unknown API error", "openai")
+        assert isinstance(error, ProviderError)
+        assert error.status_code is None
+
+
+class TestRetryConfig:
+    """Test RetryConfig."""
+
+    def test_default_values(self):
+        """RetryConfig should have sensible defaults."""
+        config = RetryConfig()
+        assert config.max_retries == 3
+        assert config.initial_delay == 1.0
+        assert config.max_delay == 60.0
+        assert config.exponential_base == 2.0
+        assert config.jitter is True
+
+    def test_custom_values(self):
+        """RetryConfig should accept custom values."""
+        config = RetryConfig(
+            max_retries=5,
+            initial_delay=0.5,
+            max_delay=30.0,
+            exponential_base=3.0,
+            jitter=False,
+        )
+        assert config.max_retries == 5
+        assert config.initial_delay == 0.5
+        assert config.max_delay == 30.0
+        assert config.exponential_base == 3.0
+        assert config.jitter is False
+
+
+class TestProviderConfigRetry:
+    """Test ProviderConfig retry configuration."""
+
+    def test_default_retry_config(self):
+        """Should use legacy max_retries when retry_config not set."""
+        config = ProviderConfig(api_key="test", max_retries=5)
+        retry_config = config.get_retry_config()
+        assert retry_config.max_retries == 5
+
+    def test_explicit_retry_config(self):
+        """Should use explicit retry_config when provided."""
+        custom_retry = RetryConfig(max_retries=10, initial_delay=2.0)
+        config = ProviderConfig(
+            api_key="test",
+            max_retries=3,  # Should be ignored
+            retry_config=custom_retry,
+        )
+        retry_config = config.get_retry_config()
+        assert retry_config.max_retries == 10
+        assert retry_config.initial_delay == 2.0
+
+
+class TestIsRetryableError:
+    """Test is_retryable_error function."""
+
+    def test_connection_error_is_retryable(self):
+        """ProviderConnectionError should be retryable."""
+        error = ProviderConnectionError("Connection failed", "anthropic")
+        assert is_retryable_error(error) is True
+
+    def test_timeout_error_is_retryable(self):
+        """ProviderTimeoutError should be retryable."""
+        error = ProviderTimeoutError("Request timed out", "anthropic", 30.0)
+        assert is_retryable_error(error) is True
+
+    def test_rate_limit_error_is_retryable(self):
+        """RateLimitError (429) should be retryable."""
+        error = RateLimitError("Rate limit exceeded", "openai")
+        assert is_retryable_error(error) is True
+
+    def test_api_error_5xx_is_retryable(self):
+        """APIError with 5xx status should be retryable."""
+        error = APIError("Server error", "anthropic", status_code=500)
+        assert is_retryable_error(error) is True
+
+        error = APIError("Bad gateway", "anthropic", status_code=502)
+        assert is_retryable_error(error) is True
+
+        error = APIError("Service unavailable", "anthropic", status_code=503)
+        assert is_retryable_error(error) is True
+
+    def test_api_error_4xx_not_retryable(self):
+        """APIError with 4xx status (except 429) should not be retryable."""
+        error = APIError("Bad request", "anthropic", status_code=400)
+        assert is_retryable_error(error) is False
+
+        error = APIError("Not found", "anthropic", status_code=404)
+        assert is_retryable_error(error) is False
+
+        error = APIError("Forbidden", "anthropic", status_code=403)
+        assert is_retryable_error(error) is False
+
+    def test_api_error_no_status_not_retryable(self):
+        """APIError without status code should not be retryable."""
+        error = APIError("Unknown error", "anthropic")
+        assert is_retryable_error(error) is False
+
+    def test_auth_error_not_retryable(self):
+        """AuthenticationError should not be retryable."""
+        error = AuthenticationError("Invalid API key", "anthropic")
+        assert is_retryable_error(error) is False
+
+    def test_model_not_available_not_retryable(self):
+        """ModelNotAvailableError should not be retryable."""
+        from cli.providers.base import ModelNotAvailableError
+        error = ModelNotAvailableError("Model not found", "anthropic")
+        assert is_retryable_error(error) is False
+
+    def test_generic_provider_error_not_retryable(self):
+        """Generic ProviderError should not be retryable."""
+        error = ProviderError("Something went wrong", "anthropic")
+        assert is_retryable_error(error) is False
+
+
+class TestCalculateRetryDelay:
+    """Test calculate_retry_delay function."""
+
+    def test_first_retry_delay(self):
+        """First retry should use initial delay."""
+        config = RetryConfig(initial_delay=1.0, jitter=False)
+        delay = calculate_retry_delay(config, 0)
+        assert delay == 1.0
+
+    def test_exponential_backoff(self):
+        """Delays should increase exponentially."""
+        config = RetryConfig(
+            initial_delay=1.0,
+            exponential_base=2.0,
+            max_delay=100.0,
+            jitter=False,
+        )
+        assert calculate_retry_delay(config, 0) == 1.0
+        assert calculate_retry_delay(config, 1) == 2.0
+        assert calculate_retry_delay(config, 2) == 4.0
+        assert calculate_retry_delay(config, 3) == 8.0
+
+    def test_max_delay_cap(self):
+        """Delay should be capped at max_delay."""
+        config = RetryConfig(
+            initial_delay=1.0,
+            exponential_base=2.0,
+            max_delay=5.0,
+            jitter=False,
+        )
+        assert calculate_retry_delay(config, 0) == 1.0
+        assert calculate_retry_delay(config, 1) == 2.0
+        assert calculate_retry_delay(config, 2) == 4.0
+        assert calculate_retry_delay(config, 3) == 5.0  # Capped
+        assert calculate_retry_delay(config, 10) == 5.0  # Still capped
+
+    def test_jitter_adds_variability(self):
+        """Jitter should add some randomness to delay."""
+        config = RetryConfig(
+            initial_delay=1.0,
+            exponential_base=2.0,
+            jitter=True,
+        )
+        # With jitter, delay should be >= base delay
+        delay = calculate_retry_delay(config, 0)
+        assert delay >= 1.0
+        assert delay <= 1.25  # Max 25% jitter
+
+
+class TestWithRetry:
+    """Test with_retry decorator."""
+
+    def test_success_no_retry(self):
+        """Successful call should not retry."""
+        call_count = 0
+
+        def succeed():
+            nonlocal call_count
+            call_count += 1
+            return "success"
+
+        config = RetryConfig(max_retries=3)
+        wrapped = with_retry(succeed, config, "test")
+        result = wrapped()
+
+        assert result == "success"
+        assert call_count == 1
+
+    def test_retry_on_transient_error(self):
+        """Should retry on transient errors."""
+        call_count = 0
+
+        def fail_then_succeed():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ProviderConnectionError("Connection failed", "test")
+            return "success"
+
+        config = RetryConfig(max_retries=3, initial_delay=0.01, jitter=False)
+        wrapped = with_retry(fail_then_succeed, config, "test")
+        result = wrapped()
+
+        assert result == "success"
+        assert call_count == 3
+
+    def test_no_retry_on_auth_error(self):
+        """Should not retry on authentication errors."""
+        call_count = 0
+
+        def auth_fail():
+            nonlocal call_count
+            call_count += 1
+            raise AuthenticationError("Invalid key", "test")
+
+        config = RetryConfig(max_retries=3, initial_delay=0.01)
+        wrapped = with_retry(auth_fail, config, "test")
+
+        with pytest.raises(AuthenticationError):
+            wrapped()
+
+        assert call_count == 1  # No retries
+
+    def test_no_retry_on_4xx_error(self):
+        """Should not retry on 4xx client errors."""
+        call_count = 0
+
+        def client_error():
+            nonlocal call_count
+            call_count += 1
+            raise APIError("Bad request", "test", status_code=400)
+
+        config = RetryConfig(max_retries=3, initial_delay=0.01)
+        wrapped = with_retry(client_error, config, "test")
+
+        with pytest.raises(APIError):
+            wrapped()
+
+        assert call_count == 1  # No retries
+
+    def test_retry_exhausted(self):
+        """Should raise after max retries exhausted."""
+        call_count = 0
+
+        def always_fail():
+            nonlocal call_count
+            call_count += 1
+            raise ProviderConnectionError("Always fails", "test")
+
+        config = RetryConfig(max_retries=3, initial_delay=0.01, jitter=False)
+        wrapped = with_retry(always_fail, config, "test")
+
+        with pytest.raises(ProviderConnectionError):
+            wrapped()
+
+        assert call_count == 4  # Initial + 3 retries
+
+    def test_retry_on_rate_limit(self):
+        """Should retry on rate limit errors."""
+        call_count = 0
+
+        def rate_limited_then_succeed():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise RateLimitError("Rate limited", "test")
+            return "success"
+
+        config = RetryConfig(max_retries=3, initial_delay=0.01, jitter=False)
+        wrapped = with_retry(rate_limited_then_succeed, config, "test")
+        result = wrapped()
+
+        assert result == "success"
+        assert call_count == 2
+
+    def test_retry_on_5xx_error(self):
+        """Should retry on 5xx server errors."""
+        call_count = 0
+
+        def server_error_then_succeed():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise APIError("Server error", "test", status_code=503)
+            return "success"
+
+        config = RetryConfig(max_retries=3, initial_delay=0.01, jitter=False)
+        wrapped = with_retry(server_error_then_succeed, config, "test")
+        result = wrapped()
+
+        assert result == "success"
+        assert call_count == 2
+
+    def test_zero_retries(self):
+        """Should not retry when max_retries is 0."""
+        call_count = 0
+
+        def fail():
+            nonlocal call_count
+            call_count += 1
+            raise ProviderConnectionError("Fails", "test")
+
+        config = RetryConfig(max_retries=0)
+        wrapped = with_retry(fail, config, "test")
+
+        with pytest.raises(ProviderConnectionError):
+            wrapped()
+
+        assert call_count == 1
+
+    def test_preserves_function_arguments(self):
+        """Should pass arguments to wrapped function."""
+
+        def add(a, b, c=0):
+            return a + b + c
+
+        config = RetryConfig(max_retries=3)
+        wrapped = with_retry(add, config, "test")
+
+        assert wrapped(1, 2) == 3
+        assert wrapped(1, 2, c=3) == 6

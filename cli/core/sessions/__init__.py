@@ -50,6 +50,9 @@ from .state_sync import (
 from .persistence import (
     create_session_record,
     update_session_state,
+    atomic_transition_session_state,
+    get_session_state_and_version,
+    StateTransitionConflictError,
     update_session_pid,
     update_session_tmux_name,
     get_session_by_id,
@@ -59,6 +62,17 @@ from .persistence import (
     count_active_sessions,
     delete_session_record,
     delete_session_for_worker,
+)
+# Cleanup
+from .cleanup import (
+    OrphanedSession,
+    CleanupResult,
+    TMUX_SESSION_PREFIX,
+    find_orphaned_tmux_sessions,
+    find_stale_db_sessions,
+    find_all_orphans,
+    cleanup_orphaned_sessions,
+    run_startup_cleanup,
 )
 
 __all__ = [
@@ -102,6 +116,9 @@ __all__ = [
     # Persistence
     "create_session_record",
     "update_session_state",
+    "atomic_transition_session_state",
+    "get_session_state_and_version",
+    "StateTransitionConflictError",
     "update_session_pid",
     "update_session_tmux_name",
     "get_session_by_id",
@@ -111,4 +128,13 @@ __all__ = [
     "count_active_sessions",
     "delete_session_record",
     "delete_session_for_worker",
+    # Cleanup
+    "OrphanedSession",
+    "CleanupResult",
+    "TMUX_SESSION_PREFIX",
+    "find_orphaned_tmux_sessions",
+    "find_stale_db_sessions",
+    "find_all_orphans",
+    "cleanup_orphaned_sessions",
+    "run_startup_cleanup",
 ]

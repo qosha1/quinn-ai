@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 from pathlib import Path
+import threading
 import uuid
 
 # Import canonical SessionState and transitions from shared/core/state
@@ -227,6 +228,8 @@ class SessionInterface(ABC):
         self._config = config
         self._id = SessionId.create(config.worker_id)
         self._state = SessionState.STOPPED  # Start in STOPPED, transition to STARTING on start()
+        self._state_version = 0  # Version for optimistic locking
+        self._state_lock = threading.RLock()  # Protects state transitions
         self._metrics = SessionMetrics(created_at=datetime.now())
         self._bound_worker_id: Optional[str] = None
 
@@ -251,7 +254,14 @@ class SessionInterface(ABC):
     @property
     def state(self) -> SessionState:
         """Current session state."""
-        return self._state
+        with self._state_lock:
+            return self._state
+
+    @property
+    def state_version(self) -> int:
+        """State version for optimistic locking."""
+        with self._state_lock:
+            return self._state_version
 
     @property
     def metrics(self) -> SessionMetrics:
@@ -385,11 +395,13 @@ class SessionInterface(ABC):
         pass
 
     # =========================================================================
-    # State Machine Validation
+    # State Machine Validation (Thread-Safe)
     # =========================================================================
 
     def _validate_state_transition(self, new_state: SessionState) -> None:
         """Validate state transition.
+
+        Thread-safe: acquires state lock.
 
         Args:
             new_state: Attempted new state
@@ -397,20 +409,86 @@ class SessionInterface(ABC):
         Raises:
             InvalidSessionStateTransition: If transition is not allowed
         """
-        valid = SESSION_STATE_TRANSITIONS.get(self._state, [])
-        if new_state not in valid:
-            raise InvalidSessionStateTransition(self._state, new_state, valid)
+        with self._state_lock:
+            valid = SESSION_STATE_TRANSITIONS.get(self._state, [])
+            if new_state not in valid:
+                raise InvalidSessionStateTransition(self._state, new_state, valid)
 
     def _set_state(self, new_state: SessionState) -> None:
-        """Set state and notify callbacks."""
-        if new_state != self._state:
+        """Set state and notify callbacks.
+
+        Thread-safe: acquires state lock for the state change,
+        then releases before calling callbacks.
+        """
+        with self._state_lock:
+            if new_state == self._state:
+                return
             old_state = self._state
             self._state = new_state
-            for cb in self._state_callbacks:
-                try:
-                    cb(old_state, new_state)
-                except Exception:
-                    pass  # Don't let callback errors break state machine
+            self._state_version += 1
+            callbacks = list(self._state_callbacks)  # Copy to release lock
+
+        # Call callbacks outside lock to prevent deadlocks
+        for cb in callbacks:
+            try:
+                cb(old_state, new_state)
+            except Exception:
+                # Intentionally swallowed: callback errors must not break state machine.
+                # State transitions are critical; callbacks are observers only.
+                pass
+
+    def _atomic_transition(
+        self,
+        expected_state: SessionState,
+        new_state: SessionState,
+        expected_version: Optional[int] = None,
+    ) -> bool:
+        """Atomically transition state if current state matches expected.
+
+        This provides optimistic locking semantics - the transition only
+        succeeds if the current state (and optionally version) matches
+        the expected values.
+
+        Args:
+            expected_state: The state we expect to transition from
+            new_state: The state to transition to
+            expected_version: Optional version to match (for stricter locking)
+
+        Returns:
+            True if transition succeeded, False if state didn't match
+
+        Raises:
+            InvalidSessionStateTransition: If the transition is not valid
+        """
+        with self._state_lock:
+            # Check expected state
+            if self._state != expected_state:
+                return False
+
+            # Check version if provided
+            if expected_version is not None and self._state_version != expected_version:
+                return False
+
+            # Validate transition
+            valid = SESSION_STATE_TRANSITIONS.get(self._state, [])
+            if new_state not in valid:
+                raise InvalidSessionStateTransition(self._state, new_state, valid)
+
+            # Perform transition
+            old_state = self._state
+            self._state = new_state
+            self._state_version += 1
+            callbacks = list(self._state_callbacks)
+
+        # Call callbacks outside lock
+        for cb in callbacks:
+            try:
+                cb(old_state, new_state)
+            except Exception:
+                # Intentionally swallowed: callback errors must not break state machine.
+                pass
+
+        return True
 
     # =========================================================================
     # Lifecycle Methods - Template pattern with hooks
@@ -620,6 +698,7 @@ class SessionInterface(ABC):
                 try:
                     cb(output)
                 except Exception:
+                    # Intentionally swallowed: callback errors must not break output streaming.
                     pass
 
             if self._detect_completion(accumulated):

@@ -761,3 +761,94 @@ class TestMessagesPermanentAfterNotificationCleanup:
         fetched_msg = get_message(db, msg.id)
         assert fetched_msg is not None
         assert fetched_msg.content == "Shared knowledge"
+
+
+class TestCleanupOrphanedNotifications:
+    """Test cleanup of orphaned notifications.
+
+    Note: Foreign key cascades normally clean up notifications when messages
+    or workers are deleted. These tests verify the safety-net cleanup for
+    edge cases where cascades may not have fired (e.g., data migration).
+    """
+
+    def test_cleanup_notifications_for_orphaned_message_ref(self, db, channel, worker, worker2):
+        """Should remove notifications referencing non-existent messages."""
+        msg = create_message(db, channel.id, worker.id, "To be orphaned")
+        notif = create_notification_bead(db, worker2.id, msg.id, channel.id)
+        notif_id = notif.id
+
+        # Disable FK constraints temporarily to simulate orphaned data
+        db.execute("PRAGMA foreign_keys=OFF")
+        db.execute("DELETE FROM messages WHERE id = ?", (msg.id,))
+        db.connection.commit()
+        db.execute("PRAGMA foreign_keys=ON")
+
+        # Notification should still exist (FK cascade was bypassed)
+        assert get_notification_bead(db, notif_id) is not None
+
+        # Run orphaned cleanup
+        purged = cleanup_orphaned_notifications(db)
+        assert purged == 1
+
+        # Notification should now be gone
+        assert get_notification_bead(db, notif_id) is None
+
+    def test_cleanup_notifications_for_orphaned_worker_ref(self, db, channel, worker, worker2):
+        """Should remove notifications referencing non-existent workers."""
+        msg = create_message(db, channel.id, worker.id, "Hello")
+        notif = create_notification_bead(db, worker2.id, msg.id, channel.id)
+        notif_id = notif.id
+
+        # Disable FK constraints to simulate orphaned data
+        db.execute("PRAGMA foreign_keys=OFF")
+        db.execute("DELETE FROM workers WHERE id = ?", (worker2.id,))
+        db.connection.commit()
+        db.execute("PRAGMA foreign_keys=ON")
+
+        # Run orphaned cleanup
+        purged = cleanup_orphaned_notifications(db)
+        assert purged == 1
+
+        # Notification should be gone
+        assert get_notification_bead(db, notif_id) is None
+
+    def test_cleanup_preserves_valid_notifications(self, db, channel, worker, worker2):
+        """Should not remove notifications with valid references."""
+        msg = create_message(db, channel.id, worker.id, "Valid message")
+        notif = create_notification_bead(db, worker2.id, msg.id, channel.id)
+
+        # Run cleanup on valid data
+        purged = cleanup_orphaned_notifications(db)
+        assert purged == 0
+
+        # Notification should still exist
+        assert get_notification_bead(db, notif.id) is not None
+
+    def test_run_cleanup_includes_orphaned(self, db, channel, worker, worker2):
+        """Should include orphaned cleanup in full run."""
+        msg = create_message(db, channel.id, worker.id, "To be orphaned")
+        notif = create_notification_bead(db, worker2.id, msg.id, channel.id)
+        notif_id = notif.id
+
+        # Create orphaned notification by bypassing FK constraints
+        db.execute("PRAGMA foreign_keys=OFF")
+        db.execute("DELETE FROM messages WHERE id = ?", (msg.id,))
+        db.connection.commit()
+        db.execute("PRAGMA foreign_keys=ON")
+
+        result = run_notification_cleanup(db)
+        assert result["orphaned_notifications_purged"] == 1
+        assert result["total_purged"] >= 1
+
+    def test_fk_cascade_deletes_notification_with_message(self, db, channel, worker, worker2):
+        """Verify FK cascade properly deletes notifications when message deleted."""
+        msg = create_message(db, channel.id, worker.id, "Will be deleted")
+        notif = create_notification_bead(db, worker2.id, msg.id, channel.id)
+        notif_id = notif.id
+
+        # Delete message normally (FK cascade should trigger)
+        db.execute("DELETE FROM messages WHERE id = ?", (msg.id,))
+        db.connection.commit()
+
+        # Notification should be auto-deleted by FK cascade
+        assert get_notification_bead(db, notif_id) is None

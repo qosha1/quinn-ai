@@ -19,6 +19,7 @@ from typing import Optional
 import uuid
 
 from .db import Database
+from .logging import get_logger, log_budget_check, log_budget_spend
 from .queries import (
     get_worker_balance,
     get_current_allocation,
@@ -32,6 +33,8 @@ from .queries import (
     BudgetBalance,
     BudgetTransaction,
 )
+
+_logger = get_logger(__name__)
 
 
 class BudgetExhaustedError(Exception):
@@ -175,7 +178,7 @@ def check_budget(
             f"only ${available:.4f} available"
         )
 
-    return BudgetCheckResult(
+    result = BudgetCheckResult(
         allowed=allowed,
         worker_id=worker_id,
         allocation_id=allocation_id,
@@ -184,6 +187,11 @@ def check_budget(
         remaining_after=remaining,
         message=message,
     )
+
+    # Log budget check
+    log_budget_check(_logger, worker_id, required_amount, available, allowed)
+
+    return result
 
 
 def enforce_budget(
@@ -236,12 +244,13 @@ def record_spend(
     """Record a budget spend transaction.
 
     Call this after a successful provider invocation to record the cost.
+    Re-validates budget before recording to prevent race conditions.
 
     Args:
         db: Database instance
         worker_id: Worker ID
         allocation_id: Allocation ID (from BudgetCheckResult)
-        amount: Actual cost in dollars
+        amount: Actual cost in dollars (must be positive)
         provider: Provider name
         model: Model name
         input_tokens: Actual input token count
@@ -252,13 +261,46 @@ def record_spend(
 
     Returns:
         Created BudgetTransaction
+
+    Raises:
+        ValueError: If amount is not positive
+        BudgetExhaustedError: If budget is now insufficient (race condition)
+        NoBudgetAllocationError: If allocation no longer exists
     """
-    return create_budget_transaction(
+    # Validate amount is positive
+    if amount <= 0:
+        raise ValueError(f"Spend amount must be positive, got {amount:.4f}")
+
+    # Re-validate budget before recording spend to prevent race conditions
+    # between enforce_budget check and actual recording
+    balance = get_worker_balance(db, worker_id)
+    if balance is None:
+        allocation = get_current_allocation(db, worker_id)
+        if allocation is None:
+            raise NoBudgetAllocationError(worker_id)
+        available = allocation.allocated_credits - allocation.spent_credits - allocation.reserved_credits
+    else:
+        available = balance.available
+
+    spend_amount = abs(amount)
+    if available < spend_amount:
+        raise BudgetExhaustedError(
+            worker_id=worker_id,
+            required=spend_amount,
+            available=available,
+            message=(
+                f"Budget insufficient at record time for worker '{worker_id}'. "
+                f"Required: ${spend_amount:.4f}, Available: ${available:.4f}. "
+                "Budget may have been consumed by concurrent operations."
+            ),
+        )
+
+    txn = create_budget_transaction(
         db=db,
         allocation_id=allocation_id,
         worker_id=worker_id,
         transaction_type="spend",
-        amount=-abs(amount),  # Negative for spend
+        amount=-spend_amount,  # Negative for spend
         provider=provider,
         model=model,
         input_tokens=input_tokens,
@@ -267,6 +309,11 @@ def record_spend(
         reference_id=reference_id,
         description=description,
     )
+
+    # Log budget spend
+    log_budget_spend(_logger, worker_id, spend_amount, provider, model)
+
+    return txn
 
 
 def get_remaining_budget(db: Database, worker_id: str) -> float:
@@ -436,6 +483,8 @@ class BudgetService:
     ) -> str:
         """Allocate budget from org pool to top-level worker (CEO).
 
+        All state changes are wrapped in a transaction for atomicity.
+
         Args:
             pool_id: Budget pool ID
             worker_id: Target worker (typically CEO)
@@ -451,6 +500,14 @@ class BudgetService:
         Raises:
             BudgetAllocationError: If pool insufficient or doesn't exist
         """
+        # === VALIDATION PHASE (before any state changes) ===
+
+        # Validate amount is positive
+        if amount <= 0:
+            raise BudgetAllocationError(
+                f"Allocation amount must be positive, got {amount:.2f}"
+            )
+
         # Verify pool exists and has sufficient funds
         pool = get_budget_pool(self.db, pool_id)
         if not pool:
@@ -465,43 +522,57 @@ class BudgetService:
                 f"{amount:.2f} requested"
             )
 
-        # Create allocation
+        # Generate allocation ID before transaction
         allocation_id = _generate_budget_id("alloc")
-        create_budget_allocation(
-            self.db,
-            worker_id=worker_id,
-            allocated_credits=amount,
-            period_start=period_start,
-            period_end=period_end,
-            pool_id=pool_id,
-            source_worker_id=None,
-            can_delegate=can_delegate,
-            delegation_limit=delegation_limit,
-        )
 
-        # Initialize balance record
-        create_budget_balance(
-            self.db,
-            allocation_id=allocation_id,
-            worker_id=worker_id,
-            allocated=amount,
-            spent=0.0,
-            reserved=0.0,
-            available=amount,
-            delegated=0.0,
-            period_start=period_start,
-            period_end=period_end,
-        )
+        # === EXECUTION PHASE (all state changes in transaction) ===
+        # Use transaction to ensure atomicity - if any step fails,
+        # all changes are rolled back automatically
+        with self.db.transaction():
+            # Re-validate pool balance inside transaction to prevent race conditions
+            allocated_total = self._get_pool_allocated_total(pool_id)
+            available_in_pool = float(pool.total_credits) - allocated_total
 
-        # Record initial allocation transaction
-        create_budget_transaction(
-            self.db,
-            allocation_id=allocation_id,
-            worker_id=worker_id,
-            transaction_type="allocation",
-            amount=amount,
-            description=f"Initial allocation from pool {pool_id}",
-        )
+            if available_in_pool < amount:
+                raise BudgetAllocationError(
+                    f"Insufficient pool funds: {available_in_pool:.2f} available, "
+                    f"{amount:.2f} requested"
+                )
+
+            # Create allocation with our pre-generated ID
+            create_budget_allocation(
+                self.db,
+                worker_id=worker_id,
+                allocated_credits=amount,
+                period_start=period_start,
+                period_end=period_end,
+                pool_id=pool_id,
+                source_worker_id=None,
+                can_delegate=can_delegate,
+                delegation_limit=delegation_limit,
+                allocation_id=allocation_id,
+            )
+
+            # Initialize balance record with zero - the allocation transaction
+            # will set the correct values via the database trigger
+            create_budget_balance(
+                self.db,
+                allocation_id=allocation_id,
+                worker_id=worker_id,
+                allocated=0.0,
+                period_start=period_start,
+                period_end=period_end,
+            )
+
+            # Record initial allocation transaction - trigger updates balance
+            create_budget_transaction(
+                self.db,
+                allocation_id=allocation_id,
+                worker_id=worker_id,
+                transaction_type="allocation",
+                amount=amount,
+                description=f"Initial allocation from pool {pool_id}",
+            )
 
         return allocation_id
 
@@ -513,7 +584,8 @@ class BudgetService:
     ) -> str:
         """Delegate budget from manager to subordinate.
 
-        Implements the cascade: manager → direct report.
+        Implements the cascade: manager -> direct report.
+        All state changes are wrapped in a transaction for atomicity.
 
         Args:
             source_worker_id: Manager delegating budget
@@ -526,6 +598,14 @@ class BudgetService:
         Raises:
             BudgetAllocationError: If delegation not allowed or insufficient
         """
+        # === VALIDATION PHASE (before any state changes) ===
+
+        # Validate amount is positive
+        if amount <= 0:
+            raise BudgetAllocationError(
+                f"Delegation amount must be positive, got {amount:.2f}"
+            )
+
         # Verify hierarchy: target must report to source
         target = get_worker(self.db, target_worker_id)
         if not target:
@@ -570,53 +650,65 @@ class BudgetService:
         # Determine if target can also delegate (managers only)
         target_can_delegate = self._is_manager(target_worker_id)
 
-        # Create target allocation
+        # Generate allocation ID before transaction
         allocation_id = _generate_budget_id("alloc")
-        create_budget_allocation(
-            self.db,
-            worker_id=target_worker_id,
-            allocated_credits=amount,
-            period_start=source_alloc.period_start,
-            period_end=source_alloc.period_end,
-            source_worker_id=source_worker_id,
-            pool_id=None,
-            can_delegate=target_can_delegate,
-            delegation_limit=source_alloc.delegation_limit,
-        )
 
-        # Initialize target balance
-        create_budget_balance(
-            self.db,
-            allocation_id=allocation_id,
-            worker_id=target_worker_id,
-            allocated=amount,
-            spent=0.0,
-            reserved=0.0,
-            available=amount,
-            delegated=0.0,
-            period_start=source_alloc.period_start,
-            period_end=source_alloc.period_end,
-        )
+        # === EXECUTION PHASE (all state changes in transaction) ===
+        # Use transaction to ensure atomicity - if any step fails,
+        # all changes are rolled back automatically
+        with self.db.transaction():
+            # Re-validate balance inside transaction to prevent race conditions
+            source_balance = get_worker_balance(self.db, source_worker_id)
+            if not source_balance or source_balance.available < amount:
+                available = source_balance.available if source_balance else 0.0
+                raise BudgetAllocationError(
+                    f"Insufficient available budget: {available:.2f} < {amount:.2f}"
+                )
 
-        # Record transfer out from source
-        create_budget_transaction(
-            self.db,
-            allocation_id=source_alloc.id,
-            worker_id=source_worker_id,
-            transaction_type="transfer_out",
-            amount=-amount,
-            description=f"Delegated to {target_worker_id}",
-        )
+            # Create target allocation with our pre-generated ID
+            create_budget_allocation(
+                self.db,
+                worker_id=target_worker_id,
+                allocated_credits=amount,
+                period_start=source_alloc.period_start,
+                period_end=source_alloc.period_end,
+                source_worker_id=source_worker_id,
+                pool_id=None,
+                can_delegate=target_can_delegate,
+                delegation_limit=source_alloc.delegation_limit,
+                allocation_id=allocation_id,
+            )
 
-        # Record transfer in to target
-        create_budget_transaction(
-            self.db,
-            allocation_id=allocation_id,
-            worker_id=target_worker_id,
-            transaction_type="transfer_in",
-            amount=amount,
-            description=f"Received from {source_worker_id}",
-        )
+            # Initialize target balance with zero - the transfer_in transaction
+            # will set the correct values via the database trigger
+            create_budget_balance(
+                self.db,
+                allocation_id=allocation_id,
+                worker_id=target_worker_id,
+                allocated=0.0,
+                period_start=source_alloc.period_start,
+                period_end=source_alloc.period_end,
+            )
+
+            # Record transfer out from source
+            create_budget_transaction(
+                self.db,
+                allocation_id=source_alloc.id,
+                worker_id=source_worker_id,
+                transaction_type="transfer_out",
+                amount=-amount,
+                description=f"Delegated to {target_worker_id}",
+            )
+
+            # Record transfer in to target
+            create_budget_transaction(
+                self.db,
+                allocation_id=allocation_id,
+                worker_id=target_worker_id,
+                transaction_type="transfer_in",
+                amount=amount,
+                description=f"Received from {source_worker_id}",
+            )
 
         return allocation_id
 
@@ -709,13 +801,26 @@ class BudgetService:
         if not allocations:
             return None
 
+        def parse_dt(val):
+            """Parse datetime from string or return as-is if already datetime."""
+            if isinstance(val, str):
+                return datetime.fromisoformat(val)
+            return val
+
         # Get most recent by period_start
         now = datetime.now()
         current = None
         for alloc in allocations:
-            if alloc.period_start <= now <= alloc.period_end:
-                if current is None or alloc.period_start > current.period_start:
+            period_start = parse_dt(alloc.period_start)
+            period_end = parse_dt(alloc.period_end)
+
+            if period_start <= now <= period_end:
+                if current is None:
                     current = alloc
+                else:
+                    current_start = parse_dt(current.period_start)
+                    if period_start > current_start:
+                        current = alloc
 
         return current or (allocations[0] if allocations else None)
 

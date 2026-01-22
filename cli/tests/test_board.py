@@ -42,7 +42,7 @@ def initialized_org(runner, temp_org):
 def started_org(runner, temp_org):
     """Create, initialize, and start an org."""
     runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
-    runner.invoke(qn, ["--org-path", str(temp_org), "org", "start", "--no-spawn-ceo"])
+    runner.invoke(qn, ["--org-path", str(temp_org), "org", "start", "--no-spawn-ceo", "--skip-config-validation"])
     return temp_org
 
 

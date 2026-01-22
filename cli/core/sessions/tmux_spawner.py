@@ -161,7 +161,8 @@ class TmuxSpawner(SpawnStrategy):
                 success=False,
                 error="tmux command timed out",
             )
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
+            # OSError: file/process issues, SubprocessError: tmux command failed
             return SpawnResult(
                 success=False,
                 error=str(e),
@@ -177,7 +178,9 @@ class TmuxSpawner(SpawnStrategy):
             )
             if result.returncode == 0 and result.stdout.strip():
                 return int(result.stdout.strip().split("\n")[0])
-        except Exception:
+        except (OSError, ValueError, subprocess.SubprocessError):
+            # OSError: process issues, ValueError: invalid PID format
+            # SubprocessError: tmux command failed
             pass
         return None
 
@@ -203,7 +206,8 @@ class TmuxSpawner(SpawnStrategy):
             result = self._run_tmux("kill-session", "-t", session_id)
             return result.returncode == 0
 
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
+            # OSError: process issues, SubprocessError: tmux command failed
             return False
 
     def is_alive(self, session_id: str) -> bool:
@@ -218,7 +222,8 @@ class TmuxSpawner(SpawnStrategy):
         try:
             result = self._run_tmux("has-session", "-t", session_id)
             return result.returncode == 0
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
+            # OSError: process issues, SubprocessError: tmux command failed
             return False
 
     def send_input(self, session_id: str, text: str) -> bool:
@@ -235,7 +240,8 @@ class TmuxSpawner(SpawnStrategy):
             # Use send-keys to send the text
             result = self._run_tmux("send-keys", "-t", session_id, text)
             return result.returncode == 0
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
+            # OSError: process issues, SubprocessError: tmux command failed
             return False
 
     def read_output(self, session_id: str, timeout_ms: Optional[int] = None) -> str:
@@ -260,7 +266,8 @@ class TmuxSpawner(SpawnStrategy):
             if result.returncode == 0:
                 return result.stdout
             return ""
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
+            # OSError: process issues, SubprocessError: tmux command failed
             return ""
 
     def attach(self, session_id: str) -> bool:
@@ -286,7 +293,8 @@ class TmuxSpawner(SpawnStrategy):
             # Run attach (this blocks and takes over terminal)
             subprocess.run(cmd, check=True)
             return True
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
+            # OSError: process issues, SubprocessError: tmux/subprocess failed
             return False
 
     def send_signal(self, session_id: str, sig: int) -> bool:
@@ -304,7 +312,8 @@ class TmuxSpawner(SpawnStrategy):
             try:
                 os.kill(pid, sig)
                 return True
-            except Exception:
+            except OSError:
+                # Process may have exited, permissions issue, or invalid signal
                 pass
         return False
 
@@ -318,6 +327,7 @@ class TmuxSpawner(SpawnStrategy):
             result = self._run_tmux("list-sessions", "-F", "#{session_name}")
             if result.returncode == 0:
                 return [s.strip() for s in result.stdout.strip().split("\n") if s.strip()]
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
+            # OSError: process issues, SubprocessError: tmux command failed
             pass
         return []

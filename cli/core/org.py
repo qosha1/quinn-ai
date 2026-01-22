@@ -10,6 +10,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from .db import Database
+from .logging import get_logger, log_org_state_change
 from .queries import (
     get_org_state,
     update_org_status,
@@ -30,6 +31,8 @@ from shared import (
     InvalidOrgTransition,
     OrgNotInitialized,
 )
+
+_logger = get_logger(__name__)
 
 
 class Org:
@@ -204,8 +207,11 @@ class Org:
         self._init_beads()
 
         # Update org status
+        old_status = "uninitialized"
         update_org_status(self.db, "initialized", ceo_data.id)
         self._state_data = None  # Invalidate cache
+
+        log_org_state_change(_logger, old_status, "initialized")
 
         return Worker.get(self.db, ceo_data.id)
 
@@ -230,10 +236,12 @@ class Org:
                 ceo.complete_onboarding()
 
             update_org_status(self.db, "running", self.ceo_worker_id)
+            log_org_state_change(_logger, current, "running")
 
         elif current == "stopped":
             self._validate_transition("running")
             update_org_status(self.db, "running", self.ceo_worker_id)
+            log_org_state_change(_logger, current, "running")
 
         else:
             # Will raise InvalidOrgTransition
@@ -270,8 +278,10 @@ class Org:
                 text=True,
             )
             # Ignore errors - may already be initialized
-        except Exception:
-            pass  # Best effort - beads init is optional
+        except (FileNotFoundError, subprocess.SubprocessError):
+            # FileNotFoundError: bd not installed, SubprocessError: init failed
+            # Beads init is optional - org can function without it
+            pass
 
     def stop(self) -> None:
         """Stop the org (pause operations).
@@ -282,9 +292,11 @@ class Org:
         Raises:
             InvalidOrgTransition: If org is not running
         """
+        old_status = self.status
         self._validate_transition("stopped")
         update_org_status(self.db, "stopped", self.ceo_worker_id)
         self._state_data = None  # Invalidate cache
+        log_org_state_change(_logger, old_status, "stopped")
 
     # ==================
     # QUERY HELPERS

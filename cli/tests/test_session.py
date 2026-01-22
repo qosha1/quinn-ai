@@ -703,3 +703,169 @@ class TestStateValidation:
         assert session.state == SessionState.IDLE
         with pytest.raises(InvalidSessionStateTransition):
             session._validate_state_transition(SessionState.STARTING)
+
+
+# =========================================================================
+# Concurrent State Transition Tests (Race Condition Fix)
+# =========================================================================
+
+class TestConcurrentStateTransitions:
+    """Test thread-safe state transitions to verify race condition fix."""
+
+    def test_state_version_increments(self, session):
+        """State version should increment with each state change."""
+        assert session.state_version == 0
+
+        session.start()
+        # STOPPED -> STARTING -> RUNNING -> IDLE = 3 transitions
+        assert session.state_version == 3
+
+        session.stop()
+        # IDLE -> STOPPED = 1 more transition
+        assert session.state_version == 4
+
+    def test_atomic_transition_success(self, session):
+        """Atomic transition should succeed when state matches."""
+        session.start()
+        assert session.state == SessionState.IDLE
+
+        # Try atomic transition from IDLE to RUNNING
+        result = session._atomic_transition(
+            expected_state=SessionState.IDLE,
+            new_state=SessionState.RUNNING,
+        )
+        assert result is True
+        assert session.state == SessionState.RUNNING
+
+    def test_atomic_transition_state_mismatch(self, session):
+        """Atomic transition should fail when state doesn't match."""
+        session.start()
+        assert session.state == SessionState.IDLE
+
+        # Try atomic transition with wrong expected state
+        result = session._atomic_transition(
+            expected_state=SessionState.RUNNING,  # Wrong state
+            new_state=SessionState.STOPPED,
+        )
+        assert result is False
+        assert session.state == SessionState.IDLE  # State unchanged
+
+    def test_atomic_transition_version_mismatch(self, session):
+        """Atomic transition should fail when version doesn't match."""
+        session.start()
+        assert session.state == SessionState.IDLE
+        current_version = session.state_version
+
+        # Try atomic transition with wrong expected version
+        result = session._atomic_transition(
+            expected_state=SessionState.IDLE,
+            new_state=SessionState.RUNNING,
+            expected_version=current_version + 100,  # Wrong version
+        )
+        assert result is False
+        assert session.state == SessionState.IDLE  # State unchanged
+
+    def test_atomic_transition_with_correct_version(self, session):
+        """Atomic transition should succeed with correct version."""
+        session.start()
+        assert session.state == SessionState.IDLE
+        current_version = session.state_version
+
+        # Try atomic transition with correct version
+        result = session._atomic_transition(
+            expected_state=SessionState.IDLE,
+            new_state=SessionState.RUNNING,
+            expected_version=current_version,
+        )
+        assert result is True
+        assert session.state == SessionState.RUNNING
+        assert session.state_version == current_version + 1
+
+    def test_concurrent_state_changes(self, session):
+        """Simulate concurrent state changes using threads."""
+        import threading
+        import time
+
+        session.start()
+        assert session.state == SessionState.IDLE
+
+        results = {"success": 0, "failure": 0}
+        lock = threading.Lock()
+
+        def try_transition():
+            """Attempt to transition from IDLE to RUNNING."""
+            # Small random delay to encourage interleaving
+            time.sleep(0.001)
+            success = session._atomic_transition(
+                expected_state=SessionState.IDLE,
+                new_state=SessionState.RUNNING,
+            )
+            with lock:
+                if success:
+                    results["success"] += 1
+                else:
+                    results["failure"] += 1
+
+        # Start multiple threads trying to do the same transition
+        threads = []
+        for _ in range(10):
+            t = threading.Thread(target=try_transition)
+            threads.append(t)
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # Exactly one should succeed, others should fail
+        assert results["success"] == 1
+        assert results["failure"] == 9
+        assert session.state == SessionState.RUNNING
+
+    def test_state_callbacks_not_blocked_by_lock(self, session):
+        """State callbacks should not cause deadlocks."""
+        callback_results = []
+
+        def slow_callback(old: SessionState, new: SessionState):
+            """Simulate a slow callback that tries to read state."""
+            import time
+            time.sleep(0.01)
+            # This should not deadlock - reading state acquires the lock
+            current = session.state
+            callback_results.append((old, new, current))
+
+        session.on_state_change(slow_callback)
+        session.start()
+
+        # Should complete without deadlock
+        assert len(callback_results) == 3  # STOPPED->STARTING, STARTING->RUNNING, RUNNING->IDLE
+        assert session.state == SessionState.IDLE
+
+    def test_state_lock_is_reentrant(self, session):
+        """State lock should allow reentrant access."""
+        # This tests that we use RLock, not Lock
+        session.start()
+
+        # Access state while holding lock implicitly through _atomic_transition
+        with session._state_lock:
+            # This should not deadlock
+            current_state = session.state
+            assert current_state == SessionState.IDLE
+
+    def test_set_state_only_fires_callbacks_once(self, session):
+        """Setting same state should not fire callbacks."""
+        callback_count = [0]
+
+        def count_callback(old: SessionState, new: SessionState):
+            callback_count[0] += 1
+
+        session.on_state_change(count_callback)
+        session.start()
+        initial_count = callback_count[0]
+
+        # Manually call _set_state with same state
+        session._set_state(SessionState.IDLE)
+
+        # Should not have fired callback again
+        assert callback_count[0] == initial_count

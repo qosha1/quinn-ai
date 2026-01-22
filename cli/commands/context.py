@@ -35,11 +35,15 @@ class Context:
         """Get database connection (lazy load)."""
         if self._db is None:
             if self.org_path is None:
-                raise click.ClickException("No org path specified")
+                raise click.ClickException(
+                    "No org path specified.\n"
+                    "Use --org-path or set QUINN_ORG_PATH environment variable."
+                )
             db_path = get_org_db_path(self.org_path)
             if not db_path.exists():
                 raise click.ClickException(
-                    f"Org not initialized: {self.org_path}"
+                    f"Organization not initialized at '{self.org_path}'.\n"
+                    "Run 'qn org init' to initialize the organization."
                 )
             self._db = open_database(db_path)
         return self._db

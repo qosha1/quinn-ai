@@ -139,7 +139,9 @@ def logs_cmd(ctx: Context, worker: str, lines: Optional[int], follow: bool):
         # Use Worker class to validate and check session state
         try:
             w = Worker.get(db, worker_id)
-        except Exception:
+        except (ValueError, KeyError):
+            # ValueError: invalid worker ID format
+            # KeyError: worker not found in database
             raise click.ClickException(
                 f"Worker '{worker}' not found.\n"
                 "Use 'qn org status' to see available workers."

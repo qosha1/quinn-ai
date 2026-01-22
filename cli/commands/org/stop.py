@@ -49,13 +49,17 @@ def stop_cmd(ctx: Context, cleanup: bool):
         if org.status != "running":
             raise click.ClickException(
                 f"Cannot stop organization in '{org.status}' state.\n"
-                "Organization must be running to stop."
+                "Organization must be 'running' to stop.\n"
+                "Check current status with 'qn org status'."
             )
 
         try:
             org.stop()
         except InvalidOrgTransition as e:
-            raise click.ClickException(str(e))
+            raise click.ClickException(
+                f"Cannot stop organization: {e}\n"
+                "Check current status with 'qn org status'."
+            )
 
         click.echo(f"Organization stopped at {org_path}")
         click.echo(f"Status: {org.status}")

@@ -933,3 +933,387 @@ class TestBudgetEnforcer:
         txns = get_transactions_by_worker(db, developer.id)
         assert txns[0].reference_type == "task"
         assert txns[0].reference_id == "task-abc-123"
+
+
+class TestBudgetServiceDelegation:
+    """Test BudgetService.delegate_budget validation."""
+
+    @pytest.fixture
+    def ceo_with_allocation(self, db, pool, ceo):
+        """Create CEO with budget allocation and balance."""
+        allocation = create_budget_allocation(
+            db,
+            worker_id=ceo.id,
+            allocated_credits=100000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+            pool_id=pool.id,
+            can_delegate=True,
+            delegation_limit=50000.0,
+        )
+        create_budget_balance(
+            db,
+            allocation_id=allocation.id,
+            worker_id=ceo.id,
+            allocated=100000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+        )
+        return allocation
+
+    @pytest.fixture
+    def manager_allocation(self, db, pool, ceo, manager):
+        """Create manager allocation with can_delegate=True."""
+        allocation = create_budget_allocation(
+            db,
+            worker_id=manager.id,
+            allocated_credits=50000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+            source_worker_id=ceo.id,
+            can_delegate=True,
+            delegation_limit=10000.0,
+        )
+        create_budget_balance(
+            db,
+            allocation_id=allocation.id,
+            worker_id=manager.id,
+            allocated=50000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+        )
+        return allocation
+
+    def test_delegate_budget_success(self, db, pool, ceo_with_allocation, manager):
+        """Should successfully delegate budget to subordinate."""
+        from cli.core.budget import BudgetService
+
+        service = BudgetService(db)
+        allocation_id = service.delegate_budget(
+            source_worker_id=ceo_with_allocation.worker_id,
+            target_worker_id=manager.id,
+            amount=10000.0,
+        )
+
+        assert allocation_id is not None
+        # Target should have allocation
+        target_balance = service.get_balance(manager.id)
+        assert target_balance is not None
+        assert target_balance.allocated == 10000.0
+
+    def test_delegate_budget_negative_amount(self, db, ceo_with_allocation, manager):
+        """Should reject negative delegation amount."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.delegate_budget(
+                source_worker_id=ceo_with_allocation.worker_id,
+                target_worker_id=manager.id,
+                amount=-100.0,
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_delegate_budget_zero_amount(self, db, ceo_with_allocation, manager):
+        """Should reject zero delegation amount."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.delegate_budget(
+                source_worker_id=ceo_with_allocation.worker_id,
+                target_worker_id=manager.id,
+                amount=0.0,
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_delegate_budget_source_cannot_delegate(self, db, pool, ceo, manager, developer):
+        """Should reject when source has can_delegate=False."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        # Create allocation WITHOUT delegation permission
+        allocation = create_budget_allocation(
+            db,
+            worker_id=manager.id,
+            allocated_credits=50000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+            source_worker_id=ceo.id,
+            can_delegate=False,  # Cannot delegate
+        )
+        create_budget_balance(
+            db,
+            allocation_id=allocation.id,
+            worker_id=manager.id,
+            allocated=50000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+        )
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.delegate_budget(
+                source_worker_id=manager.id,
+                target_worker_id=developer.id,
+                amount=1000.0,
+            )
+        assert "cannot delegate" in str(exc_info.value).lower()
+
+    def test_delegate_budget_not_manager_of_target(self, db, pool, team, ceo_with_allocation, manager):
+        """Should reject when source is not target's manager."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        # Create another worker NOT under CEO
+        other_worker = create_worker(db, "Other Worker", "Dev", team.id, 50, manager_id=manager.id)
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.delegate_budget(
+                source_worker_id=ceo_with_allocation.worker_id,
+                target_worker_id=other_worker.id,  # Reports to manager, not CEO
+                amount=1000.0,
+            )
+        assert "does not report to" in str(exc_info.value)
+
+    def test_delegate_budget_exceeds_available_balance(self, db, pool, team, manager):
+        """Should reject when amount exceeds available balance."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        # Create CEO with no delegation limit but limited balance
+        ceo = create_worker(db, "Test CEO", "CEO", team.id, 90)
+        allocation = create_budget_allocation(
+            db,
+            worker_id=ceo.id,
+            allocated_credits=10000.0,  # Only 10000 available
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+            pool_id=pool.id,
+            can_delegate=True,
+            delegation_limit=None,  # No delegation limit
+        )
+        create_budget_balance(
+            db,
+            allocation_id=allocation.id,
+            worker_id=ceo.id,
+            allocated=10000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+        )
+        # Update manager to report to this CEO
+        db.execute("UPDATE workers SET manager_id = ? WHERE id = ?", (ceo.id, manager.id))
+        db.connection.commit()
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.delegate_budget(
+                source_worker_id=ceo.id,
+                target_worker_id=manager.id,
+                amount=50000.0,  # More than 10000 available
+            )
+        assert "insufficient" in str(exc_info.value).lower()
+
+    def test_delegate_budget_exceeds_delegation_limit(self, db, ceo_with_allocation, manager):
+        """Should reject when amount exceeds delegation limit."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.delegate_budget(
+                source_worker_id=ceo_with_allocation.worker_id,
+                target_worker_id=manager.id,
+                amount=60000.0,  # delegation_limit is 50000
+            )
+        assert "delegation limit" in str(exc_info.value).lower()
+
+    def test_delegate_budget_target_not_found(self, db, ceo_with_allocation):
+        """Should reject when target worker doesn't exist."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.delegate_budget(
+                source_worker_id=ceo_with_allocation.worker_id,
+                target_worker_id="nonexistent-worker",
+                amount=1000.0,
+            )
+        assert "not found" in str(exc_info.value).lower()
+
+    def test_delegate_budget_source_no_allocation(self, db, team, ceo, manager):
+        """Should reject when source has no budget allocation."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.delegate_budget(
+                source_worker_id=ceo.id,  # No allocation created
+                target_worker_id=manager.id,
+                amount=1000.0,
+            )
+        assert "no budget allocation" in str(exc_info.value).lower()
+
+
+class TestBudgetAmountValidation:
+    """Test validation of negative amounts in budget operations."""
+
+    def test_create_budget_pool_negative_credits(self, db, period):
+        """Should reject negative total_credits in create_budget_pool."""
+        with pytest.raises(ValueError) as exc_info:
+            create_budget_pool(
+                db,
+                name="Invalid Pool",
+                total_credits=-1000.0,
+                period_start=period["start"],
+                period_end=period["end"],
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_create_budget_pool_zero_credits(self, db, period):
+        """Should reject zero total_credits in create_budget_pool."""
+        with pytest.raises(ValueError) as exc_info:
+            create_budget_pool(
+                db,
+                name="Invalid Pool",
+                total_credits=0.0,
+                period_start=period["start"],
+                period_end=period["end"],
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_create_budget_allocation_negative_credits(self, db, pool, ceo):
+        """Should reject negative allocated_credits in create_budget_allocation."""
+        with pytest.raises(ValueError) as exc_info:
+            create_budget_allocation(
+                db,
+                worker_id=ceo.id,
+                allocated_credits=-5000.0,
+                period_start=pool.period_start,
+                period_end=pool.period_end,
+                pool_id=pool.id,
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_create_budget_allocation_zero_credits(self, db, pool, ceo):
+        """Should reject zero allocated_credits in create_budget_allocation."""
+        with pytest.raises(ValueError) as exc_info:
+            create_budget_allocation(
+                db,
+                worker_id=ceo.id,
+                allocated_credits=0.0,
+                period_start=pool.period_start,
+                period_end=pool.period_end,
+                pool_id=pool.id,
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_create_budget_allocation_negative_delegation_limit(self, db, pool, ceo):
+        """Should reject negative delegation_limit in create_budget_allocation."""
+        with pytest.raises(ValueError) as exc_info:
+            create_budget_allocation(
+                db,
+                worker_id=ceo.id,
+                allocated_credits=10000.0,
+                period_start=pool.period_start,
+                period_end=pool.period_end,
+                pool_id=pool.id,
+                can_delegate=True,
+                delegation_limit=-1000.0,
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_record_spend_negative_amount(self, db, pool, developer):
+        """Should reject negative amount in record_spend."""
+        from cli.core.budget import record_spend
+
+        allocation = create_budget_allocation(
+            db,
+            worker_id=developer.id,
+            allocated_credits=1000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+            pool_id=pool.id,
+        )
+        create_budget_balance(
+            db,
+            allocation_id=allocation.id,
+            worker_id=developer.id,
+            allocated=1000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            record_spend(
+                db=db,
+                worker_id=developer.id,
+                allocation_id=allocation.id,
+                amount=-50.0,
+                provider="anthropic",
+                model="claude-3-5-sonnet",
+                input_tokens=1000,
+                output_tokens=500,
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_record_spend_zero_amount(self, db, pool, developer):
+        """Should reject zero amount in record_spend."""
+        from cli.core.budget import record_spend
+
+        allocation = create_budget_allocation(
+            db,
+            worker_id=developer.id,
+            allocated_credits=1000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+            pool_id=pool.id,
+        )
+        create_budget_balance(
+            db,
+            allocation_id=allocation.id,
+            worker_id=developer.id,
+            allocated=1000.0,
+            period_start=pool.period_start,
+            period_end=pool.period_end,
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            record_spend(
+                db=db,
+                worker_id=developer.id,
+                allocation_id=allocation.id,
+                amount=0.0,
+                provider="anthropic",
+                model="claude-3-5-sonnet",
+                input_tokens=1000,
+                output_tokens=500,
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_allocate_from_pool_negative_amount(self, db, pool, ceo, period):
+        """Should reject negative amount in allocate_from_pool."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.allocate_from_pool(
+                pool_id=pool.id,
+                worker_id=ceo.id,
+                amount=-1000.0,
+                period_start=period["start"],
+                period_end=period["end"],
+            )
+        assert "must be positive" in str(exc_info.value)
+
+    def test_allocate_from_pool_zero_amount(self, db, pool, ceo, period):
+        """Should reject zero amount in allocate_from_pool."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        service = BudgetService(db)
+        with pytest.raises(BudgetAllocationError) as exc_info:
+            service.allocate_from_pool(
+                pool_id=pool.id,
+                worker_id=ceo.id,
+                amount=0.0,
+                period_start=period["start"],
+                period_end=period["end"],
+            )
+        assert "must be positive" in str(exc_info.value)

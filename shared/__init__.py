@@ -27,6 +27,8 @@ from .exceptions import (
     InvalidLifecycleState,
     InvalidOrgTransition,
     OrgNotInitialized,
+    ActiveSessionExistsError,
+    ConfigurationError,
 )
 
 from .provider_types import (
@@ -54,6 +56,8 @@ __all__ = [
     "InvalidLifecycleState",
     "InvalidOrgTransition",
     "OrgNotInitialized",
+    "ActiveSessionExistsError",
+    "ConfigurationError",
     # Provider types
     "ModelCapabilities",
     "ModelInfo",

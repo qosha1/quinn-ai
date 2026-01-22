@@ -13,6 +13,7 @@ try:
         ModelCapabilities,
         ModelInfo,
         ProviderConfig,
+        RetryConfig,
         Message,
         CompletionResult,
         Provider,
@@ -20,6 +21,13 @@ try:
         AuthenticationError,
         RateLimitError,
         ModelNotAvailableError,
+        ProviderConnectionError,
+        ProviderTimeoutError,
+        APIError,
+        is_retryable_error,
+        calculate_retry_delay,
+        with_retry,
+        with_retry_async,
     )
 except ImportError:
     # Fallback for direct cli imports
@@ -28,6 +36,7 @@ except ImportError:
         ModelCapabilities,
         ModelInfo,
         ProviderConfig,
+        RetryConfig,
         Message,
         CompletionResult,
         Provider,
@@ -35,6 +44,13 @@ except ImportError:
         AuthenticationError,
         RateLimitError,
         ModelNotAvailableError,
+        ProviderConnectionError,
+        ProviderTimeoutError,
+        APIError,
+        is_retryable_error,
+        calculate_retry_delay,
+        with_retry,
+        with_retry_async,
     )
 
 __all__ = [
@@ -42,6 +58,7 @@ __all__ = [
     "ModelCapabilities",
     "ModelInfo",
     "ProviderConfig",
+    "RetryConfig",
     "Message",
     "CompletionResult",
     "Provider",
@@ -49,4 +66,11 @@ __all__ = [
     "AuthenticationError",
     "RateLimitError",
     "ModelNotAvailableError",
+    "ProviderConnectionError",
+    "ProviderTimeoutError",
+    "APIError",
+    "is_retryable_error",
+    "calculate_retry_delay",
+    "with_retry",
+    "with_retry_async",
 ]

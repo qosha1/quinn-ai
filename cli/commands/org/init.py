@@ -40,7 +40,8 @@ def init_cmd(ctx: Context, ceo_name: str, ceo_role: str):
     # Check if already initialized
     if db_path.exists():
         raise click.ClickException(
-            f"Organization already initialized at {org_path}"
+            f"Organization already initialized at '{org_path}'.\n"
+            "Run 'qn org status' to view or 'qn org start' to start it."
         )
 
     # Create folder structure

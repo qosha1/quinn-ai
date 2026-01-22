@@ -141,6 +141,31 @@ class ModelInfo:
 
 
 @dataclass
+class RetryConfig:
+    """Configuration for retry behavior on transient failures.
+
+    Controls exponential backoff parameters for retrying failed provider calls.
+    Only transient errors (connection, timeout, 429, 5xx) are retried.
+    Client errors (4xx except 429) are not retried.
+    """
+
+    max_retries: int = 3
+    """Maximum number of retry attempts (0 = no retries)."""
+
+    initial_delay: float = 1.0
+    """Initial delay in seconds before first retry."""
+
+    max_delay: float = 60.0
+    """Maximum delay in seconds (caps exponential growth)."""
+
+    exponential_base: float = 2.0
+    """Base for exponential backoff calculation."""
+
+    jitter: bool = True
+    """Add random jitter to delays to avoid thundering herd."""
+
+
+@dataclass
 class ProviderConfig:
     """Configuration for a provider.
 
@@ -157,7 +182,19 @@ class ProviderConfig:
     """Request timeout in seconds."""
 
     max_retries: int = 3
-    """Maximum retry attempts for failed requests."""
+    """Maximum retry attempts for failed requests (legacy, use retry_config)."""
+
+    retry_config: Optional[RetryConfig] = None
+    """Detailed retry configuration. If None, uses default RetryConfig with max_retries."""
+
+    def get_retry_config(self) -> RetryConfig:
+        """Get effective retry configuration.
+
+        Returns RetryConfig, using legacy max_retries if retry_config not set.
+        """
+        if self.retry_config is not None:
+            return self.retry_config
+        return RetryConfig(max_retries=self.max_retries)
 
 
 @dataclass
@@ -320,3 +357,249 @@ class RateLimitError(ProviderError):
 class ModelNotAvailableError(ProviderError):
     """Raised when requested model is not available."""
     pass
+
+
+class ProviderConnectionError(ProviderError):
+    """Raised when connection to provider API fails.
+
+    This includes network errors, DNS failures, SSL errors, and
+    other connection-level issues.
+    """
+    pass
+
+
+class ProviderTimeoutError(ProviderError):
+    """Raised when provider API request times out.
+
+    Includes both connection timeouts and read timeouts.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        provider: str,
+        timeout_seconds: float,
+        cause: Exception | None = None,
+    ):
+        super().__init__(message, provider, cause)
+        self.timeout_seconds = timeout_seconds
+
+
+class APIError(ProviderError):
+    """Raised for API-level errors from the provider.
+
+    This includes server errors (5xx), bad requests (4xx not covered
+    by specific exceptions), and other API-level failures.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        provider: str,
+        status_code: int | None = None,
+        cause: Exception | None = None,
+    ):
+        super().__init__(message, provider, cause)
+        self.status_code = status_code
+
+
+def is_retryable_error(error: Exception) -> bool:
+    """Check if an error is retryable (transient).
+
+    Retryable errors:
+    - ProviderConnectionError: Network/connection issues
+    - ProviderTimeoutError: Request timeouts
+    - RateLimitError: 429 rate limiting
+    - APIError with 5xx status codes (server errors)
+
+    Non-retryable errors:
+    - AuthenticationError: Credentials won't change between retries
+    - ModelNotAvailableError: Model availability won't change
+    - APIError with 4xx status codes (except 429): Client errors
+    - Any other ProviderError: Unknown errors, safer not to retry
+
+    Args:
+        error: The exception to check
+
+    Returns:
+        True if the error is transient and should be retried
+    """
+    # Connection and timeout errors are always retryable
+    if isinstance(error, (ProviderConnectionError, ProviderTimeoutError)):
+        return True
+
+    # Rate limit errors (429) are retryable
+    if isinstance(error, RateLimitError):
+        return True
+
+    # API errors: only retry 5xx server errors
+    if isinstance(error, APIError):
+        if error.status_code is not None:
+            return error.status_code >= 500
+        # Unknown status code - don't retry
+        return False
+
+    # Auth errors and model availability errors are not retryable
+    if isinstance(error, (AuthenticationError, ModelNotAvailableError)):
+        return False
+
+    # Other ProviderErrors - don't retry by default
+    return False
+
+
+def calculate_retry_delay(
+    retry_config: RetryConfig,
+    attempt: int,
+) -> float:
+    """Calculate delay before next retry attempt.
+
+    Uses exponential backoff with optional jitter.
+    Formula: min(initial_delay * (base ^ attempt), max_delay) + jitter
+
+    Args:
+        retry_config: Retry configuration
+        attempt: Current attempt number (0-indexed, so first retry is attempt=0)
+
+    Returns:
+        Delay in seconds before next retry
+    """
+    import random
+
+    delay = retry_config.initial_delay * (retry_config.exponential_base ** attempt)
+    delay = min(delay, retry_config.max_delay)
+
+    if retry_config.jitter:
+        # Add random jitter up to 25% of delay
+        jitter_amount = delay * 0.25 * random.random()
+        delay += jitter_amount
+
+    return delay
+
+
+def with_retry(
+    func: callable,
+    retry_config: RetryConfig,
+    provider_name: str = "unknown",
+) -> callable:
+    """Wrap a function with retry logic for transient failures.
+
+    Creates a wrapper that automatically retries the function on transient errors
+    using exponential backoff. Non-retryable errors are raised immediately.
+
+    Args:
+        func: The function to wrap (must be callable)
+        retry_config: Retry configuration
+        provider_name: Provider name for logging/error context
+
+    Returns:
+        Wrapped function with retry logic
+
+    Example:
+        ```python
+        config = RetryConfig(max_retries=3)
+        retryable_call = with_retry(provider.complete, config, "anthropic")
+        result = retryable_call(messages=messages, model="claude-3")
+        ```
+    """
+    import functools
+    import time
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        last_error: Exception | None = None
+
+        for attempt in range(retry_config.max_retries + 1):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                last_error = e
+
+                # Check if this error is retryable
+                if not is_retryable_error(e):
+                    raise
+
+                # Check if we have retries remaining
+                if attempt >= retry_config.max_retries:
+                    logger.warning(
+                        f"[{provider_name}] Max retries ({retry_config.max_retries}) "
+                        f"exhausted. Last error: {e}"
+                    )
+                    raise
+
+                # Calculate delay and sleep
+                delay = calculate_retry_delay(retry_config, attempt)
+                logger.info(
+                    f"[{provider_name}] Retryable error on attempt {attempt + 1}: {e}. "
+                    f"Retrying in {delay:.2f}s..."
+                )
+                time.sleep(delay)
+
+        # Should not reach here, but just in case
+        if last_error:
+            raise last_error
+
+    return wrapper
+
+
+async def with_retry_async(
+    func: callable,
+    retry_config: RetryConfig,
+    provider_name: str = "unknown",
+) -> callable:
+    """Async version of with_retry for async provider calls.
+
+    Creates an async wrapper that automatically retries the function on transient
+    errors using exponential backoff. Non-retryable errors are raised immediately.
+
+    Args:
+        func: The async function to wrap (must be async callable)
+        retry_config: Retry configuration
+        provider_name: Provider name for logging/error context
+
+    Returns:
+        Wrapped async function with retry logic
+    """
+    import functools
+    import asyncio
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        last_error: Exception | None = None
+
+        for attempt in range(retry_config.max_retries + 1):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                last_error = e
+
+                # Check if this error is retryable
+                if not is_retryable_error(e):
+                    raise
+
+                # Check if we have retries remaining
+                if attempt >= retry_config.max_retries:
+                    logger.warning(
+                        f"[{provider_name}] Max retries ({retry_config.max_retries}) "
+                        f"exhausted. Last error: {e}"
+                    )
+                    raise
+
+                # Calculate delay and sleep
+                delay = calculate_retry_delay(retry_config, attempt)
+                logger.info(
+                    f"[{provider_name}] Retryable error on attempt {attempt + 1}: {e}. "
+                    f"Retrying in {delay:.2f}s..."
+                )
+                await asyncio.sleep(delay)
+
+        # Should not reach here, but just in case
+        if last_error:
+            raise last_error
+
+    return wrapper

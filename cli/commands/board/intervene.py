@@ -46,7 +46,10 @@ def pause_cmd(ctx: Context, worker_id: str, reason: str):
         try:
             worker = Worker.get(db, worker_id)
         except WorkerNotFound:
-            raise click.ClickException(f"Worker not found: {worker_id}")
+            raise click.ClickException(
+                f"Worker '{worker_id}' not found.\n"
+                "Run 'qn board status' to see available workers."
+            )
 
         # Check current state
         runtime = worker.runtime_status
@@ -54,13 +57,14 @@ def pause_cmd(ctx: Context, worker_id: str, reason: str):
 
         if lifecycle != "active":
             raise click.ClickException(
-                f"Cannot pause worker in '{lifecycle}' lifecycle state. "
-                "Only active workers can be paused."
+                f"Cannot pause worker '{worker.name}' in '{lifecycle}' lifecycle state.\n"
+                "Only workers with 'active' lifecycle can be paused."
             )
 
         if runtime in ("stopped", "crashed", None):
             raise click.ClickException(
-                f"Worker session already stopped (runtime: {runtime})"
+                f"Worker '{worker.name}' session already stopped (runtime: {runtime or 'none'}).\n"
+                "Use 'qn board resume {worker_id}' to restart the worker."
             )
 
         click.echo(f"Pausing worker: {worker.name} ({worker_id})")
@@ -71,7 +75,10 @@ def pause_cmd(ctx: Context, worker_id: str, reason: str):
         try:
             worker.stop_session()
         except InvalidStateTransition as e:
-            raise click.ClickException(f"Cannot pause: {e}")
+            raise click.ClickException(
+                f"Cannot pause worker '{worker.name}': {e}\n"
+                "Check current runtime status with 'qn board status'."
+            )
 
         click.echo("")
         click.echo("Worker paused successfully.")
@@ -114,7 +121,10 @@ def resume_cmd(ctx: Context, worker_id: str):
         try:
             worker = Worker.get(db, worker_id)
         except WorkerNotFound:
-            raise click.ClickException(f"Worker not found: {worker_id}")
+            raise click.ClickException(
+                f"Worker '{worker_id}' not found.\n"
+                "Run 'qn board status' to see available workers."
+            )
 
         # Check current state
         runtime = worker.runtime_status
@@ -122,14 +132,14 @@ def resume_cmd(ctx: Context, worker_id: str):
 
         if lifecycle != "active":
             raise click.ClickException(
-                f"Cannot resume worker in '{lifecycle}' lifecycle state. "
-                "Only active workers can be resumed."
+                f"Cannot resume worker '{worker.name}' in '{lifecycle}' lifecycle state.\n"
+                "Only workers with 'active' lifecycle can be resumed."
             )
 
         if runtime not in ("stopped", "crashed"):
             raise click.ClickException(
-                f"Worker is not paused (runtime: {runtime}). "
-                "Use 'qn board pause' first."
+                f"Worker '{worker.name}' is not paused (runtime: {runtime}).\n"
+                "Use 'qn board pause {worker_id}' to pause the worker first."
             )
 
         click.echo(f"Resuming worker: {worker.name} ({worker_id})")
@@ -186,13 +196,17 @@ def fire_cmd(ctx: Context, worker_id: str, reason: str, force: bool):
             # Load worker data to verify exists
             _ = worker.name
         except WorkerNotFound:
-            raise click.ClickException(f"Worker not found: {worker_id}")
+            raise click.ClickException(
+                f"Worker '{worker_id}' not found.\n"
+                "Run 'qn board status' to see available workers."
+            )
 
         lifecycle = worker.lifecycle_status
 
         if lifecycle == "terminated":
             raise click.ClickException(
-                f"Worker already terminated."
+                f"Worker '{worker.name}' is already terminated.\n"
+                "No action needed."
             )
 
         # Check if this is the CEO
@@ -242,7 +256,10 @@ def fire_cmd(ctx: Context, worker_id: str, reason: str, force: bool):
             click.echo("  Storage: frozen")
             click.echo("  Channels: unsubscribed")
         except InvalidStateTransition as e:
-            raise click.ClickException(f"Cannot terminate: {e}")
+            raise click.ClickException(
+                f"Cannot terminate worker '{worker.name}': {e}\n"
+                "Check worker lifecycle status with 'qn board status'."
+            )
 
         click.echo("")
         click.echo(f"Worker {worker.name} terminated.")

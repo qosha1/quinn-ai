@@ -42,7 +42,8 @@ def send_cmd(ctx: Context, to_channel: str, priority: int, message: str):
     worker_id = ctx.worker_id
     if not worker_id:
         raise click.ClickException(
-            "Worker ID not specified. Use --worker-id or set QUINN_WORKER_ID."
+            "Worker ID not specified.\n"
+            "Use --worker-id option or set QUINN_WORKER_ID environment variable."
         )
 
     org_path = ctx.org_path
@@ -61,12 +62,18 @@ def send_cmd(ctx: Context, to_channel: str, priority: int, message: str):
         try:
             Worker.get(db, worker_id)
         except WorkerNotFound:
-            raise click.ClickException(f"Worker not found: {worker_id}")
+            raise click.ClickException(
+                f"Worker '{worker_id}' not found.\n"
+                "Run 'qn org status' to see available workers."
+            )
 
         # Verify channel exists
         channel = get_channel(db, to_channel)
         if not channel:
-            raise click.ClickException(f"Channel not found: {to_channel}")
+            raise click.ClickException(
+                f"Channel '{to_channel}' not found.\n"
+                "Verify the channel ID is correct."
+            )
 
         # Check permission to send messages to this channel
         # Sending messages requires at least COMMENT level permission
@@ -80,13 +87,16 @@ def send_cmd(ctx: Context, to_channel: str, priority: int, message: str):
             )
         except PermissionDenied as e:
             raise click.ClickException(
-                f"Permission denied: Cannot send messages to channel '{channel.name}'. "
-                f"You need at least COMMENT permission."
+                f"Permission denied: Cannot send messages to channel '{channel.name}'.\n"
+                "You need at least COMMENT permission on this channel."
             )
 
         # Validate priority
         if not 0 <= priority <= 4:
-            raise click.ClickException("Priority must be between 0 and 4")
+            raise click.ClickException(
+                f"Invalid priority '{priority}'. Must be between 0 and 4.\n"
+                "0=critical, 1=high, 2=medium (default), 3=low, 4=backlog"
+            )
 
         # Create the message and notify subscribers
         msg = create_message_with_notifications(

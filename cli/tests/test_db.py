@@ -9,6 +9,7 @@ import pytest
 
 from cli.core.db import (
     Database,
+    TransactionalFileContext,
     init_database,
     open_database,
     get_org_db_path,
@@ -491,3 +492,270 @@ class TestGetOrgDbPath:
         org_path = Path("/home/user/orgs/my-org")
         db_path = get_org_db_path(org_path)
         assert db_path == Path("/home/user/orgs/my-org/live/quinn.db")
+
+
+class TestTransactionWithFiles:
+    """Test transaction_with_files context manager for file rollback."""
+
+    def test_commit_keeps_files(self, db, db_path):
+        """On successful commit, tracked files should remain."""
+        # Create a test directory in the same temp location
+        test_dir = db_path.parent / "test_storage"
+
+        with db.transaction_with_files() as (cursor, file_ctx):
+            # Create a file during the transaction
+            test_dir.mkdir(parents=True, exist_ok=True)
+            test_file = test_dir / "worker.txt"
+            test_file.write_text("test content")
+            file_ctx.track_created(test_dir)
+
+            # Do some DB work
+            cursor.execute(
+                "INSERT INTO config (key, value) VALUES (?, ?)",
+                ("test_commit", "success")
+            )
+
+        # After successful commit, file should still exist
+        assert test_dir.exists()
+        assert test_file.exists()
+        assert test_file.read_text() == "test content"
+
+    def test_rollback_deletes_files(self, db, db_path):
+        """On rollback, tracked files should be deleted."""
+        test_dir = db_path.parent / "test_storage_rollback"
+
+        with pytest.raises(ValueError, match="intentional"):
+            with db.transaction_with_files() as (cursor, file_ctx):
+                # Create a directory during the transaction
+                test_dir.mkdir(parents=True, exist_ok=True)
+                test_file = test_dir / "orphan.txt"
+                test_file.write_text("would be orphaned")
+                file_ctx.track_created(test_dir)
+
+                # Do some DB work
+                cursor.execute(
+                    "INSERT INTO config (key, value) VALUES (?, ?)",
+                    ("test_rollback", "should_not_exist")
+                )
+
+                # Simulate failure
+                raise ValueError("intentional error")
+
+        # After rollback, file should be deleted
+        assert not test_dir.exists()
+        assert not test_file.exists()
+
+        # DB change should also be rolled back
+        result = db.fetchone("SELECT value FROM config WHERE key = 'test_rollback'")
+        assert result is None
+
+    def test_rollback_deletes_single_file(self, db, db_path):
+        """Should handle single file (not directory) rollback."""
+        test_file = db_path.parent / "single_file.txt"
+
+        with pytest.raises(RuntimeError):
+            with db.transaction_with_files() as (cursor, file_ctx):
+                test_file.write_text("test")
+                file_ctx.track_created(test_file)
+                raise RuntimeError("boom")
+
+        assert not test_file.exists()
+
+    def test_rollback_handles_multiple_files(self, db, db_path):
+        """Should delete all tracked files on rollback."""
+        storage_root = db_path.parent / "multi_storage"
+        dir1 = storage_root / "worker1"
+        dir2 = storage_root / "worker2"
+        file1 = storage_root / "standalone.txt"
+
+        with pytest.raises(Exception):
+            with db.transaction_with_files() as (cursor, file_ctx):
+                storage_root.mkdir(parents=True)
+                file_ctx.track_created(storage_root)
+
+                dir1.mkdir()
+                (dir1 / "data.txt").write_text("data1")
+                file_ctx.track_created(dir1)
+
+                dir2.mkdir()
+                (dir2 / "data.txt").write_text("data2")
+                file_ctx.track_created(dir2)
+
+                file1.write_text("standalone")
+                file_ctx.track_created(file1)
+
+                raise Exception("fail")
+
+        # All tracked files should be gone
+        assert not dir1.exists()
+        assert not dir2.exists()
+        assert not file1.exists()
+        # Note: storage_root may or may not exist depending on deletion order
+        # but the tracked subdirectories should definitely be gone
+
+    def test_rollback_with_cleanup_callback(self, db, db_path):
+        """Should run cleanup callbacks on rollback."""
+        cleanup_ran = []
+        test_file = db_path.parent / "callback_test.txt"
+
+        def custom_cleanup():
+            cleanup_ran.append(True)
+
+        with pytest.raises(Exception):
+            with db.transaction_with_files() as (cursor, file_ctx):
+                test_file.write_text("test")
+                file_ctx.track_created(test_file)
+                file_ctx.register_cleanup(custom_cleanup)
+                raise Exception("trigger rollback")
+
+        assert cleanup_ran == [True]
+        assert not test_file.exists()
+
+    def test_no_error_if_file_already_deleted(self, db, db_path):
+        """Should not fail if tracked file was already deleted."""
+        test_file = db_path.parent / "already_gone.txt"
+
+        # This should not raise even though file doesn't exist at rollback
+        with pytest.raises(ValueError):
+            with db.transaction_with_files() as (cursor, file_ctx):
+                test_file.write_text("temp")
+                file_ctx.track_created(test_file)
+                # Delete the file before rollback
+                test_file.unlink()
+                raise ValueError("trigger")
+
+        # Should complete without error
+        assert not test_file.exists()
+
+
+class TestConnectionManagement:
+    """Test database connection management features."""
+
+    def test_wal_mode_enabled_by_default(self, db):
+        """WAL journal mode should be enabled by default."""
+        cursor = db.connection.execute("PRAGMA journal_mode")
+        journal_mode = cursor.fetchone()[0]
+        assert journal_mode.lower() == "wal"
+
+    def test_busy_timeout_configured(self, db):
+        """Busy timeout should be configured."""
+        cursor = db.connection.execute("PRAGMA busy_timeout")
+        timeout = cursor.fetchone()[0]
+        # Default is 5000ms
+        assert timeout >= 5000
+
+    def test_foreign_keys_enabled(self, db):
+        """Foreign keys should be enabled."""
+        cursor = db.connection.execute("PRAGMA foreign_keys")
+        fk_enabled = cursor.fetchone()[0]
+        assert fk_enabled == 1
+
+    def test_connection_reuse(self, db):
+        """Same thread should reuse the same connection."""
+        conn1 = db.connection
+        conn2 = db.connection
+        assert conn1 is conn2
+
+    def test_get_connection_info(self, db):
+        """Should return connection info dict."""
+        info = db.get_connection_info()
+        assert "db_path" in info
+        assert "busy_timeout_ms" in info
+        assert "wal_enabled" in info
+        assert "thread_id" in info
+        assert "has_connection" in info
+        assert info["has_connection"] is True
+        assert info["wal_enabled"] is True
+
+    def test_close_clears_connection(self, db):
+        """Close should clear the thread's connection."""
+        # Ensure connection exists
+        _ = db.connection
+        assert db.get_connection_info()["has_connection"] is True
+
+        # Close it
+        db.close()
+        assert db.get_connection_info()["has_connection"] is False
+
+        # Should be able to reconnect
+        _ = db.connection
+        assert db.get_connection_info()["has_connection"] is True
+
+    def test_close_all_prevents_reconnection(self, db_path):
+        """close_all should prevent further connections."""
+        db = init_database(db_path)
+
+        # Ensure connection exists
+        _ = db.connection
+
+        # Close all
+        db.close_all()
+
+        # Should raise on access
+        with pytest.raises(RuntimeError, match="closed"):
+            _ = db.connection
+
+    def test_custom_busy_timeout(self, db_path):
+        """Should accept custom busy timeout."""
+        from cli.core.db import Database
+
+        # Ensure parent directory exists
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        db = Database(db_path, busy_timeout_ms=10000)
+        db.connection.executescript("CREATE TABLE IF NOT EXISTS test (id TEXT)")
+        db.connection.commit()
+
+        cursor = db.connection.execute("PRAGMA busy_timeout")
+        timeout = cursor.fetchone()[0]
+        assert timeout == 10000
+        db.close()
+
+    def test_wal_can_be_disabled(self, db_path):
+        """Should allow disabling WAL mode."""
+        from cli.core.db import Database
+
+        # Ensure parent directory exists
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        db = Database(db_path, enable_wal=False)
+        db.connection.executescript("CREATE TABLE IF NOT EXISTS test (id TEXT)")
+        db.connection.commit()
+
+        cursor = db.connection.execute("PRAGMA journal_mode")
+        journal_mode = cursor.fetchone()[0]
+        # Without WAL, defaults to delete or another mode
+        assert journal_mode.lower() != "wal"
+        db.close()
+
+    def test_thread_local_connections(self, db_path):
+        """Different threads should get different connections."""
+        import threading
+
+        db = init_database(db_path)
+
+        main_thread_conn_id = id(db.connection)
+        other_thread_conn_id = None
+        error = None
+
+        def worker():
+            nonlocal other_thread_conn_id, error
+            try:
+                other_thread_conn_id = id(db.connection)
+                # Verify we can actually use it
+                db.connection.execute("SELECT 1")
+            except Exception as e:
+                error = e
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+
+        if error:
+            raise error
+
+        # Different threads should have different connection instances
+        assert other_thread_conn_id is not None
+        assert main_thread_conn_id != other_thread_conn_id
+
+        db.close()

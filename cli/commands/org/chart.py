@@ -150,7 +150,8 @@ def chart_diff(ctx: Context, cached: bool):
     )
     if result.returncode != 0:
         raise click.ClickException(
-            "Not a git repository. Git tracking is required for diff."
+            "Not a git repository.\n"
+            "Git tracking is required for diff. Initialize git with 'git init'."
         )
 
     # Build git diff command
@@ -168,7 +169,10 @@ def chart_diff(ctx: Context, cached: bool):
     )
 
     if result.returncode != 0:
-        raise click.ClickException(f"Git diff failed: {result.stderr}")
+        raise click.ClickException(
+            f"Git diff failed: {result.stderr}\n"
+            "Ensure git is properly configured in this directory."
+        )
 
     if result.stdout.strip():
         click.echo(result.stdout)
@@ -204,7 +208,8 @@ def chart_history(ctx: Context, limit: int, oneline: bool):
     )
     if result.returncode != 0:
         raise click.ClickException(
-            "Not a git repository. Git tracking is required for history."
+            "Not a git repository.\n"
+            "Git tracking is required for history. Initialize git with 'git init'."
         )
 
     # Build git log command
@@ -229,7 +234,10 @@ def chart_history(ctx: Context, limit: int, oneline: bool):
             click.echo("No git history found for org-chart.")
             click.echo("The repository has no commits yet.")
             return
-        raise click.ClickException(f"Git log failed: {result.stderr}")
+        raise click.ClickException(
+            f"Git log failed: {result.stderr}\n"
+            "Ensure git is properly configured in this directory."
+        )
 
     if result.stdout.strip():
         click.echo("Org-chart History:")

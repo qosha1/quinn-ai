@@ -448,8 +448,8 @@ class EventBus:
             try:
                 handler(event)
             except Exception:
-                # Log but don't re-raise to ensure all handlers get called
-                # In production, this would use proper logging
+                # Intentionally swallowed: ensure all handlers get called even if one fails.
+                # Handler errors should not break the event notification chain.
                 pass
 
 

@@ -50,9 +50,9 @@ def create_session_record(
     db.execute(
         """INSERT INTO sessions (
             id, worker_id, provider, command, args,
-            working_directory, tmux_session_name, state,
+            working_directory, tmux_session_name, state, state_version,
             started_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             session_id,
             worker_id,
@@ -62,6 +62,7 @@ def create_session_record(
             working_directory,
             tmux_session_name,
             state,
+            0,  # Initial state_version
             now,
             now,
             now,
@@ -78,10 +79,34 @@ def create_session_record(
         "working_directory": working_directory,
         "tmux_session_name": tmux_session_name,
         "state": state,
+        "state_version": 0,
         "started_at": now,
         "created_at": now,
         "updated_at": now,
     }
+
+
+class StateTransitionConflictError(Exception):
+    """Raised when an optimistic locking conflict occurs during state transition."""
+
+    def __init__(
+        self,
+        session_id: str,
+        expected_state: Optional[str],
+        expected_version: Optional[int],
+        actual_state: Optional[str] = None,
+        actual_version: Optional[int] = None,
+    ):
+        self.session_id = session_id
+        self.expected_state = expected_state
+        self.expected_version = expected_version
+        self.actual_state = actual_state
+        self.actual_version = actual_version
+        super().__init__(
+            f"State transition conflict for session {session_id}: "
+            f"expected state={expected_state}, version={expected_version}, "
+            f"actual state={actual_state}, version={actual_version}"
+        )
 
 
 def update_session_state(
@@ -92,6 +117,9 @@ def update_session_state(
     stopped_at: Optional[datetime] = None,
 ) -> bool:
     """Update session state and optionally PID.
+
+    Note: This is the simple version without optimistic locking.
+    For concurrent-safe updates, use atomic_transition_session_state().
 
     Args:
         db: Database instance
@@ -108,20 +136,136 @@ def update_session_state(
     if pid is not None:
         db.execute(
             """UPDATE sessions
-               SET state = ?, pid = ?, stopped_at = ?, updated_at = ?
+               SET state = ?, pid = ?, stopped_at = ?, updated_at = ?,
+                   state_version = state_version + 1
                WHERE id = ?""",
             (state, pid, stopped_at, now, session_id),
         )
     else:
         db.execute(
             """UPDATE sessions
-               SET state = ?, stopped_at = ?, updated_at = ?
+               SET state = ?, stopped_at = ?, updated_at = ?,
+                   state_version = state_version + 1
                WHERE id = ?""",
             (state, stopped_at, now, session_id),
         )
 
     db.connection.commit()
     return db.connection.total_changes > 0
+
+
+def atomic_transition_session_state(
+    db: "Database",
+    session_id: str,
+    new_state: str,
+    expected_state: Optional[str] = None,
+    expected_version: Optional[int] = None,
+    pid: Optional[int] = None,
+    stopped_at: Optional[datetime] = None,
+) -> tuple[bool, int]:
+    """Atomically transition session state with optimistic locking.
+
+    This function implements the SELECT ... FOR UPDATE pattern using
+    SQLite's transaction isolation. It ensures that concurrent state
+    changes don't corrupt the session state.
+
+    Args:
+        db: Database instance
+        session_id: Session ID to update
+        new_state: New state to transition to
+        expected_state: Optional expected current state (for validation)
+        expected_version: Optional expected version (for strict locking)
+        pid: Optional PID to update
+        stopped_at: Optional stopped timestamp
+
+    Returns:
+        Tuple of (success: bool, new_version: int)
+        - success is True if transition happened, False if session not found
+        - new_version is the new state_version after transition
+
+    Raises:
+        StateTransitionConflictError: If expected_state or expected_version
+            don't match the current values (concurrent modification detected)
+    """
+    now = datetime.now()
+
+    # Use a transaction to ensure atomicity
+    with db.transaction() as cursor:
+        # First, read the current state (acts as row lock in SQLite)
+        cursor.execute(
+            "SELECT state, state_version FROM sessions WHERE id = ?",
+            (session_id,),
+        )
+        row = cursor.fetchone()
+
+        if row is None:
+            return (False, 0)
+
+        current_state = row[0]
+        current_version = row[1] if row[1] is not None else 0
+
+        # Check expected state if provided
+        if expected_state is not None and current_state != expected_state:
+            raise StateTransitionConflictError(
+                session_id=session_id,
+                expected_state=expected_state,
+                expected_version=expected_version,
+                actual_state=current_state,
+                actual_version=current_version,
+            )
+
+        # Check expected version if provided
+        if expected_version is not None and current_version != expected_version:
+            raise StateTransitionConflictError(
+                session_id=session_id,
+                expected_state=expected_state,
+                expected_version=expected_version,
+                actual_state=current_state,
+                actual_version=current_version,
+            )
+
+        # Perform the update
+        new_version = current_version + 1
+
+        if pid is not None:
+            cursor.execute(
+                """UPDATE sessions
+                   SET state = ?, state_version = ?, pid = ?,
+                       stopped_at = ?, updated_at = ?
+                   WHERE id = ?""",
+                (new_state, new_version, pid, stopped_at, now, session_id),
+            )
+        else:
+            cursor.execute(
+                """UPDATE sessions
+                   SET state = ?, state_version = ?, stopped_at = ?, updated_at = ?
+                   WHERE id = ?""",
+                (new_state, new_version, stopped_at, now, session_id),
+            )
+
+        return (True, new_version)
+
+
+def get_session_state_and_version(
+    db: "Database",
+    session_id: str,
+) -> Optional[tuple[str, int]]:
+    """Get current state and version for a session.
+
+    Args:
+        db: Database instance
+        session_id: Session ID
+
+    Returns:
+        Tuple of (state, version) or None if not found
+    """
+    row = db.fetchone(
+        "SELECT state, state_version FROM sessions WHERE id = ?",
+        (session_id,),
+    )
+    if row is None:
+        return None
+    return (row["state"], row["state_version"] if row["state_version"] is not None else 0)
 
 
 def update_session_pid(

@@ -1,0 +1,160 @@
+# Escalation Configuration
+# Defines escalation paths, timeouts, and notification rules for work items.
+#
+# Escalation triggers when work items exceed time thresholds without progress.
+# Each path defines levels that progressively escalate to higher authority.
+#
+# Targets can be:
+#   - direct_manager: Worker's immediate manager
+#   - skip_level_manager: Manager's manager (skip-level)
+#   - ceo: Organization CEO
+#   - board: Board intervention (human)
+#   - {worker_id}: Specific worker ID
+
+version: 1
+
+# Default escalation timeout (minutes)
+# Work items without activity for this duration trigger escalation check
+default_timeout_minutes: 30
+
+# Escalation paths define how work items escalate through the hierarchy
+escalation_paths:
+  # Default path for standard work items
+  default:
+    - level: 1
+      to: direct_manager
+      after_minutes: 240  # 4 hours
+      priority_bump: 1    # Increase priority by 1 level
+    - level: 2
+      to: skip_level_manager
+      after_minutes: 480  # 8 hours
+      priority_bump: 1
+    - level: 3
+      to: ceo
+      after_minutes: 1440  # 24 hours
+      priority_bump: 2
+    - level: 4
+      to: board
+      after_minutes: 2880  # 48 hours
+      priority_bump: 2
+
+  # Critical path for urgent/blocking issues
+  critical:
+    - level: 1
+      to: direct_manager
+      after_minutes: 60   # 1 hour
+      priority_bump: 2
+    - level: 2
+      to: ceo
+      after_minutes: 120  # 2 hours
+      priority_bump: 2
+    - level: 3
+      to: board
+      after_minutes: 240  # 4 hours
+      priority_bump: 2
+
+  # Blocked path for items marked as blocked
+  blocked:
+    - level: 1
+      to: direct_manager
+      after_minutes: 120  # 2 hours
+      priority_bump: 1
+    - level: 2
+      to: skip_level_manager
+      after_minutes: 240  # 4 hours
+      priority_bump: 2
+    - level: 3
+      to: ceo
+      after_minutes: 480  # 8 hours
+      priority_bump: 2
+
+  # OKR-linked path for strategic work items
+  okr_linked:
+    - level: 1
+      to: direct_manager
+      after_minutes: 180  # 3 hours
+      priority_bump: 1
+    - level: 2
+      to: skip_level_manager
+      after_minutes: 360  # 6 hours
+      priority_bump: 1
+    - level: 3
+      to: ceo
+      after_minutes: 720  # 12 hours
+      priority_bump: 2
+
+# Retry policy for failed operations or unresponsive workers
+retry_policy:
+  max_retries: 3
+  backoff: exponential  # linear | exponential | fixed
+  base_delay_minutes: 15
+  max_delay_minutes: 120
+
+# Priority levels (0 = lowest, 4 = highest)
+# Used for priority_bump calculations
+priority_levels:
+  - name: low
+    value: 0
+  - name: normal
+    value: 1
+  - name: high
+    value: 2
+  - name: urgent
+    value: 3
+  - name: critical
+    value: 4
+
+# Notification settings for escalation events
+notification_rules:
+  escalation:
+    # Notify the original assignee when their work is escalated
+    notify_original_assignee: true
+    # Notify the escalation target (manager, CEO, etc.)
+    notify_escalation_target: true
+    # Create a bead to track the escalation
+    create_bead: true
+    # Include work item context in notification
+    include_context: true
+    # Channel for escalation notifications (null = direct message)
+    channel: null
+
+  resolution:
+    # Notify original assignee when escalation is resolved
+    notify_original_assignee: true
+    # Notify all workers who were in the escalation chain
+    notify_escalation_chain: true
+
+  timeout_warning:
+    # Send warning before escalation triggers
+    enabled: true
+    # Minutes before escalation to send warning
+    warning_before_minutes: 15
+    # Notify assignee of impending escalation
+    notify_assignee: true
+
+# Auto-escalation rules (checked periodically by scheduler)
+auto_escalation:
+  # Enable automatic escalation checks
+  enabled: true
+  # How often to check for escalation triggers (minutes)
+  check_interval_minutes: 5
+  # Work states that can trigger escalation
+  escalatable_states:
+    - open
+    - in_progress
+    - blocked
+  # Work states exempt from escalation
+  exempt_states:
+    - draft
+    - review
+    - closed
+
+# Board intervention thresholds
+# When these conditions are met, escalation goes directly to board
+board_intervention:
+  # Number of consecutive escalations to CEO before board notification
+  consecutive_ceo_escalations: 3
+  # Percentage of org work items escalated in time window
+  org_wide_escalation_threshold: 0.25  # 25%
+  # Time window for org-wide threshold (minutes)
+  threshold_window_minutes: 1440  # 24 hours

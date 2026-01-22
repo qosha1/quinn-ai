@@ -26,6 +26,12 @@ from cli.providers.base import (
     ModelNotAvailableError,
     Provider,
     ProviderConfig,
+    ProviderError,
+    AuthenticationError,
+    RateLimitError,
+    ProviderConnectionError,
+    ProviderTimeoutError,
+    APIError,
 )
 
 
@@ -908,6 +914,11 @@ def complete_with_budget(
         BudgetExhaustedError: If insufficient budget
         NoBudgetAllocationError: If no budget allocation exists
         ProviderSelectionError: If no provider can satisfy requirements
+        AuthenticationError: If provider authentication fails
+        RateLimitError: If provider rate limit is exceeded
+        ProviderTimeoutError: If provider request times out
+        ProviderConnectionError: If connection to provider fails
+        ProviderError: For other provider errors (wraps unexpected exceptions)
     """
     # Import here to avoid circular imports
     from cli.core.budget import (
@@ -940,14 +951,37 @@ def complete_with_budget(
 
     # Step 4: Enforce budget and make completion
     with BudgetEnforcer(db, worker_id, estimated_cost) as enforcer:
-        # Make the actual provider call
-        # Note: This is a simplified implementation. Real providers
-        # would have their own complete() method.
-        result = selection.provider.complete(
-            messages=messages,
-            model=selection.model.id,
-            max_tokens=max_tokens,
-        )
+        # Make the actual provider call with proper exception handling
+        try:
+            result = selection.provider.complete(
+                messages=messages,
+                model=selection.model.id,
+                max_tokens=max_tokens,
+            )
+        except AuthenticationError:
+            # Re-raise auth errors as-is - caller should handle credential issues
+            raise
+        except RateLimitError:
+            # Re-raise rate limit errors - caller can implement retry logic
+            raise
+        except ProviderTimeoutError:
+            # Re-raise timeout errors - caller can retry with longer timeout
+            raise
+        except ProviderConnectionError:
+            # Re-raise connection errors - caller can retry after delay
+            raise
+        except ProviderError:
+            # Re-raise other provider errors (APIError, ModelNotAvailableError, etc.)
+            raise
+        except Exception as e:
+            # Wrap unexpected exceptions in ProviderError for consistent handling
+            # This prevents raw exceptions from leaking through and ensures
+            # the caller always gets a domain-specific exception
+            raise ProviderError(
+                message=f"Unexpected error during completion: {e}",
+                provider=selection.provider.name,
+                cause=e,
+            ) from e
 
         # Get actual token counts from result
         actual_input = result.get("usage", {}).get("input_tokens", estimated_input_tokens)

@@ -7,12 +7,17 @@ from typing import Optional
 import click
 
 from cli.commands.context import pass_context, Context
+from cli.core.config import (
+    get_org_config_path,
+    load_org_config,
+    validate_and_raise,
+)
 from cli.core.db import open_database, get_org_db_path
 from cli.core.org import Org
 from cli.core.org_chart import update_org_chart
 from cli.core.session import SessionConfig
 from cli.core.sessions.registry import get_default_registry
-from shared import InvalidOrgTransition
+from shared import InvalidOrgTransition, ConfigurationError
 
 
 @click.command()
@@ -38,6 +43,12 @@ from shared import InvalidOrgTransition
     default="",
     help="Additional args for session command (space-separated)",
 )
+@click.option(
+    "--skip-config-validation",
+    is_flag=True,
+    default=False,
+    help="Skip provider configuration validation (for testing/development)",
+)
 @pass_context
 def start_cmd(
     ctx: Context,
@@ -45,6 +56,7 @@ def start_cmd(
     provider: str,
     session_command: str,
     session_args: str,
+    skip_config_validation: bool,
 ):
     """Start the organization.
 
@@ -62,6 +74,23 @@ def start_cmd(
             "Run 'qn org init' first."
         )
 
+    # Validate provider configuration at startup (unless skipped)
+    if not skip_config_validation:
+        config_path = get_org_config_path(org_path)
+        try:
+            org_config = load_org_config(config_path)
+            validate_and_raise(org_config)
+        except FileNotFoundError as e:
+            raise click.ClickException(
+                f"Configuration file not found: {e}\n"
+                "Ensure config/providers.yaml exists."
+            )
+        except ConfigurationError as e:
+            raise click.ClickException(
+                f"Configuration error: {e}\n"
+                "Check config/providers.yaml for valid provider settings."
+            )
+
     db = open_database(db_path)
 
     try:
@@ -74,7 +103,10 @@ def start_cmd(
         try:
             org.start()
         except InvalidOrgTransition as e:
-            raise click.ClickException(str(e))
+            raise click.ClickException(
+                f"Cannot start organization: {e}\n"
+                "Check current status with 'qn org status'."
+            )
 
         # Update org-chart to reflect lifecycle changes (CEO is now active)
         update_org_chart(db, org_path)
@@ -133,8 +165,9 @@ def _spawn_ceo_session(
     if not registry.has(provider):
         available = registry.list_adapters()
         raise click.ClickException(
-            f"Unknown session provider '{provider}'. "
-            f"Available: {', '.join(available)}"
+            f"Unknown session provider '{provider}'.\n"
+            f"Available providers: {', '.join(available)}\n"
+            "Use --provider to specify a valid session provider."
         )
 
     # Set registry on CEO worker and spawn

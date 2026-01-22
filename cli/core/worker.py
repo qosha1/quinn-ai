@@ -7,6 +7,8 @@ Workers have dual state machines:
 """
 
 import json
+import sqlite3
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -30,6 +32,14 @@ from .budget import (
     BudgetExhaustedError,
     NoBudgetAllocationError,
 )
+from .logging import (
+    get_logger,
+    log_session_spawn,
+    log_session_stop,
+    log_worker_lifecycle,
+)
+
+_logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from .session import SessionInterface, SessionState, SessionConfig
@@ -73,6 +83,7 @@ from shared import (
     InvalidStateTransition,
     WorkerNotFound,
     InvalidLifecycleState,
+    ActiveSessionExistsError,
 )
 
 
@@ -437,8 +448,11 @@ class Worker:
                 worker_role=role,
                 details=f"Manager: {self.name} ({self.id})",
             )
-        except Exception:
-            pass  # Org-chart update is best-effort
+        except (ImportError, OSError, subprocess.SubprocessError):
+            # Intentionally swallowed: org-chart update is best-effort.
+            # ImportError: org_chart module not available
+            # OSError: file system issues, SubprocessError: git command failed
+            pass
 
         # Publish WORKER_HIRED event if events module is available
         try:
@@ -600,21 +614,40 @@ class Worker:
 
     def start_onboarding(self) -> None:
         """Transition from pending to onboarding."""
+        old_status = self.lifecycle_status
         self._validate_lifecycle_transition("onboarding")
         update_worker_status(self.db, self.id, "onboarding")
         self._worker_data = None  # Invalidate cache
+        log_worker_lifecycle(_logger, self.id, self.name, old_status, "onboarding")
 
     def complete_onboarding(self) -> None:
         """Transition from onboarding to active."""
+        old_status = self.lifecycle_status
         self._validate_lifecycle_transition("active")
         update_worker_status(self.db, self.id, "active")
         self._worker_data = None
+        log_worker_lifecycle(_logger, self.id, self.name, old_status, "active")
 
     def fail_onboarding(self) -> None:
-        """Transition from onboarding to terminated (failed onboarding)."""
+        """Transition from onboarding to terminated (failed onboarding).
+
+        Cleans up worker storage directory since worker never became active.
+        Unlike normal termination, no review/archive is needed for failed onboarding.
+        """
+        old_status = self.lifecycle_status
         self._validate_lifecycle_transition("terminated")
+
+        # Clean up worker storage - no review needed for failed onboarding
+        try:
+            storage = self._get_storage_manager()
+            storage.delete_worker_storage(self.id)
+        except WorkerStorageNotFound:
+            # Storage doesn't exist yet - OK to continue
+            pass
+
         update_worker_status(self.db, self.id, "terminated")
         self._worker_data = None
+        log_worker_lifecycle(_logger, self.id, self.name, old_status, "terminated")
 
     def start_offboarding(self) -> None:
         """Transition from active to offboarding.
@@ -629,6 +662,7 @@ class Worker:
         The manager will review frozen storage and archive useful files
         before the worker is terminated.
         """
+        old_status = self.lifecycle_status
         self._validate_lifecycle_transition("offboarding")
 
         # Freeze worker storage for review (if exists)
@@ -645,6 +679,7 @@ class Worker:
 
         update_worker_status(self.db, self.id, "offboarding")
         self._worker_data = None
+        log_worker_lifecycle(_logger, self.id, self.name, old_status, "offboarding")
 
     def _create_offboarding_review_bead(self) -> None:
         """Create a review notification bead for the manager.
@@ -694,8 +729,10 @@ class Worker:
                 channel_id=channel.id,
                 priority=1,  # High priority
             )
-        except Exception:
-            # Best-effort - don't fail offboarding if notification fails
+        except (ImportError, sqlite3.Error, ValueError):
+            # Intentionally swallowed: notification is best-effort during offboarding.
+            # ImportError: messaging module not available
+            # sqlite3.Error: database issues, ValueError: invalid data
             pass
 
         # Also create an 'ask' bead for tracking the review workflow
@@ -749,10 +786,11 @@ class Worker:
             return bead_id
 
         except BdCommandError:
-            # Best-effort - don't fail offboarding if bead creation fails
+            # Intentionally swallowed: bead creation is best-effort during offboarding.
             return None
-        except Exception:
-            # Catch any other errors (e.g., bd not installed)
+        except (FileNotFoundError, OSError):
+            # FileNotFoundError: bd CLI not installed
+            # OSError: other file system issues with bd
             return None
 
     def _store_offboarding_ask_bead_id(self, bead_id: str) -> None:
@@ -789,10 +827,11 @@ class Worker:
                         "bead_id": bead_id,
                     },
                 )
-            except Exception:
-                pass  # Event publishing is best-effort
-        except Exception:
-            # Best-effort storage
+            except (ImportError, sqlite3.Error):
+                # Intentionally swallowed: event publishing is best-effort.
+                pass
+        except sqlite3.Error:
+            # Intentionally swallowed: storing bead ID is best-effort.
             pass
 
     def get_offboarding_ask_bead_id(self) -> Optional[str]:
@@ -823,6 +862,8 @@ class Worker:
         Raises:
             InvalidStateTransition: If not in a state that can transition to terminated
         """
+        old_status = self.lifecycle_status
+
         # Stop session first if any
         self.terminate_session(force=True)
 
@@ -840,6 +881,7 @@ class Worker:
         # Validate and update lifecycle status
         self._validate_lifecycle_transition("terminated")
         update_worker_status(self.db, self.id, "terminated")
+        log_worker_lifecycle(_logger, self.id, self.name, old_status, "terminated")
 
         # Update org-chart
         try:
@@ -854,8 +896,11 @@ class Worker:
                 worker_name=self.name,
                 worker_role=self.role,
             )
-        except Exception:
-            pass  # Org-chart update is best-effort
+        except (ImportError, OSError, subprocess.SubprocessError):
+            # Intentionally swallowed: org-chart update is best-effort.
+            # ImportError: org_chart module not available
+            # OSError: file system issues, SubprocessError: git command failed
+            pass
 
         # Publish WORKER_FIRED event
         try:
@@ -871,8 +916,9 @@ class Worker:
                     "role": self.role,
                 },
             )
-        except Exception:
-            pass  # Event publishing is best-effort
+        except (ImportError, sqlite3.Error):
+            # Intentionally swallowed: event publishing is best-effort.
+            pass
 
         self._worker_data = None
 
@@ -1087,7 +1133,29 @@ class Worker:
             SessionSpawnError: If session fails to start
             BudgetExhaustedError: If worker has insufficient budget
             NoBudgetAllocationError: If worker has no budget allocation
+            ActiveSessionExistsError: If worker already has an active session
         """
+        # Check for existing active session before spawning
+        # This prevents duplicate sessions for the same worker
+        existing_session = get_session_for_worker(self.db, self.id)
+        if existing_session is not None:
+            # Only block if session is in an active state
+            active_states = ("starting", "running", "idle")
+            if existing_session.get("state") in active_states:
+                raise ActiveSessionExistsError(
+                    worker_id=self.id,
+                    existing_session_id=existing_session["id"],
+                )
+
+        # Ensure worker_state row exists before session state callbacks fire.
+        # The attach_session callback calls update_worker_runtime_status which
+        # only does UPDATE (not INSERT), so the row must exist first.
+        if self._state_data is None:
+            self._load_state()
+        if self._state_data is None:
+            create_worker_state(self.db, self.id, pid=None)
+            self._state_data = None  # Will be reloaded on next access
+
         # Estimate session spawn cost based on worker's cost tier
         estimated_cost = estimate_cost(
             model_tier=self.cost_tier,
@@ -1132,21 +1200,48 @@ class Worker:
             if hasattr(session, '_spawn_result') and session._spawn_result:
                 tmux_session_name = session._spawn_result.metadata.get('session_name')
 
-            create_session_record(
-                db=self.db,
-                session_id=str(session.id),
-                worker_id=self.id,
-                provider=session.provider_name,
-                command=config.command,
-                args=config.args,
-                working_directory=working_dir,
-                tmux_session_name=tmux_session_name,
-                state=session.state.value,
-            )
+            try:
+                create_session_record(
+                    db=self.db,
+                    session_id=str(session.id),
+                    worker_id=self.id,
+                    provider=session.provider_name,
+                    command=config.command,
+                    args=config.args,
+                    working_directory=working_dir,
+                    tmux_session_name=tmux_session_name,
+                    state=session.state.value,
+                )
+            except sqlite3.IntegrityError:
+                # Race condition: another session was created between our check
+                # and this insert. Stop the session we just started and raise.
+                try:
+                    session.stop(force=True)
+                except (OSError, RuntimeError):
+                    # Intentionally swallowed: best-effort cleanup after race condition.
+                    # OSError: process issues, RuntimeError: session state issues
+                    pass
+                self._session = None
+                # Re-fetch to get the existing session ID
+                existing = get_session_for_worker(self.db, self.id)
+                existing_id = existing["id"] if existing else "unknown"
+                raise ActiveSessionExistsError(
+                    worker_id=self.id,
+                    existing_session_id=existing_id,
+                )
 
             # Update PID if available
             if session.pid:
                 update_session_pid(self.db, str(session.id), session.pid)
+
+            # Log successful session spawn
+            log_session_spawn(
+                _logger,
+                worker_id=self.id,
+                worker_name=self.name,
+                provider=session.provider_name,
+                session_id=str(session.id),
+            )
 
         except Exception:
             # If spawn fails, detach the session
@@ -1176,6 +1271,8 @@ class Worker:
                 state="stopped",
                 stopped_at=datetime.now(),
             )
+            # Log session stop
+            log_session_stop(_logger, self.id, self.name, force=force)
             self._session = None
 
     # ==================
@@ -1372,8 +1469,9 @@ def process_offboarding_cleanup(
                     "bead_id": bead_id["offboarding_ask_bead_id"],
                 },
             )
-        except Exception:
-            pass  # Event publishing is best-effort
+        except (ImportError, sqlite3.Error):
+            # Intentionally swallowed: event publishing is best-effort.
+            pass
 
     # Bead is completed - run cleanup
     result = cleanup_terminated_worker(
@@ -1400,8 +1498,9 @@ def process_offboarding_cleanup(
                     "storage_deleted": result.get("storage_deleted", False),
                 },
             )
-        except Exception:
-            pass  # Event publishing is best-effort
+        except (ImportError, sqlite3.Error):
+            # Intentionally swallowed: event publishing is best-effort.
+            pass
 
     return result
 

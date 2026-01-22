@@ -15,8 +15,11 @@ from cli.core.queries import (
     # Teams & Workers (for setup)
     create_team,
     create_worker,
+    add_team_member,
     # Channels
     create_channel,
+    create_direct_channel,
+    get_or_create_direct_channel,
     get_channel,
     get_channel_by_name,
     get_team_channel,
@@ -25,6 +28,9 @@ from cli.core.queries import (
     unsubscribe_from_channel,
     get_channel_subscribers,
     get_worker_channels,
+    is_subscribed_to_channel,
+    can_subscribe_to_channel,
+    ChannelAccessError,
     # Messages
     create_message,
     get_message,
@@ -531,3 +537,144 @@ class TestMessageChannelIntegration:
         worker_ids = {m.from_worker_id for m in thread}
         assert worker.id in worker_ids
         assert worker2.id in worker_ids
+
+
+class TestChannelPermissionValidation:
+    """Test channel permission validation for subscriptions.
+
+    Security tests ensuring workers can only subscribe to channels
+    they are allowed to access based on channel type.
+    """
+
+    def test_topic_channel_open_to_all(self, db, worker):
+        """Topic channels should allow any worker to subscribe."""
+        topic = create_channel(db, "announcements", "topic")
+        can_sub, reason = can_subscribe_to_channel(db, topic.id, worker.id)
+
+        assert can_sub is True
+        assert "open to all" in reason.lower()
+
+    def test_team_channel_requires_membership(self, db, team):
+        """Team channels should only allow team members."""
+        # Create a team channel for this team
+        team_channel = create_channel(db, "eng-internal", "team", team_id=team.id)
+
+        # Worker in the team should be able to subscribe
+        team_worker = create_worker(db, "TeamMember", "Developer", team.id, 50)
+        can_sub, reason = can_subscribe_to_channel(db, team_channel.id, team_worker.id)
+        assert can_sub is True
+
+        # Worker in different team should NOT be able to subscribe
+        other_team = create_team(db, "Marketing")
+        other_worker = create_worker(db, "Outsider", "Marketer", other_team.id, 50)
+        can_sub, reason = can_subscribe_to_channel(db, team_channel.id, other_worker.id)
+        assert can_sub is False
+        assert "not a member" in reason.lower()
+
+        # Verify subscribe_to_channel raises error
+        with pytest.raises(ChannelAccessError) as exc_info:
+            subscribe_to_channel(db, team_channel.id, other_worker.id)
+        assert "not a member" in str(exc_info.value).lower()
+
+    def test_team_channel_allows_team_members_table(self, db):
+        """Team channel should allow workers added via team_members table."""
+        team1 = create_team(db, "Engineering")
+        team2 = create_team(db, "Platform")
+
+        # Create worker primarily in team2
+        worker = create_worker(db, "CrossTeam", "Developer", team2.id, 50)
+
+        # Create channel for team1
+        team1_channel = create_channel(db, "eng-channel", "team", team_id=team1.id)
+
+        # Initially cannot subscribe
+        can_sub, _ = can_subscribe_to_channel(db, team1_channel.id, worker.id)
+        assert can_sub is False
+
+        # Add worker to team1 via team_members
+        add_team_member(db, team1.id, worker.id)
+
+        # Now should be able to subscribe
+        can_sub, _ = can_subscribe_to_channel(db, team1_channel.id, worker.id)
+        assert can_sub is True
+
+    def test_direct_channel_limited_to_participants(self, db, team):
+        """Direct channels should only allow the two participants."""
+        worker1 = create_worker(db, "Alice", "Developer", team.id, 50)
+        worker2 = create_worker(db, "Bob", "Developer", team.id, 50)
+        worker3 = create_worker(db, "Charlie", "Developer", team.id, 50)
+
+        # Create direct channel between worker1 and worker2
+        dm_channel = create_direct_channel(db, worker1.id, worker2.id)
+
+        # Participants should have access
+        can_sub1, _ = can_subscribe_to_channel(db, dm_channel.id, worker1.id)
+        can_sub2, _ = can_subscribe_to_channel(db, dm_channel.id, worker2.id)
+        assert can_sub1 is True
+        assert can_sub2 is True
+
+        # Third party should NOT have access
+        can_sub3, reason = can_subscribe_to_channel(db, dm_channel.id, worker3.id)
+        assert can_sub3 is False
+        assert "not a participant" in reason.lower()
+
+        # Verify subscribe_to_channel raises error
+        with pytest.raises(ChannelAccessError) as exc_info:
+            subscribe_to_channel(db, dm_channel.id, worker3.id)
+        assert "not a participant" in str(exc_info.value).lower()
+
+    def test_create_direct_channel_validates_workers(self, db, team):
+        """create_direct_channel should validate both workers exist."""
+        worker = create_worker(db, "Real", "Developer", team.id, 50)
+
+        # Should raise for non-existent worker
+        with pytest.raises(ChannelAccessError) as exc_info:
+            create_direct_channel(db, worker.id, "fake-worker-id")
+        assert "not found" in str(exc_info.value).lower()
+
+    def test_get_or_create_direct_channel_idempotent(self, db, team):
+        """get_or_create_direct_channel should return same channel."""
+        worker1 = create_worker(db, "Alice", "Developer", team.id, 50)
+        worker2 = create_worker(db, "Bob", "Developer", team.id, 50)
+
+        # Create channel
+        dm1 = get_or_create_direct_channel(db, worker1.id, worker2.id)
+
+        # Get again (reversed order should still find same channel)
+        dm2 = get_or_create_direct_channel(db, worker2.id, worker1.id)
+
+        assert dm1.id == dm2.id
+
+    def test_is_subscribed_to_channel(self, db, channel, worker):
+        """is_subscribed_to_channel should correctly report subscription status."""
+        # Not subscribed initially
+        assert is_subscribed_to_channel(db, channel.id, worker.id) is False
+
+        # Subscribe
+        subscribe_to_channel(db, channel.id, worker.id)
+
+        # Now subscribed
+        assert is_subscribed_to_channel(db, channel.id, worker.id) is True
+
+        # Unsubscribe
+        unsubscribe_from_channel(db, channel.id, worker.id)
+
+        # No longer subscribed
+        assert is_subscribed_to_channel(db, channel.id, worker.id) is False
+
+    def test_skip_validation_allows_bypass(self, db, team):
+        """skip_validation=True should bypass permission checks."""
+        other_team = create_team(db, "Marketing")
+        outsider = create_worker(db, "Outsider", "Marketer", other_team.id, 50)
+
+        # Create team channel
+        team_channel = create_channel(db, "eng-private", "team", team_id=team.id)
+
+        # Outsider can't normally subscribe
+        can_sub, _ = can_subscribe_to_channel(db, team_channel.id, outsider.id)
+        assert can_sub is False
+
+        # But with skip_validation, it works (for internal use)
+        subscribe_to_channel(db, team_channel.id, outsider.id, skip_validation=True)
+        subscribers = get_channel_subscribers(db, team_channel.id)
+        assert outsider.id in subscribers

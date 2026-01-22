@@ -78,6 +78,29 @@ class TestOrgInit:
         assert ceo.name == "Alice"
         assert ceo.role == "Chief Executive"
 
+    def test_init_when_running_raises(self, org):
+        """Cannot init when running."""
+        org.init("Alice")
+        org.start()
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.init("Bob")
+        assert exc_info.value.current == "running"
+        assert exc_info.value.attempted == "initialized"
+        # Error message should list valid transitions
+        assert "stopped" in str(exc_info.value)
+
+    def test_init_when_stopped_raises(self, org):
+        """Cannot init when stopped (can't reinitialize)."""
+        org.init("Alice")
+        org.start()
+        org.stop()
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.init("Bob")
+        assert exc_info.value.current == "stopped"
+        assert exc_info.value.attempted == "initialized"
+        # Valid transition from stopped is running, not initialized
+        assert "running" in str(exc_info.value)
+
     def test_init_transitions_to_initialized(self, org):
         """Init should transition to initialized."""
         org.init("Alice")
@@ -162,12 +185,15 @@ class TestOrgStart:
         assert exc_info.value.current == "uninitialized"
 
     def test_start_when_running_raises(self, org):
-        """Cannot start when already running."""
+        """Cannot start when already running (double start)."""
         org.init("Alice")
         org.start()
         with pytest.raises(InvalidOrgTransition) as exc_info:
             org.start()
         assert exc_info.value.current == "running"
+        assert exc_info.value.attempted == "running"
+        # Error message should list valid transitions
+        assert "stopped" in str(exc_info.value)
 
 
 class TestOrgStop:
@@ -195,13 +221,25 @@ class TestOrgStop:
         assert exc_info.value.current == "initialized"
 
     def test_stop_when_stopped_raises(self, org):
-        """Cannot stop when already stopped."""
+        """Cannot stop when already stopped (double stop)."""
         org.init("Alice")
         org.start()
         org.stop()
         with pytest.raises(InvalidOrgTransition) as exc_info:
             org.stop()
         assert exc_info.value.current == "stopped"
+        assert exc_info.value.attempted == "stopped"
+        # Error message should list valid transitions
+        assert "running" in str(exc_info.value)
+
+    def test_stop_when_uninitialized_raises(self, org):
+        """Cannot stop when uninitialized."""
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.stop()
+        assert exc_info.value.current == "uninitialized"
+        assert exc_info.value.attempted == "stopped"
+        # Valid transition from uninitialized is initialized
+        assert "initialized" in str(exc_info.value)
 
 
 class TestOrgQueryHelpers:
@@ -274,6 +312,102 @@ class TestOrgCeoProperty:
         org.init("Alice")
         from cli.core.worker import Worker
         assert isinstance(org.ceo, Worker)
+
+
+class TestOrgLifecycleCycles:
+    """Test complete lifecycle cycles and round trips."""
+
+    def test_full_lifecycle_init_start_stop(self, org):
+        """Test complete lifecycle: init -> start -> stop."""
+        assert org.status == "uninitialized"
+        org.init("Alice")
+        assert org.status == "initialized"
+        org.start()
+        assert org.status == "running"
+        org.stop()
+        assert org.status == "stopped"
+
+    def test_stop_start_cycle(self, org):
+        """Test stop/start cycling multiple times."""
+        org.init("Alice")
+        org.start()
+        # Cycle 1
+        org.stop()
+        assert org.status == "stopped"
+        org.start()
+        assert org.status == "running"
+        # Cycle 2
+        org.stop()
+        assert org.status == "stopped"
+        org.start()
+        assert org.status == "running"
+        # Cycle 3
+        org.stop()
+        assert org.status == "stopped"
+
+    def test_multiple_start_from_stopped(self, org):
+        """Should be able to start multiple times from stopped."""
+        org.init("Alice")
+        org.start()
+        org.stop()
+        # First restart
+        org.start()
+        assert org.status == "running"
+        assert org.is_operational
+        org.stop()
+        # Second restart
+        org.start()
+        assert org.status == "running"
+        assert org.is_operational
+
+
+class TestOrgTransitionErrorMessages:
+    """Test error messages for invalid transitions."""
+
+    def test_error_contains_current_state(self, org):
+        """Error message should contain current state."""
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.start()  # Can't start uninitialized
+        assert "uninitialized" in str(exc_info.value)
+
+    def test_error_contains_attempted_state(self, org):
+        """Error message should contain attempted state."""
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.start()  # Can't start uninitialized
+        assert "running" in str(exc_info.value)
+
+    def test_error_contains_valid_transitions(self, org):
+        """Error message should contain valid transitions."""
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.start()  # Can't start uninitialized
+        # Valid transition from uninitialized is initialized
+        assert "initialized" in str(exc_info.value)
+
+    def test_error_attributes_accessible(self, org):
+        """Exception attributes should be accessible."""
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.start()
+        exc = exc_info.value
+        assert exc.current == "uninitialized"
+        assert exc.attempted == "running"
+        assert exc.valid == ["initialized"]
+
+    def test_error_valid_list_from_stopped(self, org):
+        """Error from stopped should list running as valid."""
+        org.init("Alice")
+        org.start()
+        org.stop()
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.stop()  # Can't double stop
+        assert exc_info.value.valid == ["running"]
+
+    def test_error_valid_list_from_running(self, org):
+        """Error from running should list stopped as valid."""
+        org.init("Alice")
+        org.start()
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.start()  # Can't double start
+        assert exc_info.value.valid == ["stopped"]
 
 
 class TestTransitionMaps:

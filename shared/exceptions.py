@@ -60,3 +60,36 @@ class OrgNotInitialized(Exception):
     def __init__(self, operation: str):
         self.operation = operation
         super().__init__(f"Cannot {operation}: org is not initialized")
+
+
+class ActiveSessionExistsError(Exception):
+    """Raised when trying to spawn a session for a worker that already has one.
+
+    This enforces the 1:1 relationship between workers and sessions.
+    """
+
+    def __init__(self, worker_id: str, existing_session_id: str):
+        self.worker_id = worker_id
+        self.existing_session_id = existing_session_id
+        super().__init__(
+            f"Worker '{worker_id}' already has an active session: {existing_session_id}"
+        )
+
+
+class ConfigurationError(Exception):
+    """Raised when provider or org configuration is invalid.
+
+    Used at startup to detect configuration problems early rather than
+    failing at runtime when a provider is first used.
+    """
+
+    def __init__(self, message: str, provider: str | None = None, field: str | None = None):
+        self.provider = provider
+        self.field = field
+        if provider and field:
+            full_message = f"Configuration error for provider '{provider}', field '{field}': {message}"
+        elif provider:
+            full_message = f"Configuration error for provider '{provider}': {message}"
+        else:
+            full_message = f"Configuration error: {message}"
+        super().__init__(full_message)

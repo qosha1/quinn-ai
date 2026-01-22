@@ -42,7 +42,8 @@ def get_work_cmd(ctx: Context, limit: int, as_json: bool):
     worker_id = ctx.worker_id
     if not worker_id:
         raise click.ClickException(
-            "Worker ID not specified. Use --worker-id or set QUINN_WORKER_ID."
+            "Worker ID not specified.\n"
+            "Use --worker-id option or set QUINN_WORKER_ID environment variable."
         )
 
     org_path = ctx.org_path
@@ -61,7 +62,10 @@ def get_work_cmd(ctx: Context, limit: int, as_json: bool):
         try:
             worker = Worker.get(db, worker_id)
         except WorkerNotFound:
-            raise click.ClickException(f"Worker not found: {worker_id}")
+            raise click.ClickException(
+                f"Worker '{worker_id}' not found.\n"
+                "Run 'qn org status' to see available workers."
+            )
 
         # Check if worker can accept work
         if not worker.can_work:

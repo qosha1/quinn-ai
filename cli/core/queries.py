@@ -770,6 +770,83 @@ def create_channel(
     )
 
 
+def create_direct_channel(
+    db: Database,
+    worker1_id: str,
+    worker2_id: str,
+    channel_id: Optional[str] = None,
+) -> Channel:
+    """Create a direct message channel between two workers.
+
+    Creates a channel and subscribes both workers. Direct channels are
+    restricted to only these two participants.
+
+    Args:
+        db: Database instance
+        worker1_id: First worker ID
+        worker2_id: Second worker ID
+        channel_id: Optional custom channel ID
+
+    Returns:
+        Created Channel with both workers subscribed
+
+    Raises:
+        ChannelAccessError: If either worker doesn't exist
+    """
+    # Validate both workers exist
+    worker1 = get_worker(db, worker1_id)
+    if not worker1:
+        raise ChannelAccessError(worker1_id, "new", "Worker not found")
+
+    worker2 = get_worker(db, worker2_id)
+    if not worker2:
+        raise ChannelAccessError(worker2_id, "new", "Worker not found")
+
+    # Generate consistent channel name (sorted IDs for uniqueness)
+    sorted_ids = sorted([worker1_id, worker2_id])
+    channel_name = f"dm-{sorted_ids[0][:8]}-{sorted_ids[1][:8]}"
+
+    # Check if channel already exists between these workers
+    existing = get_channel_by_name(db, channel_name)
+    if existing:
+        return existing
+
+    # Create the channel
+    channel = create_channel(db, channel_name, "direct", channel_id=channel_id)
+
+    # Subscribe both workers (skip_validation since we just validated)
+    subscribe_to_channel(db, channel.id, worker1_id, skip_validation=True)
+    subscribe_to_channel(db, channel.id, worker2_id, skip_validation=True)
+
+    return channel
+
+
+def get_or_create_direct_channel(
+    db: Database,
+    worker1_id: str,
+    worker2_id: str,
+) -> Channel:
+    """Get an existing direct channel or create one between two workers.
+
+    Args:
+        db: Database instance
+        worker1_id: First worker ID
+        worker2_id: Second worker ID
+
+    Returns:
+        Direct channel between the two workers
+    """
+    # Generate consistent channel name
+    sorted_ids = sorted([worker1_id, worker2_id])
+    channel_name = f"dm-{sorted_ids[0][:8]}-{sorted_ids[1][:8]}"
+
+    existing = get_channel_by_name(db, channel_name)
+    if existing:
+        return existing
+
+    return create_direct_channel(db, worker1_id, worker2_id)
+
+
 def get_channel(db: Database, channel_id: str) -> Optional[Channel]:
     """Get a channel by ID.
 
@@ -847,20 +924,142 @@ def create_default_org_channels(db: Database) -> list[Channel]:
     return created
 
 
-def subscribe_to_channel(db: Database, channel_id: str, worker_id: str) -> None:
-    """Subscribe a worker to a channel.
+class ChannelAccessError(Exception):
+    """Raised when a worker cannot access a channel."""
+
+    def __init__(self, worker_id: str, channel_id: str, reason: str):
+        self.worker_id = worker_id
+        self.channel_id = channel_id
+        self.reason = reason
+        super().__init__(f"Worker '{worker_id}' cannot access channel '{channel_id}': {reason}")
+
+
+def can_subscribe_to_channel(db: Database, channel_id: str, worker_id: str) -> tuple[bool, str]:
+    """Check if a worker can subscribe to a channel.
+
+    Validates channel access based on channel type:
+    - topic: Any worker can subscribe (org-wide channels)
+    - team: Only team members can subscribe
+    - direct: Only the two participants can subscribe
 
     Args:
         db: Database instance
         channel_id: Channel ID
         worker_id: Worker ID
+
+    Returns:
+        Tuple of (can_subscribe: bool, reason: str)
     """
+    channel = get_channel(db, channel_id)
+    if not channel:
+        return False, "Channel not found"
+
+    worker = get_worker(db, worker_id)
+    if not worker:
+        return False, "Worker not found"
+
+    if channel.type == "topic":
+        # Topic channels are open to all workers in the org
+        return True, "Topic channels are open to all"
+
+    elif channel.type == "team":
+        # Team channels require team membership
+        if not channel.team_id:
+            return False, "Team channel has no team_id"
+
+        # Check if worker is in this team (primary team or team_members)
+        if worker.team_id == channel.team_id:
+            return True, "Worker is in the team"
+
+        # Check team_members table for additional memberships
+        membership = db.fetchone(
+            "SELECT 1 FROM team_members WHERE team_id = ? AND worker_id = ?",
+            (channel.team_id, worker_id)
+        )
+        if membership:
+            return True, "Worker is a team member"
+
+        return False, "Worker is not a member of the team"
+
+    elif channel.type == "direct":
+        # Direct channels: check if worker is one of the two participants
+        # Direct channel names follow format "dm-{worker1_id}-{worker2_id}"
+        # or we check existing subscribers (should be at most 2)
+        subscribers = get_channel_subscribers(db, channel_id)
+
+        if len(subscribers) < 2:
+            # Channel not yet fully set up, check if this is an allowed participant
+            # For direct channels, the creator and target should both be able to join
+            # We allow subscription if there are fewer than 2 subscribers
+            if len(subscribers) == 0:
+                return True, "First participant in direct channel"
+            elif len(subscribers) == 1 and worker_id not in subscribers:
+                return True, "Second participant in direct channel"
+            elif worker_id in subscribers:
+                return True, "Already subscribed"
+
+        # If already 2 subscribers, only they can access
+        if worker_id in subscribers:
+            return True, "Worker is a direct channel participant"
+
+        return False, "Worker is not a participant in this direct channel"
+
+    else:
+        # Unknown channel type - deny by default
+        return False, f"Unknown channel type: {channel.type}"
+
+
+def subscribe_to_channel(
+    db: Database,
+    channel_id: str,
+    worker_id: str,
+    skip_validation: bool = False,
+) -> None:
+    """Subscribe a worker to a channel.
+
+    Validates that the worker is allowed to subscribe based on channel type:
+    - topic: Any worker can subscribe
+    - team: Only team members can subscribe
+    - direct: Only the two participants can subscribe
+
+    Args:
+        db: Database instance
+        channel_id: Channel ID
+        worker_id: Worker ID
+        skip_validation: Skip permission checks (for internal/system use only)
+
+    Raises:
+        ChannelAccessError: If worker cannot subscribe to this channel
+    """
+    if not skip_validation:
+        can_subscribe, reason = can_subscribe_to_channel(db, channel_id, worker_id)
+        if not can_subscribe:
+            raise ChannelAccessError(worker_id, channel_id, reason)
+
     now = datetime.now()
     db.execute(
         "INSERT OR IGNORE INTO channel_subscriptions (channel_id, worker_id, subscribed_at) VALUES (?, ?, ?)",
         (channel_id, worker_id, now)
     )
     db.connection.commit()
+
+
+def is_subscribed_to_channel(db: Database, channel_id: str, worker_id: str) -> bool:
+    """Check if a worker is subscribed to a channel.
+
+    Args:
+        db: Database instance
+        channel_id: Channel ID
+        worker_id: Worker ID
+
+    Returns:
+        True if subscribed, False otherwise
+    """
+    row = db.fetchone(
+        "SELECT 1 FROM channel_subscriptions WHERE channel_id = ? AND worker_id = ?",
+        (channel_id, worker_id)
+    )
+    return row is not None
 
 
 def unsubscribe_from_channel(db: Database, channel_id: str, worker_id: str) -> None:
@@ -2087,14 +2286,20 @@ def create_budget_pool(
     Args:
         db: Database instance
         name: Pool name
-        total_credits: Total credits in pool
+        total_credits: Total credits in pool (must be positive)
         period_start: Period start datetime
         period_end: Period end datetime
         pool_id: Optional custom ID
 
     Returns:
         Created BudgetPool
+
+    Raises:
+        ValueError: If total_credits is not positive
     """
+    if total_credits <= 0:
+        raise ValueError(f"Total credits must be positive, got {total_credits:.2f}")
+
     if pool_id is None:
         pool_id = generate_id("pool")
 
@@ -2234,18 +2439,27 @@ def create_budget_allocation(
     Args:
         db: Database instance
         worker_id: Worker receiving the allocation
-        allocated_credits: Credits being allocated
+        allocated_credits: Credits being allocated (must be positive)
         period_start: Period start datetime
         period_end: Period end datetime
         source_worker_id: Manager delegating budget (mutually exclusive with pool_id)
         pool_id: Pool providing budget (mutually exclusive with source_worker_id)
         can_delegate: Whether worker can delegate to subordinates
-        delegation_limit: Max credits delegatable to single subordinate
+        delegation_limit: Max credits delegatable to single subordinate (must be positive if set)
         allocation_id: Optional custom ID
 
     Returns:
         Created BudgetAllocation
+
+    Raises:
+        ValueError: If allocated_credits is not positive, or if delegation_limit is set but not positive
     """
+    if allocated_credits <= 0:
+        raise ValueError(f"Allocated credits must be positive, got {allocated_credits:.2f}")
+
+    if delegation_limit is not None and delegation_limit <= 0:
+        raise ValueError(f"Delegation limit must be positive, got {delegation_limit:.2f}")
+
     if allocation_id is None:
         allocation_id = generate_id("alloc")
 

@@ -107,7 +107,7 @@ class TestOrgGroup:
         # Then start (without spawning CEO since no budget in test)
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
-            "org", "start", "--no-spawn-ceo"
+            "org", "start", "--no-spawn-ceo", "--skip-config-validation"
         ])
         assert result.exit_code == 0
         assert "Organization started" in result.output
@@ -121,11 +121,33 @@ class TestOrgGroup:
         assert result.exit_code != 0
         assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
 
+    def test_org_start_validates_config(self, runner, temp_org):
+        """qn org start should validate provider configuration."""
+        # Initialize org (creates default config with env var placeholders)
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # Start without skip flag should fail validation (no API key set)
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "start", "--no-spawn-ceo"
+        ])
+        assert result.exit_code != 0
+        assert "api_key" in result.output.lower() or "configuration" in result.output.lower()
+
+    def test_org_start_skip_validation_flag(self, runner, temp_org):
+        """qn org start --skip-config-validation should skip validation."""
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # With skip flag should succeed
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "start", "--no-spawn-ceo", "--skip-config-validation"
+        ])
+        assert result.exit_code == 0
+
     def test_org_stop_runs(self, runner, temp_org):
         """qn org stop should stop running organization."""
         # Init and start first (without spawning CEO since no budget in test)
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
-        runner.invoke(qn, ["--org-path", str(temp_org), "org", "start", "--no-spawn-ceo"])
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "start", "--no-spawn-ceo", "--skip-config-validation"])
         # Then stop
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
@@ -290,7 +312,7 @@ class TestWrkrGroup:
             "wrkr", "send", "--to", "nonexistent", "hello"
         ], env={"QUINN_WORKER_ID": ceo_id})
         assert result.exit_code != 0
-        assert "Channel not found" in result.output
+        assert "not found" in result.output
 
     def test_wrkr_send_requires_to_option(self, runner, temp_org):
         """qn wrkr send should require --to option."""

@@ -3,43 +3,193 @@ Database module for QuinnAI CLI.
 
 Provides the central quinn.db SQLite database for all org state, workers,
 teams, communication, and runtime state.
+
+Connection Management:
+- Single-writer, multi-reader via WAL mode
+- Thread-local connections for multi-threaded access
+- Busy timeout for handling lock contention
+- Proper cleanup via atexit handler
 """
 
+import atexit
+import shutil
 import sqlite3
-import json
+import threading
 from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any, Callable, Generator, Optional
+import weakref
 
 # Current schema version - increment when schema changes
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 13
+
+# Connection configuration
+DEFAULT_BUSY_TIMEOUT_MS = 5000  # 5 seconds
+WAL_MODE_ENABLED = True
+
+# Track all Database instances for cleanup at exit
+_all_databases: weakref.WeakSet["Database"] = weakref.WeakSet()
+
+
+class TransactionalFileContext:
+    """Tracks files/directories created during a transaction for rollback cleanup.
+
+    When used within a database transaction, any files or directories created
+    through this context will be automatically deleted if the transaction is
+    rolled back.
+
+    Usage:
+        with db.transaction_with_files() as (cursor, file_ctx):
+            cursor.execute("INSERT INTO workers...")
+            file_ctx.track_created(storage_path)  # Track created file/dir
+            # If exception occurs, both DB and files are rolled back
+
+    Note:
+        This solves the orphaned file problem (quinnai-12oj) where database
+        rollbacks left storage files on disk.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the file tracking context."""
+        self._created_paths: list[Path] = []
+        self._cleanup_callbacks: list[Callable[[], None]] = []
+
+    def track_created(self, path: Path) -> Path:
+        """Track a file or directory created during the transaction.
+
+        Args:
+            path: Path to the created file or directory
+
+        Returns:
+            The same path (for chaining convenience)
+        """
+        self._created_paths.append(path)
+        return path
+
+    def register_cleanup(self, callback: Callable[[], None]) -> None:
+        """Register a custom cleanup callback for rollback.
+
+        Args:
+            callback: Function to call on rollback (no arguments)
+        """
+        self._cleanup_callbacks.append(callback)
+
+    def rollback(self) -> None:
+        """Delete all tracked files/directories and run cleanup callbacks.
+
+        Called automatically when the transaction context manager catches
+        an exception (before re-raising).
+        """
+        # Run custom cleanup callbacks first (in reverse order)
+        for callback in reversed(self._cleanup_callbacks):
+            try:
+                callback()
+            except Exception:
+                # Intentionally swallowed: cleanup must be best-effort.
+                # A failing callback should not prevent other cleanup from running.
+                pass
+
+        # Delete tracked paths in reverse order (newest first)
+        for path in reversed(self._created_paths):
+            try:
+                if path.exists():
+                    if path.is_dir():
+                        shutil.rmtree(path)
+                    else:
+                        path.unlink()
+            except OSError:
+                # Intentionally swallowed: cleanup is best-effort.
+                # File may be locked, permissions changed, or already deleted.
+                pass
+
+    def clear(self) -> None:
+        """Clear all tracked files (called on successful commit)."""
+        self._created_paths.clear()
+        self._cleanup_callbacks.clear()
 
 
 class Database:
-    """Central database for QuinnAI org state."""
+    """Central database for QuinnAI org state.
 
-    def __init__(self, db_path: Path):
-        """Initialize database connection.
+    Connection Management:
+    - Uses thread-local storage for connections (safe for multi-threaded access)
+    - Enables WAL mode for concurrent reads with single writer
+    - Configures busy timeout for handling lock contention
+    - Tracks instances for cleanup at process exit
+
+    SQLite Concurrency Notes:
+    - SQLite allows multiple readers but only one writer at a time
+    - WAL mode allows readers to proceed while a writer is active
+    - Each thread gets its own connection to avoid threading issues
+    - The main connection (from the thread that created Database) is the
+      primary connection; other threads get their own via thread-local storage
+    """
+
+    def __init__(
+        self,
+        db_path: Path,
+        busy_timeout_ms: int = DEFAULT_BUSY_TIMEOUT_MS,
+        enable_wal: bool = WAL_MODE_ENABLED,
+    ):
+        """Initialize database connection manager.
 
         Args:
             db_path: Path to quinn.db file
+            busy_timeout_ms: How long to wait for locks (default 5000ms)
+            enable_wal: Enable WAL journal mode for concurrent reads (default True)
         """
         self.db_path = db_path
-        self._connection: Optional[sqlite3.Connection] = None
+        self._busy_timeout_ms = busy_timeout_ms
+        self._enable_wal = enable_wal
+        self._local = threading.local()
+        self._main_thread_id = threading.get_ident()
+        self._closed = False
+
+        # Register for cleanup at exit
+        _all_databases.add(self)
+
+    def _create_connection(self) -> sqlite3.Connection:
+        """Create a new SQLite connection with proper configuration.
+
+        Returns:
+            Configured sqlite3.Connection
+        """
+        conn = sqlite3.connect(
+            str(self.db_path),
+            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+            timeout=self._busy_timeout_ms / 1000.0,  # sqlite3 timeout is in seconds
+            check_same_thread=False,  # We manage threading ourselves
+        )
+        conn.row_factory = sqlite3.Row
+
+        # Configure pragmas
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(f"PRAGMA busy_timeout = {self._busy_timeout_ms}")
+
+        if self._enable_wal:
+            conn.execute("PRAGMA journal_mode = WAL")
+            # WAL checkpoint settings for better performance
+            conn.execute("PRAGMA wal_autocheckpoint = 1000")  # Checkpoint every 1000 pages
+
+        return conn
 
     @property
     def connection(self) -> sqlite3.Connection:
-        """Get or create database connection."""
-        if self._connection is None:
-            self._connection = sqlite3.connect(
-                str(self.db_path),
-                detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
-            )
-            self._connection.row_factory = sqlite3.Row
-            # Enable foreign key support
-            self._connection.execute("PRAGMA foreign_keys = ON")
-        return self._connection
+        """Get or create thread-local database connection.
+
+        Each thread gets its own connection. This is necessary because
+        SQLite connections are not fully thread-safe (cursor state, etc.).
+
+        Returns:
+            sqlite3.Connection for the current thread
+        """
+        if self._closed:
+            raise RuntimeError("Database has been closed")
+
+        if not hasattr(self._local, 'connection') or self._local.connection is None:
+            self._local.connection = self._create_connection()
+
+        return self._local.connection
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Cursor, None, None]:
@@ -58,6 +208,43 @@ class Database:
             self.connection.commit()
         except Exception:
             self.connection.rollback()
+            raise
+        finally:
+            cursor.close()
+
+    @contextmanager
+    def transaction_with_files(
+        self,
+    ) -> Generator[tuple[sqlite3.Cursor, TransactionalFileContext], None, None]:
+        """Context manager for transactions that create files.
+
+        Provides both a database cursor and a file tracking context.
+        If the transaction is rolled back (due to an exception), any files
+        tracked through the context are automatically deleted.
+
+        Yields:
+            Tuple of (cursor, file_context) for executing queries and tracking files
+
+        Example:
+            with db.transaction_with_files() as (cursor, file_ctx):
+                cursor.execute("INSERT INTO workers...")
+                storage_path = storage.ensure_worker_storage(worker_id)
+                file_ctx.track_created(storage_path)
+                # If exception occurs here, both DB and storage are rolled back
+
+        Note:
+            This prevents orphaned files from accumulating when database
+            transactions fail (fixes quinnai-12oj).
+        """
+        cursor = self.connection.cursor()
+        file_ctx = TransactionalFileContext()
+        try:
+            yield cursor, file_ctx
+            self.connection.commit()
+            file_ctx.clear()  # Success - don't track files anymore
+        except Exception:
+            self.connection.rollback()
+            file_ctx.rollback()  # Clean up created files
             raise
         finally:
             cursor.close()
@@ -113,10 +300,24 @@ class Database:
         return cursor.fetchall()
 
     def close(self) -> None:
-        """Close database connection."""
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        """Close database connection for the current thread.
+
+        For multi-threaded usage, call close_all() to close connections
+        from all threads.
+        """
+        if hasattr(self._local, 'connection') and self._local.connection is not None:
+            self._local.connection.close()
+            self._local.connection = None
+
+    def close_all(self) -> None:
+        """Close the database and mark it as closed.
+
+        After calling this, the Database instance cannot be used.
+        This is primarily for cleanup at process exit.
+        """
+        self._closed = True
+        # Close the current thread's connection if it exists
+        self.close()
 
     def __enter__(self) -> "Database":
         """Context manager entry."""
@@ -125,6 +326,50 @@ class Database:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit."""
         self.close()
+
+    def get_connection_info(self) -> dict[str, Any]:
+        """Get information about the current connection for debugging.
+
+        Returns:
+            Dict with connection configuration details
+        """
+        info = {
+            "db_path": str(self.db_path),
+            "busy_timeout_ms": self._busy_timeout_ms,
+            "wal_enabled": self._enable_wal,
+            "thread_id": threading.get_ident(),
+            "is_main_thread": threading.get_ident() == self._main_thread_id,
+            "has_connection": hasattr(self._local, 'connection') and self._local.connection is not None,
+            "closed": self._closed,
+        }
+
+        # Add pragma info if connected
+        if info["has_connection"]:
+            try:
+                cursor = self._local.connection.execute("PRAGMA journal_mode")
+                info["journal_mode"] = cursor.fetchone()[0]
+            except Exception:
+                pass
+
+        return info
+
+
+def _cleanup_databases() -> None:
+    """Close all tracked database connections at process exit.
+
+    Registered with atexit to ensure connections are properly closed.
+    """
+    for db in _all_databases:
+        try:
+            db.close_all()
+        except Exception:
+            # Intentionally swallowed: cleanup at exit must be best-effort.
+            # A failing close should not prevent other databases from closing.
+            pass
+
+
+# Register cleanup handler
+atexit.register(_cleanup_databases)
 
 
 # Schema definition
@@ -205,6 +450,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     tmux_session_name TEXT,
     pid INTEGER,
     state TEXT NOT NULL CHECK(state IN ('starting', 'idle', 'running', 'stopped', 'crashed')),
+    state_version INTEGER NOT NULL DEFAULT 0,
     started_at DATETIME,
     stopped_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -239,6 +485,7 @@ CREATE TABLE IF NOT EXISTS channel_subscriptions (
     FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_channel_subs_worker ON channel_subscriptions(worker_id);
 
 -- Messages (permanent knowledge - never deleted)
 CREATE TABLE IF NOT EXISTS messages (
@@ -261,6 +508,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id);
 CREATE INDEX IF NOT EXISTS idx_messages_from_worker ON messages(from_worker_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_priority ON messages(priority);
+CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
 
 -- Message references (links to beads, asks, etc.)
 CREATE TABLE IF NOT EXISTS message_refs (
@@ -397,6 +645,8 @@ CREATE INDEX IF NOT EXISTS idx_notif_beads_worker_status ON notification_beads(w
 CREATE INDEX IF NOT EXISTS idx_notif_beads_priority ON notification_beads(priority);
 CREATE INDEX IF NOT EXISTS idx_notif_beads_closed_at ON notification_beads(closed_at);
 CREATE INDEX IF NOT EXISTS idx_notif_beads_expires_at ON notification_beads(expires_at);
+CREATE INDEX IF NOT EXISTS idx_notif_beads_message ON notification_beads(message_id);
+CREATE INDEX IF NOT EXISTS idx_notif_beads_channel ON notification_beads(channel_id);
 
 -- ===================
 -- BUDGET TABLES
@@ -460,6 +710,7 @@ CREATE TABLE IF NOT EXISTS budget_allocations (
 CREATE INDEX IF NOT EXISTS idx_budget_allocations_worker ON budget_allocations(worker_id);
 CREATE INDEX IF NOT EXISTS idx_budget_allocations_source ON budget_allocations(source_worker_id);
 CREATE INDEX IF NOT EXISTS idx_budget_allocations_period ON budget_allocations(period_start, period_end);
+CREATE INDEX IF NOT EXISTS idx_budget_allocations_pool ON budget_allocations(pool_id);
 
 -- Budget transactions (immutable ledger of all budget movements)
 CREATE TABLE IF NOT EXISTS budget_transactions (
@@ -1006,6 +1257,18 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
             )""",
             "CREATE INDEX IF NOT EXISTS idx_sessions_worker ON sessions(worker_id)",
             "CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state)",
+        ],
+        # Version 12: Add missing indexes on foreign key columns for join performance
+        12: [
+            "CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id)",
+            "CREATE INDEX IF NOT EXISTS idx_channel_subs_worker ON channel_subscriptions(worker_id)",
+            "CREATE INDEX IF NOT EXISTS idx_notif_beads_message ON notification_beads(message_id)",
+            "CREATE INDEX IF NOT EXISTS idx_notif_beads_channel ON notification_beads(channel_id)",
+            "CREATE INDEX IF NOT EXISTS idx_budget_allocations_pool ON budget_allocations(pool_id)",
+        ],
+        # Version 13: Add state_version column to sessions for optimistic locking (race condition fix)
+        13: [
+            "ALTER TABLE sessions ADD COLUMN state_version INTEGER NOT NULL DEFAULT 0",
         ],
     }
 

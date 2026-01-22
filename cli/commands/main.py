@@ -10,6 +10,7 @@ from typing import Optional
 import click
 
 from cli.commands.context import Context, pass_context
+from cli.core.logging import configure_logging
 
 
 @click.group()
@@ -19,8 +20,20 @@ from cli.commands.context import Context, pass_context
     envvar="QUINN_ORG_PATH",
     help="Path to org folder. Defaults to QUINN_ORG_PATH env var.",
 )
+@click.option(
+    "-v", "--verbose",
+    is_flag=True,
+    default=False,
+    help="Enable verbose output (INFO level logging).",
+)
+@click.option(
+    "--debug",
+    is_flag=True,
+    default=False,
+    help="Enable debug output (DEBUG level logging).",
+)
 @click.pass_context
-def qn(ctx, org_path: Optional[Path]):
+def qn(ctx, org_path: Optional[Path], verbose: bool, debug: bool):
     """QuinnAI organization management CLI.
 
     Three command groups for three actors:
@@ -36,6 +49,13 @@ def qn(ctx, org_path: Optional[Path]):
     elif ctx.obj.org_path is None:
         # Default to current directory
         ctx.obj.org_path = Path.cwd()
+
+    # Configure logging with verbosity settings
+    configure_logging(
+        org_path=ctx.obj.org_path,
+        verbose=verbose,
+        debug=debug,
+    )
 
 
 @qn.group()

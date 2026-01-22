@@ -121,11 +121,17 @@ def budget_tree(ctx: Context, worker_id: Optional[str]):
         if worker_id:
             root = get_worker(db, worker_id)
             if not root:
-                raise click.ClickException(f"Worker not found: {worker_id}")
+                raise click.ClickException(
+                    f"Worker '{worker_id}' not found.\n"
+                    "Run 'qn org status' to see available workers."
+                )
         else:
             root = org.ceo
             if not root:
-                raise click.ClickException("No CEO found. Initialize org first.")
+                raise click.ClickException(
+                    "No CEO found in organization.\n"
+                    "Run 'qn org init' to initialize the organization with a CEO."
+                )
 
         click.echo(f"Budget Tree (starting from {root.name}):")
         click.echo("")
@@ -186,17 +192,26 @@ def budget_allocate(ctx: Context, worker_name: str, amount: float, from_worker: 
         from cli.core.queries import get_worker_by_name
         target = get_worker_by_name(db, worker_name)
         if not target:
-            raise click.ClickException(f"Worker not found: {worker_name}")
+            raise click.ClickException(
+                f"Worker '{worker_name}' not found.\n"
+                "Run 'qn org status' to see available workers."
+            )
 
         # Determine source worker
         if from_worker:
             source = get_worker_by_name(db, from_worker)
             if not source:
-                raise click.ClickException(f"Source worker not found: {from_worker}")
+                raise click.ClickException(
+                    f"Source worker '{from_worker}' not found.\n"
+                    "Run 'qn org status' to see available workers."
+                )
         else:
             source = org.ceo
             if not source:
-                raise click.ClickException("No CEO found. Initialize org first.")
+                raise click.ClickException(
+                    "No CEO found in organization.\n"
+                    "Run 'qn org init' to initialize the organization with a CEO."
+                )
 
         # Perform allocation
         try:
@@ -214,7 +229,10 @@ def budget_allocate(ctx: Context, worker_name: str, amount: float, from_worker: 
                 click.echo(f"New balance: {balance.available:.2f} available")
 
         except BudgetAllocationError as e:
-            raise click.ClickException(str(e))
+            raise click.ClickException(
+                f"Budget allocation failed: {e}\n"
+                "Check available budget with 'qn org budget status'."
+            )
 
     finally:
         db.close()
@@ -251,11 +269,17 @@ def budget_transactions(ctx: Context, worker_name: Optional[str], txn_type: Opti
             from cli.core.queries import get_worker_by_name
             worker = get_worker_by_name(db, worker_name)
             if not worker:
-                raise click.ClickException(f"Worker not found: {worker_name}")
+                raise click.ClickException(
+                    f"Worker '{worker_name}' not found.\n"
+                    "Run 'qn org status' to see available workers."
+                )
         else:
             worker = org.ceo
             if not worker:
-                raise click.ClickException("No CEO found. Initialize org first.")
+                raise click.ClickException(
+                    "No CEO found in organization.\n"
+                    "Run 'qn org init' to initialize the organization with a CEO."
+                )
 
         click.echo(f"Transactions for {worker.name}:")
         click.echo("")

@@ -156,7 +156,10 @@ class SessionStateSync:
             try:
                 callback(worker_id, session_id)
             except Exception:
-                pass  # Don't let callback errors break crash handling
+                # Intentionally swallowed: crash handling must complete even if
+                # a callback fails. Callback errors are less critical than
+                # notifying remaining callbacks about the crash.
+                pass
 
     def on_crash(self, callback: Callable[[str, str], None]) -> None:
         """Register callback for session crashes.

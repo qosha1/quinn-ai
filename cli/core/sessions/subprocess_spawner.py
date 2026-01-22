@@ -100,7 +100,8 @@ class SubprocessSpawner(SpawnStrategy):
                 success=False,
                 error=f"Permission denied: {config.command}",
             )
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
+            # OSError: file/process issues, SubprocessError: spawn failed
             return SpawnResult(
                 success=False,
                 error=str(e),
@@ -137,7 +138,8 @@ class SubprocessSpawner(SpawnStrategy):
             del self._processes[session_id]
             return True
 
-        except Exception:
+        except OSError:
+            # Process may have exited, permissions issue, or other OS error
             return False
 
     def is_alive(self, session_id: str) -> bool:
@@ -173,7 +175,8 @@ class SubprocessSpawner(SpawnStrategy):
             process.stdin.write(text.encode())
             process.stdin.flush()
             return True
-        except Exception:
+        except (OSError, IOError):
+            # OSError: broken pipe, process exited; IOError: stdin closed
             return False
 
     def read_output(self, session_id: str, timeout_ms: Optional[int] = None) -> str:
@@ -200,7 +203,8 @@ class SubprocessSpawner(SpawnStrategy):
                 if readable:
                     return process.stdout.read(4096).decode('utf-8', errors='replace')
             return ""
-        except Exception:
+        except (OSError, IOError, ValueError):
+            # OSError: broken pipe; IOError: stdout closed; ValueError: I/O on closed file
             return ""
 
     def send_signal(self, session_id: str, sig: int) -> bool:
@@ -220,7 +224,8 @@ class SubprocessSpawner(SpawnStrategy):
         try:
             process.send_signal(sig)
             return True
-        except Exception:
+        except OSError:
+            # Process may have exited, permissions issue, or invalid signal
             return False
 
     def cleanup(self) -> None:

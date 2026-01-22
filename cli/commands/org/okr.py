@@ -90,7 +90,10 @@ def list_cmd(ctx: Context, status: Optional[str], assignee: Optional[str], show_
         if "no issues found" in result.stderr.lower() or not result.stdout.strip():
             click.echo("No OKRs found.")
             return
-        raise click.ClickException(f"Failed to list OKRs: {result.stderr}")
+        raise click.ClickException(
+                f"Failed to list OKRs: {result.stderr}\n"
+                "Ensure beads is properly configured for this organization."
+            )
 
     # Parse JSON output
     try:
@@ -184,7 +187,10 @@ def _create_okr(
     )
 
     if result.returncode != 0:
-        raise click.ClickException(f"Failed to create OKR: {result.stderr}")
+        raise click.ClickException(
+            f"Failed to create OKR: {result.stderr}\n"
+            "Check beads configuration and try again."
+        )
 
     # Extract created ID from output
     output = result.stdout.strip()
@@ -290,7 +296,10 @@ def cascade_cmd(ctx: Context, root: Optional[str]):
         )
 
         if result.returncode != 0:
-            raise click.ClickException(f"Failed to show OKR tree: {result.stderr}")
+            raise click.ClickException(
+                f"Failed to show OKR tree: {result.stderr}\n"
+                "Verify the OKR ID '{root}' is correct."
+            )
 
         click.echo(f"OKR Cascade from {root}:")
         click.echo("=" * 50)
@@ -308,7 +317,10 @@ def cascade_cmd(ctx: Context, root: Optional[str]):
             if not result.stdout.strip():
                 click.echo("No OKRs found.")
                 return
-            raise click.ClickException(f"Failed to list OKRs: {result.stderr}")
+            raise click.ClickException(
+                f"Failed to list OKRs: {result.stderr}\n"
+                "Ensure beads is properly configured for this organization."
+            )
 
         try:
             okrs = json.loads(result.stdout)
@@ -388,7 +400,10 @@ def show_cmd(ctx: Context, okr_id: str):
     )
 
     if result.returncode != 0:
-        raise click.ClickException(f"OKR not found: {okr_id}")
+        raise click.ClickException(
+            f"OKR '{okr_id}' not found.\n"
+            "Run 'qn org okr list' to see available OKRs."
+        )
 
     click.echo(result.stdout)
 
@@ -454,7 +469,10 @@ def link_cmd(ctx: Context, work_id: str, okr_id: str):
     )
 
     if result.returncode != 0:
-        raise click.ClickException(f"Failed to link: {result.stderr}")
+        raise click.ClickException(
+            f"Failed to link work item to OKR: {result.stderr}\n"
+            "Verify both '{work_id}' and '{okr_id}' exist."
+        )
 
     click.echo(f"Linked {work_id} -> {okr_id} (serves)")
     click.echo(f"Work item '{work_id}' now serves OKR '{okr_id}'")
