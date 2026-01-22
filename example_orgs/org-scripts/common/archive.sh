@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 # Archive an org's state for historical evaluation
+#
+# Creates a standardized archive with:
+# - CSV exports of all database tables
+# - Database snapshot (quinn.db copy)
+# - Org chart snapshot
+# - systemeval-results.csv for consistent metrics comparison
+#
+# The systemeval-results.csv is the key output for comparing runs:
+# - Consistent schema across ALL example orgs (hello-world, startup-team, okr-driven)
+# - Metrics include: workers, messages, budget, tokens, OKRs, duration
+# - Parsed by tests/systemeval_utils.py for programmatic validation
+#
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,6 +28,12 @@ usage() {
     echo
     echo "Output:"
     echo "  Creates archive in run-history/<org-name>/<timestamp>[-label]/"
+    echo
+    echo "  Key files:"
+    echo "    systemeval-results.csv  - Standardized metrics for comparison"
+    echo "    summary.txt             - Human-readable summary"
+    echo "    quinn.db                - Database snapshot"
+    echo "    *.csv                   - Table exports (workers, messages, etc.)"
     echo
     echo "Example:"
     echo "  $0 ./generated-orgs/hello-world"
@@ -132,6 +150,71 @@ $(sqlite3 -header -column "$DB" "SELECT id, name, role, status FROM workers;" 2>
 $(sqlite3 -header -column "$DB" "SELECT substr(id,1,12) as id, from_worker_id, substr(content,1,60) as content FROM messages ORDER BY created_at DESC LIMIT 10;" 2>/dev/null || echo "None")
 EOF
 echo "  ✓ Summary"
+
+# 6. Generate standardized systemeval-results.csv
+# This CSV is consistent across ALL example org runs for comparison and aggregation
+
+# Determine example type based on org name
+case "$org_name" in
+    hello-world) example_type="basic" ;;
+    startup-team) example_type="team" ;;
+    okr-driven) example_type="okr" ;;
+    *) example_type="unknown" ;;
+esac
+
+# Extract metrics from database
+org_status=$(sqlite3 "$DB" "SELECT status FROM org_state WHERE id='default';" 2>/dev/null || echo "unknown")
+started_at=$(sqlite3 "$DB" "SELECT started_at FROM org_state WHERE id='default';" 2>/dev/null || echo "")
+stopped_at=$(sqlite3 "$DB" "SELECT stopped_at FROM org_state WHERE id='default';" 2>/dev/null || echo "")
+
+# Calculate duration (-1 if can't compute)
+if [[ -n "$started_at" && -n "$stopped_at" ]]; then
+    start_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$started_at" "+%s" 2>/dev/null || echo "")
+    stop_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$stopped_at" "+%s" 2>/dev/null || echo "")
+    if [[ -n "$start_epoch" && -n "$stop_epoch" ]]; then
+        duration_seconds=$((stop_epoch - start_epoch))
+    else
+        duration_seconds=-1
+    fi
+else
+    duration_seconds=-1
+fi
+
+# Worker counts
+worker_count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM workers;" 2>/dev/null || echo "0")
+worker_active_count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM workers WHERE status='active';" 2>/dev/null || echo "0")
+worker_terminated_count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM workers WHERE status='terminated';" 2>/dev/null || echo "0")
+
+# Runtime metrics from worker_state
+tasks_completed=$(sqlite3 "$DB" "SELECT COALESCE(SUM(tasks_completed), 0) FROM worker_state;" 2>/dev/null || echo "0")
+tasks_failed=$(sqlite3 "$DB" "SELECT COALESCE(SUM(tasks_failed), 0) FROM worker_state;" 2>/dev/null || echo "0")
+
+# Communication metrics
+message_count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM messages;" 2>/dev/null || echo "0")
+channel_count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM channels;" 2>/dev/null || echo "0")
+
+# Team and OKR metrics
+team_count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM teams;" 2>/dev/null || echo "0")
+okr_count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM okrs;" 2>/dev/null || echo "0")
+okr_completed_count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM okrs WHERE status='completed';" 2>/dev/null || echo "0")
+
+# Budget metrics
+total_spent=$(sqlite3 "$DB" "SELECT COALESCE(printf('%.4f', ABS(SUM(amount))), '0.0000') FROM budget_transactions WHERE type='spend';" 2>/dev/null || echo "0.0000")
+total_tokens_in=$(sqlite3 "$DB" "SELECT COALESCE(SUM(input_tokens), 0) FROM budget_transactions;" 2>/dev/null || echo "0")
+total_tokens_out=$(sqlite3 "$DB" "SELECT COALESCE(SUM(output_tokens), 0) FROM budget_transactions;" 2>/dev/null || echo "0")
+
+# Session count
+session_count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM sessions;" 2>/dev/null || echo "0")
+
+# ISO8601 timestamp
+iso_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Write CSV with header
+cat > "$archive_dir/systemeval-results.csv" << EOF
+run_id,org_name,example_type,timestamp,label,duration_seconds,org_status,worker_count,worker_active_count,worker_terminated_count,tasks_completed,tasks_failed,message_count,channel_count,team_count,okr_count,okr_completed_count,total_spent,total_tokens_in,total_tokens_out,session_count
+$archive_name,$org_name,$example_type,$iso_timestamp,${LABEL:-},$duration_seconds,$org_status,$worker_count,$worker_active_count,$worker_terminated_count,$tasks_completed,$tasks_failed,$message_count,$channel_count,$team_count,$okr_count,$okr_completed_count,$total_spent,$total_tokens_in,$total_tokens_out,$session_count
+EOF
+echo "  ✓ Systemeval results"
 
 echo
 echo "Archive complete: $archive_dir"

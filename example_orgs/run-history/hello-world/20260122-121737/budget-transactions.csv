@@ -1,2 +1,0 @@
-id,allocation_id,worker_id,type,amount,provider,model,input_tokens,output_tokens,reference_type,reference_id,description,metadata,created_at
-txn-7ef35bd2,alloc-e864337e,wrkr-6bd0df48,spend,-0.0675,claude_code,premium-tier,2000,500,session,wrkr-6bd0df48:ecacbfb9fa5f,"Session spawn for worker Alice",,"2026-01-22 12:17:29.782370"

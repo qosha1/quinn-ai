@@ -1,3 +1,4 @@
-# Keep run history but ignore large files
-# Individual run archives are kept for evaluation
-*.db
+# Ignore all run history archives (generated during testing/runs)
+# Archives are created by archive.sh and contain CSVs, DB snapshots, etc.
+*
+!.gitignore

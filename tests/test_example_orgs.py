@@ -1364,3 +1364,136 @@ class TestOKRCascade:
 
         result = run_qn("org", "okr", "list", "--all", org_path=temp_org_dir)
         assert result.returncode == 0
+
+
+class TestSystemevalResults:
+    """Test systemeval-results.csv generation and validation.
+
+    These tests verify the standardized results format that enables
+    comparison across example org runs.
+    """
+
+    def test_archive_generates_systemeval_csv(self, temp_org_dir):
+        """Archive should generate systemeval-results.csv."""
+        # Setup org
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        # Run archive script
+        archive_script = EXAMPLE_ORGS_DIR / "org-scripts" / "common" / "archive.sh"
+        result = subprocess.run(
+            [str(archive_script), str(temp_org_dir), "test-run"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"Archive failed: {result.stderr}"
+        assert "Systemeval results" in result.stdout
+
+        # Find the archive and check CSV exists
+        run_history = EXAMPLE_ORGS_DIR / "run-history"
+        org_name = temp_org_dir.name
+        from tests.systemeval_utils import find_latest_archive
+
+        archive_dir = find_latest_archive(run_history, org_name)
+        assert archive_dir is not None, "Archive should be created"
+
+        csv_path = archive_dir / "systemeval-results.csv"
+        assert csv_path.exists(), "systemeval-results.csv should be generated"
+
+    def test_systemeval_csv_has_correct_schema(self, temp_org_dir):
+        """systemeval-results.csv should have all expected columns."""
+        # Setup and archive
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+
+        archive_script = EXAMPLE_ORGS_DIR / "org-scripts" / "common" / "archive.sh"
+        subprocess.run(
+            [str(archive_script), str(temp_org_dir), "schema-test"],
+            capture_output=True,
+            text=True,
+        )
+
+        # Parse CSV and verify schema
+        run_history = EXAMPLE_ORGS_DIR / "run-history"
+        org_name = temp_org_dir.name
+        from tests.systemeval_utils import find_latest_archive, parse_systemeval_csv
+
+        archive_dir = find_latest_archive(run_history, org_name)
+        csv_path = archive_dir / "systemeval-results.csv"
+
+        result = parse_systemeval_csv(csv_path)
+
+        # Verify all fields are populated
+        assert result.run_id is not None
+        assert result.org_name == org_name
+        assert result.timestamp is not None
+        assert result.org_status == "initialized"
+        assert result.worker_count == 1  # CEO
+
+    def test_systemeval_result_validation(self, temp_org_dir):
+        """ResultValidator provides fluent assertions."""
+        # Setup, start, and stop org
+        run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
+        run_qn("org", "start", "--no-spawn-ceo", "--skip-config-validation", org_path=temp_org_dir)
+        run_qn("org", "stop", org_path=temp_org_dir)
+
+        # Archive
+        archive_script = EXAMPLE_ORGS_DIR / "org-scripts" / "common" / "archive.sh"
+        subprocess.run(
+            [str(archive_script), str(temp_org_dir), "validation-test"],
+            capture_output=True,
+            text=True,
+        )
+
+        # Parse and validate
+        run_history = EXAMPLE_ORGS_DIR / "run-history"
+        org_name = temp_org_dir.name
+        from tests.systemeval_utils import (
+            find_latest_archive,
+            parse_systemeval_csv,
+            validate_result,
+        )
+
+        archive_dir = find_latest_archive(run_history, org_name)
+        result = parse_systemeval_csv(archive_dir / "systemeval-results.csv")
+
+        # Use fluent validation (duration may be 0 for quick start/stop)
+        validate_result(result) \
+            .expect_org_status("stopped") \
+            .expect_min_workers(1) \
+            .expect_no_failed_tasks() \
+            .validate()
+
+        # Duration should be >= 0 (calculated, not -1)
+        assert result.duration_seconds >= 0, "Duration should be calculated"
+
+    def test_systemeval_validation_failure_shows_details(self, temp_org_dir):
+        """Validation failures should show specific errors."""
+        run_qn("org", "init", org_path=temp_org_dir)
+
+        # Archive without starting (will have initialized status)
+        archive_script = EXAMPLE_ORGS_DIR / "org-scripts" / "common" / "archive.sh"
+        subprocess.run(
+            [str(archive_script), str(temp_org_dir), "failure-test"],
+            capture_output=True,
+            text=True,
+        )
+
+        run_history = EXAMPLE_ORGS_DIR / "run-history"
+        org_name = temp_org_dir.name
+        from tests.systemeval_utils import (
+            find_latest_archive,
+            parse_systemeval_csv,
+            validate_result,
+        )
+
+        archive_dir = find_latest_archive(run_history, org_name)
+        result = parse_systemeval_csv(archive_dir / "systemeval-results.csv")
+
+        # This should fail because org wasn't started/stopped
+        validator = validate_result(result) \
+            .expect_org_status("stopped") \
+            .expect_duration_positive()
+
+        # Verify errors are captured
+        assert len(validator.errors) == 2
+        assert "org_status" in validator.errors[0]
+        assert "duration_seconds" in validator.errors[1]

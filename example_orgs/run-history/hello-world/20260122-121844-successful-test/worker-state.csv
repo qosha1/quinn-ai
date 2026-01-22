@@ -1,2 +1,0 @@
-worker_id,runtime_status,current_task_id,pid,started_at,last_activity,tasks_completed,tasks_failed,updated_at
-wrkr-52586f34,idle,,,"2026-01-22 12:18:38.433119","2026-01-22 12:18:38.470433",0,0,"2026-01-22 12:18:38.470433"
