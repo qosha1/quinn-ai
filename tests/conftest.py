@@ -12,9 +12,9 @@ import pytest
 from shared.wrkr.core.config import WorkerConfig
 from shared.wrkr.core.result import WorkerResult
 from shared.wrkr.core.task import Task
-from shared.wrkr.escalation.interface import EscalationResponse, MockEscalation
+from shared.escalation.interface import EscalationResponse, MockEscalation
 from shared.wrkr.memory.interface import MockMemory
-from shared.wrkr.queue.interface import MockQueue
+from shared.queue.interface import MockQueue
 
 
 @pytest.fixture

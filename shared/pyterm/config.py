@@ -43,8 +43,13 @@ class LoopDetectionConfig:
 
 
 @dataclass(frozen=True)
-class SessionConfig:
-    """Configuration for terminal session behavior."""
+class TerminalSessionConfig:
+    """Configuration for terminal session behavior.
+
+    Note: This is distinct from shared.core.SessionConfig which handles
+    session spawning configuration. This class handles terminal-specific
+    behavior settings.
+    """
 
     cancel_signal: str
     """Signal to send for cancellation (e.g., Ctrl+C)."""
@@ -72,13 +77,13 @@ class PytermConfig:
         config = PytermConfig(            # Or build custom
             timing=TimingConfig(...),
             loop_detection=LoopDetectionConfig(...),
-            session=SessionConfig(...),
+            session=TerminalSessionConfig(...),
         )
     """
 
     timing: TimingConfig
     loop_detection: LoopDetectionConfig
-    session: SessionConfig
+    session: TerminalSessionConfig
 
     @classmethod
     def standard(cls) -> "PytermConfig":
@@ -99,7 +104,7 @@ class PytermConfig:
                 max_triggers_per_window=10,
                 window_duration=1.0,
             ),
-            session=SessionConfig(
+            session=TerminalSessionConfig(
                 cancel_signal="\x03",  # Ctrl+C
                 default_cols=80,
                 default_rows=24,

@@ -11,9 +11,9 @@ from shared.wrkr.core.result import WorkerResult
 from shared.wrkr.core.state import InvalidTransition, WorkerState
 from shared.wrkr.core.task import Task
 from shared.wrkr.core.worker import BaseWorker, EscalationResponse
-from shared.wrkr.escalation.interface import MockEscalation
+from shared.escalation.interface import MockEscalation
 from shared.wrkr.memory.interface import MockMemory
-from shared.wrkr.queue.interface import MockQueue
+from shared.queue.interface import MockQueue
 
 
 class SimpleWorker(BaseWorker):

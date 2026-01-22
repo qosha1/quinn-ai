@@ -13,11 +13,15 @@ These links enable:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
-import json
-import subprocess
+from typing import Any, Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from shared.bd import BdClient
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -147,6 +151,7 @@ class LinkManager:
         self,
         bd_command: str = "bd",
         db_path: str | None = None,
+        client: "BdClient | None" = None,
     ):
         """
         Initialize the link manager.
@@ -154,20 +159,15 @@ class LinkManager:
         Args:
             bd_command: Path to the bd command.
             db_path: Optional database path override.
+            client: Optional BdClient instance (for dependency injection).
         """
-        self._bd_command = bd_command
-        self._db_path = db_path
+        # Lazy import to avoid circular dependency
+        from shared.bd import BdClient
+        from shared.wrkr.work.types import BeadsDependency, BeadsType
 
-    def _run_bd(self, *args: str) -> str:
-        """Run a bd command and return output."""
-        cmd = [self._bd_command] + list(args)
-        if self._db_path:
-            cmd.extend(["--db", self._db_path])
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"bd command failed: {result.stderr}")
-        return result.stdout
+        self._client = client or BdClient(bd_command=bd_command, db_path=db_path)
+        self._BeadsDependency = BeadsDependency
+        self._BeadsType = BeadsType
 
     def link_to_ask(self, task_id: str, ask_id: str) -> WorkLink:
         """
@@ -182,10 +182,10 @@ class LinkManager:
         Returns:
             The created WorkLink.
         """
-        try:
-            self._run_bd("dep", "add", task_id, ask_id, "--type=spawned-from")
-        except RuntimeError:
-            pass  # Best effort
+        if not self._client.add_dependency(
+            task_id, ask_id, dep_type=self._BeadsDependency.SPAWNED_FROM
+        ):
+            logger.warning("Failed to link task %s to ask %s", task_id, ask_id)
 
         return WorkLink(
             source_id=task_id,
@@ -207,10 +207,10 @@ class LinkManager:
         Returns:
             The created WorkLink.
         """
-        try:
-            self._run_bd("dep", "add", task_id, okr_id, "--type=serves")
-        except RuntimeError:
-            pass  # Best effort
+        if not self._client.add_dependency(
+            task_id, okr_id, dep_type=self._BeadsDependency.SERVES
+        ):
+            logger.warning("Failed to link task %s to okr %s", task_id, okr_id)
 
         return WorkLink(
             source_id=task_id,
@@ -229,23 +229,17 @@ class LinkManager:
         Returns:
             The Ask, or None if not found.
         """
-        try:
-            output = self._run_bd("show", ask_id, "--json")
-            data = json.loads(output)
-        except (RuntimeError, json.JSONDecodeError):
+        data = self._client.get_issue(ask_id)
+        if not data:
             return None
 
-        if data.get("type") != "ask":
+        if data.get("type") != self._BeadsType.ASK:
             return None
 
         # Get spawned tasks
         spawned = []
-        try:
-            deps_output = self._run_bd("list", "--json", f"--spawned-from={ask_id}")
-            deps = json.loads(deps_output) if deps_output.strip() else []
-            spawned = [d["id"] for d in deps]
-        except (RuntimeError, json.JSONDecodeError):
-            pass
+        spawned_issues = self._client.list_issues(spawned_from=ask_id)
+        spawned = [d["id"] for d in spawned_issues]
 
         return Ask(
             id=data["id"],
@@ -268,25 +262,18 @@ class LinkManager:
         Returns:
             The OKR, or None if not found.
         """
-        try:
-            output = self._run_bd("show", okr_id, "--json")
-            data = json.loads(output)
-        except (RuntimeError, json.JSONDecodeError):
+        data = self._client.get_issue(okr_id)
+        if not data:
             return None
 
-        if data.get("type") != "okr":
+        if data.get("type") != self._BeadsType.OKR:
             return None
 
         metadata = data.get("metadata", {})
 
         # Get serving tasks
-        serving = []
-        try:
-            deps_output = self._run_bd("list", "--json", f"--serves={okr_id}")
-            deps = json.loads(deps_output) if deps_output.strip() else []
-            serving = [d["id"] for d in deps]
-        except (RuntimeError, json.JSONDecodeError):
-            pass
+        serving_issues = self._client.list_issues(serves=okr_id)
+        serving = [d["id"] for d in serving_issues]
 
         return OKR(
             id=data["id"],
@@ -310,10 +297,8 @@ class LinkManager:
         Returns:
             The source Ask, or None if not linked.
         """
-        try:
-            output = self._run_bd("show", task_id, "--json")
-            data = json.loads(output)
-        except (RuntimeError, json.JSONDecodeError):
+        data = self._client.get_issue(task_id)
+        if not data:
             return None
 
         ask_id = data.get("spawned_from") or data.get("ask_id")
@@ -332,10 +317,8 @@ class LinkManager:
         Returns:
             The served OKR, or None if not linked.
         """
-        try:
-            output = self._run_bd("show", task_id, "--json")
-            data = json.loads(output)
-        except (RuntimeError, json.JSONDecodeError):
+        data = self._client.get_issue(task_id)
+        if not data:
             return None
 
         okr_id = data.get("serves") or data.get("okr_id")
@@ -354,6 +337,8 @@ class LinkManager:
         Returns:
             Progress as float (0.0 to 1.0).
         """
+        from shared.wrkr.work.types import BeadsStatus
+
         okr = self.get_okr(okr_id)
         if not okr or not okr.serving_tasks:
             return 0.0
@@ -362,13 +347,9 @@ class LinkManager:
         total = len(okr.serving_tasks)
 
         for task_id in okr.serving_tasks:
-            try:
-                output = self._run_bd("show", task_id, "--json")
-                data = json.loads(output)
-                if data.get("status") == "closed":
-                    completed += 1
-            except (RuntimeError, json.JSONDecodeError):
-                pass
+            data = self._client.get_issue(task_id)
+            if data and data.get("status") == BeadsStatus.CLOSED:
+                completed += 1
 
         return completed / total if total > 0 else 0.0
 
@@ -384,14 +365,8 @@ class LinkManager:
         """
         progress = self.calculate_okr_progress(okr_id)
 
-        try:
-            self._run_bd(
-                "update",
-                okr_id,
-                f"--metadata={json.dumps({'progress': progress})}",
-            )
-        except RuntimeError:
-            pass
+        if not self._client.update_issue(okr_id, metadata={"progress": progress}):
+            logger.warning("Failed to update OKR progress for %s", okr_id)
 
         return progress
 

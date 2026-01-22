@@ -12,6 +12,15 @@ from typing import Optional
 
 import yaml
 
+from .constants import (
+    DEFAULT_TIMEOUT,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_SKILL_THRESHOLD_CODING,
+    DEFAULT_SKILL_THRESHOLD_REASONING,
+    DEFAULT_SKILL_THRESHOLD_RESEARCH,
+    DEFAULT_WORKER_COST,
+)
+
 
 @dataclass
 class ProviderSettings:
@@ -19,16 +28,16 @@ class ProviderSettings:
     enabled: bool = True
     api_key: str = ""
     base_url: Optional[str] = None
-    timeout: int = 60
-    max_retries: int = 3
+    timeout: int = DEFAULT_TIMEOUT
+    max_retries: int = DEFAULT_MAX_RETRIES
 
 
 @dataclass
 class ThresholdSettings:
     """Skill thresholds for capability requirements."""
-    coding: int = 80
-    reasoning: int = 60
-    research: int = 80
+    coding: int = DEFAULT_SKILL_THRESHOLD_CODING
+    reasoning: int = DEFAULT_SKILL_THRESHOLD_REASONING
+    research: int = DEFAULT_SKILL_THRESHOLD_RESEARCH
 
 
 @dataclass
@@ -44,7 +53,7 @@ class WorkerTemplate:
     """Template defining skills and cost for a worker role."""
     description: str = ""
     skills: dict[str, int] = field(default_factory=dict)
-    cost: int = 50
+    cost: int = DEFAULT_WORKER_COST
 
 
 @dataclass

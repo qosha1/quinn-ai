@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Protocol
 import uuid
 
-from shared.wrkr.comms.types import (
+from shared.comms.types import (
     MessageType,
     TimeSensitivity,
     WorkerMessage,

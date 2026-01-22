@@ -4,6 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORG_DIR="$SCRIPT_DIR/org"
+QN="$SCRIPT_DIR/../common/qn"
 
 echo "=== Startup Team: Run ==="
 echo
@@ -16,7 +17,7 @@ fi
 
 # Start the org
 echo "Starting org..."
-qn org start --org-path "$ORG_DIR"
+"$QN" --org-path "$ORG_DIR" org start
 
 echo
 echo "Org is running. Sending initial goal to CEO..."
@@ -62,7 +63,7 @@ echo
 
 # Show status
 echo "Current status:"
-qn org status --org-path "$ORG_DIR"
+"$QN" --org-path "$ORG_DIR" org status
 
 echo
 echo "Next steps:"

@@ -4,6 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORG_DIR="$SCRIPT_DIR/org"
+QN="$SCRIPT_DIR/../common/qn"
 
 echo "=== Startup Team: Setup ==="
 echo
@@ -26,7 +27,7 @@ fi
 
 # Initialize the org
 echo "Initializing org with CEO..."
-qn org init --org-path "$ORG_DIR" --ceo-name "Alice" --ceo-role "CEO"
+"$QN" --org-path "$ORG_DIR" org init --ceo-name "Alice" --ceo-role "CEO"
 
 # Copy custom worker templates (includes Engineer role)
 if [[ -f "$SCRIPT_DIR/config/worker-templates.yaml" ]]; then

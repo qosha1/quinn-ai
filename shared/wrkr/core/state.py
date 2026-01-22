@@ -1,59 +1,47 @@
 """Worker state machine with explicit state transitions.
 
-This module defines the WorkerState enum and state transition logic for
-managing worker lifecycle states in the agentic tools system.
+This module re-exports WorkerState and transition logic from the canonical
+source (shared.core.state) with local naming conventions for backwards
+compatibility.
+
+The canonical source is shared.core.state - this module provides:
+- WorkerState enum (re-exported)
+- VALID_TRANSITIONS (alias for WORKER_STATE_TRANSITIONS)
+- InvalidTransition (alias for InvalidStateTransition)
+- can_transition (alias for can_transition_worker)
+- transition (alias for transition_worker)
 """
 
-from enum import Enum
-from typing import Dict, List
+from shared.core.state import (
+    InvalidStateTransition,
+    WorkerState,
+    WORKER_STATE_TRANSITIONS,
+    can_transition_worker,
+    transition_worker,
+)
+
+# Re-export WorkerState directly
+__all__ = [
+    "WorkerState",
+    "InvalidTransition",
+    "VALID_TRANSITIONS",
+    "can_transition",
+    "transition",
+]
+
+# Alias for backwards compatibility with existing code
+VALID_TRANSITIONS = WORKER_STATE_TRANSITIONS
 
 
-class WorkerState(Enum):
-    """Enumeration of possible worker states in the lifecycle."""
+class InvalidTransition(InvalidStateTransition):
+    """Raised when an invalid state transition is attempted.
 
-    PENDING = "pending"
-    """Initial state when worker is created but not yet started."""
-
-    ONBOARDING = "onboarding"
-    """Worker is being initialized and configured."""
-
-    ACTIVE = "active"
-    """Worker is ready and waiting for work assignments."""
-
-    WORKING = "working"
-    """Worker is currently executing a task."""
-
-    STUCK = "stuck"
-    """Worker encountered an issue and needs escalation."""
-
-    OFFBOARDING = "offboarding"
-    """Worker is gracefully shutting down."""
-
-    TERMINATED = "terminated"
-    """Final state - worker has been shut down."""
-
-
-class InvalidTransition(Exception):
-    """Raised when an invalid state transition is attempted."""
+    Alias for InvalidStateTransition with simplified signature.
+    """
 
     def __init__(self, from_state: WorkerState, to_state: WorkerState) -> None:
-        self.from_state = from_state
-        self.to_state = to_state
-        super().__init__(
-            f"Invalid transition from {from_state.value} to {to_state.value}"
-        )
-
-
-# Valid state transitions mapping
-VALID_TRANSITIONS: Dict[WorkerState, List[WorkerState]] = {
-    WorkerState.PENDING: [WorkerState.ONBOARDING, WorkerState.TERMINATED],
-    WorkerState.ONBOARDING: [WorkerState.ACTIVE, WorkerState.TERMINATED],
-    WorkerState.ACTIVE: [WorkerState.WORKING, WorkerState.OFFBOARDING, WorkerState.STUCK],
-    WorkerState.WORKING: [WorkerState.ACTIVE, WorkerState.STUCK, WorkerState.OFFBOARDING],
-    WorkerState.STUCK: [WorkerState.ACTIVE, WorkerState.OFFBOARDING],
-    WorkerState.OFFBOARDING: [WorkerState.TERMINATED],
-    WorkerState.TERMINATED: [],  # Final state - no transitions allowed
-}
+        valid = VALID_TRANSITIONS.get(from_state, [])
+        super().__init__(from_state, to_state, valid)
 
 
 def can_transition(from_state: WorkerState, to_state: WorkerState) -> bool:
@@ -66,8 +54,7 @@ def can_transition(from_state: WorkerState, to_state: WorkerState) -> bool:
     Returns:
         True if the transition is valid, False otherwise.
     """
-    valid_targets = VALID_TRANSITIONS.get(from_state, [])
-    return to_state in valid_targets
+    return can_transition_worker(from_state, to_state)
 
 
 def transition(from_state: WorkerState, to_state: WorkerState) -> WorkerState:

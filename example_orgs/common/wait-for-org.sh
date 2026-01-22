@@ -3,6 +3,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+QN="$SCRIPT_DIR/qn"
 
 usage() {
     echo "Usage: $0 [OPTIONS] <org-path> <desired-state>"
@@ -71,7 +72,7 @@ echo "Timeout: ${TIMEOUT}s, Check interval: ${INTERVAL}s"
 start_time=$(date +%s)
 while true; do
     # Check current state
-    current_state=$(qn org status --org-path "$ORG_PATH" 2>/dev/null | grep "Status:" | awk '{print $2}' || echo "unknown")
+    current_state=$("$QN" --org-path "$ORG_PATH" org status 2>/dev/null | grep "Status:" | awk '{print $2}' || echo "unknown")
 
     if [[ "$current_state" == "$DESIRED_STATE" ]]; then
         echo "Org reached '$DESIRED_STATE' state!"

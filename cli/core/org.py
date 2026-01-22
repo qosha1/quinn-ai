@@ -7,6 +7,8 @@ Organizations have a single lifecycle state machine:
 
 from typing import Optional
 
+from datetime import datetime, timedelta
+
 from .db import Database
 from .queries import (
     get_org_state,
@@ -14,6 +16,8 @@ from .queries import (
     create_team,
     create_worker,
     get_worker,
+    create_budget_pool,
+    create_budget_allocation,
 )
 from .worker import Worker
 
@@ -112,14 +116,20 @@ class Org:
         if new_status not in valid:
             raise InvalidOrgTransition(current, new_status, valid)
 
-    def init(self, ceo_name: str, ceo_role: str = "CEO") -> Worker:
+    def init(
+        self,
+        ceo_name: str,
+        ceo_role: str = "CEO",
+        initial_budget: float = 1000.0,
+    ) -> Worker:
         """Initialize org with a CEO.
 
-        Creates the root team and CEO worker.
+        Creates the root team, CEO worker, and initial budget allocation.
 
         Args:
             ceo_name: Name for the CEO worker
             ceo_role: Role title for the CEO (default: "CEO")
+            initial_budget: Initial budget in dollars (default: $1000)
 
         Returns:
             The created CEO Worker instance
@@ -140,6 +150,27 @@ class Org:
             team_id=team.id,
             cost=100,  # CEO is highest cost
             manager_id=None,  # No manager - root of hierarchy
+        )
+
+        # Create budget pool and allocation for CEO
+        now = datetime.now()
+        period_end = now + timedelta(days=30)  # Monthly budget cycle
+        pool = create_budget_pool(
+            self.db,
+            name="org-main",
+            total_credits=initial_budget,
+            period_start=now,
+            period_end=period_end,
+        )
+        create_budget_allocation(
+            self.db,
+            worker_id=ceo_data.id,
+            allocated_credits=initial_budget,
+            period_start=now,
+            period_end=period_end,
+            pool_id=pool.id,
+            can_delegate=True,  # CEO can delegate budget to reports
+            delegation_limit=initial_budget * 0.5,  # Max 50% to single subordinate
         )
 
         # Update org status

@@ -14,14 +14,14 @@ from collections import deque
 from datetime import datetime
 from typing import Any, Callable
 
-from shared.wrkr.beads.client import BdClient
-from shared.wrkr.beads.types import BeadsPriority, BeadsType
-from shared.wrkr.escalation.interface import EscalationInterface, EscalationResponse
-from shared.wrkr.escalation.hierarchical import (
+from shared.bd import BdClient
+from shared.wrkr.work.types import BeadsPriority, BeadsType
+from shared.escalation.interface import EscalationInterface, EscalationResponse
+from shared.escalation.hierarchical import (
     HierarchicalRouter,
     OrgTopology,
 )
-from shared.wrkr.org.topology import BeadsOrgLoader, OrgWorker
+from shared.org.topology import BeadsOrgLoader, OrgWorker
 
 logger = logging.getLogger(__name__)
 

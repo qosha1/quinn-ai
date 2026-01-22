@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+# Import canonical Message from shared.core
+from shared.core import Message
+
 
 class CostTier(str, Enum):
     """Model cost/quality tiers.
@@ -155,20 +158,6 @@ class ProviderConfig:
 
     max_retries: int = 3
     """Maximum retry attempts for failed requests."""
-
-
-@dataclass
-class Message:
-    """A message in a conversation.
-
-    Represents a single turn in a conversation with role and content.
-    """
-
-    role: str
-    """Role: 'user', 'assistant', or 'system'."""
-
-    content: str
-    """Message content."""
 
 
 @dataclass

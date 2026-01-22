@@ -50,6 +50,9 @@ class Worker:
     status: str
     skills: dict[str, int]
     cost: int
+    hiring_authority_scope: Optional[str]
+    delegated_budget: int
+    max_reports: int
     created_at: datetime
     updated_at: datetime
 
@@ -291,6 +294,9 @@ def create_worker(
     manager_id: Optional[str] = None,
     skills: Optional[dict[str, int]] = None,
     worker_id: Optional[str] = None,
+    hiring_authority_scope: Optional[str] = None,
+    delegated_budget: int = 0,
+    max_reports: int = 10,
 ) -> Worker:
     """Create a new worker.
 
@@ -303,6 +309,9 @@ def create_worker(
         manager_id: Optional manager worker ID
         skills: Optional skills dict
         worker_id: Optional custom ID
+        hiring_authority_scope: Optional JSON serialized HiringScope
+        delegated_budget: Budget worker can delegate for hiring
+        max_reports: Maximum direct reports allowed
 
     Returns:
         Created Worker
@@ -318,9 +327,11 @@ def create_worker(
 
     db.execute(
         """INSERT INTO workers
-           (id, name, role, team_id, manager_id, status, skills, cost, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
-        (worker_id, name, role, team_id, manager_id, skills_json, cost, now, now)
+           (id, name, role, team_id, manager_id, status, skills, cost,
+            hiring_authority_scope, delegated_budget, max_reports, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)""",
+        (worker_id, name, role, team_id, manager_id, skills_json, cost,
+         hiring_authority_scope, delegated_budget, max_reports, now, now)
     )
     db.connection.commit()
 
@@ -333,6 +344,9 @@ def create_worker(
         status="pending",
         skills=skills,
         cost=cost,
+        hiring_authority_scope=hiring_authority_scope,
+        delegated_budget=delegated_budget,
+        max_reports=max_reports,
         created_at=now,
         updated_at=now,
     )
@@ -361,6 +375,9 @@ def get_worker(db: Database, worker_id: str) -> Optional[Worker]:
         status=row["status"],
         skills=json.loads(row["skills"]),
         cost=row["cost"],
+        hiring_authority_scope=row["hiring_authority_scope"],
+        delegated_budget=row["delegated_budget"],
+        max_reports=row["max_reports"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -392,6 +409,9 @@ def get_worker_by_name(db: Database, name: str) -> Optional[Worker]:
         status=row["status"],
         skills=json.loads(row["skills"]),
         cost=row["cost"],
+        hiring_authority_scope=row["hiring_authority_scope"],
+        delegated_budget=row["delegated_budget"],
+        max_reports=row["max_reports"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -434,6 +454,9 @@ def get_workers_by_status(db: Database, status: str) -> list[Worker]:
             status=row["status"],
             skills=json.loads(row["skills"]),
             cost=row["cost"],
+            hiring_authority_scope=row["hiring_authority_scope"],
+            delegated_budget=row["delegated_budget"],
+            max_reports=row["max_reports"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -462,6 +485,9 @@ def get_workers_by_manager(db: Database, manager_id: str) -> list[Worker]:
             status=row["status"],
             skills=json.loads(row["skills"]),
             cost=row["cost"],
+            hiring_authority_scope=row["hiring_authority_scope"],
+            delegated_budget=row["delegated_budget"],
+            max_reports=row["max_reports"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -490,6 +516,9 @@ def get_team_workers(db: Database, team_id: str) -> list[Worker]:
             status=row["status"],
             skills=json.loads(row["skills"]),
             cost=row["cost"],
+            hiring_authority_scope=row["hiring_authority_scope"],
+            delegated_budget=row["delegated_budget"],
+            max_reports=row["max_reports"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )

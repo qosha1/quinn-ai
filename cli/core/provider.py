@@ -15,7 +15,10 @@ Key components:
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Type
+from typing import Optional, Type, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cli.core.session import SessionInterface
 
 from cli.providers.base import (
     CostTier,
@@ -26,14 +29,11 @@ from cli.providers.base import (
 )
 
 
+# Import thresholds from constants
+from cli.core.constants import DEFAULT_SKILL_THRESHOLDS
+
 # Default thresholds - can be overridden via config
-DEFAULT_THRESHOLDS: dict[str, int] = {
-    "coding": 80,
-    "reasoning": 60,
-    "research": 80,
-    "management": 70,
-    "strategy": 90,
-}
+DEFAULT_THRESHOLDS: dict[str, int] = dict(DEFAULT_SKILL_THRESHOLDS)
 
 # Skill to capability mapping
 SKILL_TO_CAPABILITY: dict[str, str] = {
@@ -712,3 +712,69 @@ def _get_default_provider_classes() -> dict[str, Type[Provider]]:
         pass
 
     return classes
+
+
+def create_session_for_worker(
+    registry: "ProviderRegistry",
+    worker_id: str,
+    worker_cost: int,
+    worker_skills: dict[str, int],
+    working_directory: Optional[Path] = None,
+    preferred_provider: Optional[str] = None,
+    org_authorized_providers: Optional[list[str]] = None,
+) -> "SessionInterface":
+    """Create an appropriate session for a worker based on their profile.
+
+    Uses provider selection to determine the right provider and model,
+    then creates and returns a configured session instance.
+
+    Args:
+        registry: Initialized ProviderRegistry
+        worker_id: Worker ID for session binding
+        worker_cost: Worker cost score (0-100)
+        worker_skills: Worker skills dict
+        working_directory: Working directory for session
+        preferred_provider: Optional provider preference
+        org_authorized_providers: List of authorized provider names (None = all)
+
+    Returns:
+        Configured SessionInterface instance (not yet started)
+
+    Raises:
+        ProviderSelectionError: If no provider can satisfy requirements
+    """
+    # Import here to avoid circular imports
+    from cli.core.session import SessionConfig
+    from cli.core.sessions import ClaudeCodeSession
+
+    # Select provider
+    selection = select_provider_for_worker(
+        registry=registry,
+        worker_cost=worker_cost,
+        worker_skills=worker_skills,
+        preferred_provider=preferred_provider,
+        org_authorized_providers=org_authorized_providers,
+    )
+
+    # Map provider to CLI command
+    # Currently only Claude Code is implemented
+    provider_to_command = {
+        "anthropic": "claude",
+        "claude": "claude",
+    }
+    command = provider_to_command.get(selection.provider.name, "claude")
+
+    # Build session config
+    config = SessionConfig(
+        worker_id=worker_id,
+        provider=selection.provider.name,
+        command=command,
+        args=["--dangerously-skip-permissions"],
+        working_directory=working_directory,
+        env_vars={
+            "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
+        },
+    )
+
+    # Create session instance
+    return ClaudeCodeSession(config)

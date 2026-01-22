@@ -5,115 +5,22 @@ Structured representation of agent conversations:
 - Message: single message with role (user/assistant/tool_call/tool_result)
 - Turn: one exchange (prompt + response + tool calls)
 - Transcript: ordered conversation history
+
+Note: Message, MessageRole, ToolCall, ToolResult are imported from shared.core.message
+for canonical source. ConversationMessage is aliased as Message for backward compatibility.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import Any
 
-
-class MessageRole(Enum):
-    """Role of a message in conversation."""
-
-    USER = "user"
-    ASSISTANT = "assistant"
-    TOOL_CALL = "tool_call"
-    TOOL_RESULT = "tool_result"
-    SYSTEM = "system"
-
-
-@dataclass
-class ToolCall:
-    """A tool call made by the assistant."""
-
-    id: str
-    name: str
-    arguments: dict[str, Any] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.now)
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "arguments": self.arguments,
-            "timestamp": self.timestamp.isoformat(),
-        }
-
-
-@dataclass
-class ToolResult:
-    """Result from a tool execution."""
-
-    tool_call_id: str
-    output: str
-    success: bool = True
-    error: str | None = None
-    timestamp: datetime = field(default_factory=datetime.now)
-
-    def to_dict(self) -> dict:
-        return {
-            "tool_call_id": self.tool_call_id,
-            "output": self.output,
-            "success": self.success,
-            "error": self.error,
-            "timestamp": self.timestamp.isoformat(),
-        }
-
-
-@dataclass
-class Message:
-    """A single message in the conversation."""
-
-    role: MessageRole
-    content: str
-    timestamp: datetime = field(default_factory=datetime.now)
-    tool_call: ToolCall | None = None
-    tool_result: ToolResult | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        result = {
-            "role": self.role.value,
-            "content": self.content,
-            "timestamp": self.timestamp.isoformat(),
-            "metadata": self.metadata,
-        }
-        if self.tool_call:
-            result["tool_call"] = self.tool_call.to_dict()
-        if self.tool_result:
-            result["tool_result"] = self.tool_result.to_dict()
-        return result
-
-    @classmethod
-    def user(cls, content: str, **metadata) -> "Message":
-        """Create a user message."""
-        return cls(role=MessageRole.USER, content=content, metadata=metadata)
-
-    @classmethod
-    def assistant(cls, content: str, **metadata) -> "Message":
-        """Create an assistant message."""
-        return cls(role=MessageRole.ASSISTANT, content=content, metadata=metadata)
-
-    @classmethod
-    def from_tool_call(cls, tool_call: ToolCall) -> "Message":
-        """Create a message from a tool call."""
-        return cls(
-            role=MessageRole.TOOL_CALL,
-            content=f"Tool: {tool_call.name}",
-            tool_call=tool_call,
-            timestamp=tool_call.timestamp,
-        )
-
-    @classmethod
-    def from_tool_result(cls, tool_result: ToolResult) -> "Message":
-        """Create a message from a tool result."""
-        return cls(
-            role=MessageRole.TOOL_RESULT,
-            content=tool_result.output[:100] + "..." if len(tool_result.output) > 100 else tool_result.output,
-            tool_result=tool_result,
-            timestamp=tool_result.timestamp,
-        )
+# Import canonical types from shared.core.message
+from shared.core.message import (
+    MessageRole,
+    ToolCall,
+    ToolResult,
+    ConversationMessage as Message,
+)
 
 
 @dataclass

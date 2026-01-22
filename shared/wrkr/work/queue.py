@@ -8,12 +8,15 @@ and ordered by priority.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
-import json
-import subprocess
 
+from shared.bd import BdClient, BdCommandError
+from shared.wrkr.work.types import BeadsStatus, BeadsType
 from shared.wrkr.core.task import Task
+
+logger = logging.getLogger(__name__)
 
 
 class BeadsQueue:
@@ -35,6 +38,7 @@ class BeadsQueue:
         bd_command: str = "bd",
         db_path: str | None = None,
         task_types: list[str] | None = None,
+        client: BdClient | None = None,
     ):
         """
         Initialize the beads queue.
@@ -45,38 +49,21 @@ class BeadsQueue:
             db_path: Optional database path override.
             task_types: Issue types to include as tasks.
                 Defaults to ["task", "bug", "feature"].
+            client: Optional BdClient instance (for dependency injection).
         """
         self._worker_id = worker_id
-        self._bd_command = bd_command
-        self._db_path = db_path
-        self._task_types = task_types or ["task", "bug", "feature"]
+        self._client = client or BdClient(bd_command=bd_command, db_path=db_path)
+        self._task_types = task_types or [
+            BeadsType.TASK,
+            BeadsType.BUG,
+            BeadsType.FEATURE,
+        ]
         self._in_progress: dict[str, Task] = {}
 
     @property
     def worker_id(self) -> str:
         """The worker ID this queue serves."""
         return self._worker_id
-
-    def _run_bd(self, *args: str) -> str:
-        """Run a bd command and return output.
-
-        Args:
-            *args: Command arguments after "bd".
-
-        Returns:
-            Command stdout.
-
-        Raises:
-            RuntimeError: If command fails.
-        """
-        cmd = [self._bd_command] + list(args)
-        if self._db_path:
-            cmd.extend(["--db", self._db_path])
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"bd command failed: {result.stderr}")
-        return result.stdout
 
     def _parse_issue_to_task(self, issue: dict[str, Any]) -> Task:
         """Convert a beads issue to a Task.
@@ -150,21 +137,17 @@ class BeadsQueue:
             List of issue dictionaries.
         """
         try:
-            args = [
-                "list",
-                "--json",
-                f"--assignee={self._worker_id}",
-                f"--status={status}",
-            ]
-            output = self._run_bd(*args)
-            issues = json.loads(output) if output.strip() else []
-
+            issues = self._client.list_issues(
+                status=status,
+                assignee=self._worker_id,
+            )
             # Filter by task types
             return [
                 i for i in issues
-                if i.get("type", "task") in self._task_types
+                if i.get("type", BeadsType.TASK) in self._task_types
             ]
-        except (RuntimeError, json.JSONDecodeError):
+        except BdCommandError as e:
+            logger.warning("Failed to fetch issues for %s: %s", self._worker_id, e)
             return []
 
     def pop_highest_priority(self) -> Task | None:
@@ -195,10 +178,8 @@ class BeadsQueue:
             self._in_progress[task.id] = task
 
             # Update status in beads
-            try:
-                self._run_bd("update", task.id, "--status=in_progress")
-            except RuntimeError:
-                pass  # Best effort status update
+            if not self._client.update_issue(task.id, status=BeadsStatus.IN_PROGRESS):
+                logger.warning("Failed to update status for task %s", task.id)
 
             return task
 
@@ -211,30 +192,23 @@ class BeadsQueue:
         Args:
             task: The task to add.
         """
-        args = [
-            "create",
-            f"--title={task.title}",
-            f"--type=task",
-            f"--priority={task.priority}",
-            f"--assignee={self._worker_id}",
-        ]
-
-        if task.description:
-            args.append(f"--description={task.description}")
+        kwargs: dict[str, str] = {"assignee": self._worker_id}
 
         if task.ask_id:
-            args.append(f"--spawned-from={task.ask_id}")
-
+            kwargs["spawned_from"] = task.ask_id
         if task.okr_id:
-            args.append(f"--serves={task.okr_id}")
+            kwargs["serves"] = task.okr_id
 
-        if task.metadata:
-            args.append(f"--metadata={json.dumps(task.metadata)}")
-
-        try:
-            self._run_bd(*args)
-        except RuntimeError:
-            pass  # Best effort creation
+        issue_id = self._client.create_issue(
+            title=task.title,
+            type=BeadsType.TASK,
+            priority=task.priority,
+            description=task.description or None,
+            metadata=task.metadata if task.metadata else None,
+            **kwargs,
+        )
+        if not issue_id:
+            logger.warning("Failed to create issue for task: %s", task.title)
 
     def peek(self, limit: int = 10) -> list[Task]:
         """
@@ -265,10 +239,8 @@ class BeadsQueue:
             task_id: ID of the task/issue to close.
         """
         self._in_progress.pop(task_id, None)
-        try:
-            self._run_bd("close", task_id, "--reason=completed")
-        except RuntimeError:
-            pass  # Best effort
+        if not self._client.close_issue(task_id, reason="completed"):
+            logger.warning("Failed to close task %s", task_id)
 
     def mark_blocked(self, task_id: str, reason: str) -> None:
         """
@@ -281,15 +253,12 @@ class BeadsQueue:
             reason: Why the task is blocked.
         """
         self._in_progress.pop(task_id, None)
-        try:
-            self._run_bd(
-                "update",
-                task_id,
-                "--status=blocked",
-                f"--metadata={json.dumps({'blocked_reason': reason})}",
-            )
-        except RuntimeError:
-            pass  # Best effort
+        if not self._client.update_issue(
+            task_id,
+            status=BeadsStatus.BLOCKED,
+            metadata={"blocked_reason": reason},
+        ):
+            logger.warning("Failed to mark task %s as blocked", task_id)
 
     def mark_failed(self, task_id: str, error: str) -> None:
         """
@@ -302,10 +271,8 @@ class BeadsQueue:
             error: The error description.
         """
         self._in_progress.pop(task_id, None)
-        try:
-            self._run_bd("close", task_id, f"--reason=failed: {error}")
-        except RuntimeError:
-            pass  # Best effort
+        if not self._client.close_issue(task_id, reason=f"failed: {error}"):
+            logger.warning("Failed to close task %s as failed", task_id)
 
     def requeue(self, task_id: str) -> None:
         """
@@ -314,10 +281,8 @@ class BeadsQueue:
         Args:
             task_id: ID of the task to requeue.
         """
-        try:
-            self._run_bd("update", task_id, "--status=open")
-        except RuntimeError:
-            pass  # Best effort
+        if not self._client.update_issue(task_id, status=BeadsStatus.OPEN):
+            logger.warning("Failed to requeue task %s", task_id)
 
     def size(self) -> int:
         """

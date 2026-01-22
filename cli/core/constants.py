@@ -300,3 +300,20 @@ LIFECYCLE_INITIAL_STATES = {
     "feature": "discovery",
     "default": "open",
 }
+
+
+# ===================
+# HIRING AUTHORITY
+# ===================
+
+DEFAULT_MAX_REPORTS = 10
+"""Default maximum direct reports for a worker."""
+
+DEFAULT_DELEGATED_BUDGET = 0
+"""Default delegated budget for new workers (none)."""
+
+DEFAULT_HIRING_MAX_COST = 50
+"""Default maximum cost for individual hires."""
+
+DEFAULT_HIRING_MAX_TOTAL_BUDGET = 0
+"""Default total hiring budget (none - must be delegated)."""

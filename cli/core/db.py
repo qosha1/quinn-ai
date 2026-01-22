@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Generator, Optional
 
 # Current schema version - increment when schema changes
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 
 
 class Database:
@@ -164,6 +164,10 @@ CREATE TABLE IF NOT EXISTS workers (
     status TEXT NOT NULL CHECK(status IN ('pending', 'onboarding', 'active', 'offboarding', 'terminated')),
     skills TEXT NOT NULL DEFAULT '{}',
     cost INTEGER NOT NULL CHECK(cost >= 0 AND cost <= 100),
+    -- Hiring authority cascade fields
+    hiring_authority_scope TEXT,
+    delegated_budget INTEGER NOT NULL DEFAULT 0,
+    max_reports INTEGER NOT NULL DEFAULT 10,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE RESTRICT,
@@ -564,6 +568,25 @@ BEGIN
         updated_at = CURRENT_TIMESTAMP
     WHERE allocation_id = NEW.allocation_id;
 END;
+
+-- ===================
+-- EVENTS (AUDIT TRAIL)
+-- ===================
+
+-- Events table for system-wide audit trail and recovery
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,    -- worker.hired|worker.fired|okr.created|...
+    entity_type TEXT NOT NULL,   -- worker|team|okr|message|work
+    entity_id TEXT NOT NULL,
+    payload TEXT,                -- JSON event data
+    actor_id TEXT,               -- who triggered (optional)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
+CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor_id);
+CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
 """
 
 
@@ -844,6 +867,28 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
                     updated_at = CURRENT_TIMESTAMP
                 WHERE allocation_id = NEW.allocation_id;
             END""",
+        ],
+        # Version 6: Add events table for audit trail
+        6: [
+            """CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                payload TEXT,
+                actor_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)",
+            "CREATE INDEX IF NOT EXISTS idx_events_entity ON events(entity_type, entity_id)",
+            "CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor_id)",
+            "CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at)",
+        ],
+        # Version 7: Add hiring authority cascade columns to workers
+        7: [
+            "ALTER TABLE workers ADD COLUMN hiring_authority_scope TEXT",
+            "ALTER TABLE workers ADD COLUMN delegated_budget INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE workers ADD COLUMN max_reports INTEGER NOT NULL DEFAULT 10",
         ],
     }
 

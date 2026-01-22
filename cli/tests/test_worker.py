@@ -11,6 +11,7 @@ import pytest
 from cli.core.db import init_database
 from cli.core.queries import create_team, create_worker, create_budget_pool, create_budget_allocation
 from cli.core.worker import Worker
+from cli.core.session import SessionState
 from shared import (
     InvalidStateTransition,
     WorkerNotFound,
@@ -415,15 +416,6 @@ class TestTransitionMaps:
         assert LIFECYCLE_TRANSITIONS["terminated"] == []
 
 
-class MockSessionState:
-    """Mock session state enum for testing."""
-    STARTING = "starting"
-    RUNNING = "running"
-    IDLE = "idle"
-    STOPPED = "stopped"
-    CRASHED = "crashed"
-
-
 class MockSession:
     """Mock session for testing Worker session management."""
 
@@ -434,7 +426,7 @@ class MockSession:
         self.force_stopped = False
         self.should_fail_start = should_fail_start
         self._state_callbacks = []
-        self._state = MockSessionState.STOPPED
+        self._state = SessionState.STOPPED
         self.provider_name = "mock"  # For budget recording
         self.id = "mock-session-001"  # For budget reference
 
@@ -445,15 +437,15 @@ class MockSession:
         if self.should_fail_start:
             raise RuntimeError("Session failed to start")
         self.started = True
-        self._state = MockSessionState.STARTING
-        self._notify_state_change(MockSessionState.STOPPED, MockSessionState.STARTING)
+        self._state = SessionState.STARTING
+        self._notify_state_change(SessionState.STOPPED, SessionState.STARTING)
 
     def stop(self, force: bool = False) -> None:
         self.stopped = True
         self.force_stopped = force
         old_state = self._state
-        self._state = MockSessionState.STOPPED
-        self._notify_state_change(old_state, MockSessionState.STOPPED)
+        self._state = SessionState.STOPPED
+        self._notify_state_change(old_state, SessionState.STOPPED)
 
     def on_state_change(self, callback) -> None:
         self._state_callbacks.append(callback)
@@ -583,3 +575,575 @@ class TestSessionManagement:
         assert active_worker.session is None
         active_worker.attach_session(session)
         assert active_worker.session is session
+
+
+class MockSessionConfig:
+    """Mock SessionConfig for testing."""
+
+    def __init__(self, worker_id: str, provider: str = "mock"):
+        self.worker_id = worker_id
+        self.provider = provider
+        self.command = "mock-cli"
+        self.args = []
+
+
+class MockSessionRegistry:
+    """Mock SessionRegistry for testing Worker registry integration."""
+
+    def __init__(self, session_factory=None):
+        """Initialize with an optional session factory.
+
+        Args:
+            session_factory: Optional callable that takes config and returns a session.
+                            Defaults to creating a MockSession.
+        """
+        self._session_factory = session_factory or (lambda config: MockSession())
+        self._created_sessions = []
+        self._create_calls = []
+
+    def create(self, provider: str, config, **kwargs):
+        """Create a session for the given provider."""
+        self._create_calls.append((provider, config, kwargs))
+        session = self._session_factory(config)
+        self._created_sessions.append(session)
+        return session
+
+    def has(self, name: str) -> bool:
+        """Check if provider is registered."""
+        return name in ("mock", "claude_code")
+
+
+class TestWorkerRegistryIntegration:
+    """Test Worker session registry integration."""
+
+    @pytest.fixture
+    def active_worker_with_budget(self, db, worker):
+        """Get worker in active lifecycle state with budget allocation."""
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        # Create budget pool and allocation
+        now = datetime.now()
+        period_end = now + timedelta(days=30)
+        pool = create_budget_pool(db, "test-pool", 1000.0, now, period_end)
+        create_budget_allocation(
+            db,
+            worker_id=worker.id,
+            allocated_credits=100.0,
+            period_start=now,
+            period_end=period_end,
+            pool_id=pool.id,
+        )
+        return worker
+
+    def test_worker_accepts_registry_in_init(self, db, worker_data):
+        """Worker should accept session_registry in __init__."""
+        registry = MockSessionRegistry()
+        worker = Worker(db, worker_data.id, session_registry=registry)
+        assert worker.session_registry is registry
+
+    def test_set_registry(self, db, worker_data):
+        """set_registry() should set the session registry."""
+        worker = Worker.get(db, worker_data.id)
+        assert worker.session_registry is None
+
+        registry = MockSessionRegistry()
+        worker.set_registry(registry)
+        assert worker.session_registry is registry
+
+    def test_spawn_uses_provided_registry(self, active_worker_with_budget):
+        """spawn() should use the registry provided to Worker."""
+        registry = MockSessionRegistry()
+        active_worker_with_budget.set_registry(registry)
+
+        config = MockSessionConfig(
+            worker_id=active_worker_with_budget.id,
+            provider="mock"
+        )
+        session = active_worker_with_budget.spawn(config)
+
+        # Verify registry.create was called with correct args
+        assert len(registry._create_calls) == 1
+        call_provider, call_config, _ = registry._create_calls[0]
+        assert call_provider == "mock"
+        assert call_config is config
+
+        # Verify session was attached and started
+        assert active_worker_with_budget.session is session
+        assert session.started is True
+
+    def test_spawn_returns_session(self, active_worker_with_budget):
+        """spawn() should return the created session."""
+        registry = MockSessionRegistry()
+        active_worker_with_budget.set_registry(registry)
+
+        config = MockSessionConfig(
+            worker_id=active_worker_with_budget.id,
+            provider="mock"
+        )
+        session = active_worker_with_budget.spawn(config)
+
+        assert session is not None
+        assert session in registry._created_sessions
+
+    def test_spawn_falls_back_to_default_registry(self, db, active_worker_with_budget, monkeypatch):
+        """spawn() should use default registry when none provided."""
+        # Create a mock default registry
+        mock_default_registry = MockSessionRegistry()
+
+        # Monkeypatch get_default_registry to return our mock
+        def mock_get_default():
+            return mock_default_registry
+
+        monkeypatch.setattr(
+            "cli.core.worker.get_default_registry",
+            mock_get_default,
+            raising=False
+        )
+        # Also patch at the sessions.registry module level
+        import cli.core.sessions.registry as registry_module
+        monkeypatch.setattr(registry_module, "get_default_registry", mock_get_default)
+
+        # Worker has no registry set
+        assert active_worker_with_budget.session_registry is None
+
+        config = MockSessionConfig(
+            worker_id=active_worker_with_budget.id,
+            provider="mock"
+        )
+        session = active_worker_with_budget.spawn(config)
+
+        # Should have used the default registry
+        assert len(mock_default_registry._create_calls) == 1
+        assert session is not None
+
+    def test_spawn_with_custom_factory(self, active_worker_with_budget):
+        """spawn() should work with custom session factory."""
+        custom_sessions = []
+
+        def custom_factory(config):
+            session = MockSession()
+            session.custom_marker = config.provider
+            custom_sessions.append(session)
+            return session
+
+        registry = MockSessionRegistry(session_factory=custom_factory)
+        active_worker_with_budget.set_registry(registry)
+
+        config = MockSessionConfig(
+            worker_id=active_worker_with_budget.id,
+            provider="special_provider"
+        )
+        session = active_worker_with_budget.spawn(config)
+
+        assert hasattr(session, "custom_marker")
+        assert session.custom_marker == "special_provider"
+        assert len(custom_sessions) == 1
+
+    def test_spawn_respects_budget_enforcement(self, db, worker):
+        """spawn() should enforce budget (via spawn_session)."""
+        from cli.core.budget import NoBudgetAllocationError
+
+        # Active worker WITHOUT budget allocation
+        worker.start_onboarding()
+        worker.complete_onboarding()
+
+        registry = MockSessionRegistry()
+        worker.set_registry(registry)
+
+        config = MockSessionConfig(worker_id=worker.id, provider="mock")
+
+        # Should raise because no budget allocation
+        with pytest.raises(NoBudgetAllocationError):
+            worker.spawn(config)
+
+    def test_spawn_cleans_up_on_failure(self, active_worker_with_budget):
+        """spawn() should clean up session on failure."""
+        def failing_factory(config):
+            session = MockSession(should_fail_start=True)
+            return session
+
+        registry = MockSessionRegistry(session_factory=failing_factory)
+        active_worker_with_budget.set_registry(registry)
+
+        config = MockSessionConfig(
+            worker_id=active_worker_with_budget.id,
+            provider="mock"
+        )
+
+        with pytest.raises(RuntimeError, match="Session failed to start"):
+            active_worker_with_budget.spawn(config)
+
+        # Session should be detached on failure
+        assert active_worker_with_budget.session is None
+
+
+# ===================
+# HIRING AUTHORITY TESTS
+# ===================
+
+from cli.core.worker import (
+    HiringScope,
+    HiringError,
+    InsufficientHiringAuthority,
+    MaxReportsExceeded,
+)
+
+
+class TestHiringScope:
+    """Test HiringScope dataclass."""
+
+    def test_default_scope(self):
+        """Default HiringScope should have no authority."""
+        scope = HiringScope()
+        assert scope.allowed_roles == set()
+        assert scope.max_cost == 0
+        assert scope.max_total_budget == 0
+
+    def test_scope_with_roles(self):
+        """HiringScope should accept allowed roles."""
+        scope = HiringScope(allowed_roles={"engineer", "analyst"}, max_cost=50)
+        assert "engineer" in scope.allowed_roles
+        assert "analyst" in scope.allowed_roles
+        assert "manager" not in scope.allowed_roles
+
+    def test_can_hire_role(self):
+        """can_hire_role should check allowed roles."""
+        scope = HiringScope(allowed_roles={"engineer"}, max_cost=50)
+        assert scope.can_hire_role("engineer") is True
+        assert scope.can_hire_role("manager") is False
+
+    def test_can_afford_cost(self):
+        """can_afford_cost should check max_cost."""
+        scope = HiringScope(max_cost=50)
+        assert scope.can_afford_cost(25) is True
+        assert scope.can_afford_cost(50) is True
+        assert scope.can_afford_cost(51) is False
+
+    def test_to_json(self):
+        """to_json should serialize scope correctly."""
+        scope = HiringScope(
+            allowed_roles={"engineer", "analyst"},
+            max_cost=50,
+            max_total_budget=1000,
+        )
+        json_str = scope.to_json()
+        import json
+        data = json.loads(json_str)
+        assert set(data["allowed_roles"]) == {"engineer", "analyst"}
+        assert data["max_cost"] == 50
+        assert data["max_total_budget"] == 1000
+
+    def test_from_json(self):
+        """from_json should deserialize scope correctly."""
+        json_str = '{"allowed_roles": ["engineer"], "max_cost": 75, "max_total_budget": 500}'
+        scope = HiringScope.from_json(json_str)
+        assert scope.allowed_roles == {"engineer"}
+        assert scope.max_cost == 75
+        assert scope.max_total_budget == 500
+
+    def test_from_json_empty(self):
+        """from_json with None/empty should return default scope."""
+        scope = HiringScope.from_json(None)
+        assert scope.allowed_roles == set()
+        assert scope.max_cost == 0
+
+        scope = HiringScope.from_json("")
+        assert scope.allowed_roles == set()
+
+
+class TestHiringAuthorityProperties:
+    """Test Worker hiring authority properties."""
+
+    def test_default_hiring_scope(self, worker):
+        """Worker should have empty hiring scope by default."""
+        scope = worker.hiring_authority_scope
+        assert isinstance(scope, HiringScope)
+        assert scope.allowed_roles == set()
+
+    def test_default_delegated_budget(self, worker):
+        """Worker should have 0 delegated budget by default."""
+        assert worker.delegated_budget == 0
+
+    def test_default_max_reports(self, worker):
+        """Worker should have default max reports."""
+        assert worker.max_reports == 10
+
+    def test_direct_reports_count_empty(self, worker):
+        """Worker with no reports should have 0 count."""
+        assert worker.direct_reports_count == 0
+
+    def test_direct_reports_count_with_reports(self, db, team):
+        """Worker with reports should have correct count."""
+        # Create manager
+        manager_data = create_worker(db, "Manager", "Manager", team.id, 60)
+        manager = Worker.get(db, manager_data.id)
+
+        # Create reports
+        create_worker(db, "Report1", "Engineer", team.id, 50, manager_id=manager.id)
+        create_worker(db, "Report2", "Engineer", team.id, 50, manager_id=manager.id)
+
+        assert manager.direct_reports_count == 2
+
+
+class TestCanHire:
+    """Test Worker.can_hire() method."""
+
+    @pytest.fixture
+    def manager_with_authority(self, db, team):
+        """Create manager with hiring authority."""
+        scope = HiringScope(
+            allowed_roles={"engineer", "analyst"},
+            max_cost=50,
+            max_total_budget=1000,
+        )
+        worker_data = create_worker(
+            db,
+            "Manager",
+            "Manager",
+            team.id,
+            60,
+            hiring_authority_scope=scope.to_json(),
+            delegated_budget=500,
+            max_reports=5,
+        )
+        return Worker.get(db, worker_data.id)
+
+    def test_can_hire_valid(self, manager_with_authority):
+        """can_hire should return True for valid hire."""
+        can, reason = manager_with_authority.can_hire("engineer", 40)
+        assert can is True
+        assert reason == "OK"
+
+    def test_cannot_hire_no_authority(self, worker):
+        """Worker without authority cannot hire."""
+        can, reason = worker.can_hire("engineer", 40)
+        assert can is False
+        assert "No hiring authority" in reason
+
+    def test_cannot_hire_wrong_role(self, manager_with_authority):
+        """Cannot hire role not in allowed_roles."""
+        can, reason = manager_with_authority.can_hire("manager", 40)
+        assert can is False
+        assert "not in allowed roles" in reason
+
+    def test_cannot_hire_too_expensive(self, manager_with_authority):
+        """Cannot hire worker with cost above max_cost."""
+        can, reason = manager_with_authority.can_hire("engineer", 75)
+        assert can is False
+        assert "exceeds max allowed cost" in reason
+
+    def test_cannot_hire_max_reports_reached(self, db, team):
+        """Cannot hire when at max direct reports."""
+        scope = HiringScope(allowed_roles={"engineer"}, max_cost=100)
+        manager_data = create_worker(
+            db,
+            "Manager",
+            "Manager",
+            team.id,
+            60,
+            hiring_authority_scope=scope.to_json(),
+            max_reports=2,
+        )
+        manager = Worker.get(db, manager_data.id)
+
+        # Add 2 reports to reach max
+        create_worker(db, "R1", "Engineer", team.id, 50, manager_id=manager.id)
+        create_worker(db, "R2", "Engineer", team.id, 50, manager_id=manager.id)
+
+        can, reason = manager.can_hire("engineer", 50)
+        assert can is False
+        assert "Max reports reached" in reason
+
+
+class TestHire:
+    """Test Worker.hire() method."""
+
+    @pytest.fixture
+    def manager_with_authority(self, db, team):
+        """Create manager with hiring authority."""
+        scope = HiringScope(
+            allowed_roles={"engineer", "analyst"},
+            max_cost=60,
+            max_total_budget=1000,
+        )
+        worker_data = create_worker(
+            db,
+            "Manager",
+            "Manager",
+            team.id,
+            70,
+            hiring_authority_scope=scope.to_json(),
+            delegated_budget=500,
+            max_reports=5,
+        )
+        return Worker.get(db, worker_data.id)
+
+    def test_hire_creates_worker(self, manager_with_authority):
+        """hire() should create new worker."""
+        new_worker = manager_with_authority.hire(
+            name="NewEngineer",
+            role="engineer",
+            skills={"coding": 70},
+            cost=50,
+        )
+        assert new_worker.name == "NewEngineer"
+        assert new_worker.role == "engineer"
+        assert new_worker.cost == 50
+        assert new_worker.manager_id == manager_with_authority.id
+        assert new_worker.lifecycle_status == "pending"
+
+    def test_hire_sets_manager(self, manager_with_authority):
+        """hire() should set manager_id on new worker."""
+        new_worker = manager_with_authority.hire(
+            name="NewAnalyst",
+            role="analyst",
+            skills={},
+            cost=40,
+        )
+        assert new_worker.manager_id == manager_with_authority.id
+
+    def test_hire_same_team(self, manager_with_authority):
+        """hire() should set new worker to same team."""
+        new_worker = manager_with_authority.hire(
+            name="NewEngineer",
+            role="engineer",
+            skills={},
+            cost=50,
+        )
+        assert new_worker.team_id == manager_with_authority.team_id
+
+    def test_hire_increments_reports(self, manager_with_authority):
+        """hire() should increment direct reports count."""
+        initial = manager_with_authority.direct_reports_count
+        manager_with_authority.hire("E1", "engineer", {}, 50)
+        assert manager_with_authority.direct_reports_count == initial + 1
+
+    def test_hire_raises_insufficient_authority(self, manager_with_authority):
+        """hire() should raise for unauthorized role."""
+        with pytest.raises(InsufficientHiringAuthority) as exc_info:
+            manager_with_authority.hire("Manager2", "manager", {}, 50)
+        assert "not in allowed roles" in exc_info.value.reason
+
+    def test_hire_raises_max_reports_exceeded(self, db, team):
+        """hire() should raise when max reports reached."""
+        scope = HiringScope(allowed_roles={"engineer"}, max_cost=100)
+        manager_data = create_worker(
+            db,
+            "Manager",
+            "Manager",
+            team.id,
+            60,
+            hiring_authority_scope=scope.to_json(),
+            max_reports=1,
+        )
+        manager = Worker.get(db, manager_data.id)
+
+        # Hire first (ok)
+        manager.hire("E1", "engineer", {}, 50)
+
+        # Hire second (should fail)
+        with pytest.raises(MaxReportsExceeded) as exc_info:
+            manager.hire("E2", "engineer", {}, 50)
+        assert exc_info.value.current == 1
+        assert exc_info.value.maximum == 1
+
+
+class TestDelegateAuthority:
+    """Test Worker.delegate_authority() method."""
+
+    @pytest.fixture
+    def manager_with_authority(self, db, team):
+        """Create manager with hiring authority."""
+        scope = HiringScope(
+            allowed_roles={"engineer", "analyst", "junior"},
+            max_cost=70,
+            max_total_budget=1000,
+        )
+        worker_data = create_worker(
+            db,
+            "SeniorManager",
+            "Manager",
+            team.id,
+            80,
+            hiring_authority_scope=scope.to_json(),
+            delegated_budget=500,
+            max_reports=10,
+        )
+        return Worker.get(db, worker_data.id)
+
+    @pytest.fixture
+    def junior_manager(self, db, team, manager_with_authority):
+        """Create junior manager reporting to senior manager."""
+        worker_data = create_worker(
+            db,
+            "JuniorManager",
+            "Manager",
+            team.id,
+            60,
+            manager_id=manager_with_authority.id,
+        )
+        return Worker.get(db, worker_data.id)
+
+    def test_delegate_authority_success(self, manager_with_authority, junior_manager):
+        """delegate_authority should update report's hiring scope."""
+        new_scope = HiringScope(
+            allowed_roles={"junior"},
+            max_cost=40,
+        )
+        manager_with_authority.delegate_authority(
+            report=junior_manager,
+            budget=200,
+            scope=new_scope,
+        )
+
+        # Refresh and check
+        junior_manager.refresh()
+        assert junior_manager.delegated_budget == 200
+        assert junior_manager.hiring_authority_scope.allowed_roles == {"junior"}
+        assert junior_manager.hiring_authority_scope.max_cost == 40
+
+    def test_delegate_authority_not_report_raises(self, db, team, manager_with_authority):
+        """delegate_authority raises if target is not a direct report."""
+        # Create worker not reporting to manager
+        other_data = create_worker(db, "Other", "Engineer", team.id, 50)
+        other = Worker.get(db, other_data.id)
+
+        with pytest.raises(ValueError, match="not a direct report"):
+            manager_with_authority.delegate_authority(
+                report=other,
+                budget=100,
+                scope=HiringScope(allowed_roles={"junior"}),
+            )
+
+    def test_delegate_cannot_exceed_own_roles(self, manager_with_authority, junior_manager):
+        """Cannot delegate roles not in own authority."""
+        bad_scope = HiringScope(allowed_roles={"ceo"}, max_cost=40)
+        with pytest.raises(InsufficientHiringAuthority) as exc_info:
+            manager_with_authority.delegate_authority(
+                report=junior_manager,
+                budget=100,
+                scope=bad_scope,
+            )
+        assert "not in own authority" in exc_info.value.reason
+
+    def test_delegate_cannot_exceed_own_max_cost(self, manager_with_authority, junior_manager):
+        """Cannot delegate max_cost exceeding own."""
+        bad_scope = HiringScope(allowed_roles={"junior"}, max_cost=100)
+        with pytest.raises(InsufficientHiringAuthority) as exc_info:
+            manager_with_authority.delegate_authority(
+                report=junior_manager,
+                budget=100,
+                scope=bad_scope,
+            )
+        assert "exceeding own" in exc_info.value.reason
+
+    def test_delegate_cannot_exceed_own_budget(self, manager_with_authority, junior_manager):
+        """Cannot delegate budget exceeding own delegated_budget."""
+        scope = HiringScope(allowed_roles={"junior"}, max_cost=40)
+        with pytest.raises(InsufficientHiringAuthority) as exc_info:
+            manager_with_authority.delegate_authority(
+                report=junior_manager,
+                budget=1000,  # Exceeds manager's 500
+                scope=scope,
+            )
+        assert "exceeding own" in exc_info.value.reason

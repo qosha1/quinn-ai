@@ -3,12 +3,24 @@
 This module provides the WorkerResult dataclass that encapsulates
 the outcome of any worker task execution, including success/failure
 status, output, error information, and escalation handling.
+
+This is the execution-layer result type optimized for the worker state machine.
+For the organizational-layer result type with worker_id, operation, tokens_used,
+etc., see shared.core.worker.WorkerResult.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+
+# Re-export canonical types for discoverability
+from shared.core.worker import (
+    WorkerResult as CoreWorkerResult,
+    WorkerConfig as CoreWorkerConfig,
+    WorkerInfo,
+    WorkerNode,
+)
 
 
 @dataclass
@@ -18,6 +30,10 @@ class WorkerResult:
     This dataclass captures all relevant information about a completed
     task, including whether it succeeded, any output or errors produced,
     and whether the task requires escalation to a higher-level handler.
+
+    Note: This is the execution-layer result. For the organizational-layer
+    result with worker_id, operation, cost tracking, etc., see
+    shared.core.worker.WorkerResult (available as CoreWorkerResult).
 
     Attributes:
         succeeded: Whether the task completed successfully.
@@ -111,3 +127,13 @@ class WorkerResult:
             escalation_reason=reason,
             **kwargs,
         )
+
+
+# Aliases for type compatibility between layers
+__all__ = [
+    "WorkerResult",
+    "CoreWorkerResult",
+    "CoreWorkerConfig",
+    "WorkerInfo",
+    "WorkerNode",
+]

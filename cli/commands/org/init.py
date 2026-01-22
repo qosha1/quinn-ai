@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from cli.commands.main import pass_context, Context
+from cli.commands.context import pass_context, Context
 from cli.core.db import init_database, get_org_db_path
 from cli.core.org import Org
 

@@ -10,6 +10,7 @@ Per CLAUDE.md: "Notifications = ephemeral work units (beads) pointing to message
 Cleaned up after actioned."
 """
 
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
@@ -123,9 +124,12 @@ def create_notifications_for_message(
                 db, worker_id, message_id, channel_id, priority
             )
             notifications.append(notif)
-        except Exception:
+        except sqlite3.IntegrityError as e:
             # Ignore duplicate notifications (UNIQUE constraint)
-            pass
+            if "UNIQUE constraint" in str(e):
+                pass
+            else:
+                raise
 
     return notifications
 

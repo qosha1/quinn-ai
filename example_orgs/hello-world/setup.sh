@@ -4,17 +4,23 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORG_DIR="$SCRIPT_DIR/org"
+QN="$SCRIPT_DIR/../common/qn"
 
 echo "=== Hello World: Setup ==="
 echo
 
-# Check prerequisites
-"$SCRIPT_DIR/../common/check-env.sh" || {
-    echo
-    echo "Fix the issues above before continuing."
+# Check prerequisites (skip qn check since we use local wrapper)
+if ! command -v tmux &> /dev/null; then
+    echo "[ERROR] tmux not found. Install: brew install tmux"
     exit 1
-}
+fi
 
+if ! command -v python3 &> /dev/null; then
+    echo "[ERROR] python3 not found"
+    exit 1
+fi
+
+echo "[OK] Prerequisites satisfied"
 echo
 
 # Check if already initialized
@@ -26,7 +32,7 @@ fi
 
 # Initialize the org
 echo "Initializing org..."
-qn org init --org-path "$ORG_DIR" --ceo-name "Alice"
+"$QN" --org-path "$ORG_DIR" org init --ceo-name "Alice"
 
 # Copy our custom config (optional - defaults are fine for hello-world)
 # cp "$SCRIPT_DIR/config/providers.yaml" "$ORG_DIR/config/"

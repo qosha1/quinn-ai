@@ -11,25 +11,25 @@ Provides:
 All types integrate with the beads system where messages are stored as Issues.
 """
 
-from shared.wrkr.comms.types import (
+from shared.comms.types import (
     MessageType,
     Notification,
     TimeSensitivity,
     WorkerMessage,
 )
-from shared.wrkr.comms.inbox import (
+from shared.comms.inbox import (
     BaseInbox,
     BeadsInbox,
     InboxInterface,
     InMemoryInbox,
 )
-from shared.wrkr.comms.outbox import (
+from shared.comms.outbox import (
     BaseOutbox,
     BeadsOutbox,
     InMemoryOutbox,
     OutboxInterface,
 )
-from shared.wrkr.comms.notifications import (
+from shared.comms.notifications import (
     BeadsNotificationHandler,
     InMemoryNotificationHandler,
     NotificationHandler,

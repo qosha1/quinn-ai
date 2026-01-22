@@ -3,32 +3,59 @@ qn wrkr inbox command.
 """
 
 import os
+from collections import defaultdict
 
 import click
 
-from cli.commands.main import pass_context, Context
+from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
-from cli.core.queries import get_worker_channels, get_channel_messages
+from cli.core.queries import get_message, get_channel
+from cli.core.notifications import (
+    get_worker_notifications,
+    get_pending_notifications,
+    count_pending_notifications,
+    mark_notification_read,
+)
+from cli.core.permissions import (
+    PermissionLevel,
+    can_worker_access_channel,
+)
 from shared import WorkerNotFound
 
 
 @click.command()
 @click.option(
-    "--unread-only",
+    "--pending-only",
     is_flag=True,
-    help="Show only unread messages.",
+    default=True,
+    help="Show only pending (unread) notifications. Default: True",
+)
+@click.option(
+    "--all",
+    "show_all",
+    is_flag=True,
+    help="Show all notifications including read/actioned.",
+)
+@click.option(
+    "--mark-read",
+    is_flag=True,
+    help="Mark displayed notifications as read.",
 )
 @click.option(
     "--limit",
-    default=20,
-    help="Maximum messages to show per channel.",
+    default=50,
+    help="Maximum notifications to show.",
 )
 @pass_context
-def inbox_cmd(ctx: Context, unread_only: bool, limit: int):
-    """View inbox messages.
+def inbox_cmd(ctx: Context, pending_only: bool, show_all: bool, mark_read: bool, limit: int):
+    """View inbox notifications.
 
-    Lists messages for this worker from subscribed channels.
+    Lists notification beads for this worker. Notifications are ephemeral
+    work units created when messages are sent to channels you're subscribed to.
+
+    By default, shows only pending (unread) notifications. Use --all to see
+    all notifications including read/actioned ones.
     """
     worker_id = os.environ.get("QUINN_WORKER_ID")
     if not worker_id:
@@ -54,32 +81,80 @@ def inbox_cmd(ctx: Context, unread_only: bool, limit: int):
         except WorkerNotFound:
             raise click.ClickException(f"Worker not found: {worker_id}")
 
-        # Get subscribed channels
-        channels = get_worker_channels(db, worker_id)
+        # Get notifications
+        if show_all:
+            notifications = get_worker_notifications(db, worker_id, limit=limit)
+            status_filter = "all"
+        else:
+            notifications = get_pending_notifications(db, worker_id, limit=limit)
+            status_filter = "pending"
 
-        if not channels:
-            click.echo("No subscribed channels.")
-            click.echo("")
-            click.echo("Tip: Subscribe to channels to receive messages.")
+        if not notifications:
+            pending_count = count_pending_notifications(db, worker_id)
+            if pending_count == 0:
+                click.echo("No notifications.")
+            else:
+                click.echo(f"No {status_filter} notifications. ({pending_count} total pending)")
             return
 
-        # Get messages from each channel
-        total_messages = 0
-        for channel in channels:
-            messages = get_channel_messages(db, channel.id, limit=limit)
-            if messages:
-                click.echo(f"# {channel.name} ({channel.type})")
-                click.echo("-" * 40)
-                for msg in messages:
-                    timestamp = msg.created_at
-                    if hasattr(timestamp, 'strftime'):
-                        timestamp = timestamp.strftime("%Y-%m-%d %H:%M")
-                    click.echo(f"[{timestamp}] {msg.from_worker_id}: {msg.content}")
-                    total_messages += 1
-                click.echo("")
+        # Group by channel for display, filtering by permission
+        by_channel: dict[str, list] = defaultdict(list)
+        skipped_no_permission = 0
+        for notif in notifications:
+            # Check if worker has READ permission on the channel
+            if can_worker_access_channel(db, worker_id, notif.channel_id, PermissionLevel.READ):
+                by_channel[notif.channel_id].append(notif)
+            else:
+                skipped_no_permission += 1
 
-        if total_messages == 0:
-            click.echo("No messages in subscribed channels.")
+        # Display notifications
+        total_shown = 0
+        for channel_id, channel_notifs in by_channel.items():
+            channel = get_channel(db, channel_id)
+            channel_name = channel.name if channel else channel_id
+
+            click.echo(f"# {channel_name}")
+            click.echo("-" * 40)
+
+            for notif in channel_notifs:
+                # Get the message
+                message = get_message(db, notif.message_id)
+                if not message:
+                    continue
+
+                # Format timestamp
+                timestamp = notif.created_at
+                if hasattr(timestamp, 'strftime'):
+                    timestamp = timestamp.strftime("%Y-%m-%d %H:%M")
+
+                # Status indicator
+                status_icon = {
+                    "pending": "●",
+                    "read": "○",
+                    "actioned": "✓",
+                    "closed": "✗",
+                }.get(notif.status, "?")
+
+                # Display notification
+                click.echo(f"[{status_icon}] [{timestamp}] {message.from_worker_id}: {message.content}")
+                click.echo(f"    ID: {notif.id} | Priority: P{notif.priority}")
+                total_shown += 1
+
+                # Optionally mark as read
+                if mark_read and notif.status == "pending":
+                    mark_notification_read(db, notif.id)
+
+            click.echo("")
+
+        # Summary
+        pending_count = count_pending_notifications(db, worker_id)
+        click.echo(f"Showing {total_shown} notification(s). {pending_count} pending total.")
+
+        if skipped_no_permission > 0:
+            click.echo(f"({skipped_no_permission} notifications hidden due to permission restrictions)")
+
+        if mark_read:
+            click.echo("Displayed notifications marked as read.")
 
     finally:
         db.close()

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Wrapper script to run qn CLI without installing
+QUINNAI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export PYTHONPATH="$QUINNAI_DIR:$PYTHONPATH"
+python3 -m cli.commands.main "$@"

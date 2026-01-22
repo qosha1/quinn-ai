@@ -100,10 +100,10 @@ class ClaudeCodeSession(SessionInterface):
             # Start with session config that includes our command and args
             from shared.pyterm.protocols import SessionConfig as PytermSessionConfig
             session_config = PytermSessionConfig(
-                command=self._config.command,
+                shell=self._config.command,
                 args=self._config.args,
+                cwd=str(self._config.working_directory) if self._config.working_directory else None,
                 env=self._config.env_vars,
-                working_dir=str(self._config.working_directory) if self._config.working_directory else None,
                 cols=self._config.cols,
                 rows=self._config.rows,
             )
@@ -185,9 +185,10 @@ class ClaudeCodeSession(SessionInterface):
     def _map_pyterm_state_to_session_state(self, pyterm_state: PytermSessionState) -> SessionState:
         """Map pyterm session state to our SessionState."""
         mapping = {
-            PytermSessionState.STOPPED: SessionState.STOPPED,
-            PytermSessionState.STARTING: SessionState.STARTING,
+            PytermSessionState.IDLE: SessionState.IDLE,
             PytermSessionState.RUNNING: SessionState.RUNNING,
+            PytermSessionState.EXITED: SessionState.STOPPED,
+            PytermSessionState.ERROR: SessionState.CRASHED,
         }
         return mapping.get(pyterm_state, SessionState.STOPPED)
 

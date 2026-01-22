@@ -2,10 +2,26 @@
 
 Defines the WorkerConfig dataclass that captures worker identity,
 capabilities (skills), cost tier, and organizational hierarchy.
+
+This module provides a WorkerConfig tailored for the worker execution layer.
+It uses different field names and behaviors optimized for the state machine:
+- boss_id instead of manager_id (execution context)
+- idle_behavior and poll_interval for runtime behavior
+- tier property with "cheap/mid/top" naming
+
+For the canonical organizational types, see shared.core.worker.
 """
 
 from dataclasses import dataclass, field
 from typing import Literal
+
+# Re-export canonical types for discoverability
+from shared.core.worker import (
+    WorkerConfig as CoreWorkerConfig,
+    WorkerInfo,
+    WorkerResult as CoreWorkerResult,
+    WorkerNode,
+)
 
 
 @dataclass
@@ -14,6 +30,9 @@ class WorkerConfig:
 
     Workers have skills (rated 0-100), a cost tier, and belong to
     an organizational hierarchy with optional manager relationships.
+
+    Note: This is the execution-layer config. For the organizational-layer
+    config with team_id, hiring_authority, etc., see shared.core.worker.WorkerConfig.
 
     Attributes:
         id: Unique identifier for this worker.
@@ -87,3 +106,13 @@ class WorkerConfig:
             True if the worker has the skill at or above min_level.
         """
         return self.get_skill(skill) >= min_level
+
+
+# Aliases for type compatibility between layers
+__all__ = [
+    "WorkerConfig",
+    "CoreWorkerConfig",
+    "WorkerInfo",
+    "CoreWorkerResult",
+    "WorkerNode",
+]

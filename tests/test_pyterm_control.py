@@ -17,7 +17,7 @@ from shared.pyterm.control import (
 from shared.pyterm.agent_state import AgentState
 from shared.pyterm.protocols import ExtractedOutput, SessionState
 from shared.pyterm.conversation import Message, ToolCall, Transcript
-from shared.pyterm.config import PytermConfig, TimingConfig, LoopDetectionConfig, SessionConfig as PytermSessionConfig
+from shared.pyterm.config import PytermConfig, TimingConfig, LoopDetectionConfig, TerminalSessionConfig as PytermSessionConfig
 from shared.pyterm.parsers import get_parser
 
 

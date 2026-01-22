@@ -68,9 +68,10 @@ if [[ "$FORCE" != "true" ]]; then
 fi
 
 # Try to stop the org gracefully
+QN="$SCRIPT_DIR/qn"
 if [[ -f "$ORG_PATH/live/quinn.db" ]]; then
     echo "Stopping org..."
-    qn org stop --org-path "$ORG_PATH" 2>/dev/null || true
+    "$QN" --org-path "$ORG_PATH" org stop 2>/dev/null || true
 fi
 
 # Kill any tmux sessions for this org

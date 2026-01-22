@@ -10,7 +10,8 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from cli.commands.main import qn, Context
+from cli.commands.main import qn
+from cli.commands.context import Context
 
 
 @pytest.fixture
@@ -103,10 +104,10 @@ class TestOrgGroup:
         """qn org start should start initialized organization."""
         # First init
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
-        # Then start
+        # Then start (without spawning CEO since no budget in test)
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
-            "org", "start"
+            "org", "start", "--no-spawn-ceo"
         ])
         assert result.exit_code == 0
         assert "Organization started" in result.output
@@ -122,9 +123,9 @@ class TestOrgGroup:
 
     def test_org_stop_runs(self, runner, temp_org):
         """qn org stop should stop running organization."""
-        # Init and start first
+        # Init and start first (without spawning CEO since no budget in test)
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
-        runner.invoke(qn, ["--org-path", str(temp_org), "org", "start"])
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "start", "--no-spawn-ceo"])
         # Then stop
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
@@ -251,8 +252,8 @@ class TestWrkrGroup:
             "wrkr", "inbox"
         ], env={"QUINN_WORKER_ID": ceo_id})
         assert result.exit_code == 0
-        # No channels subscribed initially
-        assert "No subscribed channels" in result.output or "No messages" in result.output
+        # No notifications initially
+        assert "No notifications" in result.output
 
     def test_wrkr_send_requires_worker_id(self, runner, temp_org):
         """qn wrkr send should require QUINN_WORKER_ID."""
@@ -359,6 +360,70 @@ class TestContext:
         ctx = Context(temp_org)
         ctx.close()
         ctx.close()  # Should not raise
+
+
+class TestObserveCommand:
+    """Test qn org observe command."""
+
+    def test_observe_help(self, runner):
+        """qn org observe --help should show usage."""
+        result = runner.invoke(qn, ["org", "observe", "--help"])
+        assert result.exit_code == 0
+        assert "tmux session" in result.output.lower()
+        assert "--stream" in result.output
+
+    def test_observe_requires_init(self, runner, temp_org):
+        """qn org observe should require org to be initialized."""
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "observe", "some-worker"
+        ])
+        assert result.exit_code != 0
+        assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
+
+    def test_observe_requires_valid_worker(self, runner, temp_org):
+        """qn org observe should require valid worker."""
+        # Initialize org
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # Try to observe non-existent worker
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "observe", "nonexistent-worker"
+        ])
+        assert result.exit_code != 0
+        assert "not found" in result.output.lower()
+
+    def test_observe_requires_active_session(self, runner, temp_org):
+        """qn org observe should require worker to have active session."""
+        # Initialize org
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        # Get CEO worker ID
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
+        db = open_database(get_org_db_path(temp_org))
+        org = Org.load(db)
+        ceo_id = org.ceo_worker_id
+        db.close()
+        # Try to observe CEO (no session running)
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "observe", ceo_id
+        ])
+        assert result.exit_code != 0
+        assert "does not have an active session" in result.output.lower() or "starting" in result.output.lower() or "running" in result.output.lower() or "idle" in result.output.lower()
+
+    def test_observe_accepts_worker_name(self, runner, temp_org):
+        """qn org observe should accept worker name."""
+        # Initialize org
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init", "--ceo-name", "TestCEO"])
+        # Try to observe by name (will fail because no session, but name lookup should work)
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "observe", "TestCEO"
+        ])
+        # Should fail because no active session, not because worker not found
+        assert result.exit_code != 0
+        assert "not found" not in result.output.lower() or "session" in result.output.lower()
 
 
 class TestEnvVar:

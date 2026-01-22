@@ -5,10 +5,14 @@ This module defines the protocol for workers to escalate issues to supervisors
 or external systems when they encounter problems they cannot resolve independently.
 """
 
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+from __future__ import annotations
 
-from shared.wrkr.core.task import Task
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Protocol
+
+# Import Task only for type checking to avoid circular imports with shared.wrkr
+if TYPE_CHECKING:
+    from shared.wrkr.core.task import Task
 
 
 @dataclass
@@ -30,7 +34,7 @@ class EscalationResponse:
 
     resolved: bool
     guidance: str = ""
-    new_tasks: list[Task] = field(default_factory=list)
+    new_tasks: list["Task"] = field(default_factory=list)
     escalated_to: str | None = None
 
 

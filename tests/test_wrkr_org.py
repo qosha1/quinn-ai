@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime
 
-from shared.wrkr.org import (
+from shared.org import (
     BeadsOrgLoader,
     BoardEscalation,
     BoardNotifier,
@@ -14,12 +14,12 @@ from shared.wrkr.org import (
     OrgWorker,
     build_standard_topology,
 )
-from shared.wrkr.escalation.interface import (
+from shared.escalation.interface import (
     EscalationInterface,
     EscalationResponse,
     MockEscalation,
 )
-from shared.wrkr.escalation.hierarchical import (
+from shared.escalation.hierarchical import (
     HierarchicalRouter,
     OrgTopology,
     WorkerNode,

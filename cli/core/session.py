@@ -11,35 +11,15 @@ Gemini CLI, etc.) through a unified interface.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import Callable, Optional
 from pathlib import Path
 import uuid
 
-
-class SessionState(Enum):
-    """Session lifecycle states.
-
-    State machine: starting -> running <-> idle -> stopped
-                              |
-                              v
-                           crashed
-    """
-    STARTING = "starting"   # Session initializing
-    RUNNING = "running"     # Actively processing
-    IDLE = "idle"           # Waiting for input
-    STOPPED = "stopped"     # Gracefully shutdown
-    CRASHED = "crashed"     # Unexpected termination
-
-
-# Valid state transitions for session state machine
-SESSION_STATE_TRANSITIONS: dict[SessionState, list[SessionState]] = {
-    SessionState.STARTING: [SessionState.RUNNING, SessionState.CRASHED],
-    SessionState.RUNNING: [SessionState.IDLE, SessionState.CRASHED],
-    SessionState.IDLE: [SessionState.RUNNING, SessionState.STOPPED, SessionState.CRASHED],
-    SessionState.STOPPED: [SessionState.STARTING],
-    SessionState.CRASHED: [SessionState.STARTING, SessionState.STOPPED],
-}
+# Import canonical SessionState and transitions from shared/core/state
+from shared.core.state import (
+    SessionState,
+    SESSION_STATE_TRANSITIONS,
+)
 
 
 @dataclass(frozen=True)

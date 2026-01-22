@@ -1,24 +1,21 @@
 """
 Lifecycle hooks for worker state management.
 
-Worker lifecycle: pending -> onboarding -> active -> offboarding -> terminated
+Worker lifecycle: pending -> onboarding -> active <-> working -> offboarding -> terminated
+                                              \-> stuck -/
 Session state maps to worker state.
 """
 
 from dataclasses import dataclass, field
 from typing import Callable
 
-from shared.pyterm.protocols import SessionState, WorkerState
+# Import WorkerState and transitions from canonical source
+from shared.core.state import WorkerState, WORKER_STATE_TRANSITIONS
+from shared.pyterm.protocols import SessionState
 
 
-# Valid state transitions
-VALID_TRANSITIONS: dict[WorkerState, list[WorkerState]] = {
-    WorkerState.PENDING: [WorkerState.ONBOARDING, WorkerState.TERMINATED],
-    WorkerState.ONBOARDING: [WorkerState.ACTIVE, WorkerState.TERMINATED],
-    WorkerState.ACTIVE: [WorkerState.OFFBOARDING, WorkerState.TERMINATED],
-    WorkerState.OFFBOARDING: [WorkerState.TERMINATED],
-    WorkerState.TERMINATED: [],  # Terminal state
-}
+# Re-export canonical transitions for backward compatibility
+VALID_TRANSITIONS = WORKER_STATE_TRANSITIONS
 
 
 def session_to_worker_state(session_state: SessionState) -> WorkerState:

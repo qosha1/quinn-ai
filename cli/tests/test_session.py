@@ -155,11 +155,12 @@ class TestSessionStateTransitions:
             assert state in SESSION_STATE_TRANSITIONS
 
     def test_starting_transitions(self):
-        """STARTING can go to RUNNING or CRASHED."""
+        """STARTING can go to IDLE, RUNNING, or CRASHED."""
         valid = SESSION_STATE_TRANSITIONS[SessionState.STARTING]
+        assert SessionState.IDLE in valid
         assert SessionState.RUNNING in valid
         assert SessionState.CRASHED in valid
-        assert len(valid) == 2
+        assert len(valid) == 3
 
     def test_running_transitions(self):
         """RUNNING can go to IDLE or CRASHED."""

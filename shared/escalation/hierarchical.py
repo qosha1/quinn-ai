@@ -7,21 +7,33 @@ their management chain and attempts resolution at each level.
 
 The actual communication (API calls, messages) is handled by EscalationInterface
 implementations passed to the router - this module only handles routing logic.
+
+Note: This module uses a local WorkerNode for OrgTopology traversal that is
+simpler than shared.core.worker.WorkerNode. The canonical WorkerNode has
+additional fields (worker_id, role, direct_reports, team_id, depth) for
+full organizational representation.
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
 
-from shared.wrkr.core.task import Task
-from shared.wrkr.escalation.interface import EscalationInterface, EscalationResponse
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from shared.escalation.interface import EscalationInterface, EscalationResponse
+
+# Import canonical types for TYPE_CHECKING only to avoid circular imports
+if TYPE_CHECKING:
+    from shared.core.worker import WorkerNode as CoreWorkerNode
 
 
 @dataclass
 class WorkerNode:
     """
-    A node in the organizational hierarchy.
+    A node in the organizational hierarchy for escalation routing.
 
-    Represents a worker's position in the org chart, including their
-    reporting relationship and management status.
+    This is a lightweight node for OrgTopology traversal. For the full
+    organizational representation with direct_reports, team_id, depth,
+    etc., see shared.core.worker.WorkerNode.
 
     Attributes:
         id: Unique identifier for this worker.
@@ -35,6 +47,23 @@ class WorkerNode:
     name: str
     boss_id: str | None
     is_manager: bool
+
+    @classmethod
+    def from_core(cls, node: CoreWorkerNode) -> WorkerNode:
+        """Create from a CoreWorkerNode.
+
+        Args:
+            node: The canonical WorkerNode from shared.core.worker.
+
+        Returns:
+            A lightweight WorkerNode for escalation routing.
+        """
+        return cls(
+            id=node.worker_id,
+            name=node.name,
+            boss_id=node.manager_id,
+            is_manager=node.is_manager,
+        )
 
 
 class OrgTopology:

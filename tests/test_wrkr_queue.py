@@ -6,7 +6,7 @@ Tests push, pop, priority ordering, and task state management.
 import pytest
 
 from shared.wrkr.core.task import Task
-from shared.wrkr.queue.interface import MockQueue
+from shared.queue.interface import MockQueue
 
 
 class TestMockQueueCreation:

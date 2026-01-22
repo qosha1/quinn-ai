@@ -13,13 +13,13 @@ These enable:
 - Org-chart-based routing decisions
 """
 
-from shared.wrkr.org.topology import (
+from shared.org.topology import (
     BeadsOrgLoader,
     InMemoryOrgLoader,
     OrgWorker,
     build_standard_topology,
 )
-from shared.wrkr.org.escalation import (
+from shared.org.escalation import (
     BoardEscalation,
     BoardNotifier,
     InMemoryBoardEscalation,

@@ -7,13 +7,16 @@ enabling context-aware task execution and learning from past work.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
-import json
-import subprocess
 
+from shared.bd import BdClient, BdCommandError
+from shared.wrkr.work.types import BeadsType, BeadsPriority
 from shared.wrkr.core.task import Task
 from shared.wrkr.core.result import WorkerResult
+
+logger = logging.getLogger(__name__)
 
 
 class BeadsMemory:
@@ -34,6 +37,7 @@ class BeadsMemory:
         worker_id: str,
         bd_command: str = "bd",
         db_path: str | None = None,
+        client: BdClient | None = None,
     ):
         """
         Initialize beads memory.
@@ -42,36 +46,15 @@ class BeadsMemory:
             worker_id: The worker ID this memory belongs to.
             bd_command: Path to the bd command. Defaults to "bd".
             db_path: Optional database path override.
+            client: Optional BdClient instance (for dependency injection).
         """
         self._worker_id = worker_id
-        self._bd_command = bd_command
-        self._db_path = db_path
+        self._client = client or BdClient(bd_command=bd_command, db_path=db_path)
 
     @property
     def worker_id(self) -> str:
         """The worker ID this memory belongs to."""
         return self._worker_id
-
-    def _run_bd(self, *args: str) -> str:
-        """Run a bd command and return output.
-
-        Args:
-            *args: Command arguments after "bd".
-
-        Returns:
-            Command stdout.
-
-        Raises:
-            RuntimeError: If command fails.
-        """
-        cmd = [self._bd_command] + list(args)
-        if self._db_path:
-            cmd.extend(["--db", self._db_path])
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"bd command failed: {result.stderr}")
-        return result.stdout
 
     def record(self, task: Task, result: WorkerResult) -> None:
         """
@@ -106,29 +89,25 @@ class BeadsMemory:
             status = "escalated"
         title = f"Execution: {task.title[:50]} [{status}]"
 
-        # Create execution record as ephemeral issue
-        args = [
-            "create",
-            f"--title={title}",
-            "--type=execution",
-            "--priority=4",  # Low priority (historical record)
-            "--ephemeral",  # Auto-cleanup after some time
-            f"--metadata={json.dumps(record_data)}",
-        ]
-
+        # Build kwargs for optional dependencies
+        kwargs: dict[str, str] = {}
         if task.id:
-            args.append(f"--caused-by={task.id}")
-
+            kwargs["caused_by"] = task.id
         if task.ask_id:
-            args.append(f"--spawned-from={task.ask_id}")
-
+            kwargs["spawned_from"] = task.ask_id
         if task.okr_id:
-            args.append(f"--serves={task.okr_id}")
+            kwargs["serves"] = task.okr_id
 
-        try:
-            self._run_bd(*args)
-        except RuntimeError:
-            pass  # Best effort recording
+        issue_id = self._client.create_issue(
+            title=title,
+            type=BeadsType.EXECUTION,
+            priority=BeadsPriority.BACKLOG,
+            metadata=record_data,
+            ephemeral=True,
+            **kwargs,
+        )
+        if not issue_id:
+            logger.warning("Failed to record execution for task %s", task.id)
 
     def recent(self, limit: int = 10) -> list[dict[str, Any]]:
         """
@@ -141,14 +120,12 @@ class BeadsMemory:
             List of execution records, most recent first.
         """
         try:
-            output = self._run_bd(
-                "list",
-                "--json",
-                "--type=execution",
-                f"--limit={limit}",
+            issues = self._client.list_issues(
+                type=BeadsType.EXECUTION,
+                limit=limit,
             )
-            issues = json.loads(output) if output.strip() else []
-        except (RuntimeError, json.JSONDecodeError):
+        except BdCommandError as e:
+            logger.warning("Failed to fetch recent executions: %s", e)
             return []
 
         records = []

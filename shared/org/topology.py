@@ -7,16 +7,18 @@ traversal methods for escalation routing.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import Any
-import json
-import subprocess
+from typing import Any, Protocol, runtime_checkable
 
-from shared.wrkr.escalation.hierarchical import (
+from shared.bd import BdClient, BdCommandError
+from shared.wrkr.work.types import BeadsType
+from shared.escalation.hierarchical import (
     OrgTopology,
-    WorkerNode,
     create_simple_topology,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -59,6 +61,7 @@ class BeadsOrgLoader:
         self,
         bd_command: str = "bd",
         db_path: str | None = None,
+        client: BdClient | None = None,
     ):
         """
         Initialize the org loader.
@@ -66,20 +69,9 @@ class BeadsOrgLoader:
         Args:
             bd_command: Path to bd command.
             db_path: Optional database path override.
+            client: Optional BdClient instance (for dependency injection).
         """
-        self._bd_command = bd_command
-        self._db_path = db_path
-
-    def _run_bd(self, *args: str) -> str:
-        """Run a bd command and return output."""
-        cmd = [self._bd_command] + list(args)
-        if self._db_path:
-            cmd.extend(["--db", self._db_path])
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"bd command failed: {result.stderr}")
-        return result.stdout
+        self._client = client or BdClient(bd_command=bd_command, db_path=db_path)
 
     def _parse_worker(self, issue: dict[str, Any]) -> OrgWorker:
         """Convert beads issue to OrgWorker."""
@@ -103,9 +95,12 @@ class BeadsOrgLoader:
             List of OrgWorker instances.
         """
         try:
-            output = self._run_bd("list", "--json", "--type=worker", "--status=open")
-            issues = json.loads(output) if output.strip() else []
-        except (RuntimeError, json.JSONDecodeError):
+            issues = self._client.list_issues(
+                type=BeadsType.WORKER,
+                status="open",
+            )
+        except BdCommandError as e:
+            logger.warning("Failed to load workers: %s", e)
             return []
 
         return [self._parse_worker(i) for i in issues]
@@ -141,13 +136,11 @@ class BeadsOrgLoader:
         Returns:
             OrgWorker, or None if not found.
         """
-        try:
-            output = self._run_bd("show", worker_id, "--json")
-            issue = json.loads(output)
-        except (RuntimeError, json.JSONDecodeError):
+        issue = self._client.get_issue(worker_id)
+        if not issue:
             return None
 
-        if issue.get("type") != "worker":
+        if issue.get("type") != BeadsType.WORKER:
             return None
 
         return self._parse_worker(issue)

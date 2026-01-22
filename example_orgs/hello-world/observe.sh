@@ -4,6 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ORG_DIR="$SCRIPT_DIR/org"
+QN="$SCRIPT_DIR/../common/qn"
 
 echo "=== Hello World: Observe ==="
 echo
@@ -16,7 +17,7 @@ fi
 
 # Show status
 echo "--- Org Status ---"
-qn org status --org-path "$ORG_DIR"
+"$QN" --org-path "$ORG_DIR" org status
 
 echo
 echo "--- Org Chart ---"

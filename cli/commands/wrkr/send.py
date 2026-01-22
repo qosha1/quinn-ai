@@ -6,10 +6,15 @@ import os
 
 import click
 
-from cli.commands.main import pass_context, Context
+from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
-from cli.core.queries import get_channel, create_message
+from cli.core.queries import get_channel, create_message_with_notifications
+from cli.core.permissions import (
+    PermissionLevel,
+    PermissionDenied,
+    require_channel_permission,
+)
 from shared import WorkerNotFound
 
 
@@ -62,12 +67,28 @@ def send_cmd(ctx: Context, to_channel: str, priority: int, message: str):
         if not channel:
             raise click.ClickException(f"Channel not found: {to_channel}")
 
+        # Check permission to send messages to this channel
+        # Sending messages requires at least COMMENT level permission
+        try:
+            require_channel_permission(
+                db=db,
+                worker_id=worker_id,
+                channel_id=to_channel,
+                required_level=PermissionLevel.COMMENT,
+                action="send_message",
+            )
+        except PermissionDenied as e:
+            raise click.ClickException(
+                f"Permission denied: Cannot send messages to channel '{channel.name}'. "
+                f"You need at least COMMENT permission."
+            )
+
         # Validate priority
         if not 0 <= priority <= 4:
             raise click.ClickException("Priority must be between 0 and 4")
 
-        # Create the message
-        msg = create_message(
+        # Create the message and notify subscribers
+        msg = create_message_with_notifications(
             db=db,
             channel_id=to_channel,
             from_worker_id=worker_id,

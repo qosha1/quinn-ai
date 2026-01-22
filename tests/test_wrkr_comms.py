@@ -8,15 +8,15 @@ classes for inter-worker communication.
 import pytest
 from datetime import datetime, timedelta
 
-from shared.wrkr.comms.types import (
+from shared.comms.types import (
     MessageType,
     Notification,
     TimeSensitivity,
     WorkerMessage,
 )
-from shared.wrkr.comms.inbox import InMemoryInbox
-from shared.wrkr.comms.outbox import InMemoryOutbox
-from shared.wrkr.comms.notifications import (
+from shared.comms.inbox import InMemoryInbox
+from shared.comms.outbox import InMemoryOutbox
+from shared.comms.notifications import (
     InMemoryNotificationHandler,
     TaskConversionResult,
     UrgentInterrupt,

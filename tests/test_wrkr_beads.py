@@ -8,9 +8,9 @@ using in-memory implementations.
 import pytest
 from datetime import datetime
 
-from shared.wrkr.beads.queue import InMemoryBeadsQueue
-from shared.wrkr.beads.memory import InMemoryBeadsMemory
-from shared.wrkr.beads.links import (
+from shared.wrkr.work.queue import InMemoryBeadsQueue
+from shared.wrkr.work.memory import InMemoryBeadsMemory
+from shared.wrkr.work.links import (
     Ask,
     InMemoryLinkManager,
     OKR,

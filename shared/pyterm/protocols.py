@@ -5,14 +5,21 @@ Session = Worker's brain (1:1, unbreakable)
 Session ON = awake, Session OFF = asleep
 """
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Protocol, runtime_checkable
 
+# Import WorkerState from canonical source
+from shared.core.state import WorkerState
+
 
 class SessionState(Enum):
-    """Session lifecycle states."""
+    """Session lifecycle states for pyterm.
+
+    Note: This is pyterm-specific SessionState designed for terminal session
+    management. The canonical SessionState in shared.core.state has different
+    values (STOPPED, STARTING, etc.) designed for the worker state mapping.
+    """
 
     IDLE = "idle"
     RUNNING = "running"
@@ -20,19 +27,13 @@ class SessionState(Enum):
     ERROR = "error"
 
 
-class WorkerState(Enum):
-    """Worker lifecycle states (maps to session)."""
-
-    PENDING = "pending"
-    ONBOARDING = "onboarding"
-    ACTIVE = "active"
-    OFFBOARDING = "offboarding"
-    TERMINATED = "terminated"
-
-
 @dataclass
 class SessionConfig:
-    """Configuration for spawning a session."""
+    """Configuration for spawning a session.
+
+    This is the pyterm-specific SessionConfig for terminal sessions.
+    For the full canonical SessionConfig, see shared.core.session.
+    """
 
     shell: str = "/bin/bash"
     args: list[str] = field(default_factory=list)

@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any, Callable, Protocol
 import uuid
 
-from shared.wrkr.comms.types import (
+from shared.comms.types import (
     Notification,
     TimeSensitivity,
     WorkerMessage,
@@ -538,7 +538,7 @@ class BeadsNotificationHandler(NotificationHandler):
         metadata = issue.get("metadata", {})
 
         # Map message type
-        from shared.wrkr.comms.types import MessageType
+        from shared.comms.types import MessageType
 
         type_map = {
             "request": MessageType.REQUEST,
