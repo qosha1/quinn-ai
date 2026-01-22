@@ -8,6 +8,8 @@ Validates that beads can only be closed when in terminal states.
 from dataclasses import dataclass
 from typing import Optional
 
+from shared.enums import BeadType
+
 from .constants import LIFECYCLE_INITIAL_STATES, LIFECYCLE_STATES
 
 
@@ -65,7 +67,7 @@ class CannotCloseBeadError(LifecycleError):
 
         terminal_str = ", ".join(terminal_states)
         # Provide actionable guidance
-        if bead_type == "task":
+        if bead_type == BeadType.TASK.value:
             if current_state == "review":
                 guidance = "Complete the review first."
             elif current_state == "implementation":
@@ -76,7 +78,7 @@ class CannotCloseBeadError(LifecycleError):
                 guidance = "Complete investigation and move to planning."
             else:
                 guidance = f"Move to a terminal state: {terminal_str}"
-        elif bead_type == "bug":
+        elif bead_type == BeadType.BUG.value:
             if current_state == "review":
                 guidance = "Complete the fix review."
             elif current_state == "fixing":
@@ -87,7 +89,7 @@ class CannotCloseBeadError(LifecycleError):
                 guidance = "Triage the bug first."
             else:
                 guidance = f"Move to a terminal state: {terminal_str}"
-        elif bead_type == "feature":
+        elif bead_type == BeadType.FEATURE.value:
             if current_state == "review":
                 guidance = "Complete the feature review."
             elif current_state == "implementation":

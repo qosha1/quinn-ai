@@ -16,6 +16,7 @@ from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
 from cli.core.queries import update_worker_runtime_status
 from shared import WorkerNotFound, InvalidStateTransition
+from shared.enums import WorkerLifecycleStatus
 
 
 @click.command()
@@ -55,7 +56,7 @@ def pause_cmd(ctx: Context, worker_id: str, reason: str):
         runtime = worker.runtime_status
         lifecycle = worker.lifecycle_status
 
-        if lifecycle != "active":
+        if lifecycle != WorkerLifecycleStatus.ACTIVE.value:
             raise click.ClickException(
                 f"Cannot pause worker '{worker.name}' in '{lifecycle}' lifecycle state.\n"
                 "Only workers with 'active' lifecycle can be paused."
@@ -130,7 +131,7 @@ def resume_cmd(ctx: Context, worker_id: str):
         runtime = worker.runtime_status
         lifecycle = worker.lifecycle_status
 
-        if lifecycle != "active":
+        if lifecycle != WorkerLifecycleStatus.ACTIVE.value:
             raise click.ClickException(
                 f"Cannot resume worker '{worker.name}' in '{lifecycle}' lifecycle state.\n"
                 "Only workers with 'active' lifecycle can be resumed."
@@ -203,7 +204,7 @@ def fire_cmd(ctx: Context, worker_id: str, reason: str, force: bool):
 
         lifecycle = worker.lifecycle_status
 
-        if lifecycle == "terminated":
+        if lifecycle == WorkerLifecycleStatus.TERMINATED.value:
             raise click.ClickException(
                 f"Worker '{worker.name}' is already terminated.\n"
                 "No action needed."
@@ -241,7 +242,7 @@ def fire_cmd(ctx: Context, worker_id: str, reason: str, force: bool):
         click.echo("Terminating worker...")
 
         # First transition to offboarding if active
-        if lifecycle == "active":
+        if lifecycle == WorkerLifecycleStatus.ACTIVE.value:
             try:
                 worker.start_offboarding()
                 click.echo("  Lifecycle: active -> offboarding")

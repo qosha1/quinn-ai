@@ -10,6 +10,7 @@ from cli.core.org import Org
 from cli.core.notifications import run_notification_cleanup
 from cli.core.constants import DEFAULT_NOTIFICATION_RETENTION_DAYS
 from shared import InvalidOrgTransition
+from shared.enums import OrgStatus
 
 
 @click.command()
@@ -42,11 +43,11 @@ def stop_cmd(ctx: Context, cleanup: bool):
     try:
         org = Org.load(db)
 
-        if org.status == "stopped":
+        if org.status == OrgStatus.STOPPED.value:
             click.echo("Organization is already stopped.")
             return
 
-        if org.status != "running":
+        if org.status != OrgStatus.RUNNING.value:
             raise click.ClickException(
                 f"Cannot stop organization in '{org.status}' state.\n"
                 "Organization must be 'running' to stop.\n"

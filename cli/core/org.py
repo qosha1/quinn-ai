@@ -31,6 +31,7 @@ from shared import (
     InvalidOrgTransition,
     OrgNotInitialized,
 )
+from shared.enums import OrgStatus
 
 _logger = get_logger(__name__)
 
@@ -68,7 +69,7 @@ class Org:
         """Get current org lifecycle status."""
         if self._state_data is None:
             self._load_state()
-        return self._state_data.status if self._state_data else "uninitialized"
+        return self._state_data.status if self._state_data else OrgStatus.UNINITIALIZED.value
 
     @property
     def ceo_worker_id(self) -> Optional[str]:
@@ -88,7 +89,7 @@ class Org:
     @property
     def is_operational(self) -> bool:
         """Check if org is operational (running)."""
-        return self.status == "running"
+        return self.status == OrgStatus.RUNNING.value
 
     @property
     def started_at(self):
@@ -143,7 +144,7 @@ class Org:
         Raises:
             InvalidOrgTransition: If org is not uninitialized
         """
-        self._validate_transition("initialized")
+        self._validate_transition(OrgStatus.INITIALIZED.value)
 
         # Create root team (Executive)
         team = create_team(self.db, "Executive")
@@ -207,11 +208,11 @@ class Org:
         self._init_beads()
 
         # Update org status
-        old_status = "uninitialized"
-        update_org_status(self.db, "initialized", ceo_data.id)
+        old_status = OrgStatus.UNINITIALIZED.value
+        update_org_status(self.db, OrgStatus.INITIALIZED.value, ceo_data.id)
         self._state_data = None  # Invalidate cache
 
-        log_org_state_change(_logger, old_status, "initialized")
+        log_org_state_change(_logger, old_status, OrgStatus.INITIALIZED.value)
 
         return Worker.get(self.db, ceo_data.id)
 
@@ -226,8 +227,8 @@ class Org:
         """
         current = self.status
 
-        if current == "initialized":
-            self._validate_transition("running")
+        if current == OrgStatus.INITIALIZED.value:
+            self._validate_transition(OrgStatus.RUNNING.value)
 
             # Activate CEO
             ceo = self.ceo
@@ -235,17 +236,17 @@ class Org:
                 ceo.start_onboarding()
                 ceo.complete_onboarding()
 
-            update_org_status(self.db, "running", self.ceo_worker_id)
-            log_org_state_change(_logger, current, "running")
+            update_org_status(self.db, OrgStatus.RUNNING.value, self.ceo_worker_id)
+            log_org_state_change(_logger, current, OrgStatus.RUNNING.value)
 
-        elif current == "stopped":
-            self._validate_transition("running")
-            update_org_status(self.db, "running", self.ceo_worker_id)
-            log_org_state_change(_logger, current, "running")
+        elif current == OrgStatus.STOPPED.value:
+            self._validate_transition(OrgStatus.RUNNING.value)
+            update_org_status(self.db, OrgStatus.RUNNING.value, self.ceo_worker_id)
+            log_org_state_change(_logger, current, OrgStatus.RUNNING.value)
 
         else:
             # Will raise InvalidOrgTransition
-            self._validate_transition("running")
+            self._validate_transition(OrgStatus.RUNNING.value)
 
         self._state_data = None  # Invalidate cache
 
@@ -293,10 +294,10 @@ class Org:
             InvalidOrgTransition: If org is not running
         """
         old_status = self.status
-        self._validate_transition("stopped")
-        update_org_status(self.db, "stopped", self.ceo_worker_id)
+        self._validate_transition(OrgStatus.STOPPED.value)
+        update_org_status(self.db, OrgStatus.STOPPED.value, self.ceo_worker_id)
         self._state_data = None  # Invalidate cache
-        log_org_state_change(_logger, old_status, "stopped")
+        log_org_state_change(_logger, old_status, OrgStatus.STOPPED.value)
 
     # ==================
     # QUERY HELPERS

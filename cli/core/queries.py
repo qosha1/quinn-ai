@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .db import Database
+from shared.enums import OrgStatus
 
 
 # ===================
@@ -153,13 +154,13 @@ def update_org_status(
         ceo_worker_id: Optional CEO worker ID to set
     """
     now = datetime.now()
-    if status == "running":
+    if status == OrgStatus.RUNNING.value:
         db.execute(
             """UPDATE org_state SET status = ?, ceo_worker_id = ?,
                started_at = ?, updated_at = ? WHERE id = 'default'""",
             (status, ceo_worker_id, now, now)
         )
-    elif status == "stopped":
+    elif status == OrgStatus.STOPPED.value:
         db.execute(
             """UPDATE org_state SET status = ?, stopped_at = ?,
                updated_at = ? WHERE id = 'default'""",

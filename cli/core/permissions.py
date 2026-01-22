@@ -20,6 +20,7 @@ from .queries import (
     get_worker_team_memberships,
     log_permission_audit,
 )
+from shared.enums import TeamRole, WorkerRole
 
 
 class PermissionLevel(IntEnum):
@@ -73,12 +74,16 @@ def check_channel_permission(
 ) -> PermissionLevel:
     """Check worker's permission level on a channel.
 
+    Aggregates permissions from multiple sources and returns the highest level.
+
     Permission sources for channels:
     1. Channel subscription (subscribed workers get COMMENT)
-    2. Team channel ownership (team members get WRITE on their team's channels)
-    3. Direct permission grant
-    4. Team-based permission grant
-    5. Worker's role (CEO gets ADMIN everywhere)
+    2. Team channel ownership (team members get permissions based on role)
+    3. Primary team membership (worker's team matches channel's team)
+    4. Direct permission grant
+    5. Team-based permission grant
+    6. Worker's role (CEO gets ADMIN everywhere)
+    7. Global worker permissions
 
     Args:
         db: Database instance
@@ -89,8 +94,6 @@ def check_channel_permission(
     Returns:
         The effective permission level
     """
-    permissions: List[PermissionLevel] = []
-
     # Get worker info
     worker = get_worker(db, worker_id)
     if not worker:
@@ -101,69 +104,208 @@ def check_channel_permission(
     if not channel:
         return PermissionLevel.NONE
 
-    # 1. Check if worker is subscribed to channel (gets COMMENT)
+    # Collect permissions from all sources
+    permissions: List[PermissionLevel] = []
+
+    permissions.append(_check_subscription_permission(db, worker_id, channel))
+    permissions.append(_check_team_membership_permission(db, worker_id, channel))
+    permissions.append(_check_primary_team_permission(worker, channel))
+    permissions.append(_check_direct_grant_permission(db, worker_id, channel))
+    permissions.append(_check_team_grant_permission(db, worker_id, channel))
+    permissions.append(_check_ceo_permission(worker))
+    permissions.append(_check_global_permission(db, worker_id))
+
+    # Return highest permission level
+    return max(permissions) if permissions else PermissionLevel.NONE
+
+
+def _check_subscription_permission(
+    db: Database,
+    worker_id: str,
+    channel: "Channel",
+) -> PermissionLevel:
+    """Check permission from channel subscription.
+
+    Subscribed workers get COMMENT level access to the channel.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to check
+        channel: Channel being accessed
+
+    Returns:
+        COMMENT if subscribed, NONE otherwise
+    """
     subscription = db.fetchone(
         "SELECT 1 FROM channel_subscriptions WHERE channel_id = ? AND worker_id = ?",
-        (channel_id, worker_id)
+        (channel.id, worker_id)
     )
     if subscription:
-        permissions.append(PermissionLevel.COMMENT)
+        return PermissionLevel.COMMENT
+    return PermissionLevel.NONE
 
-    # 2. Check if channel belongs to worker's team (team members get WRITE)
-    if channel.team_id:
-        # Check if worker is in the team that owns the channel
-        team_membership = db.fetchone(
-            "SELECT role FROM team_members WHERE team_id = ? AND worker_id = ?",
-            (channel.team_id, worker_id)
-        )
-        if team_membership:
-            team_role = team_membership["role"]
-            if team_role == "admin":
-                permissions.append(PermissionLevel.ADMIN)
-            elif team_role == "lead":
-                permissions.append(PermissionLevel.APPROVE)
-            else:
-                permissions.append(PermissionLevel.WRITE)
 
-        # Also check if worker's primary team matches
-        if worker.team_id == channel.team_id:
-            permissions.append(PermissionLevel.WRITE)
+def _check_team_membership_permission(
+    db: Database,
+    worker_id: str,
+    channel: "Channel",
+) -> PermissionLevel:
+    """Check permission from team membership on channel's owning team.
 
-    # 3. Check direct permission grant on channel (using channel_id as bead_id)
+    Team members get permissions based on their TeamRole:
+    - ADMIN: ADMIN permission
+    - LEAD: APPROVE permission
+    - MEMBER: WRITE permission
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to check
+        channel: Channel being accessed
+
+    Returns:
+        Permission level based on team role, or NONE if not a member
+    """
+    if not channel.team_id:
+        return PermissionLevel.NONE
+
+    team_membership = db.fetchone(
+        "SELECT role FROM team_members WHERE team_id = ? AND worker_id = ?",
+        (channel.team_id, worker_id)
+    )
+    if not team_membership:
+        return PermissionLevel.NONE
+
+    team_role = team_membership["role"]
+    if team_role == TeamRole.ADMIN.value:
+        return PermissionLevel.ADMIN
+    elif team_role == TeamRole.LEAD.value:
+        return PermissionLevel.APPROVE
+    else:
+        return PermissionLevel.WRITE
+
+
+def _check_primary_team_permission(
+    worker: "Worker",
+    channel: "Channel",
+) -> PermissionLevel:
+    """Check permission from worker's primary team matching channel's team.
+
+    Workers get WRITE access to channels owned by their primary team.
+
+    Args:
+        worker: Worker being checked
+        channel: Channel being accessed
+
+    Returns:
+        WRITE if primary team matches, NONE otherwise
+    """
+    if channel.team_id and worker.team_id == channel.team_id:
+        return PermissionLevel.WRITE
+    return PermissionLevel.NONE
+
+
+def _check_direct_grant_permission(
+    db: Database,
+    worker_id: str,
+    channel: "Channel",
+) -> PermissionLevel:
+    """Check permission from direct channel grant.
+
+    Direct grants give workers explicit permission levels on specific channels.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to check
+        channel: Channel being accessed
+
+    Returns:
+        Granted permission level, or NONE if no grant exists
+    """
     direct_grant = db.fetchone(
         """SELECT level FROM permissions
            WHERE bead_id = ? AND grantee_type = 'worker' AND grantee_id = ?""",
-        (channel_id, worker_id)
+        (channel.id, worker_id)
     )
     if direct_grant:
-        permissions.append(PermissionLevel(direct_grant["level"]))
+        return PermissionLevel(direct_grant["level"])
+    return PermissionLevel.NONE
 
-    # 4. Check team-based permission grants
+
+def _check_team_grant_permission(
+    db: Database,
+    worker_id: str,
+    channel: "Channel",
+) -> PermissionLevel:
+    """Check permission from team channel grant.
+
+    Workers inherit permissions granted to any of their teams.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to check
+        channel: Channel being accessed
+
+    Returns:
+        Highest granted permission level from team grants, or NONE
+    """
     worker_teams = get_worker_team_memberships(db, worker_id)
+    highest = PermissionLevel.NONE
+
     for membership in worker_teams:
         team_grant = db.fetchone(
             """SELECT level FROM permissions
                WHERE bead_id = ? AND grantee_type = 'team' AND grantee_id = ?""",
-            (channel_id, membership.team_id)
+            (channel.id, membership.team_id)
         )
         if team_grant:
-            permissions.append(PermissionLevel(team_grant["level"]))
+            level = PermissionLevel(team_grant["level"])
+            if level > highest:
+                highest = level
 
-    # 5. CEO gets ADMIN on everything
-    if worker.role == "CEO":
-        permissions.append(PermissionLevel.ADMIN)
+    return highest
 
-    # 6. Global permissions (bead_id is NULL)
+
+def _check_ceo_permission(
+    worker: "Worker",
+) -> PermissionLevel:
+    """Check CEO override permission.
+
+    CEO workers get ADMIN permission on all resources.
+
+    Args:
+        worker: Worker being checked
+
+    Returns:
+        ADMIN if worker is CEO, NONE otherwise
+    """
+    if worker.role == WorkerRole.CEO.value:
+        return PermissionLevel.ADMIN
+    return PermissionLevel.NONE
+
+
+def _check_global_permission(
+    db: Database,
+    worker_id: str,
+) -> PermissionLevel:
+    """Check global worker permission.
+
+    Global permissions (bead_id is NULL) apply to all resources.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to check
+
+    Returns:
+        Global permission level, or NONE if no global grant exists
+    """
     global_worker_perm = db.fetchone(
         """SELECT level FROM permissions
            WHERE bead_id IS NULL AND grantee_type = 'worker' AND grantee_id = ?""",
         (worker_id,)
     )
     if global_worker_perm:
-        permissions.append(PermissionLevel(global_worker_perm["level"]))
-
-    # Return maximum permission, or NONE if empty
-    return max(permissions) if permissions else PermissionLevel.NONE
+        return PermissionLevel(global_worker_perm["level"])
+    return PermissionLevel.NONE
 
 
 def check_bead_permission(
@@ -230,7 +372,7 @@ def check_bead_permission(
             permissions.append(PermissionLevel(team_grant["level"]))
 
     # 4. CEO gets ADMIN on everything
-    if worker.role == "CEO":
+    if worker.role == WorkerRole.CEO.value:
         permissions.append(PermissionLevel.ADMIN)
 
     # 5. Global permissions (bead_id is NULL)
@@ -677,7 +819,7 @@ def _get_role_permissions(role: str) -> set:
             "is_manager",
             "is_director",
         },
-        "CEO": {
+        WorkerRole.CEO.value: {
             "can_create_beads",
             "can_edit_own_beads",
             "can_assign_beads",
@@ -692,8 +834,8 @@ def _get_role_permissions(role: str) -> set:
         },
     }
 
-    # Normalize role to lowercase for lookup (except CEO)
-    role_key = role if role == "CEO" else role.lower()
+    # Normalize role to lowercase for lookup
+    role_key = role.lower()
     return base_permissions | role_permissions.get(role_key, set())
 
 

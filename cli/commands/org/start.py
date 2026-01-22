@@ -18,6 +18,7 @@ from cli.core.org_chart import update_org_chart
 from cli.core.session import SessionConfig
 from cli.core.sessions.registry import get_default_registry
 from shared import InvalidOrgTransition, ConfigurationError
+from shared.enums import OrgStatus
 
 
 @click.command()
@@ -96,7 +97,7 @@ def start_cmd(
     try:
         org = Org.load(db)
 
-        if org.status == "running":
+        if org.status == OrgStatus.RUNNING.value:
             click.echo("Organization is already running.")
             return
 
