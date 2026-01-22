@@ -200,6 +200,9 @@ class Org:
         )
         subscribe_to_channel(self.db, escalations_channel.id, ceo_data.id)
 
+        # Initialize beads database for work tracking
+        self._init_beads()
+
         # Update org status
         update_org_status(self.db, "initialized", ceo_data.id)
         self._state_data = None  # Invalidate cache
@@ -237,6 +240,38 @@ class Org:
             self._validate_transition("running")
 
         self._state_data = None  # Invalidate cache
+
+    def _init_beads(self) -> None:
+        """Initialize beads database for work tracking.
+
+        Creates .beads directory and initializes bd with the org prefix.
+        This is called during org init to set up work tracking.
+        """
+        import subprocess
+        from pathlib import Path
+        from .bd_wrapper import get_bundled_bd_path, get_org_beads_dir
+
+        # Get org path from database path
+        db_path = Path(self.db.db_path)
+        org_path = db_path.parent.parent  # live/quinn.db -> org_path
+
+        # Ensure .beads directory exists
+        beads_dir = get_org_beads_dir(org_path)
+        beads_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize beads with org prefix
+        # Run from org directory so bd init creates database in the right place
+        try:
+            bd_path = get_bundled_bd_path()
+            subprocess.run(
+                [str(bd_path), "init", "--prefix", "quinnai"],
+                cwd=str(org_path),
+                capture_output=True,
+                text=True,
+            )
+            # Ignore errors - may already be initialized
+        except Exception:
+            pass  # Best effort - beads init is optional
 
     def stop(self) -> None:
         """Stop the org (pause operations).
