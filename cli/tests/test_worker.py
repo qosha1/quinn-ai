@@ -1343,20 +1343,23 @@ class TestTerminateIntegration:
         return worker
 
     def test_terminate_freezes_storage(self, offboarding_worker, org_path):
-        """terminate() should freeze worker storage."""
+        """terminate() should have frozen storage (done during offboarding).
+
+        Note: Storage is now frozen during start_offboarding(), not terminate().
+        This test verifies storage remains frozen after termination.
+        """
         from cli.core.storage import StorageManager, FROZEN_SUFFIX
 
         worker = offboarding_worker
 
-        # Verify storage exists before termination
+        # Storage should already be frozen from start_offboarding()
         storage = StorageManager(org_path, worker.db)
-        assert storage.worker_storage_exists(worker.id, reports_to="")
-        assert not storage.is_worker_frozen(worker.id, reports_to="")
+        assert storage.is_worker_frozen(worker.id, reports_to="")
 
         # Terminate
         worker.terminate()
 
-        # Verify storage is now frozen
+        # Verify storage is still frozen
         assert storage.is_worker_frozen(worker.id, reports_to="")
 
     def test_terminate_updates_org_chart(self, offboarding_worker, org_path):
@@ -1486,3 +1489,368 @@ class TestTerminateIntegration:
         # Should not raise - already frozen is OK
         worker.terminate()
         assert worker.lifecycle_status == "terminated"
+
+
+# ===================
+# TERMINATION CLEANUP WORKFLOW TESTS
+# ===================
+
+from cli.core.worker import cleanup_terminated_worker
+from cli.core.storage import ARCHIVE_DIR, FROZEN_SUFFIX
+
+
+class TestStartOffboardingWorkflow:
+    """Test start_offboarding() workflow with freeze and review bead."""
+
+    @pytest.fixture
+    def org_path(self, db):
+        """Get org path from db path."""
+        return db.db_path.parent.parent
+
+    @pytest.fixture
+    def manager_and_report(self, db, team, org_path):
+        """Create manager with a direct report."""
+        # Create manager
+        manager_data = create_worker(db, "Manager", "Manager", team.id, 70)
+        manager = Worker(db, manager_data.id, org_path=org_path)
+
+        # Create report under manager
+        report_data = create_worker(
+            db, "Report", "Developer", team.id, 50,
+            manager_id=manager.id
+        )
+        report = Worker(db, report_data.id, org_path=org_path)
+
+        # Create storage for report
+        from cli.core.storage import StorageManager
+        storage = StorageManager(org_path, db)
+        storage.ensure_worker_storage(report.id, reports_to=manager.id)
+
+        return manager, report
+
+    def test_start_offboarding_freezes_storage(self, manager_and_report, org_path):
+        """start_offboarding() should freeze worker storage."""
+        from cli.core.storage import StorageManager
+
+        manager, report = manager_and_report
+        storage = StorageManager(org_path, report.db)
+
+        # Verify storage is not frozen
+        assert not storage.is_worker_frozen(report.id, reports_to=manager.id)
+
+        # Transition to offboarding
+        report.start_onboarding()
+        report.complete_onboarding()
+        report.start_offboarding()
+
+        # Verify storage is now frozen
+        assert storage.is_worker_frozen(report.id, reports_to=manager.id)
+
+    def test_start_offboarding_creates_review_bead_for_manager(self, manager_and_report, org_path):
+        """start_offboarding() should create review notification for manager."""
+        from cli.core.notifications import get_pending_notifications
+
+        manager, report = manager_and_report
+
+        # Transition to offboarding
+        report.start_onboarding()
+        report.complete_onboarding()
+        report.start_offboarding()
+
+        # Manager should have a notification
+        notifications = get_pending_notifications(report.db, manager.id)
+        assert len(notifications) >= 1
+
+        # Verify it's about the offboarding
+        handoff_notifs = [
+            n for n in notifications
+            if "handoff" in n.channel_id.lower() or n.priority == 1
+        ]
+        assert len(handoff_notifs) >= 1
+
+    def test_start_offboarding_no_manager_no_bead(self, db, team, org_path):
+        """start_offboarding() without manager should not create bead."""
+        from cli.core.notifications import count_pending_notifications
+        from cli.core.storage import StorageManager
+
+        # Create worker without manager (CEO/root)
+        worker_data = create_worker(db, "CEO", "CEO", team.id, 100)
+        worker = Worker(db, worker_data.id, org_path=org_path)
+
+        # Create storage
+        storage = StorageManager(org_path, db)
+        storage.ensure_worker_storage(worker.id, reports_to="")
+
+        # Transition to offboarding
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        worker.start_offboarding()
+
+        # No notifications should be created (no manager to notify)
+        # Just verify offboarding succeeded
+        assert worker.lifecycle_status == "offboarding"
+
+    def test_start_offboarding_no_storage_succeeds(self, db, team, org_path):
+        """start_offboarding() should succeed even without storage."""
+        # Create worker with manager but no storage
+        manager_data = create_worker(db, "Manager", "Manager", team.id, 70)
+        worker_data = create_worker(
+            db, "Worker", "Developer", team.id, 50,
+            manager_id=manager_data.id
+        )
+        worker = Worker(db, worker_data.id, org_path=org_path)
+
+        # Transition (no storage created)
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        worker.start_offboarding()
+
+        assert worker.lifecycle_status == "offboarding"
+
+
+class TestCleanupTerminatedWorker:
+    """Test cleanup_terminated_worker() function."""
+
+    @pytest.fixture
+    def org_path(self, db):
+        """Get org path from db path."""
+        return db.db_path.parent.parent
+
+    @pytest.fixture
+    def terminated_worker_with_files(self, db, team, org_path):
+        """Create terminated worker with files in storage."""
+        from cli.core.storage import StorageManager
+
+        # Create worker
+        worker_data = create_worker(db, "TermWorker", "Developer", team.id, 50)
+        worker = Worker(db, worker_data.id, org_path=org_path)
+
+        # Create storage with files
+        storage = StorageManager(org_path, db)
+        worker_path = storage.ensure_worker_storage(worker.id, reports_to="")
+
+        # Create some files
+        (worker_path / "important.md").write_text("Important document")
+        (worker_path / "notes.txt").write_text("Some notes")
+        (worker_path / "subdir").mkdir()
+        (worker_path / "subdir" / "data.json").write_text('{"key": "value"}')
+
+        # Transition to terminated
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        worker.start_offboarding()
+        worker.terminate()
+
+        return worker, storage
+
+    def test_cleanup_archives_all_files(self, terminated_worker_with_files, org_path):
+        """cleanup_terminated_worker() should archive all files by default."""
+        worker, storage = terminated_worker_with_files
+
+        result = cleanup_terminated_worker(
+            db=worker.db,
+            worker_id=worker.id,
+            storage_manager=storage,
+        )
+
+        # Verify result
+        assert result["files_archived"] == 3
+        assert result["archived_to"] is not None
+        assert result["storage_deleted"] is True
+
+        # Verify archive exists
+        archive_path = storage.get_archive_path(worker.id)
+        assert archive_path.exists()
+
+        # Verify files are in archive
+        archived_files = list(archive_path.rglob("*"))
+        file_names = {f.name for f in archived_files if f.is_file()}
+        assert "important.md" in file_names
+        assert "notes.txt" in file_names
+        assert "data.json" in file_names
+
+    def test_cleanup_archives_specific_files(self, terminated_worker_with_files, org_path):
+        """cleanup_terminated_worker() should archive only specified files."""
+        worker, storage = terminated_worker_with_files
+
+        result = cleanup_terminated_worker(
+            db=worker.db,
+            worker_id=worker.id,
+            storage_manager=storage,
+            files_to_archive=[Path("important.md")],
+        )
+
+        # Verify result
+        assert result["files_archived"] == 1
+        assert result["storage_deleted"] is True
+
+        # Verify only specified file is in archive
+        archive_path = storage.get_archive_path(worker.id)
+        archived_files = list(archive_path.rglob("*"))
+        file_names = {f.name for f in archived_files if f.is_file()}
+        assert "important.md" in file_names
+        assert "notes.txt" not in file_names
+
+    def test_cleanup_deletes_frozen_storage(self, terminated_worker_with_files, org_path):
+        """cleanup_terminated_worker() should delete frozen storage."""
+        worker, storage = terminated_worker_with_files
+
+        # Verify storage is frozen (from terminate())
+        worker_path = storage.get_worker_path(worker.id, reports_to="")
+        frozen_path = worker_path.parent / f"{worker_path.name}{FROZEN_SUFFIX}"
+        assert frozen_path.exists()
+
+        # Cleanup
+        cleanup_terminated_worker(
+            db=worker.db,
+            worker_id=worker.id,
+            storage_manager=storage,
+        )
+
+        # Verify frozen storage is deleted
+        assert not frozen_path.exists()
+        assert not worker_path.exists()
+
+    def test_cleanup_keeps_worker_in_db(self, terminated_worker_with_files, org_path):
+        """cleanup_terminated_worker() should keep worker record in DB."""
+        worker, storage = terminated_worker_with_files
+
+        cleanup_terminated_worker(
+            db=worker.db,
+            worker_id=worker.id,
+            storage_manager=storage,
+        )
+
+        # Worker should still exist in DB
+        from cli.core.queries import get_worker as get_worker_query
+        worker_data = get_worker_query(worker.db, worker.id)
+        assert worker_data is not None
+        assert worker_data.status == "terminated"
+
+    def test_cleanup_nonexistent_worker_raises(self, db, org_path):
+        """cleanup_terminated_worker() should raise for nonexistent worker."""
+        from cli.core.storage import StorageManager
+
+        storage = StorageManager(org_path, db)
+
+        with pytest.raises(WorkerNotFound):
+            cleanup_terminated_worker(
+                db=db,
+                worker_id="nonexistent-worker",
+                storage_manager=storage,
+            )
+
+    def test_cleanup_non_terminated_worker_raises(self, db, team, org_path):
+        """cleanup_terminated_worker() should raise if worker not terminated."""
+        from cli.core.storage import StorageManager
+
+        # Create active worker
+        worker_data = create_worker(db, "ActiveWorker", "Developer", team.id, 50)
+        worker = Worker(db, worker_data.id, org_path=org_path)
+        worker.start_onboarding()
+        worker.complete_onboarding()
+
+        storage = StorageManager(org_path, db)
+
+        with pytest.raises(ValueError, match="not terminated"):
+            cleanup_terminated_worker(
+                db=db,
+                worker_id=worker.id,
+                storage_manager=storage,
+            )
+
+    def test_cleanup_no_storage_succeeds(self, db, team, org_path):
+        """cleanup_terminated_worker() should succeed if no storage exists."""
+        from cli.core.storage import StorageManager
+
+        # Create and terminate worker without storage
+        worker_data = create_worker(db, "NoStorageWorker", "Developer", team.id, 50)
+        worker = Worker(db, worker_data.id, org_path=org_path)
+        worker.start_onboarding()
+        worker.fail_onboarding()  # Direct to terminated
+
+        storage = StorageManager(org_path, db)
+
+        result = cleanup_terminated_worker(
+            db=db,
+            worker_id=worker.id,
+            storage_manager=storage,
+        )
+
+        assert result["files_archived"] == 0
+        assert result["archived_to"] is None
+        assert result["storage_deleted"] is False
+
+
+class TestFullTerminationWorkflow:
+    """Test complete termination workflow from offboarding to cleanup."""
+
+    @pytest.fixture
+    def org_path(self, db):
+        """Get org path from db path."""
+        return db.db_path.parent.parent
+
+    def test_full_workflow(self, db, team, org_path):
+        """Test complete workflow: active -> offboarding -> terminated -> cleanup."""
+        from cli.core.storage import StorageManager
+        from cli.core.notifications import get_pending_notifications
+
+        # Create manager
+        manager_data = create_worker(db, "Manager", "Manager", team.id, 70)
+        manager = Worker(db, manager_data.id, org_path=org_path)
+
+        # Create worker under manager
+        worker_data = create_worker(
+            db, "Worker", "Developer", team.id, 50,
+            manager_id=manager.id
+        )
+        worker = Worker(db, worker_data.id, org_path=org_path)
+
+        # Create storage with work files
+        storage = StorageManager(org_path, db)
+        worker_path = storage.ensure_worker_storage(worker.id, reports_to=manager.id)
+        (worker_path / "project.md").write_text("Project documentation")
+        (worker_path / "scratch.txt").write_text("Temporary notes")
+
+        # Activate worker
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        assert worker.lifecycle_status == "active"
+
+        # Step 1: Start offboarding
+        # - Storage should freeze
+        # - Manager should get review notification
+        worker.start_offboarding()
+        assert worker.lifecycle_status == "offboarding"
+        assert storage.is_worker_frozen(worker.id, reports_to=manager.id)
+
+        manager_notifs = get_pending_notifications(db, manager.id)
+        assert len(manager_notifs) >= 1
+
+        # Step 2: Terminate
+        worker.terminate()
+        assert worker.lifecycle_status == "terminated"
+
+        # Step 3: Manager reviews and cleans up
+        # Archive only the useful file
+        result = cleanup_terminated_worker(
+            db=db,
+            worker_id=worker.id,
+            storage_manager=storage,
+            files_to_archive=[Path("project.md")],
+        )
+
+        # Verify final state
+        assert result["files_archived"] == 1
+        assert result["storage_deleted"] is True
+
+        # Archive should contain project.md
+        archive_path = storage.get_archive_path(worker.id)
+        assert (archive_path / "project.md").exists()
+        assert not (archive_path / "scratch.txt").exists()
+
+        # Worker record still in DB for audit
+        from cli.core.queries import get_worker as get_worker_query
+        worker_data = get_worker_query(db, worker.id)
+        assert worker_data is not None
+        assert worker_data.status == "terminated"

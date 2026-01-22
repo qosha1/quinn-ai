@@ -25,6 +25,7 @@ from .constants import (
     PERM_LEVEL_WRITE,
 )
 from .lifecycle import (
+    BeadBlockedError,
     CannotCloseBeadError,
     InvalidStateTransitionError,
     LifecycleError,
@@ -141,13 +142,47 @@ def _get_bead_info(
 
         # Parse JSON output
         data = json.loads(result.stdout)
+        # Get depends_on from relationships
+        depends_on = data.get("depends_on", [])
+        if not depends_on:
+            # Try alternate field names
+            deps = data.get("dependencies", {})
+            depends_on = deps.get("depends_on", []) or deps.get("blocks", [])
         return {
             "id": data.get("id", bead_id),
             "type": data.get("type", "default"),
             "status": data.get("status", "open"),
+            "depends_on": depends_on,
         }
     except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
         return None
+
+
+def _get_open_blockers(
+    bead_ids: list[str],
+    org_path: Path,
+) -> list[str]:
+    """Check which of the given beads are still open.
+
+    Args:
+        bead_ids: List of bead IDs to check
+        org_path: Path to org folder
+
+    Returns:
+        List of bead IDs that are still open (not closed/done)
+    """
+    open_blockers = []
+    closed_statuses = {"closed", "done", "rejected", "abandoned", "wontfix", "duplicate", "deferred"}
+
+    for bead_id in bead_ids:
+        bead_info = _get_bead_info(bead_id, org_path)
+        if bead_info:
+            status = bead_info.get("status", "open").lower()
+            if status not in closed_statuses:
+                open_blockers.append(bead_id)
+        # If we can't get bead info, assume it's blocking to be safe
+
+    return open_blockers
 
 
 def check_lifecycle_transition(
@@ -191,8 +226,16 @@ def check_lifecycle_transition(
     current_state = bead_info["status"]
 
     if command == "close":
-        # Validate close is allowed
+        # Validate close is allowed (terminal state check)
         validate_can_close(bead_id, bead_type, current_state)
+
+        # Check for blocking dependencies (can't close if blocked)
+        depends_on = bead_info.get("depends_on", [])
+        if depends_on:
+            # Check if any blocking beads are still open
+            blocking_beads = _get_open_blockers(depends_on, org_path)
+            if blocking_beads:
+                raise BeadBlockedError(bead_id, blocking_beads)
 
     elif command == "update":
         # Check if status is being updated

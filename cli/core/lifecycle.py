@@ -107,6 +107,29 @@ class CannotCloseBeadError(LifecycleError):
         super().__init__(message)
 
 
+class BeadBlockedError(LifecycleError):
+    """Raised when attempting to close a bead that has unresolved dependencies."""
+
+    def __init__(
+        self,
+        bead_id: str,
+        blocking_beads: list[str],
+    ):
+        self.bead_id = bead_id
+        self.blocking_beads = blocking_beads
+
+        blockers_str = ", ".join(blocking_beads[:5])
+        if len(blocking_beads) > 5:
+            blockers_str += f" (and {len(blocking_beads) - 5} more)"
+
+        message = (
+            f"Cannot close bead '{bead_id}': blocked by {len(blocking_beads)} "
+            f"unresolved dependencies: {blockers_str}. "
+            "Resolve or close blocking beads first."
+        )
+        super().__init__(message)
+
+
 class InvalidStateError(LifecycleError):
     """Raised when a state is not valid for a bead type."""
 

@@ -598,10 +598,86 @@ class Worker:
         self._worker_data = None
 
     def start_offboarding(self) -> None:
-        """Transition from active to offboarding."""
+        """Transition from active to offboarding.
+
+        Per CLAUDE.md: "On fire: freeze -> ask bead for review -> teammate
+        saves useful to shared/ -> delete."
+
+        When entering OFFBOARDING state:
+        1. Freeze worker storage (mark read-only)
+        2. Create a review bead assigned to manager for work handoff
+
+        The manager will review frozen storage and archive useful files
+        before the worker is terminated.
+        """
         self._validate_lifecycle_transition("offboarding")
+
+        # Freeze worker storage for review (if exists)
+        try:
+            storage = self._get_storage_manager()
+            storage.freeze_worker(self.id)
+        except (WorkerStorageNotFound, StorageAlreadyFrozen):
+            # Storage doesn't exist or already frozen - OK to continue
+            pass
+
+        # Create review bead for manager if worker has a manager
+        if self.manager_id:
+            self._create_offboarding_review_bead()
+
         update_worker_status(self.db, self.id, "offboarding")
         self._worker_data = None
+
+    def _create_offboarding_review_bead(self) -> None:
+        """Create a review notification bead for the manager.
+
+        Creates a direct channel between the offboarding worker and their
+        manager, sends a handoff message, and creates a notification bead
+        for the manager to review the worker's frozen storage.
+        """
+        if not self.manager_id:
+            return
+
+        try:
+            # Create or get direct channel for handoff
+            channel_name = f"handoff-{self.id}"
+            channel = create_channel(
+                self.db,
+                name=channel_name,
+                channel_type="direct",
+            )
+
+            # Subscribe both workers to the channel
+            subscribe_to_channel(self.db, channel.id, self.id)
+            subscribe_to_channel(self.db, channel.id, self.manager_id)
+
+            # Create handoff message
+            message = create_message(
+                self.db,
+                channel_id=channel.id,
+                from_worker_id=self.id,
+                content=(
+                    f"OFFBOARDING REVIEW REQUIRED\n\n"
+                    f"Worker {self.name} ({self.id}) is being terminated.\n"
+                    f"Role: {self.role}\n\n"
+                    f"Please review their frozen storage and archive any useful files "
+                    f"to shared/archive/{self.id}/ before completing termination.\n\n"
+                    f"Use: cleanup_terminated_worker(db, '{self.id}', storage_manager)"
+                ),
+                priority=1,  # High priority
+                time_sensitivity="today",
+            )
+
+            # Create notification bead for manager
+            create_notification_bead(
+                self.db,
+                worker_id=self.manager_id,
+                message_id=message.id,
+                channel_id=channel.id,
+                priority=1,  # High priority
+            )
+        except Exception:
+            # Best-effort - don't fail offboarding if notification fails
+            pass
 
     def terminate(self) -> None:
         """Terminate worker - freeze storage, update org-chart, fire event.
@@ -1011,3 +1087,95 @@ class Worker:
         worker = cls(db, worker_id)
         worker._load_worker()  # Validate exists
         return worker
+
+
+# ===================
+# TERMINATION CLEANUP
+# ===================
+
+
+def cleanup_terminated_worker(
+    db: Database,
+    worker_id: str,
+    storage_manager: StorageManager,
+    files_to_archive: Optional[list[Path]] = None,
+) -> dict:
+    """Clean up a terminated worker's data.
+
+    Per CLAUDE.md: "On fire: freeze -> ask bead for review -> teammate
+    saves useful to shared/ -> delete."
+
+    This function completes the termination workflow:
+    1. Archive useful files to shared/archive/{worker_id}/
+    2. Delete worker session data (frozen storage)
+    3. Keep worker record in DB (for audit trail)
+
+    The worker must already be in TERMINATED state. Use Worker.terminate()
+    to transition a worker to terminated state and freeze their storage.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to clean up
+        storage_manager: StorageManager for the org
+        files_to_archive: List of file paths to archive from worker storage.
+                         If None, archives all files. Paths should be relative
+                         to worker storage root.
+
+    Returns:
+        Dict with cleanup results:
+        - archived_to: Path to archive directory (or None if no files)
+        - files_archived: Number of files archived
+        - storage_deleted: Whether storage was deleted
+
+    Raises:
+        WorkerNotFound: If worker doesn't exist
+        ValueError: If worker is not in TERMINATED state
+
+    Example:
+        # After manager reviews frozen storage and identifies useful files
+        result = cleanup_terminated_worker(
+            db=db,
+            worker_id="worker-abc123",
+            storage_manager=storage,
+            files_to_archive=[Path("important-doc.md"), Path("config.yaml")],
+        )
+        print(f"Archived {result['files_archived']} files to {result['archived_to']}")
+    """
+    # Verify worker exists and is terminated
+    worker_data = get_worker(db, worker_id)
+    if worker_data is None:
+        raise WorkerNotFound(worker_id)
+
+    if worker_data.status != "terminated":
+        raise ValueError(
+            f"Worker {worker_id} is not terminated (status: {worker_data.status}). "
+            "Use Worker.terminate() first."
+        )
+
+    result = {
+        "archived_to": None,
+        "files_archived": 0,
+        "storage_deleted": False,
+    }
+
+    # Archive files if storage exists
+    try:
+        # Get list of files that exist
+        existing_files = storage_manager.list_worker_files(worker_id)
+
+        if existing_files:
+            # Archive specified files or all files
+            archive_files = files_to_archive if files_to_archive is not None else existing_files
+            archive_path = storage_manager.archive_worker_files(worker_id, archive_files)
+            result["archived_to"] = str(archive_path)
+            result["files_archived"] = len(archive_files)
+
+        # Delete worker storage
+        if storage_manager.delete_worker_storage(worker_id):
+            result["storage_deleted"] = True
+
+    except WorkerStorageNotFound:
+        # No storage to clean up - that's OK
+        pass
+
+    return result
