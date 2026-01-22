@@ -31,6 +31,7 @@ def worker_config():
         name="Test Worker",
         skills={"coding": 80, "reasoning": 70},
         cost=50,
+        idle_behavior="exit",  # Exit immediately when queue is empty
     )
 
 
