@@ -40,3 +40,110 @@ categories:
     name: "Versioning & Releases"
     description: "Version files, changelog, and release infrastructure"
     pattern: "test_versioning.py::*"
+  # ==========================================================================
+  # BASELINE FUNCTIONALITY TESTS (Gate: quinnai-oc69)
+  # These categories must ALL pass before baseline is considered complete
+  # ==========================================================================
+
+  baseline-org:
+    description: "Org lifecycle integration tests (init/start/status/stop)"
+    pattern: "test_baseline_org.py"
+
+  baseline-worker:
+    description: "Worker lifecycle integration tests (spawn/run/stop/terminate)"
+    pattern: "test_baseline_worker.py"
+
+  baseline-comms:
+    description: "Communication integration tests (messages/inbox/channels)"
+    pattern: "test_baseline_comms.py"
+
+  baseline-work:
+    description: "Work management integration tests (beads/assignments/queue)"
+    pattern: "test_baseline_work.py"
+
+  baseline-okr:
+    description: "OKR cascade integration tests (goals/alignment/tracking)"
+    pattern: "test_baseline_okr.py"
+
+  # ==========================================================================
+  # E2E EXAMPLE_ORGS WORKFLOWS
+  # Full workflow tests using example_orgs setups
+  # ==========================================================================
+
+  e2e-hello-world:
+    description: "Hello-world example org full workflow"
+    pattern: "test_e2e_hello_world.py"
+
+  e2e-startup-team:
+    description: "Startup-team example org full workflow"
+    pattern: "test_e2e_startup_team.py"
+
+  e2e-okr-driven:
+    description: "OKR-driven example org full workflow"
+    pattern: "test_e2e_okr_driven.py"
+
+  # ==========================================================================
+  # EXISTING TEST CATEGORIES
+  # ==========================================================================
+
+  example_orgs:
+    description: "Integration tests for example_orgs workflows (existing)"
+    pattern: "test_example_orgs.py"
+
+  # CLI Tests (expanded from single file to all CLI tests)
+  cli-core:
+    description: "Core CLI module tests (db, config, session, worker, lifecycle)"
+    pattern: "cli/tests/test_{db,config,session,worker,lifecycle}.py"
+
+  cli-commands:
+    description: "CLI command tests"
+    pattern: "cli/tests/test_{cli,org}.py"
+
+  cli-budget:
+    description: "Budget system tests"
+    pattern: "cli/tests/test_budget.py"
+
+  cli-provider:
+    description: "Provider selection tests"
+    pattern: "cli/tests/test_provider*.py"
+
+  cli-messages:
+    description: "Message and notification tests"
+    pattern: "cli/tests/test_{messages,notifications}.py"
+
+  cli-sessions:
+    description: "Session implementation tests"
+    pattern: "cli/tests/test_*session*.py"
+
+  cli-all:
+    description: "All CLI tests"
+    pattern: "cli/tests/test_*.py"
+
+  # Shared module tests
+  wrkr:
+    description: "Worker module tests"
+    pattern: "test_wrkr_*.py"
+
+  pyterm:
+    description: "PyTerm session tests"
+    pattern: "test_pyterm_*.py"
+
+  shared-beads:
+    description: "Shared beads client tests"
+    pattern: "test_bd_*.py"
+
+  # ==========================================================================
+  # AGGREGATE CATEGORIES
+  # ==========================================================================
+
+  baseline-all:
+    description: "ALL baseline functionality tests"
+    pattern: "test_baseline_*.py"
+
+  e2e-all:
+    description: "ALL end-to-end workflow tests"
+    pattern: "test_e2e_*.py"
+
+  integration-all:
+    description: "ALL integration tests"
+    pattern: "test_{baseline,e2e,example}*.py"
