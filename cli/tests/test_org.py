@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from core.db import init_database
-from core.org import (
-    Org,
+from core.org import Org
+from shared import (
     InvalidOrgTransition,
     OrgNotInitialized,
     ORG_TRANSITIONS,

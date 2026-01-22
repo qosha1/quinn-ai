@@ -1,0 +1,63 @@
+"""
+QuinnAI shared business logic.
+
+This package contains conceptual models and business rules that are
+shared across all QuinnAI components (CLI, backend, etc.).
+
+- state_machines: State transition definitions
+- exceptions: Business logic exceptions
+- provider_types: Provider interfaces and data classes
+"""
+
+from .state_machines import (
+    LIFECYCLE_TRANSITIONS,
+    RUNTIME_TRANSITIONS,
+    ORG_TRANSITIONS,
+    SESSION_ALLOWED_LIFECYCLES,
+    LIFECYCLE_STATES,
+    RUNTIME_STATES,
+    ORG_STATES,
+)
+
+from .exceptions import (
+    InvalidStateTransition,
+    WorkerNotFound,
+    InvalidLifecycleState,
+    InvalidOrgTransition,
+    OrgNotInitialized,
+)
+
+from .provider_types import (
+    ModelCapabilities,
+    ModelInfo,
+    ProviderConfig,
+    Message,
+    CompletionResult,
+    Provider,
+    ProviderError,
+)
+
+__all__ = [
+    # State machines
+    "LIFECYCLE_TRANSITIONS",
+    "RUNTIME_TRANSITIONS",
+    "ORG_TRANSITIONS",
+    "SESSION_ALLOWED_LIFECYCLES",
+    "LIFECYCLE_STATES",
+    "RUNTIME_STATES",
+    "ORG_STATES",
+    # Exceptions
+    "InvalidStateTransition",
+    "WorkerNotFound",
+    "InvalidLifecycleState",
+    "InvalidOrgTransition",
+    "OrgNotInitialized",
+    # Provider types
+    "ModelCapabilities",
+    "ModelInfo",
+    "ProviderConfig",
+    "Message",
+    "CompletionResult",
+    "Provider",
+    "ProviderError",
+]

@@ -20,59 +20,15 @@ from .queries import (
     increment_worker_task_count,
 )
 
-
-# Valid lifecycle transitions
-LIFECYCLE_TRANSITIONS: dict[str, list[str]] = {
-    "pending": ["onboarding"],
-    "onboarding": ["active", "terminated"],
-    "active": ["offboarding"],
-    "offboarding": ["terminated"],
-    "terminated": [],
-}
-
-# Valid runtime transitions
-RUNTIME_TRANSITIONS: dict[str, list[str]] = {
-    "starting": ["running", "crashed"],
-    "running": ["idle", "stopped", "crashed"],
-    "idle": ["running", "stopped"],
-    "stopped": ["starting"],
-    "crashed": ["starting"],
-}
-
-# Lifecycle states that allow sessions
-SESSION_ALLOWED_LIFECYCLES = {"onboarding", "active", "offboarding"}
-
-
-class InvalidStateTransition(Exception):
-    """Raised when attempting an invalid state transition."""
-
-    def __init__(self, current: str, attempted: str, valid: list[str]):
-        self.current = current
-        self.attempted = attempted
-        self.valid = valid
-        super().__init__(
-            f"Cannot transition from '{current}' to '{attempted}'. "
-            f"Valid transitions: {valid}"
-        )
-
-
-class WorkerNotFound(Exception):
-    """Raised when worker doesn't exist."""
-
-    def __init__(self, worker_id: str):
-        self.worker_id = worker_id
-        super().__init__(f"Worker not found: {worker_id}")
-
-
-class InvalidLifecycleState(Exception):
-    """Raised when operation not allowed in current lifecycle state."""
-
-    def __init__(self, operation: str, lifecycle: str):
-        self.operation = operation
-        self.lifecycle = lifecycle
-        super().__init__(
-            f"Cannot {operation} when lifecycle is '{lifecycle}'"
-        )
+# Import shared business logic
+from shared import (
+    LIFECYCLE_TRANSITIONS,
+    RUNTIME_TRANSITIONS,
+    SESSION_ALLOWED_LIFECYCLES,
+    InvalidStateTransition,
+    WorkerNotFound,
+    InvalidLifecycleState,
+)
 
 
 class Worker:

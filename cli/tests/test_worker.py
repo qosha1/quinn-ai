@@ -9,8 +9,8 @@ import pytest
 
 from core.db import init_database
 from core.queries import create_team, create_worker
-from core.worker import (
-    Worker,
+from core.worker import Worker
+from shared import (
     InvalidStateTransition,
     WorkerNotFound,
     InvalidLifecycleState,

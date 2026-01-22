@@ -17,35 +17,12 @@ from .queries import (
 )
 from .worker import Worker
 
-
-# Valid org lifecycle transitions
-ORG_TRANSITIONS: dict[str, list[str]] = {
-    "uninitialized": ["initialized"],
-    "initialized": ["running"],
-    "running": ["stopped"],
-    "stopped": ["running"],
-}
-
-
-class InvalidOrgTransition(Exception):
-    """Raised when attempting an invalid org state transition."""
-
-    def __init__(self, current: str, attempted: str, valid: list[str]):
-        self.current = current
-        self.attempted = attempted
-        self.valid = valid
-        super().__init__(
-            f"Cannot transition org from '{current}' to '{attempted}'. "
-            f"Valid transitions: {valid}"
-        )
-
-
-class OrgNotInitialized(Exception):
-    """Raised when operation requires initialized org."""
-
-    def __init__(self, operation: str):
-        self.operation = operation
-        super().__init__(f"Cannot {operation}: org is not initialized")
+# Import shared business logic
+from shared import (
+    ORG_TRANSITIONS,
+    InvalidOrgTransition,
+    OrgNotInitialized,
+)
 
 
 class Org:
