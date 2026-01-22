@@ -9,6 +9,7 @@ from typing import Optional
 
 from datetime import datetime, timedelta
 
+from .constants import DEFAULT_CEO_COST
 from .db import Database
 from .logging import get_logger, log_org_state_change
 from .queries import (
@@ -155,7 +156,7 @@ class Org:
             name=ceo_name,
             role=ceo_role,
             team_id=team.id,
-            cost=100,  # CEO is highest cost
+            cost=DEFAULT_CEO_COST,
             manager_id=None,  # No manager - root of hierarchy
         )
 

@@ -369,6 +369,141 @@ def get_org_beads_dir(org_path: Path) -> Path:
     return org_path / ".beads"
 
 
+class OKRLinkWarning(UserWarning):
+    """Warning when work item is created without OKR link."""
+
+    pass
+
+
+class OKRLinkRequiredError(Exception):
+    """Error when work item requires OKR link but none provided."""
+
+    def __init__(self, bead_type: str):
+        self.bead_type = bead_type
+        message = (
+            f"Cannot create {bead_type}: OKR link required. "
+            "Use --deps 'serves:<okr-id>' to link to an OKR objective."
+        )
+        super().__init__(message)
+
+
+def _load_workflow_config(org_path: Path) -> dict:
+    """Load workflow configuration from org's workflow.yaml.
+
+    Args:
+        org_path: Path to org folder
+
+    Returns:
+        Workflow config dict, or empty dict if not found
+    """
+    import yaml
+
+    workflow_path = org_path / "cli" / "config" / "workflow.yaml"
+    if not workflow_path.exists():
+        # Check parent directories for shared config
+        workflow_path = Path(__file__).parent.parent / "config" / "workflow.yaml"
+        if not workflow_path.exists():
+            return {}
+
+    try:
+        with open(workflow_path) as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def _parse_deps_from_args(args: list[str]) -> list[str]:
+    """Extract --deps values from command arguments.
+
+    Args:
+        args: Command line arguments
+
+    Returns:
+        List of dependency strings (e.g., ['serves:okr-123', 'blocks:bd-456'])
+    """
+    deps = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--deps" and i + 1 < len(args):
+            # Value is next argument
+            deps.extend(args[i + 1].split(","))
+            i += 2
+        elif arg.startswith("--deps="):
+            deps.extend(arg.split("=", 1)[1].split(","))
+            i += 1
+        else:
+            i += 1
+    return [d.strip() for d in deps if d.strip()]
+
+
+def check_okr_linking(
+    args: list[str],
+    org_path: Path,
+    skip_check: bool = False,
+) -> None:
+    """Check if OKR linking is required for create commands.
+
+    Args:
+        args: bd command arguments
+        org_path: Path to org folder
+        skip_check: If True, skip OKR check
+
+    Raises:
+        OKRLinkRequiredError: If strict_mode and no OKR link provided
+
+    Warnings:
+        OKRLinkWarning: If require_okr_link but not strict_mode
+    """
+    import warnings
+
+    if skip_check or not args:
+        return
+
+    # Only check 'create' commands
+    command = args[0] if args else ""
+    if command not in ("create", "new"):
+        return
+
+    # Load workflow config
+    config = _load_workflow_config(org_path)
+    okr_config = config.get("okr_linking", {})
+
+    if not okr_config.get("require_okr_link", False):
+        return
+
+    # Check if deps include a 'serves' relationship
+    deps = _parse_deps_from_args(args)
+    has_okr_link = any(d.startswith("serves:") for d in deps)
+
+    if has_okr_link:
+        return
+
+    # Get bead type from args
+    bead_type = "task"  # default
+    for i, arg in enumerate(args):
+        if arg in ("-t", "--type") and i + 1 < len(args):
+            bead_type = args[i + 1]
+            break
+        elif arg.startswith("--type="):
+            bead_type = arg.split("=", 1)[1]
+            break
+
+    # Skip for epics and non-work types
+    if bead_type in ("epic", "gate", "agent", "role", "rig", "convoy", "event"):
+        return
+
+    if okr_config.get("strict_mode", False):
+        raise OKRLinkRequiredError(bead_type)
+    else:
+        warnings.warn(
+            f"Creating {bead_type} without OKR link. "
+            "Consider using --deps 'serves:<okr-id>' to link to an objective.",
+            OKRLinkWarning,
+            stacklevel=2,
+        )
+
+
 def run_bd(
     args: list[str],
     org_path: Path,
@@ -376,6 +511,7 @@ def run_bd(
     capture_output: bool = False,
     skip_permission_check: bool = False,
     skip_lifecycle_check: bool = False,
+    skip_okr_check: bool = False,
 ) -> subprocess.CompletedProcess:
     """Run beads command with org context.
 
@@ -392,6 +528,7 @@ def run_bd(
         capture_output: If True, capture stdout/stderr
         skip_permission_check: If True, skip permission check (admin use only)
         skip_lifecycle_check: If True, skip lifecycle validation (admin use only)
+        skip_okr_check: If True, skip OKR link requirement check
 
     Returns:
         CompletedProcess with result
@@ -401,6 +538,7 @@ def run_bd(
         BeadPermissionError: If worker lacks required permission
         InvalidStateTransitionError: If state transition is not allowed
         CannotCloseBeadError: If closing bead not in terminal state
+        OKRLinkRequiredError: If strict_mode and work item lacks OKR link
     """
 
     # Check permissions before executing
@@ -410,6 +548,10 @@ def run_bd(
     # Validate lifecycle transitions before executing
     if not skip_lifecycle_check:
         check_lifecycle_transition(args, org_path)
+
+    # Check OKR linking requirement for create commands
+    if not skip_okr_check:
+        check_okr_linking(args, org_path)
 
     # Get bd binary
     bd_path = get_bundled_bd_path()
