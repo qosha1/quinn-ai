@@ -74,7 +74,10 @@ def budget_status(ctx: Context):
         for pool in pools:
             click.echo(f"  {pool.name}:")
             click.echo(f"    Total: {pool.total_credits:.2f} credits")
-            click.echo(f"    Period: {pool.period_start.date()} to {pool.period_end.date()}")
+            # Handle both datetime objects and strings
+            start_date = pool.period_start.date() if hasattr(pool.period_start, 'date') else pool.period_start[:10]
+            end_date = pool.period_end.date() if hasattr(pool.period_end, 'date') else pool.period_end[:10]
+            click.echo(f"    Period: {start_date} to {end_date}")
 
         # CEO budget if exists
         if org.ceo:

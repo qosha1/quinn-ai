@@ -42,6 +42,11 @@ class EventType(Enum):
     WORK_STATUS_CHANGED = "work.status_changed"
     WORK_COMPLETED = "work.completed"
 
+    # Offboarding events
+    OFFBOARDING_ASK_CREATED = "offboarding.ask_created"
+    OFFBOARDING_ASK_COMPLETED = "offboarding.ask_completed"
+    OFFBOARDING_CLEANUP_DONE = "offboarding.cleanup_done"
+
     # OKR events
     OKR_CREATED = "okr.created"
     OKR_UPDATED = "okr.updated"
@@ -49,7 +54,7 @@ class EventType(Enum):
 
 
 # Entity types for type safety
-ENTITY_TYPES = frozenset({"worker", "team", "okr", "message", "work"})
+ENTITY_TYPES = frozenset({"worker", "team", "okr", "message", "work", "offboarding"})
 
 
 @dataclass
@@ -475,6 +480,10 @@ WORK_COMPLETED = EventType.WORK_COMPLETED
 OKR_CREATED = EventType.OKR_CREATED
 OKR_UPDATED = EventType.OKR_UPDATED
 OKR_COMPLETED = EventType.OKR_COMPLETED
+
+OFFBOARDING_ASK_CREATED = EventType.OFFBOARDING_ASK_CREATED
+OFFBOARDING_ASK_COMPLETED = EventType.OFFBOARDING_ASK_COMPLETED
+OFFBOARDING_CLEANUP_DONE = EventType.OFFBOARDING_CLEANUP_DONE
 
 
 # Global event bus instance (set by init_event_bus)

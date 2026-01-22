@@ -5,6 +5,7 @@ Provides functions to regenerate the org-chart YAML from database state.
 The org-chart is the git-tracked output of hiring decisions.
 """
 
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +19,89 @@ from .queries import get_worker, get_workers_by_manager
 ORG_CHART_DIR = "org-chart"
 ORG_CHART_CURRENT = "current.yaml"
 ORG_CHART_VERSION = "1.0"
+
+
+def git_commit_org_chart(
+    org_path: Path,
+    change_type: str,
+    worker_name: Optional[str] = None,
+    worker_role: Optional[str] = None,
+    details: Optional[str] = None,
+) -> bool:
+    """Commit org-chart changes to git.
+
+    Auto-commits org-chart/current.yaml after updates. Gracefully handles
+    non-git repos by returning False without raising.
+
+    Args:
+        org_path: Path to the org folder (git repo root)
+        change_type: Type of change (hired, terminated, promoted, updated)
+        worker_name: Name of the affected worker (optional)
+        worker_role: Role of the affected worker (optional)
+        details: Additional details for commit message (optional)
+
+    Returns:
+        True if commit succeeded, False if git not available or commit failed
+    """
+    chart_path = org_path / ORG_CHART_DIR / ORG_CHART_CURRENT
+
+    # Build commit message
+    if worker_name and worker_role:
+        message = f"org-chart: {change_type} {worker_name} as {worker_role}"
+    elif worker_name:
+        message = f"org-chart: {change_type} {worker_name}"
+    else:
+        message = f"org-chart: {change_type}"
+
+    if details:
+        message = f"{message}\n\n{details}"
+
+    try:
+        # Check if org_path is a git repo
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=org_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return False  # Not a git repo
+
+        # Stage the org-chart file
+        result = subprocess.run(
+            ["git", "add", str(chart_path.relative_to(org_path))],
+            cwd=org_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return False
+
+        # Check if there are staged changes
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            cwd=org_path,
+            capture_output=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return False  # No changes to commit
+
+        # Commit the changes
+        result = subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=org_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        # Git not available, timeout, or other OS error
+        return False
 
 
 def update_org_chart(db: Database, org_path: Path) -> Path:

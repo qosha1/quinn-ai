@@ -115,8 +115,10 @@ class TestRunBd:
 
             # Get the command that was run
             cmd = mock_run.call_args.args[0]
-            # First arg is bd binary path, rest are our args
-            assert cmd[1:] == ["create", "--title", "Test", "--type", "task"]
+            # Command includes bd path, --sandbox, --db=..., then our args
+            # Check that our args are at the end of the command
+            user_args = ["create", "--title", "Test", "--type", "task"]
+            assert cmd[-len(user_args):] == user_args
 
     def test_capture_output(self, temp_org):
         """Should capture output when requested."""

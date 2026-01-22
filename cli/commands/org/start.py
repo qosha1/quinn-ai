@@ -9,6 +9,7 @@ import click
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.org import Org
+from cli.core.org_chart import update_org_chart
 from cli.core.session import SessionConfig
 from cli.core.sessions.registry import get_default_registry
 from shared import InvalidOrgTransition
@@ -74,6 +75,9 @@ def start_cmd(
             org.start()
         except InvalidOrgTransition as e:
             raise click.ClickException(str(e))
+
+        # Update org-chart to reflect lifecycle changes (CEO is now active)
+        update_org_chart(db, org_path)
 
         click.echo(f"Organization started at {org_path}")
         click.echo(f"Status: {org.status}")

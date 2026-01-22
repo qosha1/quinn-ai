@@ -46,6 +46,20 @@ from .state_sync import (
     get_state_sync,
     reset_state_sync,
 )
+# Persistence
+from .persistence import (
+    create_session_record,
+    update_session_state,
+    update_session_pid,
+    update_session_tmux_name,
+    get_session_by_id,
+    get_session_for_worker,
+    get_active_sessions,
+    get_all_sessions,
+    count_active_sessions,
+    delete_session_record,
+    delete_session_for_worker,
+)
 
 __all__ = [
     # Adapters
@@ -85,4 +99,16 @@ __all__ = [
     "StateSyncConfig",
     "get_state_sync",
     "reset_state_sync",
+    # Persistence
+    "create_session_record",
+    "update_session_state",
+    "update_session_pid",
+    "update_session_tmux_name",
+    "get_session_by_id",
+    "get_session_for_worker",
+    "get_active_sessions",
+    "get_all_sessions",
+    "count_active_sessions",
+    "delete_session_record",
+    "delete_session_for_worker",
 ]

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Generator, Optional
 
 # Current schema version - increment when schema changes
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 11
 
 
 class Database:
@@ -168,6 +168,8 @@ CREATE TABLE IF NOT EXISTS workers (
     hiring_authority_scope TEXT,
     delegated_budget INTEGER NOT NULL DEFAULT 0,
     max_reports INTEGER NOT NULL DEFAULT 10,
+    -- Offboarding workflow tracking
+    offboarding_ask_bead_id TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE RESTRICT,
@@ -191,6 +193,26 @@ CREATE TABLE IF NOT EXISTS worker_state (
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_worker_state_status ON worker_state(runtime_status);
+
+-- Sessions (1:1 with worker - worker's brain)
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    worker_id TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL,
+    command TEXT NOT NULL,
+    args TEXT,
+    working_directory TEXT,
+    tmux_session_name TEXT,
+    pid INTEGER,
+    state TEXT NOT NULL CHECK(state IN ('starting', 'idle', 'running', 'stopped', 'crashed')),
+    started_at DATETIME,
+    stopped_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_worker ON sessions(worker_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
 
 -- ===================
 -- COMMUNICATION
@@ -959,6 +981,31 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
             )""",
             "CREATE INDEX IF NOT EXISTS idx_work_okr_links_okr ON work_okr_links(okr_id)",
             "CREATE INDEX IF NOT EXISTS idx_work_okr_links_work ON work_okr_links(work_id)",
+        ],
+        # Version 10: Add offboarding_ask_bead_id for tracking storage review workflow
+        10: [
+            "ALTER TABLE workers ADD COLUMN offboarding_ask_bead_id TEXT",
+        ],
+        # Version 11: Add sessions table for session persistence
+        11: [
+            """CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                worker_id TEXT NOT NULL UNIQUE,
+                provider TEXT NOT NULL,
+                command TEXT NOT NULL,
+                args TEXT,
+                working_directory TEXT,
+                tmux_session_name TEXT,
+                pid INTEGER,
+                state TEXT NOT NULL CHECK(state IN ('starting', 'idle', 'running', 'stopped', 'crashed')),
+                started_at DATETIME,
+                stopped_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_worker ON sessions(worker_id)",
+            "CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state)",
         ],
     }
 

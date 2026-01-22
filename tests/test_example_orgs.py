@@ -103,15 +103,13 @@ class TestOrgStart:
         result = run_qn("org", "status", org_path=temp_org_dir)
         assert "active" in result.stdout.lower()
 
-    @pytest.mark.xfail(reason="Known issue: quinnai-qi2r - Session not spawned on start")
     def test_start_spawns_ceo_session(self, temp_org_dir):
-        """qn org start should spawn a tmux session for CEO.
+        """qn org start should spawn a session for CEO.
 
-        BUG: This currently fails because `qn org start` does not
-        spawn a tmux session. See quinnai-qi2r.
+        Fixed: quinnai-qi2r - Sessions now tracked in database.
         """
         run_qn("org", "init", org_path=temp_org_dir)
-        run_qn("org", "start", "--no-spawn-ceo", org_path=temp_org_dir)
+        run_qn("org", "start", org_path=temp_org_dir)  # Default spawns CEO session
 
         result = run_qn("org", "status", org_path=temp_org_dir)
         # Should show at least 1 session
@@ -545,12 +543,10 @@ class TestKnownIssues:
 
         assert count > 0, "Expected at least one channel to be created"
 
-    @pytest.mark.xfail(reason="quinnai-8x29: Org-chart shows stale lifecycle status")
     def test_org_chart_reflects_lifecycle_changes(self, temp_org_dir):
         """Org-chart should update when worker lifecycle changes.
 
-        BUG: After start, org-chart still shows 'pending' even though
-        worker is 'active'. See quinnai-8x29.
+        Fixed: quinnai-8x29 - Org start now updates org-chart.
         """
         import yaml
 

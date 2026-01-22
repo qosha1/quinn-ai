@@ -53,6 +53,17 @@ from .queries import (
 )
 from .storage import StorageManager, WorkerStorageNotFound, StorageAlreadyFrozen
 from .notifications import create_notification_bead
+from .sessions.persistence import (
+    create_session_record,
+    update_session_state,
+    update_session_pid,
+    update_session_tmux_name,
+    get_session_for_worker,
+    delete_session_for_worker,
+)
+
+# Import bd client for creating beads
+from shared.bd.client import BdClient, BdCommandError
 
 # Import shared business logic
 from shared import (
@@ -414,10 +425,18 @@ class Worker:
 
         # Update org-chart to reflect the new hire
         try:
-            from .org_chart import update_org_chart
+            from .org_chart import update_org_chart, git_commit_org_chart
 
             org_path = self._get_org_path()
             update_org_chart(self.db, org_path)
+            # Commit to git (best-effort, gracefully handles non-git repos)
+            git_commit_org_chart(
+                org_path=org_path,
+                change_type="hired",
+                worker_name=name,
+                worker_role=role,
+                details=f"Manager: {self.name} ({self.id})",
+            )
         except Exception:
             pass  # Org-chart update is best-effort
 
@@ -679,6 +698,117 @@ class Worker:
             # Best-effort - don't fail offboarding if notification fails
             pass
 
+        # Also create an 'ask' bead for tracking the review workflow
+        self._create_offboarding_ask_bead()
+
+    def _create_offboarding_ask_bead(self) -> Optional[str]:
+        """Create an 'ask' bead for offboarding storage review.
+
+        Per README workflow:
+        1. Worker folder frozen (read-only) - done in start_offboarding
+        2. System creates 'ask' bead: 'Offboard storage review: {worker-id}'
+        3. Assigned teammate reviews, moves useful -> shared/, deletes rest
+        4. On ask completion, system deletes worker folder
+
+        Returns:
+            Created bead ID, or None if creation failed.
+        """
+        if not self.manager_id:
+            return None
+
+        try:
+            bd_client = BdClient()
+
+            # Create the 'ask' bead with metadata linking to worker
+            bead_id = bd_client.create_issue(
+                title=f"Offboard storage review: {self.id}",
+                type="ask",
+                priority=1,  # High priority
+                description=(
+                    f"Review frozen storage for terminated worker {self.name} ({self.id}).\n\n"
+                    f"Role: {self.role}\n\n"
+                    f"Actions required:\n"
+                    f"1. Review files in frozen storage\n"
+                    f"2. Move useful files to shared/archive/{self.id}/\n"
+                    f"3. Close this bead when review is complete\n"
+                    f"4. System will delete worker folder on bead closure"
+                ),
+                metadata={
+                    "worker_id": self.id,
+                    "worker_name": self.name,
+                    "manager_id": self.manager_id,
+                    "workflow": "offboarding_storage_review",
+                },
+                assignee=self.manager_id,
+            )
+
+            if bead_id:
+                # Store the bead ID in worker metadata for later lookup
+                self._store_offboarding_ask_bead_id(bead_id)
+
+            return bead_id
+
+        except BdCommandError:
+            # Best-effort - don't fail offboarding if bead creation fails
+            return None
+        except Exception:
+            # Catch any other errors (e.g., bd not installed)
+            return None
+
+    def _store_offboarding_ask_bead_id(self, bead_id: str) -> None:
+        """Store the offboarding ask bead ID in worker metadata.
+
+        Args:
+            bead_id: The created bead ID
+        """
+        try:
+            # Store in a metadata column or a separate table
+            # For now, use worker_state's metadata or a simple approach
+            now = datetime.now()
+            self.db.execute(
+                """UPDATE workers
+                   SET offboarding_ask_bead_id = ?, updated_at = ?
+                   WHERE id = ?""",
+                (bead_id, now, self.id)
+            )
+            self.db.connection.commit()
+
+            # Publish OFFBOARDING_ASK_CREATED event
+            try:
+                from .events import EventBus, EventType
+
+                bus = EventBus(self.db)
+                bus.publish(
+                    EventType.OFFBOARDING_ASK_CREATED,
+                    "offboarding",
+                    bead_id,
+                    {
+                        "worker_id": self.id,
+                        "worker_name": self.name,
+                        "manager_id": self.manager_id,
+                        "bead_id": bead_id,
+                    },
+                )
+            except Exception:
+                pass  # Event publishing is best-effort
+        except Exception:
+            # Best-effort storage
+            pass
+
+    def get_offboarding_ask_bead_id(self) -> Optional[str]:
+        """Get the offboarding ask bead ID for this worker.
+
+        Returns:
+            The bead ID if set, None otherwise.
+        """
+        row = self.db.fetchone(
+            "SELECT offboarding_ask_bead_id FROM workers WHERE id = ?",
+            (self.id,)
+        )
+        if row and row["offboarding_ask_bead_id"]:
+            return row["offboarding_ask_bead_id"]
+        return None
+
     def terminate(self) -> None:
         """Terminate worker - freeze storage, update org-chart, fire event.
 
@@ -713,10 +843,17 @@ class Worker:
 
         # Update org-chart
         try:
-            from .org_chart import update_org_chart
+            from .org_chart import update_org_chart, git_commit_org_chart
 
             org_path = self._get_org_path()
             update_org_chart(self.db, org_path)
+            # Commit to git (best-effort, gracefully handles non-git repos)
+            git_commit_org_chart(
+                org_path=org_path,
+                change_type="terminated",
+                worker_name=self.name,
+                worker_role=self.role,
+            )
         except Exception:
             pass  # Org-chart update is best-effort
 
@@ -940,6 +1077,7 @@ class Worker:
 
         Attaches the session, starts it, and updates worker state.
         Enforces budget check before spawning and records spend after.
+        Persists session record to database for crash recovery.
 
         Args:
             session: Configured SessionInterface instance to spawn
@@ -984,6 +1122,32 @@ class Worker:
                 reference_id=str(session.id),
                 description=f"Session spawn for worker {self.name}",
             )
+
+            # Persist session record to database
+            config = session.config
+            working_dir = str(config.working_directory) if config.working_directory else None
+
+            # Get tmux session name if available (from spawn result metadata)
+            tmux_session_name = None
+            if hasattr(session, '_spawn_result') and session._spawn_result:
+                tmux_session_name = session._spawn_result.metadata.get('session_name')
+
+            create_session_record(
+                db=self.db,
+                session_id=str(session.id),
+                worker_id=self.id,
+                provider=session.provider_name,
+                command=config.command,
+                args=config.args,
+                working_directory=working_dir,
+                tmux_session_name=tmux_session_name,
+                state=session.state.value,
+            )
+
+            # Update PID if available
+            if session.pid:
+                update_session_pid(self.db, str(session.id), session.pid)
+
         except Exception:
             # If spawn fails, detach the session
             self._session = None
@@ -992,7 +1156,7 @@ class Worker:
     def terminate_session(self, force: bool = False) -> None:
         """Terminate the current session.
 
-        Stops the session and detaches it from this worker.
+        Stops the session, updates database record, and detaches from worker.
 
         Args:
             force: If True, force kill without cleanup
@@ -1000,9 +1164,18 @@ class Worker:
         if self._session is None:
             return
 
+        session_id = str(self._session.id)
+
         try:
             self._session.stop(force=force)
         finally:
+            # Update session state in database to 'stopped'
+            update_session_state(
+                db=self.db,
+                session_id=session_id,
+                state="stopped",
+                stopped_at=datetime.now(),
+            )
             self._session = None
 
     # ==================
@@ -1092,6 +1265,145 @@ class Worker:
 # ===================
 # TERMINATION CLEANUP
 # ===================
+
+
+def check_offboarding_ask_completed(
+    db: Database,
+    worker_id: str,
+    bd_client: Optional[BdClient] = None,
+) -> bool:
+    """Check if the offboarding ask bead for a worker is completed.
+
+    Per README workflow:
+    1. Worker folder frozen (read-only)
+    2. System creates 'ask' bead: 'Offboard storage review: {worker-id}'
+    3. Assigned teammate reviews, moves useful -> shared/, deletes rest
+    4. On ask completion, system deletes worker folder
+
+    This function checks step 4 - whether the ask bead has been closed.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to check
+        bd_client: Optional BdClient instance (creates default if None)
+
+    Returns:
+        True if ask bead is closed, False otherwise (or if no bead exists)
+    """
+    # Get the worker's offboarding ask bead ID
+    row = db.fetchone(
+        "SELECT offboarding_ask_bead_id FROM workers WHERE id = ?",
+        (worker_id,)
+    )
+
+    if not row or not row["offboarding_ask_bead_id"]:
+        return False
+
+    bead_id = row["offboarding_ask_bead_id"]
+
+    # Check bead status via bd client
+    if bd_client is None:
+        bd_client = BdClient()
+
+    try:
+        issue = bd_client.get_issue(bead_id)
+        if issue and issue.get("status") == "closed":
+            return True
+    except BdCommandError:
+        pass
+
+    return False
+
+
+def process_offboarding_cleanup(
+    db: Database,
+    worker_id: str,
+    storage_manager: StorageManager,
+    bd_client: Optional[BdClient] = None,
+    files_to_archive: Optional[list[Path]] = None,
+) -> Optional[dict]:
+    """Process offboarding cleanup if the ask bead is completed.
+
+    This is the hook that should be called (e.g., by a cron job or event handler)
+    to check if a worker's offboarding review has been completed and trigger
+    the storage cleanup.
+
+    Per README workflow:
+    1. Worker folder frozen (read-only) - already done
+    2. System creates 'ask' bead - already done
+    3. Assigned teammate reviews, moves useful -> shared/, deletes rest
+    4. On ask completion, system deletes worker folder <- this function does this
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to process
+        storage_manager: StorageManager for the org
+        bd_client: Optional BdClient instance
+        files_to_archive: Optional list of files to archive (if None, archives all)
+
+    Returns:
+        Cleanup result dict if cleanup was performed, None if not ready
+    """
+    # Check if worker is in terminated state
+    worker_data = get_worker(db, worker_id)
+    if worker_data is None or worker_data.status != "terminated":
+        return None
+
+    # Check if the ask bead is completed
+    if not check_offboarding_ask_completed(db, worker_id, bd_client):
+        return None
+
+    # Publish OFFBOARDING_ASK_COMPLETED event
+    bead_id = db.fetchone(
+        "SELECT offboarding_ask_bead_id FROM workers WHERE id = ?",
+        (worker_id,)
+    )
+    if bead_id and bead_id["offboarding_ask_bead_id"]:
+        try:
+            from .events import EventBus, EventType
+
+            bus = EventBus(db)
+            bus.publish(
+                EventType.OFFBOARDING_ASK_COMPLETED,
+                "offboarding",
+                bead_id["offboarding_ask_bead_id"],
+                {
+                    "worker_id": worker_id,
+                    "bead_id": bead_id["offboarding_ask_bead_id"],
+                },
+            )
+        except Exception:
+            pass  # Event publishing is best-effort
+
+    # Bead is completed - run cleanup
+    result = cleanup_terminated_worker(
+        db=db,
+        worker_id=worker_id,
+        storage_manager=storage_manager,
+        files_to_archive=files_to_archive,
+    )
+
+    # Publish OFFBOARDING_CLEANUP_DONE event
+    if result:
+        try:
+            from .events import EventBus, EventType
+
+            bus = EventBus(db)
+            bus.publish(
+                EventType.OFFBOARDING_CLEANUP_DONE,
+                "offboarding",
+                worker_id,
+                {
+                    "worker_id": worker_id,
+                    "files_archived": result.get("files_archived", 0),
+                    "archived_to": result.get("archived_to"),
+                    "storage_deleted": result.get("storage_deleted", False),
+                },
+            )
+        except Exception:
+            pass  # Event publishing is best-effort
+
+    return result
 
 
 def cleanup_terminated_worker(

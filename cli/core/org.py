@@ -298,7 +298,20 @@ class Org:
 
     @property
     def active_session_count(self) -> int:
-        """Get count of workers with active sessions."""
+        """Get count of active sessions from the sessions table.
+
+        Falls back to worker_state if sessions table has no records.
+        Active sessions are those in 'starting', 'running', or 'idle' state.
+        """
+        # First try the sessions table (new)
+        row = self.db.fetchone(
+            """SELECT COUNT(*) as count FROM sessions
+               WHERE state IN ('starting', 'running', 'idle')"""
+        )
+        if row and row["count"] > 0:
+            return row["count"]
+
+        # Fall back to worker_state for backwards compatibility
         row = self.db.fetchone(
             """SELECT COUNT(*) as count FROM worker_state
                WHERE runtime_status IN ('starting', 'running', 'idle')"""
