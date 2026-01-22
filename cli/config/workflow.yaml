@@ -1,0 +1,147 @@
+# Workflow Configuration
+# Defines work lifecycle states, transitions, event triggers, and automation rules.
+#
+# Work items flow through states defined here. Transitions determine valid state changes.
+# Event triggers automate responses to conditions. Automation rules handle routine operations.
+
+version: 1
+
+# Work lifecycle states (per-org customizable)
+work_states:
+  - draft
+  - open
+  - in_progress
+  - review
+  - blocked
+  - closed
+
+# Valid state transitions
+# Each state maps to a list of states it can transition to
+transitions:
+  draft: [open, closed]
+  open: [in_progress, blocked, closed]
+  in_progress: [review, blocked, closed]
+  review: [in_progress, closed]
+  blocked: [open, in_progress, closed]
+  closed: []  # terminal state - no transitions out
+
+# Terminal states (work is complete, no further action)
+terminal_states: [closed]
+
+# OKR linking configuration
+okr_linking:
+  # Require work items to link to OKR via 'serves' relationship
+  require_okr_link: true
+  # Allow work without OKR link (with warning) when false
+  strict_mode: false
+
+# Event triggers - automatic actions when conditions are met
+event_triggers:
+  # Auto-escalate when worker blocked for too long
+  worker_blocked:
+    condition: "worker.blocked_duration > threshold"
+    threshold_hours: 4
+    action: escalate_to_manager
+
+  # Warning when budget running low
+  budget_low:
+    condition: "worker.budget_remaining < threshold"
+    threshold_percent: 20
+    action: notify_manager
+
+  # Cleanup on session crash
+  session_crashed:
+    condition: "session.state == crashed"
+    action:
+      - cleanup_session_resources
+      - notify_worker
+      - create_incident_bead
+
+  # Work item stale (no activity)
+  work_stale:
+    condition: "work.last_activity > threshold"
+    threshold_hours: 24
+    action: notify_owner
+
+# Escalation configuration
+escalation:
+  # Default escalation path
+  default_path:
+    - manager
+    - director
+    - ceo
+    - board
+
+  # Time thresholds for auto-escalation (hours)
+  thresholds:
+    p0: 1      # Critical - immediate
+    p1: 4      # High priority
+    p2: 24     # Normal priority
+    p3: 72     # Low priority
+    p4: 168    # 1 week - backlog
+
+  # Maximum escalation levels before board intervention
+  max_levels: 4
+
+# Automation rules
+automation:
+  # Auto-assign work to available workers
+  auto_assign:
+    enabled: true
+    # Match worker skills to work requirements
+    match_skills: true
+    # Prefer workers with lowest current load
+    prefer_least_loaded: true
+    # Assignment strategy: least_loaded | round_robin | skill_match
+    strategy: least_loaded
+
+  # Auto-close completed work
+  auto_close:
+    enabled: true
+    # Require manager approval before auto-close
+    require_approval: true
+    # Hours to wait for approval before auto-closing
+    approval_timeout_hours: 24
+
+  # Auto-archive old channels
+  channel_archive:
+    enabled: true
+    # Days of inactivity before archiving
+    inactive_days: 30
+    # Channel types exempt from auto-archive
+    exclude_types:
+      - team
+      - direct
+
+  # Auto-cleanup notifications
+  notification_cleanup:
+    enabled: true
+    # Days to keep actioned notifications
+    actioned_retention_days: 7
+    # Days to keep read notifications
+    read_retention_days: 30
+    # Never auto-delete unread (escalate instead)
+    escalate_unread: true
+
+# Notification settings
+notifications:
+  # Channels for different notification types
+  channels:
+    alerts: "#alerts"
+    escalations: "#escalations"
+    daily_summary: "#daily-digest"
+
+  # Quiet hours (no non-urgent notifications)
+  quiet_hours:
+    enabled: false
+    start: "22:00"
+    end: "08:00"
+    timezone: "UTC"
+
+  # Notification batching
+  batching:
+    enabled: true
+    # Maximum notifications in a batch
+    max_batch_size: 10
+    # Minutes to wait before sending batch
+    batch_delay_minutes: 5

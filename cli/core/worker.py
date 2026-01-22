@@ -31,6 +31,7 @@ from .budget import (
     estimate_cost,
     BudgetExhaustedError,
     NoBudgetAllocationError,
+    BudgetCheckResult,
 )
 from .logging import (
     get_logger,
@@ -1121,9 +1122,11 @@ class Worker:
     def spawn_session(self, session: "SessionInterface") -> None:
         """Spawn a session for this worker.
 
-        Attaches the session, starts it, and updates worker state.
-        Enforces budget check before spawning and records spend after.
-        Persists session record to database for crash recovery.
+        Orchestrates the session spawn process through distinct phases:
+        1. Validate preconditions (no existing active session, worker state ready)
+        2. Enforce budget constraints (estimate cost, check allocation)
+        3. Attach and start the session
+        4. Finalize (record spend, persist session record, handle race conditions)
 
         Args:
             session: Configured SessionInterface instance to spawn
@@ -1133,6 +1136,31 @@ class Worker:
             SessionSpawnError: If session fails to start
             BudgetExhaustedError: If worker has insufficient budget
             NoBudgetAllocationError: If worker has no budget allocation
+            ActiveSessionExistsError: If worker already has an active session
+        """
+        # Phase 1: Validate preconditions
+        self._validate_spawn_preconditions(session)
+
+        # Phase 2: Budget enforcement
+        budget_check = self._enforce_spawn_budget(session)
+
+        # Phase 3: Attach and start session
+        self._start_session(session)
+
+        # Phase 4: Record spend and persist
+        self._finalize_spawn(session, budget_check)
+
+    def _validate_spawn_preconditions(self, session: "SessionInterface") -> None:
+        """Validate that session can be spawned.
+
+        Checks:
+        - No existing active session for this worker
+        - Worker state row exists (required for session state callbacks)
+
+        Args:
+            session: The session to be spawned (used for type consistency)
+
+        Raises:
             ActiveSessionExistsError: If worker already has an active session
         """
         # Check for existing active session before spawning
@@ -1156,6 +1184,22 @@ class Worker:
             create_worker_state(self.db, self.id, pid=None)
             self._state_data = None  # Will be reloaded on next access
 
+    def _enforce_spawn_budget(self, session: "SessionInterface") -> BudgetCheckResult:
+        """Estimate cost and enforce budget constraints.
+
+        Calculates the estimated cost of spawning this session based on
+        the worker's cost tier, then verifies sufficient budget is available.
+
+        Args:
+            session: The session to be spawned (used for type consistency)
+
+        Returns:
+            BudgetCheckResult with allocation details for recording spend
+
+        Raises:
+            BudgetExhaustedError: If worker has insufficient budget
+            NoBudgetAllocationError: If worker has no budget allocation
+        """
         # Estimate session spawn cost based on worker's cost tier
         estimated_cost = estimate_cost(
             model_tier=self.cost_tier,
@@ -1170,12 +1214,57 @@ class Worker:
             required_amount=estimated_cost,
         )
 
+        return budget_check
+
+    def _start_session(self, session: "SessionInterface") -> None:
+        """Attach and start the session.
+
+        Attaches the session to this worker and starts it. If start fails,
+        the session is detached before the exception propagates.
+
+        Args:
+            session: The session to attach and start
+
+        Raises:
+            SessionSpawnError: If session fails to start
+        """
         self.attach_session(session)
 
         try:
             # Start the session - state callbacks will update our runtime status
             session.start()
+        except Exception:
+            # If start fails, detach the session before re-raising
+            self._session = None
+            raise
 
+    def _finalize_spawn(
+        self,
+        session: "SessionInterface",
+        budget_check: BudgetCheckResult,
+    ) -> None:
+        """Record spend and persist session record.
+
+        Records the session spawn cost against the budget allocation and
+        persists the session record to the database for crash recovery.
+        Handles race conditions where another process created a session
+        between our precondition check and the database insert.
+
+        Args:
+            session: The started session to finalize
+            budget_check: Budget check result from enforcement phase
+
+        Raises:
+            ActiveSessionExistsError: If race condition detected during persist
+        """
+        # Estimate cost again for recording (same calculation as enforcement)
+        estimated_cost = estimate_cost(
+            model_tier=self.cost_tier,
+            input_tokens=DEFAULT_SESSION_SPAWN_TOKENS_INPUT,
+            output_tokens=DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT,
+        )
+
+        try:
             # Record spend after successful spawn
             record_spend(
                 db=self.db,
@@ -1215,20 +1304,7 @@ class Worker:
             except sqlite3.IntegrityError:
                 # Race condition: another session was created between our check
                 # and this insert. Stop the session we just started and raise.
-                try:
-                    session.stop(force=True)
-                except (OSError, RuntimeError):
-                    # Intentionally swallowed: best-effort cleanup after race condition.
-                    # OSError: process issues, RuntimeError: session state issues
-                    pass
-                self._session = None
-                # Re-fetch to get the existing session ID
-                existing = get_session_for_worker(self.db, self.id)
-                existing_id = existing["id"] if existing else "unknown"
-                raise ActiveSessionExistsError(
-                    worker_id=self.id,
-                    existing_session_id=existing_id,
-                )
+                self._handle_spawn_race_condition(session)
 
             # Update PID if available
             if session.pid:
@@ -1244,9 +1320,36 @@ class Worker:
             )
 
         except Exception:
-            # If spawn fails, detach the session
+            # If finalization fails, detach the session
             self._session = None
             raise
+
+    def _handle_spawn_race_condition(self, session: "SessionInterface") -> None:
+        """Handle race condition where another session was created concurrently.
+
+        Stops the session we just started (best-effort cleanup) and raises
+        an error indicating the existing session.
+
+        Args:
+            session: The session that was started but cannot be persisted
+
+        Raises:
+            ActiveSessionExistsError: Always raised to indicate race condition
+        """
+        try:
+            session.stop(force=True)
+        except (OSError, RuntimeError):
+            # Intentionally swallowed: best-effort cleanup after race condition.
+            # OSError: process issues, RuntimeError: session state issues
+            pass
+        self._session = None
+        # Re-fetch to get the existing session ID
+        existing = get_session_for_worker(self.db, self.id)
+        existing_id = existing["id"] if existing else "unknown"
+        raise ActiveSessionExistsError(
+            worker_id=self.id,
+            existing_session_id=existing_id,
+        )
 
     def terminate_session(self, force: bool = False) -> None:
         """Terminate the current session.
