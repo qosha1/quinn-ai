@@ -135,7 +135,7 @@ Timestamp: $(date)
 Label: ${LABEL:-none}
 
 --- Org Status ---
-$(sqlite3 "$DB" "SELECT key, value FROM org_state;" 2>/dev/null || echo "N/A")
+$(sqlite3 -header -column "$DB" "SELECT status, ceo_worker_id, started_at, stopped_at FROM org_state WHERE id='default';" 2>/dev/null || echo "N/A")
 
 --- Worker Count ---
 $(sqlite3 "$DB" "SELECT COUNT(*) FROM workers;" 2>/dev/null || echo "0")
