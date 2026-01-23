@@ -56,26 +56,37 @@ def get_ceo_worker_id(temp_org: Path) -> str:
 def create_worker(temp_org: Path, name: str, manager_id: str) -> str:
     """Create a worker and return their ID.
 
-    Sets up hiring authority for the manager if needed.
+    Creates worker directly in database to avoid hiring authority issues.
+    Activates the worker so they can be fired (pending workers can't be terminated).
     """
     from cli.core.db import open_database, get_org_db_path
-    from cli.core.queries import create_worker as db_create_worker, generate_id
+    from cli.core.queries import create_worker as db_create_worker, get_worker
+    from cli.core.worker import Worker
 
     db = open_database(get_org_db_path(temp_org))
     try:
+        # Get manager's team_id - new workers inherit team from manager
+        manager = get_worker(db, manager_id)
+        team_id = manager.team_id
+
         # Create worker directly in database to avoid hiring authority issues
-        worker_id = generate_id("wrkr")
-        db_create_worker(
+        worker_data = db_create_worker(
             db=db,
-            worker_id=worker_id,
             name=name,
             role="developer",
-            manager_id=manager_id,
-            status="active",
-            skills={},
+            team_id=team_id,
             cost=50,
+            manager_id=manager_id,
+            skills={},
         )
-        return worker_id
+
+        # Transition worker to active status so they can be fired
+        # Lifecycle: pending -> onboarding -> active
+        worker = Worker(db, worker_data.id)
+        worker.start_onboarding()
+        worker.complete_onboarding()
+
+        return worker_data.id
     finally:
         db.close()
 

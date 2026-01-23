@@ -202,7 +202,14 @@ def fire_cmd(
             target_worker.terminate_session(force=True)
             click.echo("  Session stopped.")
 
-        # Terminate the worker (handles storage, channels, status)
+        # Lifecycle: active -> offboarding -> terminated
+        # Must go through offboarding first (freezes storage, creates review bead)
+        if target_worker.lifecycle_status == "active":
+            click.echo("  Starting offboarding...")
+            target_worker.start_offboarding()
+            click.echo("  Worker in offboarding state.")
+
+        # Terminate the worker (handles channels, org-chart update, status)
         target_worker.terminate()
         click.echo("  Worker terminated.")
 
