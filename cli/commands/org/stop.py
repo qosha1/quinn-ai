@@ -9,6 +9,7 @@ from cli.core.db import open_database, get_org_db_path
 from cli.core.org import Org
 from cli.core.notifications import run_notification_cleanup
 from cli.core.constants import DEFAULT_NOTIFICATION_RETENTION_DAYS
+from cli.core.sessions import stop_all_sessions
 from shared import InvalidOrgTransition
 from shared.enums import OrgStatus
 
@@ -19,12 +20,18 @@ from shared.enums import OrgStatus
     default=True,
     help="Run notification cleanup on stop (default: True).",
 )
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Force kill sessions without waiting for graceful shutdown.",
+)
 @pass_context
-def stop_cmd(ctx: Context, cleanup: bool):
+def stop_cmd(ctx: Context, cleanup: bool, force: bool):
     """Stop the organization.
 
-    Gracefully stops the organization and transitions to stopped state.
-    Worker sessions should be stopped before calling this.
+    Gracefully stops all worker sessions and transitions the organization
+    to stopped state.
 
     By default, runs notification cleanup to purge old closed notifications.
     Use --no-cleanup to skip this step.
@@ -54,6 +61,19 @@ def stop_cmd(ctx: Context, cleanup: bool):
                 "Check current status with 'qn org status'."
             )
 
+        # Stop all worker sessions first
+        session_result = stop_all_sessions(db, force=force)
+        if session_result.sessions_found > 0:
+            click.echo(
+                f"Stopped {session_result.sessions_stopped}/{session_result.sessions_found} sessions"
+            )
+            if session_result.tmux_sessions_killed > 0:
+                click.echo(f"  Tmux sessions killed: {session_result.tmux_sessions_killed}")
+            if session_result.errors:
+                for error in session_result.errors:
+                    click.echo(f"  Warning: {error}")
+
+        # Transition org to stopped state
         try:
             org.stop()
         except InvalidOrgTransition as e:
