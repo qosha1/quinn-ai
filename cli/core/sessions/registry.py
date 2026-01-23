@@ -135,6 +135,47 @@ class SessionRegistry:
         self._adapters.clear()
         self._aliases.clear()
 
+    def create_for_worker(
+        self,
+        worker_id: str,
+        provider_name: str,
+        command: str,
+        working_directory: Optional[str] = None,
+        args: Optional[list[str]] = None,
+        env_vars: Optional[dict[str, str]] = None,
+        **kwargs,
+    ) -> SessionInterface:
+        """
+        Create a session for a worker with the given provider.
+
+        Convenience factory method that builds SessionConfig and creates
+        the appropriate session adapter in one step.
+
+        Args:
+            worker_id: Worker ID to bind the session to
+            provider_name: Provider name (used for adapter lookup)
+            command: CLI command to execute
+            working_directory: Optional working directory path
+            args: Optional command arguments
+            env_vars: Optional environment variables
+            **kwargs: Additional arguments for adapter constructor
+
+        Returns:
+            New SessionInterface instance
+
+        Raises:
+            AdapterNotFoundError: If no adapter for provider_name
+        """
+        config = SessionConfig(
+            worker_id=worker_id,
+            provider=provider_name,
+            command=command,
+            args=args or [],
+            working_directory=working_directory,
+            env_vars=env_vars or {},
+        )
+        return self.create(provider_name, config, **kwargs)
+
 
 # =============================================================================
 # Default Registry

@@ -449,6 +449,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     worker_id TEXT NOT NULL UNIQUE,
     provider TEXT NOT NULL,
+    model TEXT,
     command TEXT NOT NULL,
     args TEXT,
     working_directory TEXT,
@@ -458,12 +459,14 @@ CREATE TABLE IF NOT EXISTS sessions (
     state_version INTEGER NOT NULL DEFAULT 0,
     started_at DATETIME,
     stopped_at DATETIME,
+    last_activity DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_worker ON sessions(worker_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
+CREATE INDEX IF NOT EXISTS idx_sessions_last_activity ON sessions(last_activity);
 
 -- ===================
 -- COMMUNICATION
