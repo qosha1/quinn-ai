@@ -75,22 +75,25 @@ def _get_qn_command() -> list[str]:
     if _qn_command_cache is not None:
         return _qn_command_cache
 
-    # First try: sys.executable -m cli.commands.main
-    module_cmd = [sys.executable, "-m", "cli.commands.main"]
-    try:
-        result = subprocess.run(
-            module_cmd + ["--help"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            _qn_command_cache = module_cmd
-            return _qn_command_cache
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        pass
+    # First try: qn in the same venv as sys.executable
+    # This is the most reliable approach when running from a venv
+    venv_bin_dir = Path(sys.executable).parent
+    venv_qn = venv_bin_dir / "qn"
+    if venv_qn.exists():
+        try:
+            result = subprocess.run(
+                [str(venv_qn), "--help"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                _qn_command_cache = [str(venv_qn)]
+                return _qn_command_cache
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
 
-    # Second try: qn (globally installed)
+    # Second try: qn in PATH (globally installed)
     if shutil.which("qn"):
         try:
             result = subprocess.run(
@@ -105,22 +108,7 @@ def _get_qn_command() -> list[str]:
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
             pass
 
-    # Default fallback (will likely fail but provides consistent behavior)
-    _qn_command_cache = module_cmd
-    return _qn_command_cache
-
-
-def check_cli_available() -> tuple[bool, str]:
-    """Check if the qn CLI is available.
-
-    Tries to run the qn CLI with --help to verify it's working.
-
-    Returns:
-        Tuple of (is_available, error_message).
-        If available: (True, "")
-        If not available: (False, "helpful error message")
-    """
-    # First try: sys.executable -m cli.commands.main
+    # Third try: sys.executable -m cli.commands.main (if cli is installed as module)
     module_cmd = [sys.executable, "-m", "cli.commands.main"]
     try:
         result = subprocess.run(
@@ -130,35 +118,49 @@ def check_cli_available() -> tuple[bool, str]:
             timeout=5,
         )
         if result.returncode == 0:
+            _qn_command_cache = module_cmd
+            return _qn_command_cache
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+
+    # Default fallback: assume qn in venv (will likely fail but provides consistent behavior)
+    _qn_command_cache = [str(venv_qn)]
+    return _qn_command_cache
+
+
+def check_cli_available() -> tuple[bool, str]:
+    """Check if the qn CLI is available.
+
+    Uses _get_qn_command() to find the CLI and verifies it's working.
+
+    Returns:
+        Tuple of (is_available, error_message).
+        If available: (True, "")
+        If not available: (False, "helpful error message")
+    """
+    qn_cmd = _get_qn_command()
+
+    try:
+        result = subprocess.run(
+            qn_cmd + ["--help"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
             return True, ""
+        else:
+            return False, f"qn CLI returned error (exit {result.returncode}): {result.stderr}"
     except subprocess.TimeoutExpired:
         return False, "CLI check timed out. The CLI may be hanging."
     except FileNotFoundError:
-        pass  # Try next method
+        return False, (
+            f"qn CLI not found at: {qn_cmd[0]}\n"
+            "Install with: pip install -e .\n"
+            "Or ensure you're running from the quinnai virtual environment."
+        )
     except Exception as e:
-        pass  # Try next method
-
-    # Second try: qn (globally installed)
-    if shutil.which("qn"):
-        try:
-            result = subprocess.run(
-                ["qn", "--help"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                return True, ""
-        except subprocess.TimeoutExpired:
-            return False, "CLI check timed out. The CLI may be hanging."
-        except Exception:
-            pass
-
-    # Neither method worked
-    return False, (
-        "qn CLI not found. Install with: pip install quinnai-cli\n"
-        "Or ensure you're running from the quinnai virtual environment."
-    )
+        return False, f"Error checking CLI availability: {e}"
 
 
 def _get_db_path(org_path: Path) -> Path:
