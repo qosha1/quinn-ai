@@ -49,6 +49,44 @@ class DatabaseNotFound(OrgConnectionError):
         super().__init__(f"Database not found: {db_path}")
 
 
+class _Sqlite3Wrapper:
+    """Minimal wrapper around sqlite3 to match CLI Database interface.
+
+    Used as a fallback when cli.core.db.Database is not available.
+    Provides the same interface for fetchone, fetchall, execute, and close.
+    """
+
+    def __init__(self, db_path: Path):
+        import sqlite3
+        self._conn = sqlite3.connect(str(db_path), timeout=10.0)
+        self._conn.row_factory = sqlite3.Row
+
+    @property
+    def connection(self):
+        """Return the underlying sqlite3 connection."""
+        return self._conn
+
+    def fetchone(self, sql: str, params: tuple = ()) -> Optional[Any]:
+        """Execute SQL and fetch one row."""
+        cursor = self._conn.execute(sql, params)
+        return cursor.fetchone()
+
+    def fetchall(self, sql: str, params: tuple = ()) -> list:
+        """Execute SQL and fetch all rows."""
+        cursor = self._conn.execute(sql, params)
+        return cursor.fetchall()
+
+    def execute(self, sql: str, params: tuple = ()) -> None:
+        """Execute SQL statement."""
+        self._conn.execute(sql, params)
+
+    def close(self) -> None:
+        """Close the connection."""
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+
+
 class QuinnAIOrgConnection(OrgConnection):
     """Connection to a QuinnAI org via SQLite database.
 
@@ -109,10 +147,15 @@ class QuinnAIOrgConnection(OrgConnection):
         if self._database_factory:
             self._db = self._database_factory(db_path)
         else:
-            # Import Database from CLI core
-            # This creates a thread-safe connection with WAL mode
-            from cli.core.db import Database
-            self._db = Database(db_path)
+            # Try to import Database from CLI core (thread-safe with WAL mode)
+            # Fall back to raw sqlite3 if CLI module not available
+            try:
+                from cli.core.db import Database
+                self._db = Database(db_path)
+            except ImportError:
+                # CLI module not available - use sqlite3 directly
+                import sqlite3
+                self._db = _Sqlite3Wrapper(db_path)
 
         self._connected = True
 
@@ -757,54 +800,46 @@ class QuinnAIOrgConnection(OrgConnection):
     def start_org(self) -> bool:
         """Start the org (if stopped or initialized).
 
-        Uses the CLI's org start logic to properly transition the org.
+        Uses subprocess call to qn CLI to properly transition the org.
+        This avoids direct dependency on cli.core.org which may not be available.
 
         Returns:
             True if org was started successfully
         """
         self._ensure_connected()
 
-        try:
-            # Import and use the Org class from CLI
-            from cli.core.org import Org
-
-            org = Org.load(self._db)
-
-            # Check if we can start
-            current_status = org.status
-            if current_status not in ("initialized", "stopped"):
-                return False
-
-            org.start()
-            return True
-        except Exception:
+        # Check current status first
+        org_info = self.get_org_info()
+        if org_info.status not in (OrgStatus.INITIALIZED, OrgStatus.STOPPED):
             return False
+
+        # Use subprocess-based start from org_discovery
+        from .org_discovery import start_org as subprocess_start_org
+
+        result = subprocess_start_org(self._org_path)
+        return result.success
 
     def stop_org(self) -> bool:
         """Stop the org gracefully.
 
-        Uses the CLI's org stop logic to properly transition the org.
+        Uses subprocess call to qn CLI to properly transition the org.
+        This avoids direct dependency on cli.core.org which may not be available.
 
         Returns:
             True if org was stopped successfully
         """
         self._ensure_connected()
 
-        try:
-            # Import and use the Org class from CLI
-            from cli.core.org import Org
-
-            org = Org.load(self._db)
-
-            # Check if we can stop
-            current_status = org.status
-            if current_status != "running":
-                return False
-
-            org.stop()
-            return True
-        except Exception:
+        # Check current status first
+        org_info = self.get_org_info()
+        if org_info.status != OrgStatus.RUNNING:
             return False
+
+        # Use subprocess-based stop from org_discovery
+        from .org_discovery import stop_org as subprocess_stop_org
+
+        result = subprocess_stop_org(self._org_path)
+        return result.success
 
     # ==================
     # SUBSCRIPTIONS

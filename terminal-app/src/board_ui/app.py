@@ -40,14 +40,6 @@ from .services import (
     discover_available_orgs,
     start_org,
 )
-from cli.core.org_init import (
-    OrgInitConfig,
-    ProviderConfig,
-    ObjectiveConfig,
-    KeyResultConfig,
-    CEOBriefingConfig,
-    init_org,
-)
 
 
 class BoardApp(App):
@@ -414,6 +406,29 @@ class BoardApp(App):
         Uses the shared org_init module to ensure CLI and wizard
         create orgs identically.
         """
+        # Lazy import: cli module may not be available when terminal-app
+        # is installed as a standalone package
+        try:
+            from cli.core.org_init import (
+                OrgInitConfig,
+                ProviderConfig,
+                ObjectiveConfig,
+                KeyResultConfig,
+                CEOBriefingConfig,
+                init_org,
+            )
+        except ModuleNotFoundError:
+            self.notify(
+                "CLI module not available. Install quinnai-cli or run from monorepo.",
+                severity="error",
+            )
+            # Go back to no-org view
+            wizard = self.query_one("#org-wizard", OrgInitWizard)
+            no_org_view = self.query_one("#no-org-view", NoOrgView)
+            wizard.add_class("hidden")
+            no_org_view.remove_class("hidden")
+            return
+
         try:
             if not config.path:
                 raise ValueError("Org path is required")

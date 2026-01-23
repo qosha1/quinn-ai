@@ -6,12 +6,16 @@ to the existing CLI. The board is independent of org lifecycle - it can run
 without any org, and starting/stopping orgs is done through the qn CLI.
 """
 
+import shutil
 import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+# Module-level cache for the qn command
+_qn_command_cache: Optional[list[str]] = None
 
 
 @dataclass
@@ -61,14 +65,100 @@ def _get_qn_command() -> list[str]:
     """Get the qn CLI command.
 
     Uses sys.executable to ensure we use the same Python environment.
-    Falls back to 'qn' if installed in PATH.
+    Falls back to 'qn' if installed in PATH. Caches the result for performance.
 
     Returns:
         Command list to invoke qn CLI
     """
-    # Try to use the CLI from the same environment
-    # qn is registered as an entry point in pyproject.toml
-    return [sys.executable, "-m", "commands.main"]
+    global _qn_command_cache
+
+    if _qn_command_cache is not None:
+        return _qn_command_cache
+
+    # First try: sys.executable -m cli.commands.main
+    module_cmd = [sys.executable, "-m", "cli.commands.main"]
+    try:
+        result = subprocess.run(
+            module_cmd + ["--help"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            _qn_command_cache = module_cmd
+            return _qn_command_cache
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+
+    # Second try: qn (globally installed)
+    if shutil.which("qn"):
+        try:
+            result = subprocess.run(
+                ["qn", "--help"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                _qn_command_cache = ["qn"]
+                return _qn_command_cache
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
+
+    # Default fallback (will likely fail but provides consistent behavior)
+    _qn_command_cache = module_cmd
+    return _qn_command_cache
+
+
+def check_cli_available() -> tuple[bool, str]:
+    """Check if the qn CLI is available.
+
+    Tries to run the qn CLI with --help to verify it's working.
+
+    Returns:
+        Tuple of (is_available, error_message).
+        If available: (True, "")
+        If not available: (False, "helpful error message")
+    """
+    # First try: sys.executable -m cli.commands.main
+    module_cmd = [sys.executable, "-m", "cli.commands.main"]
+    try:
+        result = subprocess.run(
+            module_cmd + ["--help"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return True, ""
+    except subprocess.TimeoutExpired:
+        return False, "CLI check timed out. The CLI may be hanging."
+    except FileNotFoundError:
+        pass  # Try next method
+    except Exception as e:
+        pass  # Try next method
+
+    # Second try: qn (globally installed)
+    if shutil.which("qn"):
+        try:
+            result = subprocess.run(
+                ["qn", "--help"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return True, ""
+        except subprocess.TimeoutExpired:
+            return False, "CLI check timed out. The CLI may be hanging."
+        except Exception:
+            pass
+
+    # Neither method worked
+    return False, (
+        "qn CLI not found. Install with: pip install quinnai-cli\n"
+        "Or ensure you're running from the quinnai virtual environment."
+    )
 
 
 def _get_db_path(org_path: Path) -> Path:
@@ -381,7 +471,16 @@ def start_org(
     Returns:
         StartResult with success status and message
     """
-    cmd = _get_qn_command() + ["org", "start", "--org-path", str(org_path)]
+    # Check CLI availability first
+    cli_available, cli_error = check_cli_available()
+    if not cli_available:
+        return StartResult(
+            success=False,
+            message=cli_error,
+            returncode=-1,
+        )
+
+    cmd = _get_qn_command() + ["--org-path", str(org_path), "org", "start"]
 
     if not spawn_ceo:
         cmd.append("--no-spawn-ceo")
@@ -449,7 +548,16 @@ def stop_org(
     Returns:
         StopResult with success status and message
     """
-    cmd = _get_qn_command() + ["org", "stop", "--org-path", str(org_path)]
+    # Check CLI availability first
+    cli_available, cli_error = check_cli_available()
+    if not cli_available:
+        return StopResult(
+            success=False,
+            message=cli_error,
+            returncode=-1,
+        )
+
+    cmd = _get_qn_command() + ["--org-path", str(org_path), "org", "stop"]
 
     if force:
         cmd.append("--force")

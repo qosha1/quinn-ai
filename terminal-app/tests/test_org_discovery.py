@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+from board_ui.services import org_discovery
 from board_ui.services.org_discovery import (
     OrgInfo,
     OrgConfig,
@@ -22,6 +23,14 @@ from board_ui.services.org_discovery import (
     get_org_status,
     refresh_org_info,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_cli_cache():
+    """Reset the CLI command cache before each test."""
+    org_discovery._qn_command_cache = None
+    yield
+    org_discovery._qn_command_cache = None
 
 
 @pytest.fixture
@@ -164,6 +173,10 @@ class TestOrgDiscovery:
     def test_start_org_from_board(self, temp_stopped_org_dir):
         """Board should be able to start an org."""
         # Mock subprocess.run to avoid actually running the CLI
+        # Note: subprocess.run is called multiple times:
+        # 1. check_cli_available() calls --help
+        # 2. _get_qn_command() calls --help (cached after first call)
+        # 3. The actual org start command
         with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -175,11 +188,17 @@ class TestOrgDiscovery:
 
             assert result.success is True
             assert "started" in result.message.lower()
-            mock_run.assert_called_once()
+            # Verify the actual org start command was called (last call)
+            assert mock_run.call_count >= 1
+            # Check that at least one call was for org start
+            calls = mock_run.call_args_list
+            start_calls = [c for c in calls if "org" in str(c) and "start" in str(c)]
+            assert len(start_calls) == 1
 
     def test_stop_org_from_board(self, temp_org_dir):
         """Board should be able to stop an org."""
         # Mock subprocess.run to avoid actually running the CLI
+        # Note: subprocess.run is called multiple times for CLI availability check
         with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -191,7 +210,12 @@ class TestOrgDiscovery:
 
             assert result.success is True
             assert "stopped" in result.message.lower()
-            mock_run.assert_called_once()
+            # Verify the actual org stop command was called
+            assert mock_run.call_count >= 1
+            # Check that at least one call was for org stop
+            calls = mock_run.call_args_list
+            stop_calls = [c for c in calls if "org" in str(c) and "stop" in str(c)]
+            assert len(stop_calls) == 1
 
     def test_board_independent_of_org_lifecycle(self):
         """Board can run without any org running."""
@@ -237,11 +261,22 @@ class TestOrgDiscovery:
     def test_stop_org_handles_cli_error(self, temp_org_dir):
         """Should handle CLI errors gracefully."""
         with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=1,
-                stdout="",
-                stderr="Organization not found",
-            )
+            # First call(s) for CLI availability check should succeed
+            # Last call (actual stop) should fail
+            def side_effect(*args, **kwargs):
+                cmd = args[0] if args else kwargs.get("command", [])
+                if "--help" in cmd:
+                    # CLI availability check succeeds
+                    return MagicMock(returncode=0, stdout="Help text", stderr="")
+                else:
+                    # Actual stop command fails
+                    return MagicMock(
+                        returncode=1,
+                        stdout="",
+                        stderr="Organization not found",
+                    )
+
+            mock_run.side_effect = side_effect
 
             result = stop_org(temp_org_dir)
 
