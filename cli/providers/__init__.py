@@ -18,6 +18,12 @@ def get_anthropic_provider():
     return AnthropicProvider
 
 
+def get_openai_provider():
+    """Get OpenAIProvider class (lazy import)."""
+    from cli.providers.openai import OpenAIProvider
+    return OpenAIProvider
+
+
 __all__ = [
     "Provider",
     "ProviderConfig",
@@ -27,4 +33,5 @@ __all__ = [
     "CompletionResult",
     "ProviderError",
     "get_anthropic_provider",
+    "get_openai_provider",
 ]
