@@ -23,6 +23,7 @@ from shared.enums import OrgStatus
 class OrgState:
     """Organization state."""
     id: str
+    name: str
     status: str
     ceo_worker_id: Optional[str]
     started_at: Optional[datetime]
@@ -134,6 +135,7 @@ def get_org_state(db: Database) -> Optional[OrgState]:
 
     return OrgState(
         id=row["id"],
+        name=row.get("name", "My Organization"),
         status=row["status"],
         ceo_worker_id=row["ceo_worker_id"],
         started_at=row["started_at"],

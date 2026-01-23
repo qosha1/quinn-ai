@@ -380,7 +380,8 @@ SCHEMA_SQL = """
 
 -- Organization state (one per org folder)
 CREATE TABLE IF NOT EXISTS org_state (
-    id TEXT PRIMARY KEY DEFAULT 'default',
+    id TEXT PRIMARY KEY CHECK(id = 'default'),  -- Singleton: only 'default' allowed
+    name TEXT NOT NULL DEFAULT 'My Organization',
     status TEXT NOT NULL CHECK(status IN ('uninitialized', 'initialized', 'running', 'stopped')),
     ceo_worker_id TEXT,
     started_at DATETIME,
