@@ -305,8 +305,10 @@ class AnthropicProvider(Provider):
         """
         return True
 
-    def get_token_costs(self, model_id: str) -> dict[str, float]:
-        """Get cost per 1K tokens for a model.
+    def _get_default_token_costs(self, model_id: str) -> dict[str, float]:
+        """Get default token costs for Anthropic models.
+
+        These are fallback costs used when not overridden in config.
 
         Args:
             model_id: Model ID

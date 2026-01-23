@@ -166,6 +166,24 @@ class RetryConfig:
 
 
 @dataclass
+class TokenCosts:
+    """Cost per 1K tokens for a model.
+
+    All costs are in USD.
+    """
+
+    input: float
+    """Cost per 1K input tokens."""
+
+    output: float
+    """Cost per 1K output tokens."""
+
+    def to_dict(self) -> dict[str, float]:
+        """Convert to dict format."""
+        return {"input": self.input, "output": self.output}
+
+
+@dataclass
 class ProviderConfig:
     """Configuration for a provider.
 
@@ -187,6 +205,9 @@ class ProviderConfig:
     retry_config: Optional[RetryConfig] = None
     """Detailed retry configuration. If None, uses default RetryConfig with max_retries."""
 
+    token_costs: Optional[dict[str, TokenCosts]] = None
+    """Custom token costs by model ID. Overrides provider defaults if set."""
+
     def get_retry_config(self) -> RetryConfig:
         """Get effective retry configuration.
 
@@ -195,6 +216,19 @@ class ProviderConfig:
         if self.retry_config is not None:
             return self.retry_config
         return RetryConfig(max_retries=self.max_retries)
+
+    def get_token_costs(self, model_id: str) -> Optional[dict[str, float]]:
+        """Get token costs for a model from config.
+
+        Args:
+            model_id: Model ID to look up
+
+        Returns:
+            Dict with 'input' and 'output' costs, or None if not configured
+        """
+        if self.token_costs and model_id in self.token_costs:
+            return self.token_costs[model_id].to_dict()
+        return None
 
 
 @dataclass
@@ -347,8 +381,28 @@ class Provider(ABC):
     def get_token_costs(self, model_id: str) -> dict[str, float]:
         """Get cost per 1K tokens for a model.
 
-        Default implementation returns zeros - providers should override
-        with their actual pricing.
+        Checks config-provided costs first, then falls back to
+        _get_default_token_costs() which providers can override.
+
+        Args:
+            model_id: Model ID to get costs for
+
+        Returns:
+            Dict with 'input' and 'output' costs per 1K tokens in USD
+        """
+        # Config-provided costs take precedence
+        config_costs = self._config.get_token_costs(model_id)
+        if config_costs is not None:
+            return config_costs
+
+        # Fall back to provider defaults
+        return self._get_default_token_costs(model_id)
+
+    def _get_default_token_costs(self, model_id: str) -> dict[str, float]:
+        """Get default token costs for a model.
+
+        Providers should override this to provide their pricing.
+        Default returns zeros.
 
         Args:
             model_id: Model ID to get costs for
