@@ -697,6 +697,74 @@ class ProviderRegistry:
         """
         return list(self._providers.keys())
 
+    def get_model_for_tier(
+        self,
+        tier: CostTier,
+        required_capabilities: Optional[list[str]] = None,
+    ) -> tuple[Provider, ModelInfo]:
+        """Get a model for a specific tier from any provider.
+
+        Tries providers in order: default first, then others.
+        Returns the first matching model at the requested tier.
+
+        Args:
+            tier: Target cost tier
+            required_capabilities: Optional capability requirements
+
+        Returns:
+            Tuple of (Provider, ModelInfo)
+
+        Raises:
+            ValueError: If no model available for tier
+        """
+        fallback_chain = self._build_fallback_chain(tier, required_capabilities)
+        if not fallback_chain:
+            raise ValueError(f"No model available for tier {tier.value}")
+        return fallback_chain[0]
+
+    def _build_fallback_chain(
+        self,
+        tier: CostTier,
+        required_capabilities: Optional[list[str]] = None,
+    ) -> list[tuple[Provider, ModelInfo]]:
+        """Build ordered list of provider/model pairs for fallback.
+
+        Builds a list of (provider, model) tuples that can serve
+        the requested tier. List is ordered by preference:
+        1. Default provider first
+        2. Other authorized providers in registration order
+
+        Args:
+            tier: Target cost tier
+            required_capabilities: Optional capability requirements
+
+        Returns:
+            List of (Provider, ModelInfo) tuples in fallback order
+        """
+        if required_capabilities is None:
+            required_capabilities = []
+
+        fallback: list[tuple[Provider, ModelInfo]] = []
+
+        # Build provider order: default first
+        provider_order = []
+        if self._default_provider and self.is_authorized(self._default_provider):
+            provider_order.append(self._default_provider)
+        for name in self._providers:
+            if name not in provider_order and self.is_authorized(name):
+                provider_order.append(name)
+
+        # Try each provider
+        for name in provider_order:
+            provider = self._providers[name]
+            try:
+                model = _select_model_for_tier(provider, tier, required_capabilities)
+                fallback.append((provider, model))
+            except (ValueError, ModelNotAvailableError):
+                continue
+
+        return fallback
+
     def __len__(self) -> int:
         """Number of registered providers."""
         return len(self._providers)
