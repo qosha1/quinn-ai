@@ -545,3 +545,126 @@ class TestOkrErrorHandling:
         # Should not crash, should show no OKRs message
         assert result.exit_code == 0
         assert "No OKRs found" in result.output
+
+
+class TestOkrDatabaseIntegration:
+    """Test OKR database integration features."""
+
+    def test_list_from_db_shows_message_when_empty(self, runner, initialized_org):
+        """--from-db should show no OKRs message when database is empty."""
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "list", "--from-db"
+        ])
+
+        assert result.exit_code == 0
+        assert "No OKRs found in database" in result.output
+
+    def test_list_from_db_shows_okrs(self, runner, initialized_org):
+        """--from-db should list OKRs from database with progress."""
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import create_okr, add_okr_key_result
+
+        # Create an OKR directly in the database
+        db = open_database(get_org_db_path(initialized_org))
+        try:
+            # Get CEO worker ID
+            from cli.core.org import Org
+            org = Org.load(db)
+            ceo_id = org.ceo_worker_id
+
+            okr = create_okr(
+                db=db,
+                title="Test OKR from DB",
+                owner_id=ceo_id,
+                description="Test description",
+                status="active",
+            )
+
+            # Add a key result
+            add_okr_key_result(db, okr.id, "metric_a", 100.0, "count", 25.0)
+        finally:
+            db.close()
+
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "list", "--from-db"
+        ])
+
+        assert result.exit_code == 0
+        assert "Test OKR from DB" in result.output
+        assert "active" in result.output
+        assert "metric_a" in result.output
+        assert "25" in result.output  # Current value
+        assert "100" in result.output  # Target value
+
+    @patch('cli.commands.org.okr.run_bd')
+    def test_set_stores_in_database(self, mock_run_bd, runner, initialized_org):
+        """OKR set should also store OKR in database."""
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import get_okr
+
+        # Mock successful beads creation
+        mock_run_bd.return_value = MagicMock(
+            returncode=0,
+            stdout="✓ Created issue: test-abc\n  Title: DB Test OKR",
+            stderr=""
+        )
+
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set",
+            "--title", "DB Test OKR",
+            "--owner", "TestCEO",
+            "--description", "Test description"
+        ])
+
+        assert result.exit_code == 0
+
+        # Verify OKR was stored in database
+        db = open_database(get_org_db_path(initialized_org))
+        try:
+            okr = get_okr(db, "test-abc")
+            assert okr is not None
+            assert okr.title == "DB Test OKR"
+            assert okr.description == "Test description"
+        finally:
+            db.close()
+
+    def test_list_from_db_with_status_filter(self, runner, initialized_org):
+        """--from-db should respect status filter."""
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import create_okr
+
+        # Get CEO ID
+        db = open_database(get_org_db_path(initialized_org))
+        try:
+            from cli.core.org import Org
+            org = Org.load(db)
+            ceo_id = org.ceo_worker_id
+
+            # Create active and completed OKRs
+            create_okr(db=db, title="Active OKR", owner_id=ceo_id, status="active")
+            create_okr(db=db, title="Completed OKR", owner_id=ceo_id, status="completed")
+        finally:
+            db.close()
+
+        # List only active
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "list", "--from-db", "--status=active"
+        ])
+
+        assert result.exit_code == 0
+        assert "Active OKR" in result.output
+        assert "Completed OKR" not in result.output
+
+        # List only completed
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "list", "--from-db", "--status=completed"
+        ])
+
+        assert result.exit_code == 0
+        assert "Completed OKR" in result.output
+        assert "Active OKR" not in result.output

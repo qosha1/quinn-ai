@@ -3333,6 +3333,57 @@ def get_okrs_by_owner(db: Database, owner_id: str) -> list[OKR]:
     ]
 
 
+def list_okrs(
+    db: Database,
+    status: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    include_closed: bool = False,
+) -> list[OKR]:
+    """List all OKRs with optional filtering.
+
+    Args:
+        db: Database instance
+        status: Optional status filter ('draft', 'active', 'completed', 'cancelled')
+        owner_id: Optional owner worker ID filter
+        include_closed: If True, include completed/cancelled OKRs
+
+    Returns:
+        List of OKRs
+    """
+    query = "SELECT * FROM okrs WHERE 1=1"
+    params: list = []
+
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    elif not include_closed:
+        # Default: exclude closed statuses
+        query += " AND status NOT IN ('completed', 'cancelled')"
+
+    if owner_id:
+        query += " AND owner_worker_id = ?"
+        params.append(owner_id)
+
+    query += " ORDER BY created_at DESC"
+
+    rows = db.fetchall(query, tuple(params))
+    return [
+        OKR(
+            id=row["id"],
+            title=row["title"],
+            description=row["description"],
+            owner_worker_id=row["owner_worker_id"],
+            parent_okr_id=row["parent_okr_id"],
+            status=row["status"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            key_results=_parse_key_results(_get_row_value(row, "key_results")),
+            due_date=_parse_date(_get_row_value(row, "due_date")),
+        )
+        for row in rows
+    ]
+
+
 def get_child_okrs(db: Database, parent_id: str) -> list[OKR]:
     """Get OKRs that have the given OKR as their parent.
 

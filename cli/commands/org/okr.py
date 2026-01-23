@@ -11,7 +11,7 @@ from typing import Optional
 
 from cli.commands.context import pass_context, Context
 from cli.core.bd_wrapper import run_bd
-from cli.core.db import get_org_db_path
+from cli.core.db import get_org_db_path, open_database
 
 
 @click.group()
@@ -27,7 +27,7 @@ def okr_cmd():
 @okr_cmd.command("list")
 @click.option(
     "--status",
-    type=click.Choice(["open", "in_progress", "closed"]),
+    type=click.Choice(["open", "in_progress", "closed", "active", "completed", "cancelled", "draft"]),
     help="Filter by status",
 )
 @click.option(
@@ -41,19 +41,28 @@ def okr_cmd():
     is_flag=True,
     help="Include closed OKRs",
 )
+@click.option(
+    "--from-db",
+    "from_db",
+    is_flag=True,
+    help="Read from database instead of beads (shows key results progress)",
+)
 @pass_context
-def list_cmd(ctx: Context, status: Optional[str], assignee: Optional[str], show_all: bool):
+def list_cmd(ctx: Context, status: Optional[str], assignee: Optional[str], show_all: bool, from_db: bool):
     """List all OKRs from the organization.
 
     Shows objective title, status, owner, and progress.
 
     \b
     Examples:
-      qn org okr list                    # List open OKRs
+      qn org okr list                    # List open OKRs from beads
+      qn org okr list --from-db          # List from database with progress
       qn org okr list --all              # Include closed
       qn org okr list --status=in_progress
       qn org okr list --assignee=ceo
     """
+    from cli.core.queries import list_okrs, get_worker_by_name
+
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)
 
@@ -63,11 +72,86 @@ def list_cmd(ctx: Context, status: Optional[str], assignee: Optional[str], show_
             "Run 'qn org init' first."
         )
 
+    if from_db:
+        # Read from database - shows key results and progress
+        db = open_database(db_path)
+        try:
+            # Map beads status to db status
+            db_status = None
+            if status:
+                status_map = {
+                    "open": "active",
+                    "in_progress": "active",
+                    "closed": "completed",
+                    "active": "active",
+                    "completed": "completed",
+                    "cancelled": "cancelled",
+                    "draft": "draft",
+                }
+                db_status = status_map.get(status, status)
+
+            # Resolve assignee to worker ID
+            owner_id = None
+            if assignee:
+                worker = get_worker_by_name(db, assignee)
+                if worker:
+                    owner_id = worker.id
+                else:
+                    owner_id = assignee
+
+            okrs = list_okrs(db, status=db_status, owner_id=owner_id, include_closed=show_all)
+
+            if not okrs:
+                click.echo("No OKRs found in database.")
+                return
+
+            for okr in okrs:
+                click.echo("")
+                click.echo(f"{'=' * 60}")
+                click.echo(f"OKR: {okr.title}")
+                click.echo(f"{'=' * 60}")
+                click.echo(f"  ID: {okr.id}")
+                click.echo(f"  Status: {okr.status}")
+                click.echo(f"  Owner: {okr.owner_worker_id}")
+
+                if okr.description:
+                    click.echo(f"  Description: {okr.description[:100]}...")
+
+                if okr.due_date:
+                    click.echo(f"  Due: {okr.due_date}")
+
+                # Show key results with progress
+                if okr.key_results:
+                    click.echo("  Key Results:")
+                    for kr in okr.key_results:
+                        progress = kr.progress()
+                        status_icon = "✓" if kr.is_met() else "○"
+                        click.echo(f"    {status_icon} {kr.metric}: {kr.current}/{kr.target} {kr.unit} ({progress:.0f}%)")
+                    click.echo(f"  Overall Progress: {okr.progress():.0f}%")
+
+                if okr.created_at:
+                    created_str = okr.created_at.strftime('%Y-%m-%d') if hasattr(okr.created_at, 'strftime') else str(okr.created_at)[:10]
+                    click.echo(f"  Created: {created_str}")
+                else:
+                    click.echo(f"  Created: N/A")
+
+            click.echo("")
+        finally:
+            db.close()
+        return
+
+    # Default: Read from beads
     # Build bd list command - use label since 'okr' is not a valid beads type
     args = ["list", "--label=okr", "--json"]
 
     if status:
-        args.append(f"--status={status}")
+        # Map database statuses to beads statuses
+        beads_status = status
+        if status in ("active", "draft"):
+            beads_status = "open"
+        elif status in ("completed", "cancelled"):
+            beads_status = "closed"
+        args.append(f"--status={beads_status}")
     elif not show_all:
         # Default to open issues only
         args.append("--status=open")
@@ -150,6 +234,8 @@ def _create_okr(
     parent: Optional[str],
 ):
     """Shared implementation for set/add commands."""
+    from cli.core.queries import get_worker_by_name, create_okr
+
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)
 
@@ -207,7 +293,63 @@ def _create_okr(
                     break
             break
 
+    # Also store OKR in database for querying
     if okr_id:
+        db = open_database(db_path)
+        try:
+            # Resolve owner name to worker ID
+            owner_id = owner
+            if owner:
+                worker = get_worker_by_name(db, owner)
+                if worker:
+                    owner_id = worker.id
+                else:
+                    # Use owner as-is if not found (might be a worker ID)
+                    owner_id = owner
+
+            # Parse due date if provided
+            due_date = None
+            if due:
+                from datetime import date, timedelta
+                import re
+                # Handle relative dates like +3m
+                if due.startswith("+"):
+                    match = re.match(r"\+(\d+)([dwmy])", due)
+                    if match:
+                        num = int(match.group(1))
+                        unit = match.group(2)
+                        today = date.today()
+                        if unit == "d":
+                            due_date = today + timedelta(days=num)
+                        elif unit == "w":
+                            due_date = today + timedelta(weeks=num)
+                        elif unit == "m":
+                            due_date = date(today.year, today.month + num, today.day)
+                        elif unit == "y":
+                            due_date = date(today.year + num, today.month, today.day)
+                else:
+                    # Try ISO format
+                    try:
+                        due_date = date.fromisoformat(due)
+                    except ValueError:
+                        pass
+
+            create_okr(
+                db=db,
+                title=title,
+                owner_id=owner_id,
+                parent_id=parent,
+                description=description,
+                status="active",
+                okr_id=okr_id,
+                due_date=due_date,
+            )
+        except Exception:
+            # Database storage is secondary - don't fail if it errors
+            pass
+        finally:
+            db.close()
+
         click.echo("")
         click.echo(f"Link work items to this OKR with:")
         click.echo(f"  bd dep add <work-id> {okr_id} --type serves")
