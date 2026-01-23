@@ -13,6 +13,7 @@ Example:
 from typing import Type, Optional
 
 from cli.core.session import SessionInterface, SessionConfig
+from shared.pyterm import PytermConfig
 
 
 class AdapterNotFoundError(Exception):
@@ -143,6 +144,7 @@ class SessionRegistry:
         working_directory: Optional[str] = None,
         args: Optional[list[str]] = None,
         env_vars: Optional[dict[str, str]] = None,
+        pyterm_config: Optional[PytermConfig] = None,
         **kwargs,
     ) -> SessionInterface:
         """
@@ -158,6 +160,7 @@ class SessionRegistry:
             working_directory: Optional working directory path
             args: Optional command arguments
             env_vars: Optional environment variables
+            pyterm_config: Terminal configuration (defaults to PytermConfig.standard())
             **kwargs: Additional arguments for adapter constructor
 
         Returns:
@@ -174,7 +177,9 @@ class SessionRegistry:
             working_directory=working_directory,
             env_vars=env_vars or {},
         )
-        return self.create(provider_name, config, **kwargs)
+        # Factory provides the standard config if not specified
+        effective_pyterm_config = pyterm_config or PytermConfig.standard()
+        return self.create(provider_name, config, pyterm_config=effective_pyterm_config, **kwargs)
 
 
 # =============================================================================

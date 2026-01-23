@@ -42,23 +42,26 @@ class ClaudeCodeSession(SessionInterface):
             command="claude",
             args=["--dangerously-skip-permissions"],
         )
-        session = ClaudeCodeSession(config)
+        session = ClaudeCodeSession(config, pyterm_config)
         session.start()
         result = session.send_prompt("Hello!")
         session.stop()
     """
 
-    def __init__(self, config: SessionConfig, pyterm_config: Optional[PytermConfig] = None):
+    def __init__(self, config: SessionConfig, pyterm_config: PytermConfig):
         """Initialize Claude Code session.
 
         Args:
             config: SessionConfig with provider settings
-            pyterm_config: Optional pyterm configuration (uses standard if not provided)
+            pyterm_config: Pyterm configuration for terminal behavior
+
+        Note:
+            pyterm_config is required - no internal defaults. Use
+            PytermConfig.standard() if you need standard values.
         """
         super().__init__(config)
 
-        # Build pyterm config
-        self._pyterm_config = pyterm_config or PytermConfig.standard()
+        self._pyterm_config = pyterm_config
 
         # AgentSession will be created on start()
         self._agent_session: Optional[AgentSession] = None
@@ -77,6 +80,11 @@ class ClaudeCodeSession(SessionInterface):
     def pid(self) -> Optional[int]:
         """Process ID of the underlying CLI process."""
         return self._pid
+
+    @property
+    def platform_session_name(self) -> Optional[str]:
+        """Tmux session name used for this session."""
+        return f"qn-{self._config.worker_id}"
 
     # =========================================================================
     # Abstract method implementations

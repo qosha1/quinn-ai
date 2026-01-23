@@ -213,7 +213,7 @@ class SessionInterface(ABC):
                     CRASHED
 
     Usage:
-        session = ClaudeCodeSession(config)
+        session = ClaudeCodeSession(config, pyterm_config)
         session.start()
         result = session.send_prompt("Hello")
         session.stop()
@@ -298,6 +298,15 @@ class SessionInterface(ABC):
     def pid(self) -> Optional[int]:
         """Process ID of the underlying CLI process."""
         pass
+
+    @property
+    def platform_session_name(self) -> Optional[str]:
+        """Platform-specific session identifier (e.g., tmux session name).
+
+        Override in subclasses that use platform-specific session management.
+        Returns None by default for sessions without platform identifiers.
+        """
+        return None
 
     @abstractmethod
     def _spawn_process(self) -> None:
