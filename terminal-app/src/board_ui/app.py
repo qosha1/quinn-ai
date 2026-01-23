@@ -30,6 +30,7 @@ from .views.no_org import (
     ShowNewOrgWizard,
     RefreshOrgList,
 )
+from .views.org_wizard import OrgInitWizard, OrgConfig
 from .services import (
     QuinnAIOrgConnection,
     OrgConnectionError,
@@ -169,6 +170,9 @@ class BoardApp(App):
         # Start with no-org view, will be replaced when connected
         yield NoOrgView(id="no-org-view")
 
+        # Org init wizard (hidden until user clicks "New Org")
+        yield OrgInitWizard(id="org-wizard", classes="hidden")
+
         # Org views container (hidden until connected)
         with TabbedContent(initial="dashboard", id="org-tabs", classes="hidden"):
             with TabPane("Dashboard", id="dashboard"):
@@ -295,8 +299,99 @@ class BoardApp(App):
 
     async def on_show_new_org_wizard(self, message: ShowNewOrgWizard) -> None:
         """Handle request to show the new org wizard."""
-        # TODO: Implement org init wizard
-        self.notify("Org wizard coming soon", severity="warning")
+        # Hide no-org view and show wizard
+        no_org_view = self.query_one("#no-org-view", NoOrgView)
+        wizard = self.query_one("#org-wizard", OrgInitWizard)
+
+        no_org_view.add_class("hidden")
+        wizard.remove_class("hidden")
+
+    async def on_org_init_wizard_wizard_completed(
+        self, message: OrgInitWizard.WizardCompleted
+    ) -> None:
+        """Handle wizard completion - create the org."""
+        config = message.config
+        self.notify(f"Creating org '{config.name}'...")
+
+        # Create org using CLI
+        await self._create_org_from_config(config)
+
+    async def on_org_init_wizard_wizard_cancelled(
+        self, message: OrgInitWizard.WizardCancelled
+    ) -> None:
+        """Handle wizard cancellation - go back to no-org view."""
+        wizard = self.query_one("#org-wizard", OrgInitWizard)
+        no_org_view = self.query_one("#no-org-view", NoOrgView)
+
+        wizard.add_class("hidden")
+        no_org_view.remove_class("hidden")
+
+    async def _create_org_from_config(self, config: OrgConfig) -> None:
+        """Create an org from wizard configuration."""
+        import subprocess
+        import json
+
+        try:
+            # Create the org directory
+            if config.path:
+                config.path.mkdir(parents=True, exist_ok=True)
+
+                # Create config directory
+                config_dir = config.path / "config"
+                config_dir.mkdir(exist_ok=True)
+
+                # Write providers.yaml
+                providers_content = "# AI Service Providers\n"
+                providers_content += "default: claude_code\n\n"
+                providers_content += "providers:\n"
+                for provider in config.providers:
+                    if provider.enabled:
+                        providers_content += f"  {provider.id}:\n"
+                        providers_content += f"    enabled: true\n"
+                        if provider.api_key:
+                            providers_content += f"    api_key: {provider.api_key}\n"
+
+                (config_dir / "providers.yaml").write_text(providers_content)
+
+                # Write initial OKRs if provided
+                if config.objectives:
+                    okrs_data = []
+                    for obj in config.objectives:
+                        okr = {
+                            "title": obj.title,
+                            "key_results": [
+                                {
+                                    "metric": kr.metric,
+                                    "target": kr.target,
+                                    "unit": kr.unit,
+                                }
+                                for kr in obj.key_results
+                            ],
+                        }
+                        okrs_data.append(okr)
+                    (config_dir / "initial_okrs.json").write_text(
+                        json.dumps(okrs_data, indent=2)
+                    )
+
+                # Write CEO briefing if provided
+                if config.ceo_briefing:
+                    briefing_md = config.ceo_briefing.to_markdown()
+                    (config_dir / "ceo_briefing.md").write_text(briefing_md)
+
+                self.notify(f"Org '{config.name}' created at {config.path}", severity="information")
+
+                # Hide wizard and refresh org list
+                wizard = self.query_one("#org-wizard", OrgInitWizard)
+                wizard.add_class("hidden")
+                self._refresh_org_list()
+
+        except Exception as e:
+            self.notify(f"Failed to create org: {e}", severity="error")
+            # Go back to no-org view
+            wizard = self.query_one("#org-wizard", OrgInitWizard)
+            no_org_view = self.query_one("#no-org-view", NoOrgView)
+            wizard.add_class("hidden")
+            no_org_view.remove_class("hidden")
 
     async def on_refresh_org_list(self, message: RefreshOrgList) -> None:
         """Handle request to refresh the org list."""
