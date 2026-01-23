@@ -314,6 +314,8 @@ def get_team_children(db: Database, team_id: str) -> list[Team]:
             id=row["id"],
             name=row["name"],
             parent_team_id=row["parent_team_id"],
+            lead_id=row["lead_id"],
+            channel_id=row["channel_id"],
             created_at=row["created_at"],
         )
         for row in rows
@@ -335,6 +337,8 @@ def get_all_teams(db: Database) -> list[Team]:
             id=row["id"],
             name=row["name"],
             parent_team_id=row["parent_team_id"],
+            lead_id=row["lead_id"],
+            channel_id=row["channel_id"],
             created_at=row["created_at"],
         )
         for row in rows
