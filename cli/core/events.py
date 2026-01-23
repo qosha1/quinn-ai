@@ -18,12 +18,23 @@ from .db import Database
 class EventType(Enum):
     """All event types in the QuinnAI system."""
 
+    # Org events
+    ORG_INITIALIZED = "org.initialized"
+    ORG_STARTED = "org.started"
+    ORG_STOPPED = "org.stopped"
+
     # Worker events
     WORKER_HIRED = "worker.hired"
     WORKER_FIRED = "worker.fired"
     WORKER_PROMOTED = "worker.promoted"
     WORKER_STARTED = "worker.started"
     WORKER_STOPPED = "worker.stopped"
+
+    # Session events
+    SESSION_STARTED = "session.started"
+    SESSION_STOPPED = "session.stopped"
+    SESSION_CRASHED = "session.crashed"
+    SESSION_IDLE = "session.idle"
 
     # Team events
     TEAM_CREATED = "team.created"
@@ -40,6 +51,8 @@ class EventType(Enum):
     WORK_ASSIGNED = "work.assigned"
     WORK_STATUS_CHANGED = "work.status_changed"
     WORK_COMPLETED = "work.completed"
+    WORK_ESCALATED = "work.escalated"
+    WORK_BLOCKED = "work.blocked"
 
     # Offboarding events
     OFFBOARDING_ASK_CREATED = "offboarding.ask_created"
@@ -51,9 +64,17 @@ class EventType(Enum):
     OKR_UPDATED = "okr.updated"
     OKR_COMPLETED = "okr.completed"
 
+    # Budget events
+    BUDGET_WARNING = "budget.warning"
+    BUDGET_EXHAUSTED = "budget.exhausted"
+    BUDGET_DELEGATED = "budget.delegated"
+
 
 # Entity types for type safety
-ENTITY_TYPES = frozenset({"worker", "team", "okr", "message", "work", "offboarding"})
+ENTITY_TYPES = frozenset({
+    "org", "worker", "session", "team", "okr",
+    "message", "work", "offboarding", "budget"
+})
 
 
 @dataclass

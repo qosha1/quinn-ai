@@ -7,8 +7,8 @@ writing raw SQL. All functions are organized by entity type.
 
 import json
 import uuid
-from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Optional
 
 from .db import Database
@@ -37,6 +37,8 @@ class Team:
     id: str
     name: str
     parent_team_id: Optional[str]
+    lead_id: Optional[str]
+    channel_id: Optional[str]
     created_at: datetime
 
 
@@ -183,6 +185,7 @@ def create_team(
     db: Database,
     name: str,
     parent_team_id: Optional[str] = None,
+    lead_id: Optional[str] = None,
     team_id: Optional[str] = None,
     auto_create_channel: bool = True,
 ) -> Team:
@@ -192,6 +195,7 @@ def create_team(
         db: Database instance
         name: Team name
         parent_team_id: Optional parent team for hierarchy
+        lead_id: Optional team lead worker ID
         team_id: Optional custom ID (generated if not provided)
         auto_create_channel: Create a team channel automatically (default True)
 
@@ -202,30 +206,34 @@ def create_team(
         team_id = generate_id("team")
 
     now = datetime.now()
-    db.execute(
-        "INSERT INTO teams (id, name, parent_team_id, created_at) VALUES (?, ?, ?, ?)",
-        (team_id, name, parent_team_id, now)
-    )
-    db.connection.commit()
+    channel_id = None
 
-    team = Team(
-        id=team_id,
-        name=name,
-        parent_team_id=parent_team_id,
-        created_at=now,
-    )
-
-    # Auto-create a channel for the team
+    # Auto-create a channel for the team first
     if auto_create_channel:
         channel_name = name.lower().replace(" ", "-")
-        create_channel(
+        channel = create_channel(
             db,
             name=channel_name,
             channel_type="team",
             team_id=team_id,
         )
+        channel_id = channel.id
 
-    return team
+    db.execute(
+        """INSERT INTO teams (id, name, parent_team_id, lead_id, channel_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (team_id, name, parent_team_id, lead_id, channel_id, now)
+    )
+    db.connection.commit()
+
+    return Team(
+        id=team_id,
+        name=name,
+        parent_team_id=parent_team_id,
+        lead_id=lead_id,
+        channel_id=channel_id,
+        created_at=now,
+    )
 
 
 def get_team(db: Database, team_id: str) -> Optional[Team]:
@@ -246,6 +254,8 @@ def get_team(db: Database, team_id: str) -> Optional[Team]:
         id=row["id"],
         name=row["name"],
         parent_team_id=row["parent_team_id"],
+        lead_id=row.get("lead_id"),
+        channel_id=row.get("channel_id"),
         created_at=row["created_at"],
     )
 
@@ -3079,6 +3089,25 @@ def is_worker_manager(db: Database, worker_id: str) -> bool:
 # ===================
 
 @dataclass
+class KeyResult:
+    """A single measurable key result."""
+    metric: str  # e.g., "lighthouse_score", "test_coverage"
+    target: float  # target value
+    current: float  # current value
+    unit: str  # e.g., "%", "count", "seconds"
+
+    def progress(self) -> float:
+        """Calculate progress as percentage (0-100)."""
+        if self.target == 0:
+            return 100.0 if self.current >= 0 else 0.0
+        return min(100.0, (self.current / self.target) * 100)
+
+    def is_met(self) -> bool:
+        """Check if target is met."""
+        return self.current >= self.target
+
+
+@dataclass
 class OKR:
     """Objective and Key Result definition."""
     id: str
@@ -3089,6 +3118,18 @@ class OKR:
     status: str
     created_at: datetime
     updated_at: datetime
+    key_results: list[KeyResult] = field(default_factory=list)
+    due_date: Optional[date] = None
+
+    def progress(self) -> float:
+        """Calculate overall progress across all key results."""
+        if not self.key_results:
+            return 0.0
+        return sum(kr.progress() for kr in self.key_results) / len(self.key_results)
+
+    def all_key_results_met(self) -> bool:
+        """Check if all key results are met."""
+        return all(kr.is_met() for kr in self.key_results) if self.key_results else False
 
 
 @dataclass
@@ -3112,6 +3153,8 @@ def create_okr(
     description: Optional[str] = None,
     status: str = "active",
     okr_id: Optional[str] = None,
+    key_results: Optional[list[KeyResult]] = None,
+    due_date: Optional[date] = None,
 ) -> OKR:
     """Create a new OKR.
 
@@ -3126,6 +3169,8 @@ def create_okr(
         description: Optional description
         status: OKR status ('draft', 'active', 'completed', 'cancelled')
         okr_id: Optional custom ID (generated if not provided)
+        key_results: Optional list of measurable key results
+        due_date: Optional due date for the OKR
 
     Returns:
         Created OKR
@@ -3134,11 +3179,18 @@ def create_okr(
         okr_id = generate_id("okr")
 
     now = datetime.now()
+    kr_json = None
+    if key_results:
+        kr_json = json.dumps([
+            {"metric": kr.metric, "target": kr.target, "current": kr.current, "unit": kr.unit}
+            for kr in key_results
+        ])
+
     db.execute(
         """INSERT INTO okrs
-           (id, title, description, owner_worker_id, parent_okr_id, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (okr_id, title, description, owner_id, parent_id, status, now, now)
+           (id, title, description, owner_worker_id, parent_okr_id, status, key_results, due_date, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (okr_id, title, description, owner_id, parent_id, status, kr_json, due_date, now, now)
     )
     db.connection.commit()
 
@@ -3151,7 +3203,46 @@ def create_okr(
         status=status,
         created_at=now,
         updated_at=now,
+        key_results=key_results or [],
+        due_date=due_date,
     )
+
+
+def _parse_key_results(kr_json: Optional[str]) -> list[KeyResult]:
+    """Parse key results from JSON string."""
+    if not kr_json:
+        return []
+    try:
+        data = json.loads(kr_json)
+        return [
+            KeyResult(
+                metric=kr["metric"],
+                target=kr["target"],
+                current=kr["current"],
+                unit=kr["unit"],
+            )
+            for kr in data
+        ]
+    except (json.JSONDecodeError, KeyError):
+        return []
+
+
+def _parse_date(date_str: Optional[str]) -> Optional[date]:
+    """Parse date from string."""
+    if not date_str:
+        return None
+    try:
+        return date.fromisoformat(date_str) if isinstance(date_str, str) else date_str
+    except ValueError:
+        return None
+
+
+def _get_row_value(row: dict, key: str, default=None):
+    """Safely get value from sqlite3.Row or dict."""
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return default
 
 
 def get_okr(db: Database, okr_id: str) -> Optional[OKR]:
@@ -3177,6 +3268,8 @@ def get_okr(db: Database, okr_id: str) -> Optional[OKR]:
         status=row["status"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        key_results=_parse_key_results(_get_row_value(row, "key_results")),
+        due_date=_parse_date(_get_row_value(row, "due_date")),
     )
 
 
@@ -3220,6 +3313,8 @@ def get_okrs_by_owner(db: Database, owner_id: str) -> list[OKR]:
             status=row["status"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            key_results=_parse_key_results(_get_row_value(row, "key_results")),
+            due_date=_parse_date(_get_row_value(row, "due_date")),
         )
         for row in rows
     ]
@@ -3249,9 +3344,108 @@ def get_child_okrs(db: Database, parent_id: str) -> list[OKR]:
             status=row["status"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            key_results=_parse_key_results(_get_row_value(row, "key_results")),
+            due_date=_parse_date(_get_row_value(row, "due_date")),
         )
         for row in rows
     ]
+
+
+def update_okr_key_result(
+    db: Database,
+    okr_id: str,
+    metric: str,
+    current: float,
+) -> Optional[OKR]:
+    """Update a key result's current value.
+
+    Args:
+        db: Database instance
+        okr_id: OKR ID
+        metric: Key result metric name to update
+        current: New current value
+
+    Returns:
+        Updated OKR, or None if not found or metric doesn't exist
+    """
+    okr = get_okr(db, okr_id)
+    if not okr:
+        return None
+
+    # Find and update the key result
+    updated = False
+    for kr in okr.key_results:
+        if kr.metric == metric:
+            kr.current = current
+            updated = True
+            break
+
+    if not updated:
+        return None
+
+    # Save back to database
+    kr_json = json.dumps([
+        {"metric": kr.metric, "target": kr.target, "current": kr.current, "unit": kr.unit}
+        for kr in okr.key_results
+    ])
+    now = datetime.now()
+    db.execute(
+        "UPDATE okrs SET key_results = ?, updated_at = ? WHERE id = ?",
+        (kr_json, now, okr_id)
+    )
+    db.connection.commit()
+
+    okr.updated_at = now
+    return okr
+
+
+def add_okr_key_result(
+    db: Database,
+    okr_id: str,
+    metric: str,
+    target: float,
+    unit: str,
+    current: float = 0.0,
+) -> Optional[OKR]:
+    """Add a new key result to an OKR.
+
+    Args:
+        db: Database instance
+        okr_id: OKR ID
+        metric: Key result metric name
+        target: Target value
+        unit: Unit of measurement
+        current: Initial current value (default 0)
+
+    Returns:
+        Updated OKR, or None if OKR not found
+    """
+    okr = get_okr(db, okr_id)
+    if not okr:
+        return None
+
+    # Check if metric already exists
+    for kr in okr.key_results:
+        if kr.metric == metric:
+            return None  # Duplicate metric
+
+    # Add new key result
+    okr.key_results.append(KeyResult(metric=metric, target=target, current=current, unit=unit))
+
+    # Save back to database
+    kr_json = json.dumps([
+        {"metric": kr.metric, "target": kr.target, "current": kr.current, "unit": kr.unit}
+        for kr in okr.key_results
+    ])
+    now = datetime.now()
+    db.execute(
+        "UPDATE okrs SET key_results = ?, updated_at = ? WHERE id = ?",
+        (kr_json, now, okr_id)
+    )
+    db.connection.commit()
+
+    okr.updated_at = now
+    return okr
 
 
 @dataclass

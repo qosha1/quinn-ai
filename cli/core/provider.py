@@ -861,7 +861,7 @@ def create_session_for_worker(
     """Create an appropriate session for a worker based on their profile.
 
     Uses provider selection to determine the right provider and model,
-    then creates and returns a configured session instance.
+    then uses the SessionRegistry to create the appropriate session type.
 
     Args:
         registry: Initialized ProviderRegistry
@@ -877,10 +877,11 @@ def create_session_for_worker(
 
     Raises:
         ProviderSelectionError: If no provider can satisfy requirements
+        AdapterNotFoundError: If no session adapter for the provider
     """
     # Import here to avoid circular imports
     from cli.core.session import SessionConfig
-    from cli.core.sessions import ClaudeCodeSession
+    from cli.core.sessions.registry import get_default_registry
 
     # Select provider
     selection = select_provider_for_worker(
@@ -906,8 +907,9 @@ def create_session_for_worker(
         },
     )
 
-    # Create session instance
-    return ClaudeCodeSession(config)
+    # Use SessionRegistry to create appropriate session type (no hardcoding)
+    session_registry = get_default_registry()
+    return session_registry.create(selection.provider.name, config)
 
 
 def complete_with_budget(

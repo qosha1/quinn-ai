@@ -394,10 +394,15 @@ CREATE TABLE IF NOT EXISTS teams (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     parent_team_id TEXT,
+    lead_id TEXT,
+    channel_id TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (parent_team_id) REFERENCES teams(id) ON DELETE SET NULL
+    FOREIGN KEY (parent_team_id) REFERENCES teams(id) ON DELETE SET NULL,
+    FOREIGN KEY (lead_id) REFERENCES workers(id) ON DELETE SET NULL,
+    FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_teams_parent ON teams(parent_team_id);
+CREATE INDEX IF NOT EXISTS idx_teams_lead ON teams(lead_id);
 
 -- Workers (everyone is a worker - CEO, manager, junior)
 CREATE TABLE IF NOT EXISTS workers (
@@ -869,6 +874,7 @@ CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
 
 -- OKRs cascade: Board -> CEO -> Directors -> Managers -> Workers
 -- Every OKR has an owner and optional parent for hierarchy
+-- key_results is JSON: [{"metric": "...", "target": N, "current": N, "unit": "..."}]
 CREATE TABLE IF NOT EXISTS okrs (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -876,6 +882,8 @@ CREATE TABLE IF NOT EXISTS okrs (
     owner_worker_id TEXT NOT NULL,
     parent_okr_id TEXT,
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('draft', 'active', 'completed', 'cancelled')),
+    key_results TEXT,
+    due_date DATE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (owner_worker_id) REFERENCES workers(id) ON DELETE CASCADE,
@@ -1313,6 +1321,11 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
             "CREATE INDEX IF NOT EXISTS idx_escalations_escalated_to ON escalations(escalated_to_id)",
             "CREATE INDEX IF NOT EXISTS idx_escalations_state ON escalations(state)",
             "CREATE INDEX IF NOT EXISTS idx_escalations_created_at ON escalations(created_at)",
+        ],
+        # Version 15: Add key_results and due_date columns to okrs for progress tracking
+        15: [
+            "ALTER TABLE okrs ADD COLUMN key_results TEXT",  # JSON array of {metric, target, current, unit}
+            "ALTER TABLE okrs ADD COLUMN due_date DATE",
         ],
     }
 
