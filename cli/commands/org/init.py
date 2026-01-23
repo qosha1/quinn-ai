@@ -27,8 +27,9 @@ def _get_config_template_path() -> Path:
         # This works in packaged distributions and zip imports
         with resources.as_file(resources.files("cli.config")) as config_path:
             return config_path
-    except (TypeError, ModuleNotFoundError):
+    except (TypeError, ModuleNotFoundError, FileNotFoundError):
         # Fallback for development: use source-relative path
+        # FileNotFoundError: config dir exists but isn't a package (no __init__.py)
         return Path(__file__).parent.parent.parent / "config"
 
 

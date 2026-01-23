@@ -402,8 +402,9 @@ def _get_default_config_path() -> Path:
         # Use importlib.resources for proper package data access
         with resources.as_file(resources.files("cli.config")) as config_path:
             return config_path
-    except (TypeError, ModuleNotFoundError):
+    except (TypeError, ModuleNotFoundError, FileNotFoundError):
         # Fallback for development: use source-relative path
+        # FileNotFoundError: config dir exists but isn't a package (no __init__.py)
         return Path(__file__).parent.parent / "config"
 
 
