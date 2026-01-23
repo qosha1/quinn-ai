@@ -1,0 +1,249 @@
+"""Tests for org discovery and startup.
+
+Tests finding available orgs and starting them from the board.
+"""
+
+import pytest
+import sqlite3
+import tempfile
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+from board_ui.services.org_discovery import (
+    OrgInfo,
+    OrgConfig,
+    StartResult,
+    StopResult,
+    discover_running_orgs,
+    discover_available_orgs,
+    get_org_configs,
+    start_org,
+    stop_org,
+    get_org_status,
+    refresh_org_info,
+)
+
+
+@pytest.fixture
+def temp_org_dir():
+    """Create a temporary org directory with mock database."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        org_path = Path(tmpdir) / "test-org"
+        org_path.mkdir()
+        live_path = org_path / "live"
+        live_path.mkdir()
+
+        # Create mock quinn.db
+        db_path = live_path / "quinn.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE org_state (
+                id TEXT PRIMARY KEY,
+                status TEXT,
+                ceo_worker_id TEXT,
+                started_at TEXT,
+                stopped_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE workers (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                role TEXT,
+                team_id TEXT,
+                manager_id TEXT,
+                status TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                worker_id TEXT,
+                state TEXT,
+                tmux_session_name TEXT
+            )
+        """)
+        conn.execute("""
+            INSERT INTO org_state (id, status, ceo_worker_id)
+            VALUES ('default', 'running', 'worker-ceo')
+        """)
+        conn.commit()
+        conn.close()
+
+        yield org_path
+
+
+@pytest.fixture
+def temp_stopped_org_dir():
+    """Create a temporary org directory with stopped status."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        org_path = Path(tmpdir) / "stopped-org"
+        org_path.mkdir()
+        live_path = org_path / "live"
+        live_path.mkdir()
+
+        # Create mock quinn.db with stopped status
+        db_path = live_path / "quinn.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE org_state (
+                id TEXT PRIMARY KEY,
+                status TEXT,
+                ceo_worker_id TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE workers (id TEXT PRIMARY KEY)
+        """)
+        conn.execute("""
+            CREATE TABLE sessions (id TEXT PRIMARY KEY, state TEXT)
+        """)
+        conn.execute("""
+            INSERT INTO org_state (id, status, ceo_worker_id)
+            VALUES ('default', 'stopped', 'worker-ceo')
+        """)
+        conn.commit()
+        conn.close()
+
+        yield org_path
+
+
+@pytest.fixture
+def temp_config_dir():
+    """Create a temporary org directory with config only (uninitialized)."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        org_path = Path(tmpdir) / "uninit-org"
+        org_path.mkdir()
+        config_path = org_path / "config"
+        config_path.mkdir()
+
+        # Create providers.yaml
+        providers_yaml = config_path / "providers.yaml"
+        providers_yaml.write_text("default: claude_code\n")
+
+        yield org_path
+
+
+class TestOrgDiscovery:
+    """Tests for org discovery functionality."""
+
+    def test_discover_running_orgs(self, temp_org_dir):
+        """Should find all currently running orgs."""
+        result = discover_running_orgs([temp_org_dir.parent])
+
+        assert len(result) == 1
+        assert result[0].name == "test-org"
+        assert result[0].status == "running"
+        assert result[0].is_running is True
+        assert result[0].has_db is True
+
+    def test_discover_running_orgs_excludes_stopped(self, temp_stopped_org_dir):
+        """Should not include stopped orgs in running discovery."""
+        result = discover_running_orgs([temp_stopped_org_dir.parent])
+
+        # Stopped orgs should not be in running list
+        assert len(result) == 0
+
+    def test_discover_available_orgs_includes_all(self, temp_org_dir, temp_stopped_org_dir):
+        """Should find all orgs regardless of status."""
+        result = discover_available_orgs([temp_org_dir.parent, temp_stopped_org_dir.parent])
+
+        assert len(result) == 2
+        statuses = {org.status for org in result}
+        assert "running" in statuses
+        assert "stopped" in statuses
+
+    def test_discover_available_configs(self, temp_config_dir):
+        """Should find org configs that can be started."""
+        result = get_org_configs([temp_config_dir.parent])
+
+        assert len(result) == 1
+        assert result[0].name == "uninit-org"
+        assert result[0].has_providers is True
+
+    def test_start_org_from_board(self, temp_stopped_org_dir):
+        """Board should be able to start an org."""
+        # Mock subprocess.run to avoid actually running the CLI
+        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="Organization started successfully",
+                stderr="",
+            )
+
+            result = start_org(temp_stopped_org_dir)
+
+            assert result.success is True
+            assert "started" in result.message.lower()
+            mock_run.assert_called_once()
+
+    def test_stop_org_from_board(self, temp_org_dir):
+        """Board should be able to stop an org."""
+        # Mock subprocess.run to avoid actually running the CLI
+        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="Organization stopped successfully",
+                stderr="",
+            )
+
+            result = stop_org(temp_org_dir)
+
+            assert result.success is True
+            assert "stopped" in result.message.lower()
+            mock_run.assert_called_once()
+
+    def test_board_independent_of_org_lifecycle(self):
+        """Board can run without any org running."""
+        # Discovery should work with empty paths
+        result = discover_running_orgs([])
+        assert result == []
+
+        # Discovery should handle non-existent paths gracefully
+        result = discover_available_orgs([Path("/nonexistent/path")])
+        assert result == []
+
+    def test_reconnect_to_running_org(self, temp_org_dir):
+        """Board can get status of running org."""
+        # First discovery
+        orgs1 = discover_running_orgs([temp_org_dir.parent])
+        assert len(orgs1) == 1
+
+        # Refresh org info
+        refreshed = refresh_org_info(orgs1[0])
+        assert refreshed.status == "running"
+        assert refreshed.path == orgs1[0].path
+
+    def test_get_org_status(self, temp_org_dir):
+        """Should get current org status."""
+        info = get_org_status(temp_org_dir)
+
+        assert info.name == "test-org"
+        assert info.status == "running"
+        assert info.is_running is True
+
+    def test_start_org_handles_timeout(self, temp_stopped_org_dir):
+        """Should handle subprocess timeout gracefully."""
+        import subprocess
+
+        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="qn", timeout=30)
+
+            result = start_org(temp_stopped_org_dir)
+
+            assert result.success is False
+            assert "timed out" in result.message.lower()
+
+    def test_stop_org_handles_cli_error(self, temp_org_dir):
+        """Should handle CLI errors gracefully."""
+        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=1,
+                stdout="",
+                stderr="Organization not found",
+            )
+
+            result = stop_org(temp_org_dir)
+
+            assert result.success is False
+            assert result.returncode == 1

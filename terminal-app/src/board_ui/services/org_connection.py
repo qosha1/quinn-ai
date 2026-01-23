@@ -1,0 +1,884 @@
+"""
+Concrete OrgConnection implementation for QuinnAI orgs.
+
+Connects to a QuinnAI org's SQLite database to provide read access
+to org state, workers, messages, OKRs, and budget information.
+
+The board TUI is independent of org lifecycle - orgs can run without board,
+board can connect/disconnect at will.
+"""
+
+import json
+import subprocess
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+from ..interfaces.org_connection import (
+    OrgConnection,
+    OrgInfo,
+    OrgStatus,
+    WorkerInfo,
+    WorkerStatus,
+    SessionState,
+    BudgetSummary,
+    Message,
+    OKRInfo,
+)
+
+
+class OrgConnectionError(Exception):
+    """Base exception for org connection errors."""
+
+    pass
+
+
+class OrgNotFound(OrgConnectionError):
+    """Raised when org path doesn't exist or is invalid."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        super().__init__(f"Org not found at: {path}")
+
+
+class DatabaseNotFound(OrgConnectionError):
+    """Raised when org database doesn't exist."""
+
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        super().__init__(f"Database not found: {db_path}")
+
+
+class QuinnAIOrgConnection(OrgConnection):
+    """Connection to a QuinnAI org via SQLite database.
+
+    Provides read-only access to org state for the board TUI.
+    Connects to the org's quinn.db at {org_path}/live/quinn.db.
+
+    Example:
+        conn = QuinnAIOrgConnection(Path("/path/to/my-org"))
+        if conn.is_connected:
+            info = conn.get_org_info()
+            workers = conn.get_workers()
+    """
+
+    # Database path pattern relative to org root
+    DB_RELATIVE_PATH = Path("live") / "quinn.db"
+
+    # Escalations channel name for board messages
+    ESCALATIONS_CHANNEL = "escalations"
+
+    def __init__(self, org_path: Path, database_factory: Optional[Callable] = None):
+        """Initialize connection to an org.
+
+        Args:
+            org_path: Path to the org folder (contains live/quinn.db)
+            database_factory: Optional factory function for creating database connections.
+                              If not provided, uses the CLI's Database class.
+
+        Raises:
+            OrgNotFound: If org_path doesn't exist
+        """
+        self._org_path = org_path.resolve()
+        self._db = None
+        self._connected = False
+        self._database_factory = database_factory
+
+        # Validate org path exists
+        if not self._org_path.exists():
+            raise OrgNotFound(self._org_path)
+
+        # Attempt to connect
+        self._connect()
+
+    def _get_db_path(self) -> Path:
+        """Get the database path for this org."""
+        return self._org_path / self.DB_RELATIVE_PATH
+
+    def _connect(self) -> None:
+        """Connect to the org database.
+
+        Raises:
+            DatabaseNotFound: If database doesn't exist
+        """
+        db_path = self._get_db_path()
+        if not db_path.exists():
+            raise DatabaseNotFound(db_path)
+
+        # Use provided factory or import Database from CLI core
+        if self._database_factory:
+            self._db = self._database_factory(db_path)
+        else:
+            # Import Database from CLI core
+            # This creates a thread-safe connection with WAL mode
+            from quinnai.cli.core.db import Database
+            self._db = Database(db_path)
+
+        self._connected = True
+
+    def _disconnect(self) -> None:
+        """Disconnect from the org database."""
+        if self._db is not None:
+            self._db.close()
+            self._db = None
+        self._connected = False
+
+    def _ensure_connected(self) -> None:
+        """Ensure we have an active database connection.
+
+        Raises:
+            OrgConnectionError: If not connected
+        """
+        if not self._connected or self._db is None:
+            raise OrgConnectionError("Not connected to org")
+
+    # ==================
+    # PROPERTIES
+    # ==================
+
+    @property
+    def org_path(self) -> Path:
+        """Path to the connected org."""
+        return self._org_path
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if currently connected to an org."""
+        return self._connected and self._db is not None
+
+    # ==================
+    # ORG STATE
+    # ==================
+
+    def get_org_info(self) -> OrgInfo:
+        """Get current org information.
+
+        Returns:
+            OrgInfo with current org state
+        """
+        self._ensure_connected()
+
+        # Get org state from database
+        row = self._db.fetchone("SELECT * FROM org_state WHERE id = 'default'")
+
+        if not row:
+            # Uninitialized org
+            return OrgInfo(
+                path=self._org_path,
+                name=self._org_path.name,
+                status=OrgStatus.UNINITIALIZED,
+                ceo_worker_id=None,
+                worker_count=0,
+                active_session_count=0,
+                started_at=None,
+                stopped_at=None,
+            )
+
+        # Get counts
+        worker_count = self._get_worker_count()
+        active_session_count = self._get_active_session_count()
+
+        # Parse status
+        status_str = row["status"]
+        try:
+            status = OrgStatus(status_str)
+        except ValueError:
+            status = OrgStatus.UNINITIALIZED
+
+        # Parse timestamps
+        started_at = self._parse_datetime(row["started_at"])
+        stopped_at = self._parse_datetime(row["stopped_at"])
+
+        return OrgInfo(
+            path=self._org_path,
+            name=self._org_path.name,
+            status=status,
+            ceo_worker_id=row["ceo_worker_id"],
+            worker_count=worker_count,
+            active_session_count=active_session_count,
+            started_at=started_at,
+            stopped_at=stopped_at,
+        )
+
+    def _get_worker_count(self) -> int:
+        """Get total worker count."""
+        row = self._db.fetchone("SELECT COUNT(*) as count FROM workers")
+        return row["count"] if row else 0
+
+    def _get_active_session_count(self) -> int:
+        """Get count of active sessions."""
+        # Try sessions table first (new)
+        row = self._db.fetchone(
+            """SELECT COUNT(*) as count FROM sessions
+               WHERE state IN ('starting', 'running', 'idle')"""
+        )
+        if row and row["count"] > 0:
+            return row["count"]
+
+        # Fall back to worker_state for backwards compatibility
+        row = self._db.fetchone(
+            """SELECT COUNT(*) as count FROM worker_state
+               WHERE runtime_status IN ('starting', 'running', 'idle')"""
+        )
+        return row["count"] if row else 0
+
+    def get_budget_summary(self) -> BudgetSummary:
+        """Get budget summary for the org.
+
+        Returns:
+            BudgetSummary with current budget state
+        """
+        self._ensure_connected()
+
+        # Get current budget pool
+        now = datetime.now()
+        pool_row = self._db.fetchone(
+            """SELECT * FROM budget_pools
+               WHERE period_start <= ? AND period_end >= ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (now, now),
+        )
+
+        if not pool_row:
+            # No active budget pool
+            return BudgetSummary(
+                total_allocated=0.0,
+                total_spent=0.0,
+                total_available=0.0,
+                period_start=now,
+                period_end=now + timedelta(days=30),
+                spend_today=0.0,
+                spend_this_week=0.0,
+            )
+
+        pool_id = pool_row["id"]
+        period_start = self._parse_datetime(pool_row["period_start"]) or now
+        period_end = self._parse_datetime(pool_row["period_end"]) or (
+            now + timedelta(days=30)
+        )
+
+        # Get totals from budget_balances
+        totals_row = self._db.fetchone(
+            """SELECT
+                   SUM(allocated) as total_allocated,
+                   SUM(spent) as total_spent,
+                   SUM(available) as total_available
+               FROM budget_balances bb
+               JOIN budget_allocations ba ON bb.allocation_id = ba.id
+               WHERE ba.pool_id = ?""",
+            (pool_id,),
+        )
+
+        total_allocated = float(totals_row["total_allocated"] or 0)
+        total_spent = float(totals_row["total_spent"] or 0)
+        total_available = float(totals_row["total_available"] or 0)
+
+        # Calculate spend today
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        spend_today_row = self._db.fetchone(
+            """SELECT SUM(ABS(amount)) as total
+               FROM budget_transactions
+               WHERE type = 'spend' AND created_at >= ?""",
+            (today_start,),
+        )
+        spend_today = float(spend_today_row["total"] or 0)
+
+        # Calculate spend this week
+        week_start = today_start - timedelta(days=today_start.weekday())
+        spend_week_row = self._db.fetchone(
+            """SELECT SUM(ABS(amount)) as total
+               FROM budget_transactions
+               WHERE type = 'spend' AND created_at >= ?""",
+            (week_start,),
+        )
+        spend_this_week = float(spend_week_row["total"] or 0)
+
+        return BudgetSummary(
+            total_allocated=total_allocated,
+            total_spent=total_spent,
+            total_available=total_available,
+            period_start=period_start,
+            period_end=period_end,
+            spend_today=spend_today,
+            spend_this_week=spend_this_week,
+        )
+
+    # ==================
+    # WORKERS
+    # ==================
+
+    def get_workers(self) -> list[WorkerInfo]:
+        """Get all workers in the org.
+
+        Returns:
+            List of WorkerInfo sorted by hierarchy (CEO first)
+        """
+        self._ensure_connected()
+
+        # Get all workers with team info
+        rows = self._db.fetchall(
+            """SELECT w.*, t.name as team_name
+               FROM workers w
+               JOIN teams t ON w.team_id = t.id
+               ORDER BY w.manager_id NULLS FIRST, w.created_at"""
+        )
+
+        # Get session states for all workers
+        session_states = self._get_worker_session_states()
+
+        # Get CEO worker ID
+        org_row = self._db.fetchone(
+            "SELECT ceo_worker_id FROM org_state WHERE id = 'default'"
+        )
+        ceo_id = org_row["ceo_worker_id"] if org_row else None
+
+        workers = []
+        for row in rows:
+            worker_id = row["id"]
+            session_info = session_states.get(worker_id, {})
+
+            workers.append(
+                WorkerInfo(
+                    id=worker_id,
+                    name=row["name"],
+                    role=row["role"],
+                    team_name=row["team_name"],
+                    status=self._parse_worker_status(row["status"]),
+                    session_state=self._parse_session_state(
+                        session_info.get("state")
+                    ),
+                    tmux_session_name=session_info.get("tmux_session_name"),
+                    manager_id=row["manager_id"],
+                    current_task=session_info.get("current_task_id"),
+                    is_ceo=(worker_id == ceo_id),
+                )
+            )
+
+        return workers
+
+    def get_worker(self, worker_id: str) -> Optional[WorkerInfo]:
+        """Get a specific worker by ID.
+
+        Args:
+            worker_id: Worker ID to look up
+
+        Returns:
+            WorkerInfo or None if not found
+        """
+        self._ensure_connected()
+
+        row = self._db.fetchone(
+            """SELECT w.*, t.name as team_name
+               FROM workers w
+               JOIN teams t ON w.team_id = t.id
+               WHERE w.id = ?""",
+            (worker_id,),
+        )
+
+        if not row:
+            return None
+
+        # Get session state
+        session_info = self._get_worker_session_state(worker_id)
+
+        # Check if CEO
+        org_row = self._db.fetchone(
+            "SELECT ceo_worker_id FROM org_state WHERE id = 'default'"
+        )
+        ceo_id = org_row["ceo_worker_id"] if org_row else None
+
+        return WorkerInfo(
+            id=worker_id,
+            name=row["name"],
+            role=row["role"],
+            team_name=row["team_name"],
+            status=self._parse_worker_status(row["status"]),
+            session_state=self._parse_session_state(session_info.get("state")),
+            tmux_session_name=session_info.get("tmux_session_name"),
+            manager_id=row["manager_id"],
+            current_task=session_info.get("current_task_id"),
+            is_ceo=(worker_id == ceo_id),
+        )
+
+    def get_ceo(self) -> Optional[WorkerInfo]:
+        """Get the CEO worker.
+
+        Returns:
+            WorkerInfo for CEO or None if org not initialized
+        """
+        self._ensure_connected()
+
+        # Get CEO worker ID
+        org_row = self._db.fetchone(
+            "SELECT ceo_worker_id FROM org_state WHERE id = 'default'"
+        )
+
+        if not org_row or not org_row["ceo_worker_id"]:
+            return None
+
+        return self.get_worker(org_row["ceo_worker_id"])
+
+    def _get_worker_session_states(self) -> dict[str, dict]:
+        """Get session states for all workers.
+
+        Returns:
+            Dict mapping worker_id to session info dict
+        """
+        # Try sessions table first
+        rows = self._db.fetchall(
+            """SELECT worker_id, state, tmux_session_name
+               FROM sessions"""
+        )
+
+        result = {}
+        for row in rows:
+            result[row["worker_id"]] = {
+                "state": row["state"],
+                "tmux_session_name": row["tmux_session_name"],
+            }
+
+        # Add current task from worker_state
+        state_rows = self._db.fetchall(
+            """SELECT worker_id, current_task_id, runtime_status
+               FROM worker_state"""
+        )
+
+        for row in state_rows:
+            worker_id = row["worker_id"]
+            if worker_id not in result:
+                result[worker_id] = {"state": row["runtime_status"]}
+            result[worker_id]["current_task_id"] = row["current_task_id"]
+
+        return result
+
+    def _get_worker_session_state(self, worker_id: str) -> dict:
+        """Get session state for a specific worker.
+
+        Returns:
+            Dict with session info or empty dict
+        """
+        # Try sessions table first
+        row = self._db.fetchone(
+            """SELECT state, tmux_session_name
+               FROM sessions WHERE worker_id = ?""",
+            (worker_id,),
+        )
+
+        if row:
+            result = {
+                "state": row["state"],
+                "tmux_session_name": row["tmux_session_name"],
+            }
+        else:
+            result = {}
+
+        # Add current task from worker_state
+        state_row = self._db.fetchone(
+            """SELECT current_task_id, runtime_status
+               FROM worker_state WHERE worker_id = ?""",
+            (worker_id,),
+        )
+
+        if state_row:
+            if "state" not in result:
+                result["state"] = state_row["runtime_status"]
+            result["current_task_id"] = state_row["current_task_id"]
+
+        return result
+
+    # ==================
+    # MESSAGES (BOARD INBOX)
+    # ==================
+
+    def get_board_messages(self, unread_only: bool = False) -> list[Message]:
+        """Get messages escalated to the board.
+
+        Messages from the escalations channel are treated as board messages.
+
+        Args:
+            unread_only: If True, only return unread messages
+
+        Returns:
+            List of messages sorted by priority then recency
+        """
+        self._ensure_connected()
+
+        # Get escalations channel
+        channel_row = self._db.fetchone(
+            "SELECT id FROM channels WHERE name = ?",
+            (self.ESCALATIONS_CHANNEL,),
+        )
+
+        if not channel_row:
+            return []
+
+        channel_id = channel_row["id"]
+
+        # Build query for messages
+        if unread_only:
+            # Join with notification_beads to check read status
+            # Board messages are "unread" if they have pending notification beads
+            rows = self._db.fetchall(
+                """SELECT DISTINCT m.*, w.name as from_worker_name
+                   FROM messages m
+                   JOIN workers w ON m.from_worker_id = w.id
+                   JOIN notification_beads nb ON nb.message_id = m.id
+                   WHERE m.channel_id = ? AND nb.status = 'pending'
+                   ORDER BY m.priority DESC, m.created_at DESC""",
+                (channel_id,),
+            )
+        else:
+            rows = self._db.fetchall(
+                """SELECT m.*, w.name as from_worker_name
+                   FROM messages m
+                   JOIN workers w ON m.from_worker_id = w.id
+                   WHERE m.channel_id = ?
+                   ORDER BY m.priority DESC, m.created_at DESC""",
+                (channel_id,),
+            )
+
+        messages = []
+        for row in rows:
+            # Check if message has been read (no pending notification beads)
+            is_read = self._is_message_read(row["id"])
+
+            messages.append(
+                Message(
+                    id=row["id"],
+                    from_worker_id=row["from_worker_id"],
+                    from_worker_name=row["from_worker_name"],
+                    channel_name=self.ESCALATIONS_CHANNEL,
+                    content=row["content"],
+                    priority=row["priority"],
+                    created_at=self._parse_datetime(row["created_at"]) or datetime.now(),
+                    is_read=is_read,
+                    requires_response=row["priority"] >= 3,  # High priority
+                )
+            )
+
+        return messages
+
+    def get_unread_count(self) -> int:
+        """Get count of unread board messages.
+
+        Returns:
+            Number of unread messages
+        """
+        self._ensure_connected()
+
+        # Get escalations channel
+        channel_row = self._db.fetchone(
+            "SELECT id FROM channels WHERE name = ?",
+            (self.ESCALATIONS_CHANNEL,),
+        )
+
+        if not channel_row:
+            return 0
+
+        # Count messages with pending notification beads
+        count_row = self._db.fetchone(
+            """SELECT COUNT(DISTINCT m.id) as count
+               FROM messages m
+               JOIN notification_beads nb ON nb.message_id = m.id
+               WHERE m.channel_id = ? AND nb.status = 'pending'""",
+            (channel_row["id"],),
+        )
+
+        return count_row["count"] if count_row else 0
+
+    def send_board_response(
+        self,
+        message_id: str,
+        response: str,
+    ) -> bool:
+        """Send a board response to a message.
+
+        Creates a reply message in the same channel as the original message.
+        The response is async - workers will see it when they check.
+
+        Args:
+            message_id: ID of message being responded to
+            response: Response content
+
+        Returns:
+            True if response was queued successfully
+        """
+        self._ensure_connected()
+
+        # Get original message
+        msg_row = self._db.fetchone(
+            "SELECT channel_id, thread_id FROM messages WHERE id = ?",
+            (message_id,),
+        )
+
+        if not msg_row:
+            return False
+
+        channel_id = msg_row["channel_id"]
+        thread_id = msg_row["thread_id"] or message_id
+
+        # Create response message
+        # Use a special "board" worker ID for board responses
+        import uuid
+
+        response_id = f"msg-{str(uuid.uuid4())[:8]}"
+        now = datetime.now()
+
+        try:
+            self._db.execute(
+                """INSERT INTO messages
+                   (id, channel_id, thread_id, parent_id, from_worker_id, content,
+                    priority, time_sensitivity, created_at)
+                   VALUES (?, ?, ?, ?, 'board', ?, 3, 'immediate', ?)""",
+                (response_id, channel_id, thread_id, message_id, response, now),
+            )
+            self._db.connection.commit()
+
+            # Mark original as read
+            self.mark_message_read(message_id)
+
+            return True
+        except Exception:
+            return False
+
+    def mark_message_read(self, message_id: str) -> bool:
+        """Mark a message as read.
+
+        Closes all notification beads for this message.
+
+        Args:
+            message_id: ID of message to mark
+
+        Returns:
+            True if marked successfully
+        """
+        self._ensure_connected()
+
+        try:
+            now = datetime.now()
+            self._db.execute(
+                """UPDATE notification_beads
+                   SET status = 'read', read_at = ?
+                   WHERE message_id = ? AND status = 'pending'""",
+                (now, message_id),
+            )
+            self._db.connection.commit()
+            return True
+        except Exception:
+            return False
+
+    def _is_message_read(self, message_id: str) -> bool:
+        """Check if a message has been read (no pending notification beads)."""
+        row = self._db.fetchone(
+            """SELECT COUNT(*) as count FROM notification_beads
+               WHERE message_id = ? AND status = 'pending'""",
+            (message_id,),
+        )
+        return row["count"] == 0 if row else True
+
+    # ==================
+    # OKRS
+    # ==================
+
+    def get_okrs(self, owner_id: Optional[str] = None) -> list[OKRInfo]:
+        """Get OKRs, optionally filtered by owner.
+
+        Args:
+            owner_id: If provided, only return OKRs owned by this worker
+
+        Returns:
+            List of OKRs in hierarchy order
+        """
+        self._ensure_connected()
+
+        if owner_id:
+            rows = self._db.fetchall(
+                """SELECT o.*, w.name as owner_name
+                   FROM okrs o
+                   JOIN workers w ON o.owner_worker_id = w.id
+                   WHERE o.owner_worker_id = ?
+                   ORDER BY o.parent_okr_id NULLS FIRST, o.created_at""",
+                (owner_id,),
+            )
+        else:
+            rows = self._db.fetchall(
+                """SELECT o.*, w.name as owner_name
+                   FROM okrs o
+                   JOIN workers w ON o.owner_worker_id = w.id
+                   ORDER BY o.parent_okr_id NULLS FIRST, o.created_at"""
+            )
+
+        okrs = []
+        for row in rows:
+            # Parse key results from JSON (sqlite3.Row doesn't have .get())
+            key_results = self._parse_key_results(row["key_results"])
+
+            # Count children
+            children_count = self._count_child_okrs(row["id"])
+
+            okrs.append(
+                OKRInfo(
+                    id=row["id"],
+                    title=row["title"],
+                    description=row["description"],
+                    owner_name=row["owner_name"],
+                    owner_id=row["owner_worker_id"],
+                    status=row["status"],
+                    parent_id=row["parent_okr_id"],
+                    key_results=key_results,
+                    due_date=self._parse_datetime(row["due_date"]),
+                    children_count=children_count,
+                )
+            )
+
+        return okrs
+
+    def _parse_key_results(self, kr_json: Optional[str]) -> list[dict[str, Any]]:
+        """Parse key results from JSON string."""
+        if not kr_json:
+            return []
+        try:
+            return json.loads(kr_json)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def _count_child_okrs(self, okr_id: str) -> int:
+        """Count OKRs that have this OKR as parent."""
+        row = self._db.fetchone(
+            "SELECT COUNT(*) as count FROM okrs WHERE parent_okr_id = ?",
+            (okr_id,),
+        )
+        return row["count"] if row else 0
+
+    # ==================
+    # ORG ACTIONS
+    # ==================
+
+    def start_org(self) -> bool:
+        """Start the org (if stopped or initialized).
+
+        Uses the CLI's org start logic to properly transition the org.
+
+        Returns:
+            True if org was started successfully
+        """
+        self._ensure_connected()
+
+        try:
+            # Import and use the Org class from CLI
+            from quinnai.cli.core.org import Org
+
+            org = Org.load(self._db)
+
+            # Check if we can start
+            current_status = org.status
+            if current_status not in ("initialized", "stopped"):
+                return False
+
+            org.start()
+            return True
+        except Exception:
+            return False
+
+    def stop_org(self) -> bool:
+        """Stop the org gracefully.
+
+        Uses the CLI's org stop logic to properly transition the org.
+
+        Returns:
+            True if org was stopped successfully
+        """
+        self._ensure_connected()
+
+        try:
+            # Import and use the Org class from CLI
+            from quinnai.cli.core.org import Org
+
+            org = Org.load(self._db)
+
+            # Check if we can stop
+            current_status = org.status
+            if current_status != "running":
+                return False
+
+            org.stop()
+            return True
+        except Exception:
+            return False
+
+    # ==================
+    # SUBSCRIPTIONS
+    # ==================
+
+    def subscribe_to_updates(
+        self,
+        callback: Callable[[str, Any], None],
+    ) -> Callable[[], None]:
+        """Subscribe to real-time org updates.
+
+        Currently returns a no-op unsubscribe function since real-time
+        updates require additional infrastructure (file watching, sqlite
+        triggers, or event bus).
+
+        The board UI should poll for updates in the meantime.
+
+        Args:
+            callback: Function called with (event_type, event_data)
+
+        Returns:
+            Function to call to unsubscribe
+        """
+        # TODO: Implement real-time subscriptions via:
+        # 1. SQLite WAL polling
+        # 2. File system watching on quinn.db-wal
+        # 3. Event bus subscription
+        return lambda: None
+
+    # ==================
+    # HELPER METHODS
+    # ==================
+
+    def _parse_datetime(self, value: Any) -> Optional[datetime]:
+        """Parse datetime from various formats."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    def _parse_worker_status(self, status_str: str) -> WorkerStatus:
+        """Parse worker status string to enum."""
+        try:
+            return WorkerStatus(status_str)
+        except ValueError:
+            return WorkerStatus.PENDING
+
+    def _parse_session_state(self, state_str: Optional[str]) -> Optional[SessionState]:
+        """Parse session state string to enum."""
+        if not state_str:
+            return None
+        try:
+            return SessionState(state_str)
+        except ValueError:
+            return None
+
+    # ==================
+    # CONTEXT MANAGER
+    # ==================
+
+    def __enter__(self) -> "QuinnAIOrgConnection":
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Context manager exit - close connection."""
+        self._disconnect()
+
+    def close(self) -> None:
+        """Close the connection."""
+        self._disconnect()
