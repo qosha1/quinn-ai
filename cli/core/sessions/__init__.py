@@ -3,6 +3,7 @@ Concrete SessionInterface implementations and registry.
 """
 
 from .claude_code import ClaudeCodeSession
+from .codex import CodexSession
 from .openai import OpenAISession
 from .registry import (
     SessionRegistry,
@@ -81,6 +82,7 @@ from .cleanup import (
 __all__ = [
     # Adapters
     "ClaudeCodeSession",
+    "CodexSession",
     "OpenAISession",
     # Registry
     "SessionRegistry",
