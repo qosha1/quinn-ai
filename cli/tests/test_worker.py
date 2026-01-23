@@ -432,6 +432,12 @@ class MockSession:
         # Store config for session persistence - create default if not provided
         self.config = config or MockSessionConfig(worker_id="mock-worker")
         self.pid = None  # Process ID for session persistence
+        self._platform_session_name = f"mock-session-{self.config.worker_id}"
+
+    @property
+    def platform_session_name(self):
+        """Return mock platform session name."""
+        return self._platform_session_name
 
     @property
     def state(self):

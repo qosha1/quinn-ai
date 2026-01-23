@@ -485,3 +485,171 @@ class TestSchemaVersion:
     def test_schema_version_includes_okr(self, db):
         """Schema version should be 9 or higher with OKR tables."""
         assert SCHEMA_VERSION >= 9
+
+
+class TestKeyResults:
+    """Test key results functionality."""
+
+    def test_create_okr_with_key_results(self, db, ceo):
+        """OKR can be created with key results."""
+        from cli.core.queries import KeyResult
+
+        key_results = [
+            KeyResult(metric="test_coverage", target=80, current=0, unit="%"),
+            KeyResult(metric="bugs_fixed", target=10, current=0, unit="count"),
+        ]
+        okr = create_okr(
+            db,
+            title="Q1 Quality Goals",
+            owner_id=ceo.id,
+            key_results=key_results,
+        )
+        assert len(okr.key_results) == 2
+        assert okr.key_results[0].metric == "test_coverage"
+        assert okr.key_results[0].target == 80
+        assert okr.key_results[1].metric == "bugs_fixed"
+
+    def test_get_okr_with_key_results(self, db, ceo):
+        """Retrieved OKR includes key results."""
+        from cli.core.queries import KeyResult
+
+        key_results = [KeyResult(metric="lighthouse", target=90, current=75, unit="score")]
+        created = create_okr(db, title="Performance OKR", owner_id=ceo.id, key_results=key_results)
+
+        fetched = get_okr(db, created.id)
+        assert len(fetched.key_results) == 1
+        assert fetched.key_results[0].metric == "lighthouse"
+        assert fetched.key_results[0].current == 75
+
+    def test_update_key_result(self, db, ceo):
+        """Key result current value can be updated."""
+        from cli.core.queries import KeyResult, update_okr_key_result
+
+        key_results = [KeyResult(metric="test_coverage", target=80, current=50, unit="%")]
+        okr = create_okr(db, title="Coverage OKR", owner_id=ceo.id, key_results=key_results)
+
+        updated = update_okr_key_result(db, okr.id, "test_coverage", 72)
+        assert updated is not None
+        assert updated.key_results[0].current == 72
+
+    def test_update_nonexistent_key_result(self, db, ceo):
+        """Updating nonexistent key result returns None."""
+        from cli.core.queries import KeyResult, update_okr_key_result
+
+        key_results = [KeyResult(metric="test_coverage", target=80, current=50, unit="%")]
+        okr = create_okr(db, title="Coverage OKR", owner_id=ceo.id, key_results=key_results)
+
+        result = update_okr_key_result(db, okr.id, "nonexistent", 72)
+        assert result is None
+
+    def test_add_key_result(self, db, ceo):
+        """Key result can be added to existing OKR."""
+        from cli.core.queries import add_okr_key_result
+
+        okr = create_okr(db, title="Empty OKR", owner_id=ceo.id)
+        assert len(okr.key_results) == 0
+
+        updated = add_okr_key_result(db, okr.id, "bugs_fixed", 10, "count", 3)
+        assert updated is not None
+        assert len(updated.key_results) == 1
+        assert updated.key_results[0].metric == "bugs_fixed"
+        assert updated.key_results[0].target == 10
+        assert updated.key_results[0].current == 3
+
+    def test_add_duplicate_key_result_fails(self, db, ceo):
+        """Adding duplicate key result metric returns None."""
+        from cli.core.queries import KeyResult, add_okr_key_result
+
+        key_results = [KeyResult(metric="test_coverage", target=80, current=50, unit="%")]
+        okr = create_okr(db, title="Coverage OKR", owner_id=ceo.id, key_results=key_results)
+
+        result = add_okr_key_result(db, okr.id, "test_coverage", 90, "%", 0)
+        assert result is None
+
+
+class TestOKRProgress:
+    """Test OKR progress calculation."""
+
+    def test_key_result_progress(self, db, ceo):
+        """Key result progress is calculated correctly."""
+        from cli.core.queries import KeyResult
+
+        kr = KeyResult(metric="test", target=100, current=75, unit="%")
+        assert kr.progress() == 75.0
+        assert not kr.is_met()
+
+        kr.current = 100
+        assert kr.progress() == 100.0
+        assert kr.is_met()
+
+    def test_key_result_progress_exceeds_target(self, db, ceo):
+        """Progress caps at 100% when exceeding target."""
+        from cli.core.queries import KeyResult
+
+        kr = KeyResult(metric="test", target=80, current=100, unit="%")
+        assert kr.progress() == 100.0  # Capped at 100%
+        assert kr.is_met()
+
+    def test_okr_overall_progress(self, db, ceo):
+        """OKR overall progress averages all key results."""
+        from cli.core.queries import KeyResult
+
+        key_results = [
+            KeyResult(metric="kr1", target=100, current=50, unit="%"),  # 50%
+            KeyResult(metric="kr2", target=100, current=100, unit="%"),  # 100%
+        ]
+        okr = create_okr(db, title="Progress OKR", owner_id=ceo.id, key_results=key_results)
+
+        assert okr.progress() == 75.0  # Average of 50% and 100%
+
+    def test_okr_all_key_results_met(self, db, ceo):
+        """OKR reports when all key results are met."""
+        from cli.core.queries import KeyResult
+
+        key_results = [
+            KeyResult(metric="kr1", target=80, current=80, unit="%"),
+            KeyResult(metric="kr2", target=10, current=15, unit="count"),
+        ]
+        okr = create_okr(db, title="Complete OKR", owner_id=ceo.id, key_results=key_results)
+
+        assert okr.all_key_results_met()
+
+    def test_okr_not_all_key_results_met(self, db, ceo):
+        """OKR reports when not all key results are met."""
+        from cli.core.queries import KeyResult
+
+        key_results = [
+            KeyResult(metric="kr1", target=80, current=80, unit="%"),
+            KeyResult(metric="kr2", target=10, current=5, unit="count"),
+        ]
+        okr = create_okr(db, title="Incomplete OKR", owner_id=ceo.id, key_results=key_results)
+
+        assert not okr.all_key_results_met()
+
+    def test_empty_okr_progress(self, db, ceo):
+        """OKR with no key results has 0% progress."""
+        okr = create_okr(db, title="Empty OKR", owner_id=ceo.id)
+        assert okr.progress() == 0.0
+        assert not okr.all_key_results_met()
+
+
+class TestOKRDueDate:
+    """Test OKR due date functionality."""
+
+    def test_create_okr_with_due_date(self, db, ceo):
+        """OKR can be created with due date."""
+        from datetime import date
+
+        due = date(2025, 3, 31)
+        okr = create_okr(db, title="Q1 OKR", owner_id=ceo.id, due_date=due)
+        assert okr.due_date == due
+
+    def test_get_okr_with_due_date(self, db, ceo):
+        """Retrieved OKR includes due date."""
+        from datetime import date
+
+        due = date(2025, 6, 30)
+        created = create_okr(db, title="Q2 OKR", owner_id=ceo.id, due_date=due)
+
+        fetched = get_okr(db, created.id)
+        assert fetched.due_date == due
