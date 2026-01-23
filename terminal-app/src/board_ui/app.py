@@ -39,6 +39,14 @@ from .services import (
     discover_available_orgs,
     start_org,
 )
+from cli.core.org_init import (
+    OrgInitConfig,
+    ProviderConfig,
+    ObjectiveConfig,
+    KeyResultConfig,
+    CEOBriefingConfig,
+    init_org,
+)
 
 
 class BoardApp(App):
@@ -329,109 +337,60 @@ class BoardApp(App):
     async def _create_org_from_config(self, config: OrgConfig) -> None:
         """Create an org from wizard configuration.
 
-        This performs full org initialization:
-        1. Create folder structure (config/, org-chart/, live/, storage/)
-        2. Write config files (providers.yaml, etc.)
-        3. Initialize database with schema
-        4. Create CEO worker
-        5. Generate org-chart
+        Uses the shared org_init module to ensure CLI and wizard
+        create orgs identically.
         """
-        import json
-        import yaml
-
         try:
             if not config.path:
                 raise ValueError("Org path is required")
 
-            org_path = config.path
-
-            # 1. Create folder structure
-            (org_path / "config").mkdir(parents=True, exist_ok=True)
-            (org_path / "org-chart").mkdir(parents=True, exist_ok=True)
-            (org_path / "live").mkdir(parents=True, exist_ok=True)
-            (org_path / "live" / "workers").mkdir(exist_ok=True)
-            (org_path / "storage" / "shared").mkdir(parents=True, exist_ok=True)
-            (org_path / "storage" / "workers").mkdir(parents=True, exist_ok=True)
-
-            # 2. Write config files
-            config_dir = org_path / "config"
-
-            # Write providers.yaml
-            providers_content = "# AI Service Providers\n"
-            providers_content += "default: claude_code\n\n"
-            providers_content += "providers:\n"
-            for provider in config.providers:
-                if provider.enabled:
-                    providers_content += f"  {provider.id}:\n"
-                    providers_content += f"    enabled: true\n"
-                    if provider.api_key:
-                        providers_content += f"    api_key: {provider.api_key}\n"
-            (config_dir / "providers.yaml").write_text(providers_content)
-
-            # Write initial OKRs if provided
-            if config.objectives:
-                okrs_data = []
-                for obj in config.objectives:
-                    okr = {
-                        "title": obj.title,
-                        "key_results": [
-                            {
-                                "metric": kr.metric,
-                                "target": kr.target,
-                                "unit": kr.unit,
-                            }
+            # Convert wizard config to shared OrgInitConfig
+            init_config = OrgInitConfig(
+                path=config.path,
+                name=config.name,
+                ceo_name="CEO",
+                ceo_role="CEO",
+                providers=[
+                    ProviderConfig(
+                        id=p.id,
+                        enabled=p.enabled,
+                        api_key=p.api_key,
+                    )
+                    for p in config.providers
+                    if p.enabled
+                ],
+                objectives=[
+                    ObjectiveConfig(
+                        title=obj.title,
+                        key_results=[
+                            KeyResultConfig(
+                                metric=kr.metric,
+                                target=kr.target,
+                                unit=kr.unit,
+                            )
                             for kr in obj.key_results
                         ],
-                    }
-                    okrs_data.append(okr)
-                (config_dir / "initial_okrs.json").write_text(
-                    json.dumps(okrs_data, indent=2)
-                )
+                    )
+                    for obj in config.objectives
+                ],
+                ceo_briefing=CEOBriefingConfig(
+                    context=config.ceo_briefing.context,
+                    goals=config.ceo_briefing.requirements,  # Map requirements to goals
+                    constraints=config.ceo_briefing.constraints,
+                    initial_action=config.ceo_briefing.success_criteria,  # Map success_criteria to initial_action
+                ) if config.ceo_briefing else None,
+            )
 
-            # Write CEO briefing if provided
-            if config.ceo_briefing:
-                briefing_md = config.ceo_briefing.to_markdown()
-                (config_dir / "ceo_briefing.md").write_text(briefing_md)
+            # Initialize the org using shared module
+            result = init_org(init_config)
 
-            # 3. Initialize database
-            from cli.core.db import init_database, get_org_db_path
-            from cli.core.org import Org
+            if not result.success:
+                raise ValueError(result.error or "Failed to initialize organization")
 
-            db_path = get_org_db_path(org_path)
-            db = init_database(db_path)
-
-            try:
-                # 4. Create CEO worker
-                org = Org(db)
-                ceo = org.init("CEO", "CEO")
-
-                # 5. Create org-chart
-                org_chart = {
-                    "version": "1.0",
-                    "workers": {
-                        ceo.id: {
-                            "name": ceo.name,
-                            "role": ceo.role,
-                            "lifecycle": ceo.lifecycle_status,
-                            "manager": None,
-                            "reports": [],
-                        }
-                    },
-                    "hierarchy": {
-                        "root": ceo.id,
-                    }
-                }
-                chart_path = org_path / "org-chart" / "current.yaml"
-                with open(chart_path, "w") as f:
-                    yaml.dump(org_chart, f, default_flow_style=False, sort_keys=False)
-
-                self.notify(
-                    f"Org '{config.name}' initialized at {org_path}",
-                    severity="information"
-                )
-
-            finally:
-                db.close()
+            self.notify(
+                f"Org '{config.name}' initialized at {config.path}",
+                severity="information"
+            )
 
             # Hide wizard and show no-org view with new org
             wizard = self.query_one("#org-wizard", OrgInitWizard)
