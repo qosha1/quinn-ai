@@ -6,10 +6,11 @@ The simplest possible QuinnAI organization. Learn the basic lifecycle:
 ## What You'll See
 
 1. An org folder structure gets created
-2. A CEO worker is initialized
+2. A CEO worker is initialized with a $1000 budget
 3. The org starts running
-4. You can check status and observe the CEO
-5. The org stops gracefully
+4. You can check status and observe the CEO (including budget)
+5. AI calls consume budget that's tracked in real-time
+6. The org stops gracefully
 
 ## Quick Start
 
@@ -86,7 +87,14 @@ What happens:
 Shows:
 - Current org status
 - CEO worker state
+- Budget allocation and spend
 - Recent activity (if any)
+
+To view detailed budget info:
+```bash
+qn --org-path ../generated-orgs/hello-world org budget status
+qn --org-path ../generated-orgs/hello-world org budget transactions
+```
 
 ### Step 5: Stop and Cleanup
 
@@ -107,6 +115,7 @@ qn org stop --org-path org
 | Database | Single `quinn.db` for everything |
 | Worker lifecycle | CEO goes pending → active |
 | Session management | tmux session created for CEO |
+| Budget tracking | CEO gets $1000, spend visible via `qn org budget status` |
 | Graceful shutdown | `qn org stop` cleanly stops |
 
 ## Next Steps

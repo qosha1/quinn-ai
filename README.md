@@ -163,6 +163,22 @@ Set goals → Watch org grow → Review org-chart → Nudge if off-track → (re
 - Medium: Direct feedback to CEO ("Rebalance eng/sales ratio")
 - Hard: Fire CEO (nuclear option)
 
+**Quality standards nudge:**
+
+If you notice work being closed without measurable results:
+```bash
+# Check OKRs have key results defined
+qn org okr progress <okr-id>
+
+# If no key results: message CEO
+qn org message ceo "OKR 'Launch MVP' has no measurable key results. Add KRs like:
+- Lighthouse score > 90
+- Load time < 2s
+- Core flows have tests"
+```
+
+Workers verify their work against key results before closing. If CEO hasn't set KRs, quality is undefined and workers can't self-verify. Nudge the CEO to add measurable targets.
+
 ---
 
 ## CLI

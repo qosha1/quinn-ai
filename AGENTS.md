@@ -12,6 +12,31 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## Verifying Work Against OKRs
+
+**Before closing any work item**, verify it meets the linked OKR's key results:
+
+1. **Find the OKR** - Check what OKR your work serves:
+   ```bash
+   bd show <work-id>  # Look for "serves" dependency
+   qn org okr progress <okr-id>  # View key results and targets
+   ```
+
+2. **Run verification** - Execute tests/checks for each key result:
+   - If KR is "test coverage > 80%": run coverage tool
+   - If KR is "Lighthouse > 90": run lighthouse audit
+   - If KR is "load time < 2s": measure performance
+
+3. **Update progress** - Record your results:
+   ```bash
+   qn org okr update-kr <okr-id> --metric="lighthouse" --current=92
+   ```
+
+4. **Only close if targets met** - If key results aren't met, iterate on the work
+
+**If no OKR exists**, escalate to your manager:
+- "This work has no measurable key results. What quality bar should I verify against?"
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
