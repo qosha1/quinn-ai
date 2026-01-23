@@ -178,15 +178,20 @@ class AgentController:
 
     def on_response(self, callback: ResponseCallback) -> None:
         """Register callback for output updates."""
-        self._response_callbacks.append(callback)
+        with self._lock:
+            self._response_callbacks.append(callback)
 
     def on_state_change(self, callback: StateChangeCallback) -> None:
         """Register callback for state changes."""
-        self._state_callbacks.append(callback)
+        with self._lock:
+            self._state_callbacks.append(callback)
 
     def _handle_state_change(self, old: AgentState, new: AgentState) -> None:
         """Internal state change handler."""
-        for cb in self._state_callbacks:
+        # Copy callback list to avoid race condition during iteration
+        with self._lock:
+            callbacks = list(self._state_callbacks)
+        for cb in callbacks:
             cb(old, new)
 
     def send_prompt(
@@ -227,9 +232,15 @@ class AgentController:
             # Send prompt to session
             self._session.inject(prompt + "\n")
 
-            # Poll for completion
+            # Poll for completion with hard iteration limit to prevent infinite loops
+            # Max iterations = timeout / poll_interval * 2 (with some margin)
+            max_iterations = int((timeout / self._config.poll_interval) * 2) + 100
             last_output = ""
-            while True:
+            iteration = 0
+
+            while iteration < max_iterations:
+                iteration += 1
+
                 # Check for cancellation
                 if self._cancel_requested.is_set():
                     self._handle_cancel(turn)
@@ -250,6 +261,8 @@ class AgentController:
                 # Check timeout
                 elapsed = time.time() - start_time
                 if elapsed > timeout:
+                    # Clear cancel flag on timeout to prevent next operation from failing
+                    self._cancel_requested.clear()
                     self._state_machine.force_transition(AgentState.ERROR)
                     turn.complete(Message.assistant(""))
                     raise TimeoutError(
@@ -273,8 +286,9 @@ class AgentController:
                             turn.add_tool_call(tc)
                             self._tool_tracker.add_call(tc)
 
-                    # Notify callbacks
-                    for cb in self._response_callbacks:
+                    # Notify callbacks - copy list to avoid race condition
+                    callbacks = list(self._response_callbacks)
+                    for cb in callbacks:
                         cb(parsed)
 
                     # Check if complete (back to idle with response)
@@ -289,6 +303,14 @@ class AgentController:
                         )
 
                 time.sleep(self._config.poll_interval)
+
+            # Exceeded max iterations - treat as timeout
+            self._cancel_requested.clear()
+            self._state_machine.force_transition(AgentState.ERROR)
+            turn.complete(Message.assistant(""))
+            raise TimeoutError(
+                f"Response exceeded max iterations ({max_iterations})"
+            )
 
     def _handle_cancel(self, turn: Turn) -> None:
         """Handle cancellation of current operation."""

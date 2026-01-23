@@ -108,15 +108,26 @@ class SessionWorker(BaseWorker):
         Called automatically when worker transitions to ONBOARDING state.
         Creates a session using the factory and starts it.
         """
-        # Create session using factory
-        self._session = self._session_factory(self._config)
+        try:
+            # Create session using factory
+            self._session = self._session_factory(self._config)
 
-        # Start the session
-        self._session.start()
+            # Start the session
+            self._session.start()
 
-        # Wait for session to be ready (idle state)
-        if hasattr(self._session, "wait_for_idle"):
-            self._session.wait_for_idle(timeout=30.0)
+            # Wait for session to be ready (idle state)
+            if hasattr(self._session, "wait_for_idle"):
+                if not self._session.wait_for_idle(timeout=30.0):
+                    raise RuntimeError("Session failed to reach idle state")
+        except Exception:
+            # Cleanup partial session on failure
+            if self._session is not None:
+                try:
+                    self._session.stop(force=True)
+                except Exception:
+                    pass
+                self._session = None
+            raise  # Re-raise to fail onboarding
 
     def _on_state_change(self, new_state: WorkerState) -> None:
         """
@@ -131,17 +142,19 @@ class SessionWorker(BaseWorker):
 
     def _cleanup_session(self) -> None:
         """Stop and clean up the session."""
-        if self._session is not None:
+        # Atomically capture and clear to prevent race conditions
+        session = self._session
+        self._session = None
+
+        if session is not None:
             try:
-                self._session.stop()
+                session.stop()
             except Exception:
                 # Force stop on error
                 try:
-                    self._session.stop(force=True)
+                    session.stop(force=True)
                 except Exception:
                     pass  # Best effort cleanup
-            finally:
-                self._session = None
 
     def execute(self, task: Task) -> WorkerResult:
         """

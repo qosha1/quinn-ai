@@ -214,15 +214,15 @@ class ResultExtractor:
         # Check for success indicators
         succeeded = self._check_success(response_content)
 
-        # Extract tool calls as artifacts
-        artifacts = []
+        # Extract file paths from tool calls as artifacts
+        artifacts: list[str] = []
         if prompt_result.turn:
             for tool_call in prompt_result.turn.tool_calls:
-                artifacts.append({
-                    "type": "tool_call",
-                    "tool": tool_call.name,
-                    "arguments": tool_call.arguments,
-                })
+                if tool_call.name in ("Write", "Edit", "Read"):
+                    if "file_path" in tool_call.arguments:
+                        file_path = tool_call.arguments["file_path"]
+                        if file_path not in artifacts:
+                            artifacts.append(file_path)
 
         if succeeded:
             return WorkerResult.success(

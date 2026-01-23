@@ -13,6 +13,7 @@ Workers use this via `qn-bd` or programmatically via run_bd().
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -33,6 +34,30 @@ from .lifecycle import (
     validate_can_close,
     validate_state_transition,
 )
+
+
+# Safe pattern for worker IDs - alphanumeric, underscores, hyphens only
+SAFE_WORKER_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+
+def validate_worker_id(worker_id: str) -> None:
+    """Validate worker_id format to prevent injection attacks.
+
+    Args:
+        worker_id: Worker ID to validate
+
+    Raises:
+        ValueError: If worker_id contains unsafe characters
+    """
+    if not worker_id:
+        raise ValueError("worker_id cannot be empty")
+    if len(worker_id) > 128:
+        raise ValueError(f"worker_id too long: {len(worker_id)} chars (max 128)")
+    if not SAFE_WORKER_ID_PATTERN.match(worker_id):
+        raise ValueError(
+            f"Invalid worker_id format: '{worker_id}'. "
+            "Only alphanumeric characters, underscores, and hyphens allowed."
+        )
 
 
 class BeadPermissionError(Exception):
@@ -562,7 +587,12 @@ def run_bd(
         InvalidStateTransitionError: If state transition is not allowed
         CannotCloseBeadError: If closing bead not in terminal state
         OKRLinkRequiredError: If strict_mode and work item lacks OKR link
+        ValueError: If worker_id format is invalid
     """
+
+    # Validate worker_id format if provided (security)
+    if worker_id:
+        validate_worker_id(worker_id)
 
     # Check permissions before executing
     if worker_id and not skip_permission_check:

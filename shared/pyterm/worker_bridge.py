@@ -16,9 +16,34 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 import json
+import re
 
 if TYPE_CHECKING:
     from sqlite3 import Connection
+
+
+# Safe pattern for worker IDs - alphanumeric, underscores, hyphens only
+SAFE_WORKER_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+
+def validate_worker_id(worker_id: str) -> None:
+    """Validate worker_id format to prevent injection attacks.
+
+    Args:
+        worker_id: Worker ID to validate
+
+    Raises:
+        ValueError: If worker_id contains unsafe characters
+    """
+    if not worker_id:
+        raise ValueError("worker_id cannot be empty")
+    if len(worker_id) > 128:
+        raise ValueError(f"worker_id too long: {len(worker_id)} chars (max 128)")
+    if not SAFE_WORKER_ID_PATTERN.match(worker_id):
+        raise ValueError(
+            f"Invalid worker_id format: '{worker_id}'. "
+            "Only alphanumeric characters, underscores, and hyphens allowed."
+        )
 
 
 @dataclass
@@ -190,7 +215,14 @@ class WorkerBridge:
             db: SQLite database connection
             worker_id: ID of the worker this bridge serves
             org_path: Optional org path for beads integration
+
+        Raises:
+            ValueError: If worker_id format is invalid
+            WorkerNotFoundError: If worker not found in database
         """
+        # Validate worker_id format first (security)
+        validate_worker_id(worker_id)
+
         self._db = db
         self._worker_id = worker_id
         self._org_path = org_path

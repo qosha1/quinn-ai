@@ -9,6 +9,7 @@ Parses terminal output from the Claude Code CLI to extract:
 """
 
 import re
+import threading
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -16,6 +17,9 @@ from typing import Any
 from shared.pyterm.agent_state import AgentState
 from shared.pyterm.conversation import ToolCall
 from shared.pyterm.parsers.base import OutputParser, ParsedOutput
+
+# Maximum input size to parse (100KB) - prevents catastrophic backtracking
+MAX_PARSE_INPUT_SIZE = 100 * 1024
 
 
 # Known Claude Code tool names
@@ -41,9 +45,10 @@ TAG_FUNCTION_RESULTS_OPEN = "<function_results>"
 TAG_FUNCTION_RESULTS_CLOSE = "</function_results>"
 TAG_INVOKE_CLOSE = "</invoke>"
 
-# Regex patterns as raw strings
-TAG_INVOKE_PATTERN = r'<invoke\s+name=\"([^\"]+)\"[^>]*>'
-TAG_PARAMETER_PATTERN = r'<parameter\s+name=\"([^\"]+)\">([\s\S]*?)</parameter>'
+# Regex patterns as raw strings - use possessive/atomic patterns where possible
+# These patterns avoid catastrophic backtracking by using [^<]* instead of [\s\S]*?
+TAG_INVOKE_PATTERN = r'<invoke\s+name="([^"]+)"[^>]*>'
+TAG_PARAMETER_PATTERN = r'<parameter\s+name="([^"]+)">([^<]*(?:<(?!/parameter>)[^<]*)*)</parameter>'
 
 
 @dataclass
@@ -84,28 +89,41 @@ class ClaudeCodeParser(OutputParser):
 
     def __init__(self):
         self._patterns = ClaudeCodePatterns()
-        self._tool_call_counter = 0
+        self._counter_lock = threading.Lock()
 
     @property
     def provider_name(self) -> str:
         return "claude-code"
 
+    def _truncate_input(self, raw: str) -> str:
+        """Truncate input to prevent catastrophic backtracking.
+
+        Takes the last MAX_PARSE_INPUT_SIZE bytes if input exceeds limit.
+        """
+        if len(raw) <= MAX_PARSE_INPUT_SIZE:
+            return raw
+        # Take last MAX_PARSE_INPUT_SIZE chars to preserve most recent output
+        return raw[-MAX_PARSE_INPUT_SIZE:]
+
     def parse_output(self, raw: str) -> ParsedOutput:
         """Parse raw Claude Code CLI output."""
-        state = self.detect_state(raw)
-        tool_calls = self.extract_tool_calls(raw)
-        response = self.extract_assistant_response(raw)
-        prompt_ready = self.detect_prompt_ready(raw)
-        error_msg = self._extract_error(raw)
+        # Truncate to prevent catastrophic backtracking on malicious input
+        truncated = self._truncate_input(raw)
+
+        state = self.detect_state(truncated)
+        tool_calls = self.extract_tool_calls(truncated)
+        response = self.extract_assistant_response(truncated)
+        prompt_ready = self.detect_prompt_ready(truncated)
+        error_msg = self._extract_error(truncated)
 
         return ParsedOutput(
-            raw=raw,
+            raw=raw,  # Keep original raw for reference
             state=state,
             tool_calls=tool_calls,
             assistant_response=response,
             prompt_ready=prompt_ready,
             error_message=error_msg,
-            metadata={"provider": self.provider_name},
+            metadata={"provider": self.provider_name, "truncated": len(raw) > MAX_PARSE_INPUT_SIZE},
         )
 
     def detect_state(self, raw: str) -> AgentState:
@@ -146,9 +164,10 @@ class ClaudeCodeParser(OutputParser):
         """Extract tool calls from Claude Code output."""
         tool_calls = []
 
-        # Build pattern for full invoke block
+        # Build pattern for full invoke block using non-backtracking pattern
+        # Uses [^<]* with lookahead fallback instead of [\s\S]*? to prevent backtracking
         invoke_block_pattern = re.compile(
-            TAG_INVOKE_PATTERN + r'([\s\S]*?)' + TAG_INVOKE_CLOSE,
+            TAG_INVOKE_PATTERN + r'([^<]*(?:<(?!/invoke>)[^<]*)*)' + TAG_INVOKE_CLOSE,
             re.DOTALL
         )
         param_pattern = re.compile(TAG_PARAMETER_PATTERN, re.DOTALL)
@@ -164,9 +183,9 @@ class ClaudeCodeParser(OutputParser):
                 param_value = param_match.group(2).strip()
                 arguments[param_name] = param_value
 
-            self._tool_call_counter += 1
+            # Thread-safe ID generation using UUID only
             tc = ToolCall(
-                id=f"tc-{self._tool_call_counter}-{uuid.uuid4().hex[:8]}",
+                id=f"tc-{uuid.uuid4().hex}",
                 name=tool_name,
                 arguments=arguments,
             )
@@ -178,16 +197,20 @@ class ClaudeCodeParser(OutputParser):
         """Extract assistant response text, stripping tool formatting."""
         text = raw
 
-        # Remove function_calls blocks
+        # Remove function_calls blocks using non-backtracking pattern
         fc_pattern = re.compile(
-            re.escape(TAG_FUNCTION_CALLS_OPEN) + r'[\s\S]*?' + re.escape(TAG_FUNCTION_CALLS_CLOSE),
+            re.escape(TAG_FUNCTION_CALLS_OPEN)
+            + r'[^<]*(?:<(?!/function_calls>)[^<]*)*'
+            + re.escape(TAG_FUNCTION_CALLS_CLOSE),
             re.DOTALL
         )
         text = fc_pattern.sub("", text)
 
-        # Remove function_results blocks
+        # Remove function_results blocks using non-backtracking pattern
         fr_pattern = re.compile(
-            re.escape(TAG_FUNCTION_RESULTS_OPEN) + r'[\s\S]*?' + re.escape(TAG_FUNCTION_RESULTS_CLOSE),
+            re.escape(TAG_FUNCTION_RESULTS_OPEN)
+            + r'[^<]*(?:<(?!/function_results>)[^<]*)*'
+            + re.escape(TAG_FUNCTION_RESULTS_CLOSE),
             re.DOTALL
         )
         text = fr_pattern.sub("", text)
