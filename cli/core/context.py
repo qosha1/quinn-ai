@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from .bead_service import BeadService
     from .storage import StorageManager
     from .org import Org
+    from shared.escalation.manager import EscalationManager
 
 
 class OrgContextError(Exception):
@@ -94,6 +95,7 @@ class OrgContext:
         self._bead_service: Optional[BeadService] = None
         self._storage_manager: Optional[StorageManager] = None
         self._org: Optional[Org] = None
+        self._escalation_manager: Optional[EscalationManager] = None
 
         # Track whether context is closed
         self._closed = False
@@ -174,6 +176,45 @@ class OrgContext:
             self._org = Org.load(self._db)
         return self._org
 
+    @property
+    def escalation_manager(self) -> EscalationManager:
+        """Get the escalation manager (lazy initialized).
+
+        Builds OrgTopology from workers in the database and initializes
+        the EscalationManager with config from escalation.yaml if present.
+        """
+        self._check_closed()
+        if self._escalation_manager is None:
+            from shared.escalation.manager import EscalationManager, EscalationConfig
+            from shared.escalation.hierarchical import OrgTopology, WorkerNode
+
+            # Build topology from database workers
+            topology = OrgTopology()
+            rows = self._db.fetchall("SELECT id, name, manager_id, role FROM workers")
+            for row in rows:
+                # Determine if worker is a manager (has direct reports)
+                has_reports = self._db.fetchone(
+                    "SELECT 1 FROM workers WHERE manager_id = ?", (row["id"],)
+                )
+                node = WorkerNode(
+                    id=row["id"],
+                    name=row["name"],
+                    boss_id=row["manager_id"],
+                    is_manager=has_reports is not None,
+                )
+                topology.add_node(node)
+
+            # Load escalation config if it exists
+            escalation_config_path = self._config.config_path / "escalation.yaml"
+            if escalation_config_path.exists():
+                config = EscalationConfig.load_from_yaml(escalation_config_path)
+            else:
+                config = EscalationConfig()
+
+            self._escalation_manager = EscalationManager(topology, config)
+
+        return self._escalation_manager
+
     # ===================
     # ORG METADATA
     # ===================
@@ -211,6 +252,10 @@ class OrgContext:
         if self._closed:
             return
 
+        # Stop escalation manager if it was started
+        if self._escalation_manager is not None:
+            self._escalation_manager.stop()
+
         # Close database connection
         self._db.close()
 
@@ -219,6 +264,7 @@ class OrgContext:
         self._bead_service = None
         self._storage_manager = None
         self._org = None
+        self._escalation_manager = None
 
         self._closed = True
 

@@ -195,6 +195,74 @@ class BudgetConfig:
 
 
 @dataclass
+class AutoAssignConfig:
+    """Configuration for automatic work assignment."""
+    enabled: bool = True
+    match_skills: bool = True
+    prefer_least_loaded: bool = True
+    strategy: str = "least_loaded"  # least_loaded | round_robin | skill_match
+
+
+@dataclass
+class OKRLinkingConfig:
+    """Configuration for OKR linking requirements."""
+    require_okr_link: bool = True
+    strict_mode: bool = False
+
+
+@dataclass
+class WorkflowConfig:
+    """Configuration for work lifecycle and automation.
+
+    Loaded from workflow.yaml. Defines valid states, transitions,
+    and automation rules for work items.
+    """
+    # Work states and transitions
+    work_states: list[str] = field(default_factory=lambda: [
+        "draft", "open", "in_progress", "review", "blocked", "closed"
+    ])
+    transitions: dict[str, list[str]] = field(default_factory=dict)
+    terminal_states: list[str] = field(default_factory=lambda: ["closed"])
+
+    # OKR linking
+    okr_linking: OKRLinkingConfig = field(default_factory=OKRLinkingConfig)
+
+    # Automation
+    auto_assign: AutoAssignConfig = field(default_factory=AutoAssignConfig)
+
+    def is_valid_transition(self, from_state: str, to_state: str) -> bool:
+        """Check if a state transition is valid.
+
+        Args:
+            from_state: Current state
+            to_state: Target state
+
+        Returns:
+            True if transition is allowed
+        """
+        allowed = self.transitions.get(from_state, [])
+        return to_state in allowed
+
+    def is_terminal(self, state: str) -> bool:
+        """Check if a state is terminal (no further transitions)."""
+        return state in self.terminal_states
+
+    @classmethod
+    def default(cls) -> "WorkflowConfig":
+        """Create default workflow config."""
+        return cls(
+            transitions={
+                "draft": ["open", "closed"],
+                "open": ["in_progress", "blocked", "closed"],
+                "in_progress": ["review", "blocked", "closed"],
+                "review": ["in_progress", "closed"],
+                "blocked": ["open", "in_progress", "closed"],
+                "closed": [],
+            }
+        )
+
+
+@dataclass
 class OrgConfig:
     """Complete configuration for an organization.
 
@@ -204,6 +272,7 @@ class OrgConfig:
     providers: ProvidersConfig
     worker_templates: WorkerTemplatesConfig
     budget: BudgetConfig
+    workflow: WorkflowConfig
     config_path: Path
 
 
@@ -364,6 +433,49 @@ def load_budget_config(config_path: Path) -> BudgetConfig:
     )
 
 
+def load_workflow_config(config_path: Path) -> WorkflowConfig:
+    """Load workflow configuration from explicit path.
+
+    Args:
+        config_path: Path to workflow.yaml file
+
+    Returns:
+        WorkflowConfig with loaded settings, or defaults if file doesn't exist
+    """
+    if not config_path.exists():
+        return WorkflowConfig.default()
+
+    with open(config_path) as f:
+        data = yaml.safe_load(f)
+
+    if not data:
+        return WorkflowConfig.default()
+
+    # Parse OKR linking config
+    okr_data = data.get("okr_linking", {})
+    okr_linking = OKRLinkingConfig(
+        require_okr_link=okr_data.get("require_okr_link", True),
+        strict_mode=okr_data.get("strict_mode", False),
+    )
+
+    # Parse auto-assign config
+    auto_data = data.get("automation", {}).get("auto_assign", {})
+    auto_assign = AutoAssignConfig(
+        enabled=auto_data.get("enabled", True),
+        match_skills=auto_data.get("match_skills", True),
+        prefer_least_loaded=auto_data.get("prefer_least_loaded", True),
+        strategy=auto_data.get("strategy", "least_loaded"),
+    )
+
+    return WorkflowConfig(
+        work_states=data.get("work_states", WorkflowConfig.default().work_states),
+        transitions=data.get("transitions", WorkflowConfig.default().transitions),
+        terminal_states=data.get("terminal_states", ["closed"]),
+        okr_linking=okr_linking,
+        auto_assign=auto_assign,
+    )
+
+
 def load_org_config(config_dir: Path) -> OrgConfig:
     """Load complete organization configuration from explicit directory.
 
@@ -389,6 +501,7 @@ def load_org_config(config_dir: Path) -> OrgConfig:
     providers_path = config_dir / "providers.yaml"
     templates_path = config_dir / "worker-templates.yaml"
     budget_path = config_dir / "budget.yaml"
+    workflow_path = config_dir / "workflow.yaml"
 
     providers = load_providers_config(providers_path)
 
@@ -401,10 +514,14 @@ def load_org_config(config_dir: Path) -> OrgConfig:
     # Budget config is optional (defaults to constants)
     budget = load_budget_config(budget_path)
 
+    # Workflow config is optional (defaults to standard work lifecycle)
+    workflow = load_workflow_config(workflow_path)
+
     return OrgConfig(
         providers=providers,
         worker_templates=templates,
         budget=budget,
+        workflow=workflow,
         config_path=config_dir,
     )
 
