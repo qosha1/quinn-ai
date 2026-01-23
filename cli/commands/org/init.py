@@ -4,6 +4,7 @@ qn org init command.
 
 import shutil
 from pathlib import Path
+from importlib import resources
 
 import click
 
@@ -12,8 +13,23 @@ from cli.core.db import init_database, get_org_db_path
 from cli.core.org import Org
 
 
-# Path to default config templates (relative to this file's package)
-DEFAULT_CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
+def _get_config_template_path() -> Path:
+    """Get path to config templates using importlib.resources.
+
+    Falls back to __file__-based path if resources are not available.
+    This supports both development (editable install) and packaged installs.
+
+    Returns:
+        Path to the config templates directory
+    """
+    try:
+        # Use importlib.resources for proper package data access
+        # This works in packaged distributions and zip imports
+        with resources.as_file(resources.files("cli.config")) as config_path:
+            return config_path
+    except (TypeError, ModuleNotFoundError):
+        # Fallback for development: use source-relative path
+        return Path(__file__).parent.parent.parent / "config"
 
 
 @click.command()
@@ -110,12 +126,12 @@ def _copy_default_configs(org_path: Path) -> None:
     config_dir = org_path / "config"
 
     # Copy providers.yaml
-    providers_src = DEFAULT_CONFIG_DIR / "providers.yaml"
+    providers_src = _get_config_template_path() / "providers.yaml"
     if providers_src.exists():
         shutil.copy(providers_src, config_dir / "providers.yaml")
 
     # Copy worker-templates.yaml
-    templates_src = DEFAULT_CONFIG_DIR / "worker-templates.yaml"
+    templates_src = _get_config_template_path() / "worker-templates.yaml"
     if templates_src.exists():
         shutil.copy(templates_src, config_dir / "worker-templates.yaml")
 

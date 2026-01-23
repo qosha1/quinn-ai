@@ -387,6 +387,26 @@ class OKRLinkRequiredError(Exception):
         super().__init__(message)
 
 
+def _get_default_config_path() -> Path:
+    """Get path to default config using importlib.resources.
+
+    Falls back to __file__-based path if resources are not available.
+    This supports both development (editable install) and packaged installs.
+
+    Returns:
+        Path to the config directory
+    """
+    from importlib import resources
+
+    try:
+        # Use importlib.resources for proper package data access
+        with resources.as_file(resources.files("cli.config")) as config_path:
+            return config_path
+    except (TypeError, ModuleNotFoundError):
+        # Fallback for development: use source-relative path
+        return Path(__file__).parent.parent / "config"
+
+
 def _load_workflow_config(org_path: Path) -> dict:
     """Load workflow configuration from org's workflow.yaml.
 
@@ -398,10 +418,12 @@ def _load_workflow_config(org_path: Path) -> dict:
     """
     import yaml
 
-    workflow_path = org_path / "cli" / "config" / "workflow.yaml"
+    # First check org-specific config
+    workflow_path = org_path / "config" / "workflow.yaml"
     if not workflow_path.exists():
-        # Check parent directories for shared config
-        workflow_path = Path(__file__).parent.parent / "config" / "workflow.yaml"
+        # Fall back to package default config
+        default_config = _get_default_config_path()
+        workflow_path = default_config / "workflow.yaml"
         if not workflow_path.exists():
             return {}
 
