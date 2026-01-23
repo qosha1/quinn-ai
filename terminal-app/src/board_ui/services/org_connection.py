@@ -9,10 +9,13 @@ board can connect/disconnect at will.
 """
 
 import json
+import logging
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 from ..interfaces.org_connection import (
     OrgConnection,
@@ -328,19 +331,31 @@ class QuinnAIOrgConnection(OrgConnection):
     def _get_active_session_count(self) -> int:
         """Get count of active sessions."""
         # Try sessions table first (new)
-        row = self._db.fetchone(
-            """SELECT COUNT(*) as count FROM sessions
-               WHERE state IN ('starting', 'running', 'idle')"""
-        )
-        if row and row["count"] > 0:
-            return row["count"]
+        try:
+            row = self._db.fetchone(
+                """SELECT COUNT(*) as count FROM sessions
+                   WHERE state IN ('starting', 'running', 'idle')"""
+            )
+            if row and row["count"] > 0:
+                return row["count"]
+        except Exception:
+            # sessions table doesn't exist, try fallback
+            pass
 
         # Fall back to worker_state for backwards compatibility
-        row = self._db.fetchone(
-            """SELECT COUNT(*) as count FROM worker_state
-               WHERE runtime_status IN ('starting', 'running', 'idle')"""
-        )
-        return row["count"] if row else 0
+        try:
+            row = self._db.fetchone(
+                """SELECT COUNT(*) as count FROM worker_state
+                   WHERE runtime_status IN ('starting', 'running', 'idle')"""
+            )
+            return row["count"] if row else 0
+        except Exception as e:
+            # Both tables failed - unexpected schema
+            logger.warning(
+                "Failed to query session tables, org database may have unexpected schema: %s",
+                e,
+            )
+            return 0
 
     def get_budget_summary(self) -> BudgetSummary:
         """Get budget summary for the org.

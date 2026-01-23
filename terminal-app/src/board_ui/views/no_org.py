@@ -90,6 +90,19 @@ class NoOrgView(Widget):
         color: $text-muted;
         margin: 1 0;
     }
+
+    #error-display {
+        text-align: center;
+        color: $error;
+        background: $error 10%;
+        border: solid $error;
+        padding: 1 2;
+        margin: 1 0;
+    }
+
+    .hidden {
+        display: none;
+    }
     """
 
     def __init__(
@@ -113,6 +126,9 @@ class NoOrgView(Widget):
                     "Connect to an existing org or create a new one",
                     id="no-org-subtitle",
                 )
+
+                # Error display (hidden by default)
+                yield Static("", id="error-display", classes="hidden")
 
                 if self.available_orgs:
                     yield Label(
@@ -153,6 +169,9 @@ class NoOrgView(Widget):
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
+        # Clear any previous errors when user tries again
+        self.clear_error()
+
         if event.button.id == "connect-btn":
             await self._connect_to_selected()
         elif event.button.id == "start-btn":
@@ -198,6 +217,22 @@ class NoOrgView(Widget):
     async def _refresh_org_list(self) -> None:
         """Refresh the list of available orgs."""
         self.post_message(RefreshOrgList())
+
+    def show_error(self, message: str) -> None:
+        """Display a persistent error message.
+
+        Args:
+            message: Error message to display
+        """
+        error_display = self.query_one("#error-display", Static)
+        error_display.update(f"⚠ {message}")
+        error_display.remove_class("hidden")
+
+    def clear_error(self) -> None:
+        """Clear the error message display."""
+        error_display = self.query_one("#error-display", Static)
+        error_display.add_class("hidden")
+        error_display.update("")
 
 
 # Custom messages for communication with parent app

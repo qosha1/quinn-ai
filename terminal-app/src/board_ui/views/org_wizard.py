@@ -19,6 +19,7 @@ from textual.containers import Container, Vertical, Horizontal, Center
 from textual.widgets import Button, Label, Input, Static, ProgressBar
 from textual.widget import Widget
 from textual.message import Message
+from textual.reactive import reactive
 
 from ..widgets.provider_config import ProviderConfigWidget, ProviderInfo
 from ..widgets.okr_editor import OKREditorWidget, Objective
@@ -108,6 +109,20 @@ class OrgInitWizard(Widget):
         text-style: italic;
         margin-left: 15;
     }
+
+    .validation-error {
+        color: $error;
+        margin-left: 15;
+        margin-top: 0;
+        margin-bottom: 1;
+    }
+
+    .validation-success {
+        color: $success;
+        margin-left: 15;
+        margin-top: 0;
+        margin-bottom: 1;
+    }
     """
 
     STEPS = [
@@ -127,6 +142,9 @@ class OrgInitWizard(Widget):
     class WizardCancelled(Message):
         """Wizard was cancelled."""
         pass
+
+    # Reactive validation state
+    validation_errors: reactive[dict[str, str]] = reactive({})
 
     def __init__(self, default_path: Optional[Path] = None, **kwargs) -> None:
         """Initialize the wizard.
@@ -178,6 +196,7 @@ class OrgInitWizard(Widget):
                 ),
                 classes="input-row",
             ),
+            Static("", id="org-name-error", classes="validation-error"),
             Horizontal(
                 Label("Location:", classes="input-label"),
                 Input(
@@ -187,6 +206,7 @@ class OrgInitWizard(Widget):
                 ),
                 classes="input-row",
             ),
+            Static("", id="org-path-error", classes="validation-error"),
             Label(
                 "The org folder will be created at: [location]/[name]",
                 classes="path-hint",
@@ -204,6 +224,7 @@ class OrgInitWizard(Widget):
                 classes="step-description",
             ),
             ProviderConfigWidget(id="provider-config"),
+            Static("", id="provider-error", classes="validation-error"),
             id="step-2",
             classes="hidden",
         )
@@ -217,6 +238,7 @@ class OrgInitWizard(Widget):
                 classes="step-description",
             ),
             OKREditorWidget(id="okr-editor"),
+            Static("", id="okr-error", classes="validation-error"),
             id="step-3",
             classes="hidden",
         )
@@ -238,6 +260,7 @@ class OrgInitWizard(Widget):
         """Initialize wizard state."""
         self._update_progress()
         self._show_current_step()
+        self._validate_current_step_ui()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle navigation buttons."""
@@ -249,9 +272,10 @@ class OrgInitWizard(Widget):
             self._go_next()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Update path preview when inputs change."""
+        """Update path preview and validation when inputs change."""
         if event.input.id in ("org-name-input", "org-path-input"):
             self._update_path_preview()
+            self._validate_current_step_ui()
 
     def _go_back(self) -> None:
         """Go to previous step."""
@@ -261,6 +285,7 @@ class OrgInitWizard(Widget):
             self._show_current_step()
             self._update_progress()
             self._update_buttons()
+            self._validate_current_step_ui()
 
     def _go_next(self) -> None:
         """Go to next step or finish."""
@@ -274,6 +299,7 @@ class OrgInitWizard(Widget):
             self._show_current_step()
             self._update_progress()
             self._update_buttons()
+            self._validate_current_step_ui()
         else:
             # Wizard complete
             self._finish_wizard()
@@ -328,32 +354,124 @@ class OrgInitWizard(Widget):
 
     def _validate_current_step(self) -> bool:
         """Validate current step before proceeding."""
+        errors = self._get_current_step_errors()
+
+        if errors:
+            # Show first error as notification
+            first_error = next(iter(errors.values()))
+            self.notify(first_error, severity="error")
+            return False
+
+        return True
+
+    def _validate_current_step_ui(self) -> None:
+        """Update UI validation state for current step."""
+        errors = self._get_current_step_errors()
+        self.validation_errors = errors
+
+        # Update next button state
+        next_btn = self.query_one("#next-btn", Button)
+        next_btn.disabled = bool(errors)
+
+        # Update error displays
+        if self._current_step == 0:
+            self._update_error_display("org-name-error", "org-name")
+            self._update_error_display("org-path-error", "org-path")
+        elif self._current_step == 1:
+            self._update_error_display("provider-error", "providers")
+        elif self._current_step == 2:
+            self._update_error_display("okr-error", "okrs")
+
+    def _update_error_display(self, widget_id: str, error_key: str) -> None:
+        """Update a specific error display widget."""
+        try:
+            error_widget = self.query_one(f"#{widget_id}", Static)
+            error_msg = self.validation_errors.get(error_key, "")
+            error_widget.update(error_msg)
+
+            if error_msg:
+                error_widget.add_class("validation-error")
+                error_widget.remove_class("validation-success")
+            else:
+                error_widget.remove_class("validation-error")
+                error_widget.remove_class("validation-success")
+        except Exception:
+            pass
+
+    def _get_current_step_errors(self) -> dict[str, str]:
+        """Get validation errors for current step."""
+        errors = {}
+
         if self._current_step == 0:
             # Validate name and path
-            name_input = self.query_one("#org-name-input", Input)
-            path_input = self.query_one("#org-path-input", Input)
+            try:
+                name_input = self.query_one("#org-name-input", Input)
+                path_input = self.query_one("#org-path-input", Input)
 
-            name = name_input.value.strip()
-            if not name:
-                self.notify("Please enter an org name", severity="error")
-                return False
+                name = name_input.value.strip()
+                if not name:
+                    errors["org-name"] = "Org name is required"
+                elif not name.replace("-", "").replace("_", "").isalnum():
+                    errors["org-name"] = "Name should only contain letters, numbers, hyphens, and underscores"
 
-            if not name.replace("-", "").replace("_", "").isalnum():
-                self.notify(
-                    "Org name should only contain letters, numbers, hyphens, and underscores",
-                    severity="error",
-                )
-                return False
+                path_str = path_input.value.strip()
+                if not path_str:
+                    errors["org-path"] = "Location is required"
+                else:
+                    try:
+                        base_path = Path(path_str)
+                        # Check if path exists or parent exists for creation
+                        if not base_path.exists():
+                            parent = base_path.parent
+                            if not parent.exists():
+                                errors["org-path"] = f"Parent directory does not exist: {parent}"
+                            elif not parent.is_dir():
+                                errors["org-path"] = f"Parent path is not a directory: {parent}"
+                        elif not base_path.is_dir():
+                            errors["org-path"] = f"Path exists but is not a directory: {base_path}"
 
-            path = path_input.value.strip()
-            if not path:
-                self.notify("Please enter a location", severity="error")
-                return False
+                        # Check if org path would already exist
+                        if name and not errors.get("org-name"):
+                            full_path = base_path / name
+                            if full_path.exists():
+                                errors["org-path"] = f"Organization already exists at: {full_path}"
+                    except (OSError, ValueError) as e:
+                        errors["org-path"] = f"Invalid path: {e}"
+            except Exception:
+                pass
 
-            return True
+        elif self._current_step == 1:
+            # Validate at least one provider is enabled
+            try:
+                provider_widget = self.query_one("#provider-config", ProviderConfigWidget)
+                enabled_providers = provider_widget.get_enabled_providers()
+                if not enabled_providers:
+                    errors["providers"] = "At least one AI provider must be enabled"
+            except Exception:
+                pass
 
-        # Other steps are optional
-        return True
+        elif self._current_step == 2:
+            # Validate OKRs - titles must not be empty if objectives exist
+            try:
+                okr_widget = self.query_one("#okr-editor", OKREditorWidget)
+                objectives = okr_widget.get_objectives()
+
+                for i, obj in enumerate(objectives):
+                    if not obj.title.strip():
+                        errors["okrs"] = f"Objective {i+1} has an empty title"
+                        break
+
+                    for j, kr in enumerate(obj.key_results):
+                        if not kr.metric.strip():
+                            errors["okrs"] = f"Objective {i+1}, Key Result {j+1} is empty"
+                            break
+
+                    if "okrs" in errors:
+                        break
+            except Exception:
+                pass
+
+        return errors
 
     def _save_current_step(self) -> None:
         """Save data from current step."""

@@ -274,11 +274,20 @@ class BoardApp(App):
             await self._refresh_all_views()
 
         except OrgNotFound:
-            self.notify(f"Org not found at {org_path}", severity="error")
+            error_msg = f"Org not found at {org_path}"
+            self.notify(error_msg, severity="error")
+            no_org_view = self.query_one("#no-org-view", NoOrgView)
+            no_org_view.show_error(error_msg)
         except DatabaseNotFound:
-            self.notify(f"Org not initialized at {org_path}", severity="warning")
+            error_msg = f"Org not initialized at {org_path}"
+            self.notify(error_msg, severity="warning")
+            no_org_view = self.query_one("#no-org-view", NoOrgView)
+            no_org_view.show_error(error_msg)
         except OrgConnectionError as e:
-            self.notify(f"Connection failed: {e}", severity="error")
+            error_msg = f"Connection failed: {e}"
+            self.notify(error_msg, severity="error")
+            no_org_view = self.query_one("#no-org-view", NoOrgView)
+            no_org_view.show_error(error_msg)
 
     async def _refresh_all_views(self) -> None:
         """Refresh all org views after connection or org switch."""
@@ -369,7 +378,10 @@ class BoardApp(App):
             # Connect after successful start
             await self._connect_to_org(message.org_path)
         else:
-            self.notify(result.message, severity="error")
+            error_msg = result.message
+            self.notify(error_msg, severity="error")
+            no_org_view = self.query_one("#no-org-view", NoOrgView)
+            no_org_view.show_error(error_msg)
 
     async def on_show_new_org_wizard(self, message: ShowNewOrgWizard) -> None:
         """Handle request to show the new org wizard."""
@@ -493,12 +505,14 @@ class BoardApp(App):
             no_org_view.remove_class("hidden")
 
         except Exception as e:
-            self.notify(f"Failed to create org: {e}", severity="error")
+            error_msg = f"Failed to create org: {e}"
+            self.notify(error_msg, severity="error")
             # Go back to no-org view
             wizard = self.query_one("#org-wizard", OrgInitWizard)
             no_org_view = self.query_one("#no-org-view", NoOrgView)
             wizard.add_class("hidden")
             no_org_view.remove_class("hidden")
+            no_org_view.show_error(error_msg)
 
     async def on_refresh_org_list(self, message: RefreshOrgList) -> None:
         """Handle request to refresh the org list."""
