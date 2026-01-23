@@ -46,16 +46,15 @@ def qn(ctx, org_path: Optional[Path], verbose: bool, debug: bool):
     ctx.ensure_object(Context)
     if org_path:
         ctx.obj.org_path = org_path
-    elif ctx.obj.org_path is None:
-        # Default to current directory
-        ctx.obj.org_path = Path.cwd()
+    # Note: org_path may be None here - validated in subcommands that need it
 
-    # Configure logging with verbosity settings
-    configure_logging(
-        org_path=ctx.obj.org_path,
-        verbose=verbose,
-        debug=debug,
-    )
+    # Configure logging only if org_path is available
+    if ctx.obj.org_path:
+        configure_logging(
+            org_path=ctx.obj.org_path,
+            verbose=verbose,
+            debug=debug,
+        )
 
 
 @qn.group()

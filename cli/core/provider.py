@@ -892,13 +892,8 @@ def create_session_for_worker(
         org_authorized_providers=org_authorized_providers,
     )
 
-    # Map provider to CLI command
-    # Currently only Claude Code is implemented
-    provider_to_command = {
-        "anthropic": "claude",
-        "claude": "claude",
-    }
-    command = provider_to_command.get(selection.provider.name, "claude")
+    # Get CLI command from provider (no string dispatch)
+    command = selection.provider.cli_command
 
     # Build session config
     config = SessionConfig(

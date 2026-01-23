@@ -249,6 +249,19 @@ class Provider(ABC):
         pass
 
     @property
+    def cli_command(self) -> str:
+        """CLI command for this provider's session.
+
+        Returns the command to spawn a session for this provider.
+        Override in subclasses for provider-specific commands.
+
+        Returns:
+            CLI command name (e.g., 'claude' for Anthropic)
+        """
+        # Default implementation - subclasses should override
+        return self.name
+
+    @property
     @abstractmethod
     def models(self) -> list[ModelInfo]:
         """Available models from this provider.
