@@ -53,12 +53,17 @@ def main(
         preferred_terminal=_parse_terminal(terminal),
     )
 
-    # If no org paths specified, try current directory
+    # If no org paths specified, use default search paths
     if not config.org_paths:
         cwd = Path.cwd()
         # Check if current dir looks like an org
         if (cwd / "live" / "quinn.db").exists():
             config.org_paths = [cwd]
+        else:
+            # Default search paths: ~/orgs and current directory
+            default_orgs_dir = Path.home() / "orgs"
+            if default_orgs_dir.exists():
+                config.org_paths = [default_orgs_dir]
 
     # Launch the app
     app = BoardApp(config)
