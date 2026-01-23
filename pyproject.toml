@@ -30,9 +30,6 @@ qn = "cli.commands.main:qn"
 [tool.hatch.build.targets.wheel]
 packages = ["cli", "shared"]
 
-[tool.pytest.ini_options]
-testpaths = ["cli/tests", "tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = "-v"
+# NOTE: Pytest configuration lives in pytest.ini (single source of truth)
+# pyproject.toml [tool.pytest.ini_options] is intentionally omitted to avoid conflicts.
+# Run: pytest (uses pytest.ini) or systemeval test (uses pytest adapter with pytest.ini)

@@ -1,9 +1,12 @@
 adapter: pytest
 project_root: .
-test_directory: tests
+# NOTE: Pytest configuration (testpaths, ignores) is defined in pytest.ini
+# systemeval uses pytest as adapter, which reads pytest.ini automatically.
+# Test directories: tests/, cli/tests/
+# Ignored: backend/, terminal-app/, e2e/ (have separate test configurations)
 options:
-  # Ignore backend tests that require Django setup
-  ignore: ["backend"]
+  # Additional ignores passed to pytest (pytest.ini already handles these)
+  ignore: ["backend", "terminal-app", "e2e"]
 
 categories:
   code-quality:

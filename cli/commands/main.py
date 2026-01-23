@@ -128,5 +128,11 @@ board.add_command(resume_cmd, name="resume")
 board.add_command(fire_cmd, name="fire")
 
 
+# Config commands - configuration validation
+from cli.commands.config import config as config_group
+
+qn.add_command(config_group, name="config")
+
+
 if __name__ == "__main__":
     qn()
