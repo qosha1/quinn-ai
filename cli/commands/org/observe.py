@@ -4,9 +4,6 @@ qn org observe command.
 Attach to or stream a worker's tmux session in real-time.
 """
 
-import os
-import subprocess
-import sys
 import time
 from typing import Optional
 
@@ -17,10 +14,13 @@ from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
 from cli.core.queries import get_worker_by_name, get_worker
 from shared import WorkerNotFound
+from shared.pyterm.tmux_session import TmuxSession
 
 
 def get_tmux_session_name(worker_id: str) -> str:
     """Get the tmux session name for a worker.
+
+    Uses consistent naming with AgentSession.
 
     Args:
         worker_id: Worker ID
@@ -31,53 +31,10 @@ def get_tmux_session_name(worker_id: str) -> str:
     return f"qn-{worker_id}"
 
 
-def session_exists(session_name: str) -> bool:
-    """Check if a tmux session exists.
-
-    Args:
-        session_name: tmux session name
-
-    Returns:
-        True if session exists
-    """
-    result = subprocess.run(
-        ["tmux", "has-session", "-t", session_name],
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
-
-
-def attach_to_session(session_name: str) -> None:
-    """Attach to a tmux session, replacing the current process.
-
-    Args:
-        session_name: tmux session name
-    """
-    os.execvp("tmux", ["tmux", "attach-session", "-t", session_name])
-
-
-def capture_pane_output(session_name: str) -> str:
-    """Capture the current pane output from a tmux session.
-
-    Args:
-        session_name: tmux session name
-
-    Returns:
-        Current pane content
-    """
-    result = subprocess.run(
-        ["tmux", "capture-pane", "-t", session_name, "-p"],
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout if result.returncode == 0 else ""
-
-
 def stream_session_output(session_name: str, poll_interval: float = 0.5) -> None:
     """Stream tmux session output by polling.
 
-    Polls the session at regular intervals and prints new output.
+    Uses TmuxSession for consistent tmux handling.
 
     Args:
         session_name: tmux session name
@@ -90,11 +47,11 @@ def stream_session_output(session_name: str, poll_interval: float = 0.5) -> None
 
     try:
         while True:
-            if not session_exists(session_name):
+            if not TmuxSession.exists(session_name):
                 click.echo("\nSession ended.")
                 break
 
-            current_output = capture_pane_output(session_name)
+            current_output = TmuxSession.capture(session_name)
 
             if current_output != last_output:
                 # Clear screen and show new output
@@ -191,11 +148,11 @@ def observe_cmd(ctx: Context, worker: str, stream: bool, poll_interval: float):
                 "Worker must be in 'starting', 'running', or 'idle' state to observe."
             )
 
-        # Get tmux session name
+        # Get tmux session name (consistent with AgentSession naming)
         session_name = get_tmux_session_name(worker_data.id)
 
-        # Verify tmux session actually exists
-        if not session_exists(session_name):
+        # Verify tmux session actually exists using TmuxSession
+        if not TmuxSession.exists(session_name):
             raise click.ClickException(
                 f"Worker '{worker_data.name}' shows active but tmux session '{session_name}' not found.\n"
                 "The session may have crashed. Try 'qn org cleanup' to sync state."
@@ -212,8 +169,8 @@ def observe_cmd(ctx: Context, worker: str, stream: bool, poll_interval: float):
         else:
             # Attach mode - take over terminal
             click.echo("Attaching to session... (Ctrl+B, then D to detach)")
-            db.close()  # Close DB before exec
-            attach_to_session(session_name)
+            db.close()  # Close DB before exec replaces process
+            TmuxSession.attach(session_name)
 
     finally:
         db.close()

@@ -48,6 +48,94 @@ class TmuxSession:
         self._polling_thread: threading.Thread | None = None
         self._stop_polling = threading.Event()
 
+    @classmethod
+    def exists(cls, session_name: str) -> bool:
+        """Check if a tmux session with the given name exists.
+
+        Class method for checking external sessions.
+
+        Args:
+            session_name: tmux session name to check
+
+        Returns:
+            True if session exists
+        """
+        result = subprocess.run(
+            ["tmux", "has-session", "-t", session_name],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode == 0
+
+    @classmethod
+    def connect(cls, session_name: str, config: PytermConfig | None = None) -> "TmuxSession":
+        """Connect to an existing tmux session.
+
+        Factory method that creates a TmuxSession instance connected
+        to an existing external session. The session must already exist.
+
+        Args:
+            session_name: Name of existing tmux session
+            config: Optional pyterm configuration
+
+        Returns:
+            TmuxSession instance connected to the session
+
+        Raises:
+            ValueError: If session does not exist
+        """
+        if not cls.exists(session_name):
+            raise ValueError(f"Tmux session '{session_name}' does not exist")
+
+        session = cls(session_name=session_name, config=config)
+        session._state = SessionState.RUNNING
+
+        # Try to get PID of the existing session
+        try:
+            result = subprocess.run(
+                ["tmux", "display-message", "-t", session_name, "-p", "#{pane_pid}"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                session._pid = int(result.stdout.strip())
+        except (ValueError, subprocess.SubprocessError):
+            pass  # PID extraction is optional
+
+        return session
+
+    @classmethod
+    def capture(cls, session_name: str) -> str:
+        """Capture pane output from a tmux session.
+
+        Class method for capturing output from any session.
+
+        Args:
+            session_name: tmux session name
+
+        Returns:
+            Current pane content, or empty string if capture fails
+        """
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-t", session_name, "-p"],
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout if result.returncode == 0 else ""
+
+    @classmethod
+    def attach(cls, session_name: str) -> None:
+        """Attach to a tmux session, replacing the current process.
+
+        This uses os.execvp so it does not return - the current
+        process is replaced by tmux.
+
+        Args:
+            session_name: tmux session name to attach to
+        """
+        import os
+        os.execvp("tmux", ["tmux", "attach-session", "-t", session_name])
+
     @property
     def id(self) -> str:
         return self._id
