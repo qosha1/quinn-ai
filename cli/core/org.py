@@ -23,6 +23,7 @@ from .queries import (
     create_channel,
     subscribe_to_channel,
     get_team_channel,
+    add_team_member,
 )
 from .worker import Worker
 
@@ -159,6 +160,9 @@ class Org:
             cost=DEFAULT_CEO_COST,
             manager_id=None,  # No manager - root of hierarchy
         )
+
+        # Add CEO to team_members table (org-chart sync)
+        add_team_member(self.db, team.id, ceo_data.id, role="lead")
 
         # Create budget pool and allocation for CEO
         now = datetime.now()

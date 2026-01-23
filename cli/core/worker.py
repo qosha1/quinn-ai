@@ -61,6 +61,10 @@ from .queries import (
     create_channel,
     create_message,
     generate_id,
+    # Team membership sync
+    add_team_member,
+    remove_team_member,
+    get_worker_team_memberships,
 )
 from .storage import StorageManager, WorkerStorageNotFound, StorageAlreadyFrozen
 from .notifications import create_notification_bead
@@ -480,6 +484,9 @@ class Worker:
         # Create worker storage folder (mirrors org-chart hierarchy)
         storage = self._get_storage_manager()
         storage.ensure_worker_storage(worker_data.id, reports_to=self.id)
+
+        # Add worker to team_members table (org-chart sync)
+        add_team_member(self.db, self.team_id, worker_data.id, role="member")
 
         # Subscribe new worker to team channel
         team_channel = get_team_channel(self.db, self.team_id)
@@ -908,6 +915,11 @@ class Worker:
         # Unsubscribe from all channels
         unsubscribe_from_all_channels(self.db, self.id)
 
+        # Remove from all teams (org-chart sync)
+        memberships = get_worker_team_memberships(self.db, self.id)
+        for membership in memberships:
+            remove_team_member(self.db, membership.team_id, self.id)
+
         # Validate and update lifecycle status
         self._validate_lifecycle_transition("terminated")
         update_worker_status(self.db, self.id, "terminated")
@@ -1313,10 +1325,8 @@ class Worker:
             config = session.config
             working_dir = str(config.working_directory) if config.working_directory else None
 
-            # Get tmux session name if available (from spawn result metadata)
-            tmux_session_name = None
-            if hasattr(session, '_spawn_result') and session._spawn_result:
-                tmux_session_name = session._spawn_result.metadata.get('session_name')
+            # Get platform session name (tmux session name, etc.)
+            tmux_session_name = session.platform_session_name
 
             try:
                 create_session_record(

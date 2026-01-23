@@ -10,6 +10,7 @@ Messages are persisted in beads and create notifications for recipients.
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Protocol
 import uuid
@@ -19,6 +20,8 @@ from shared.comms.types import (
     TimeSensitivity,
     WorkerMessage,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class OutboxInterface(Protocol):
@@ -411,7 +414,8 @@ class BeadsOutbox(BaseOutbox):
                         if part.startswith("bd-"):
                             return part.rstrip(":")
             return message.id
-        except RuntimeError:
+        except RuntimeError as e:
+            logger.warning("Failed to persist message %s: %s", message.id, e)
             return message.id
 
     def _get_message(self, message_id: str) -> WorkerMessage | None:
@@ -422,7 +426,8 @@ class BeadsOutbox(BaseOutbox):
         try:
             output = self._run_bd("show", message_id, "--json")
             issue = json.loads(output)
-        except (RuntimeError, json.JSONDecodeError):
+        except (RuntimeError, json.JSONDecodeError) as e:
+            logger.warning("Failed to retrieve message %s: %s", message_id, e)
             return None
 
         metadata = issue.get("metadata", {})
@@ -457,7 +462,8 @@ class BeadsOutbox(BaseOutbox):
                 "list", "--json", f"--sender={self._worker_id}", f"--limit={limit}"
             )
             issues = json.loads(output) if output.strip() else []
-        except (RuntimeError, json.JSONDecodeError):
+        except (RuntimeError, json.JSONDecodeError) as e:
+            logger.warning("Failed to fetch sent messages for worker %s: %s", self._worker_id, e)
             return []
 
         messages = []

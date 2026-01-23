@@ -3,14 +3,116 @@ Lifecycle state validation for beads.
 
 Enforces valid state transitions based on bead type configuration.
 Validates that beads can only be closed when in terminal states.
+
+Lifecycle rules are loaded from config/lifecycle.yaml for per-org customization.
+Falls back to hardcoded defaults if config file is missing.
 """
 
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from shared.enums import BeadType
 
 from .constants import LIFECYCLE_INITIAL_STATES, LIFECYCLE_STATES
+
+
+# Cache for loaded lifecycle config
+_lifecycle_config_cache: dict | None = None
+
+
+def _get_config_path() -> Path:
+    """Get the path to lifecycle.yaml config file."""
+    # Config lives in cli/config/lifecycle.yaml
+    return Path(__file__).parent.parent / "config" / "lifecycle.yaml"
+
+
+def _load_lifecycle_config() -> dict:
+    """Load lifecycle configuration from YAML file.
+
+    Returns:
+        Dict with bead type configurations, or empty dict if file not found.
+    """
+    global _lifecycle_config_cache
+
+    if _lifecycle_config_cache is not None:
+        return _lifecycle_config_cache
+
+    config_path = _get_config_path()
+    if not config_path.exists():
+        _lifecycle_config_cache = {}
+        return _lifecycle_config_cache
+
+    try:
+        import yaml
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+            _lifecycle_config_cache = data.get("bead_types", {})
+            return _lifecycle_config_cache
+    except ImportError:
+        # yaml not available, use hardcoded defaults
+        _lifecycle_config_cache = {}
+        return _lifecycle_config_cache
+    except Exception:
+        # Config file malformed, use hardcoded defaults
+        _lifecycle_config_cache = {}
+        return _lifecycle_config_cache
+
+
+def _get_lifecycle_for_type(bead_type: str) -> dict:
+    """Get lifecycle configuration for a specific bead type.
+
+    Tries to load from config file first, falls back to hardcoded constants.
+
+    Args:
+        bead_type: The bead type (task, bug, feature, etc.)
+
+    Returns:
+        Dict with states, terminal_states, initial_state, transitions
+    """
+    yaml_config = _load_lifecycle_config()
+
+    # Try YAML config first
+    if bead_type in yaml_config:
+        cfg = yaml_config[bead_type]
+        return {
+            "states": cfg.get("states", []),
+            "terminal": cfg.get("terminal_states", []),
+            "initial": cfg.get("initial_state", cfg.get("states", ["open"])[0]),
+            "transitions": cfg.get("transitions", {}),
+        }
+
+    # Try default from YAML
+    if "default" in yaml_config:
+        cfg = yaml_config["default"]
+        return {
+            "states": cfg.get("states", []),
+            "terminal": cfg.get("terminal_states", []),
+            "initial": cfg.get("initial_state", cfg.get("states", ["open"])[0]),
+            "transitions": cfg.get("transitions", {}),
+        }
+
+    # Fall back to hardcoded constants
+    config = LIFECYCLE_STATES.get(bead_type, LIFECYCLE_STATES["default"])
+    initial = LIFECYCLE_INITIAL_STATES.get(
+        bead_type, LIFECYCLE_INITIAL_STATES["default"]
+    )
+    return {
+        "states": config["states"],
+        "terminal": config["terminal"],
+        "initial": initial,
+        "transitions": config["transitions"],
+    }
+
+
+def clear_lifecycle_cache() -> None:
+    """Clear the cached lifecycle configuration.
+
+    Call this if the config file has been modified and needs to be reloaded.
+    """
+    global _lifecycle_config_cache
+    _lifecycle_config_cache = None
 
 
 class LifecycleError(Exception):
@@ -168,13 +270,16 @@ class LifecycleConfig:
     def for_type(cls, bead_type: str) -> "LifecycleConfig":
         """Get lifecycle configuration for a bead type.
 
+        Loads from config/lifecycle.yaml if available, otherwise uses
+        hardcoded defaults from constants.py.
+
         Args:
             bead_type: The bead type (task, bug, feature, etc.)
 
         Returns:
             LifecycleConfig for the bead type
         """
-        config = LIFECYCLE_STATES.get(bead_type, LIFECYCLE_STATES["default"])
+        config = _get_lifecycle_for_type(bead_type)
         return cls(
             bead_type=bead_type,
             states=config["states"],
@@ -188,9 +293,8 @@ class LifecycleConfig:
         Returns:
             Initial state name
         """
-        return LIFECYCLE_INITIAL_STATES.get(
-            self.bead_type, LIFECYCLE_INITIAL_STATES["default"]
-        )
+        config = _get_lifecycle_for_type(self.bead_type)
+        return config["initial"]
 
     def is_valid_state(self, state: str) -> bool:
         """Check if a state is valid for this bead type.

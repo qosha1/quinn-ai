@@ -1,0 +1,108 @@
+# Lifecycle Configuration
+# Defines per-bead-type lifecycle states, transitions, and terminal states.
+#
+# Each bead type can have its own workflow:
+# - states: Ordered list of valid states for this type
+# - terminal_states: States where the bead is considered complete
+# - initial_state: Starting state for new beads
+# - transitions: Valid state changes (from_state -> [to_states])
+
+version: 1
+
+# Bead type lifecycles
+bead_types:
+  task:
+    states:
+      - investigation
+      - planning
+      - implementation
+      - review
+      - done
+    terminal_states:
+      - done
+      - rejected
+      - abandoned
+    initial_state: investigation
+    transitions:
+      investigation: [planning, rejected, abandoned]
+      planning: [implementation, investigation, rejected, abandoned]
+      implementation: [review, planning, rejected, abandoned]
+      review: [done, implementation, rejected, abandoned]
+      done: []  # Terminal - no further transitions
+      rejected: []
+      abandoned: []
+
+  bug:
+    states:
+      - triage
+      - investigation
+      - fixing
+      - review
+      - done
+    terminal_states:
+      - done
+      - wontfix
+      - duplicate
+    initial_state: triage
+    transitions:
+      triage: [investigation, wontfix, duplicate]
+      investigation: [fixing, triage, wontfix, duplicate]
+      fixing: [review, investigation, wontfix]
+      review: [done, fixing, wontfix]
+      done: []
+      wontfix: []
+      duplicate: []
+
+  feature:
+    states:
+      - discovery
+      - design
+      - implementation
+      - review
+      - done
+    terminal_states:
+      - done
+      - rejected
+      - deferred
+    initial_state: discovery
+    transitions:
+      discovery: [design, rejected, deferred]
+      design: [implementation, discovery, rejected, deferred]
+      implementation: [review, design, rejected, deferred]
+      review: [done, implementation, rejected, deferred]
+      done: []
+      rejected: []
+      deferred: []
+
+  epic:
+    states:
+      - draft
+      - planning
+      - active
+      - done
+    terminal_states:
+      - done
+      - cancelled
+    initial_state: draft
+    transitions:
+      draft: [planning, cancelled]
+      planning: [active, draft, cancelled]
+      active: [done, planning, cancelled]
+      done: []
+      cancelled: []
+
+  # Default lifecycle for unspecified bead types
+  default:
+    states:
+      - open
+      - in_progress
+      - done
+    terminal_states:
+      - done
+      - closed
+    initial_state: open
+    transitions:
+      open: [in_progress, done, closed]
+      in_progress: [done, open, closed]
+      done: []
+      closed: []

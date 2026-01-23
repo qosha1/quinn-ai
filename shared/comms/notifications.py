@@ -13,11 +13,14 @@ Notifications are ephemeral work pointers that:
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Protocol
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from shared.comms.types import (
     Notification,
@@ -513,7 +516,8 @@ class BeadsNotificationHandler(NotificationHandler):
                 f"--assignee={self._worker_id}",
             )
             issues = json.loads(output) if output.strip() else []
-        except (RuntimeError, json.JSONDecodeError):
+        except (RuntimeError, json.JSONDecodeError) as e:
+            logger.warning("Failed to fetch notifications for worker %s: %s", self._worker_id, e)
             return []
 
         return [self._parse_notification(issue) for issue in issues]
@@ -522,8 +526,8 @@ class BeadsNotificationHandler(NotificationHandler):
         """Acknowledge by closing the beads issue."""
         try:
             self._run_bd("close", notification_id, "--reason=acknowledged")
-        except RuntimeError:
-            pass  # Best effort
+        except RuntimeError as e:
+            logger.debug("Failed to acknowledge notification %s: %s", notification_id, e)
 
     def _fetch_message(self, message_id: str) -> WorkerMessage | None:
         """Fetch message from beads."""
@@ -532,7 +536,8 @@ class BeadsNotificationHandler(NotificationHandler):
         try:
             output = self._run_bd("show", message_id, "--json")
             issue = json.loads(output)
-        except (RuntimeError, json.JSONDecodeError):
+        except (RuntimeError, json.JSONDecodeError) as e:
+            logger.warning("Failed to fetch message %s: %s", message_id, e)
             return None
 
         metadata = issue.get("metadata", {})

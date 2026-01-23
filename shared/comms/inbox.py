@@ -10,6 +10,7 @@ by urgent messages (TimeSensitivity.IMMEDIATE).
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Protocol
 
@@ -19,6 +20,8 @@ from shared.comms.types import (
     TimeSensitivity,
     WorkerMessage,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class InboxInterface(Protocol):
@@ -375,7 +378,8 @@ class BeadsInbox(BaseInbox):
         try:
             output = self._run_bd(*args)
             issues = json.loads(output) if output.strip() else []
-        except (RuntimeError, json.JSONDecodeError):
+        except (RuntimeError, json.JSONDecodeError) as e:
+            logger.warning("Failed to fetch messages for worker %s: %s", self._worker_id, e)
             return []
 
         # Filter out messages sent by self
@@ -390,8 +394,8 @@ class BeadsInbox(BaseInbox):
         """Mark message as read by closing the issue."""
         try:
             self._run_bd("close", message_id, "--reason=read")
-        except RuntimeError:
-            pass  # Best effort
+        except RuntimeError as e:
+            logger.debug("Failed to mark message %s as read: %s", message_id, e)
 
     def _fetch_thread(self, thread_id: str) -> list[WorkerMessage]:
         """Fetch all messages in a thread."""
@@ -400,7 +404,8 @@ class BeadsInbox(BaseInbox):
         try:
             output = self._run_bd("list", "--json", f"--thread={thread_id}")
             issues = json.loads(output) if output.strip() else []
-        except (RuntimeError, json.JSONDecodeError):
+        except (RuntimeError, json.JSONDecodeError) as e:
+            logger.warning("Failed to fetch thread %s: %s", thread_id, e)
             return []
 
         return [self._parse_message(issue) for issue in issues]
