@@ -319,8 +319,8 @@ class TestResultExtractor:
         turn = MockTurn(
             response=MockResponse(content="Done successfully."),
             tool_calls=[
-                MockToolCall(name="Read", arguments={"file": "test.py"}),
-                MockToolCall(name="Write", arguments={"file": "output.py"}),
+                MockToolCall(name="Read", arguments={"file_path": "test.py"}),
+                MockToolCall(name="Write", arguments={"file_path": "output.py"}),
             ],
         )
         prompt_result = MockPromptResult(turn=turn)
@@ -329,7 +329,8 @@ class TestResultExtractor:
 
         assert result.succeeded
         assert len(result.artifacts) == 2
-        assert result.artifacts[0]["tool"] == "Read"
+        assert result.artifacts[0] == "test.py"
+        assert result.artifacts[1] == "output.py"
 
     def test_custom_escalation_keywords(self, sample_task):
         extractor = ResultExtractor(escalation_keywords=["custom_block"])

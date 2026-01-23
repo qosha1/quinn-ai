@@ -142,7 +142,7 @@ class AgentController:
 
         self._cancel_requested = threading.Event()
         self._pause_requested = threading.Event()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         # Callbacks
         self._response_callbacks: list[ResponseCallback] = []

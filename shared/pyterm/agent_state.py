@@ -103,7 +103,7 @@ class AgentStateMachine:
     _transition_history: list[tuple[AgentState, AgentState, datetime]] = field(
         default_factory=list
     )
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _lock: threading.RLock = field(default_factory=threading.RLock)
 
     @property
     def state(self) -> AgentState:
