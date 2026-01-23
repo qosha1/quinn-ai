@@ -49,3 +49,28 @@ STATIC_ROOT=/app/staticfiles
 
 # Logging
 LOG_LEVEL=DEBUG
+
+# =============================================================================
+# AI Provider API Keys
+# =============================================================================
+# These keys are required for AI agent functionality in QuinnAI
+
+# Anthropic Claude API Key
+# Get from: https://console.anthropic.com/settings/keys
+# Sign up at https://console.anthropic.com if you don't have an account
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-api-key
+
+# OpenAI API Key
+# Get from: https://platform.openai.com/api-keys
+# Sign up at https://platform.openai.com if you don't have an account
+OPENAI_API_KEY=sk-your-openai-api-key
+
+# =============================================================================
+# AWS Credentials (Optional - for S3 storage, Bedrock, etc.)
+# =============================================================================
+# Get from: https://console.aws.amazon.com/iam/home#/security_credentials
+# Or create an IAM user with programmatic access at:
+# https://console.aws.amazon.com/iam/home#/users
+# AWS_ACCESS_KEY_ID=your-access-key-id
+# AWS_SECRET_ACCESS_KEY=your-secret-access-key
+# AWS_REGION=us-east-1

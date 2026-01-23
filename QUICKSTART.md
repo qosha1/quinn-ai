@@ -1,195 +1,102 @@
 # Quick Start Guide
 
-Get the B2B SaaS template running in 5 minutes.
+Get QuinnAI running in 5 minutes.
 
 ## Prerequisites
 
-- Docker Desktop installed and running
-- Git
-- Make (optional but recommended)
-
-## Step 1: Setup Environment Files
-
-Run the setup command to copy environment templates:
+- **Python 3.11+**
+- **tmux** - Worker session management
+- **API Key** - At least one provider (Anthropic recommended)
 
 ```bash
-make setup
+# Install tmux (if not installed)
+brew install tmux        # macOS
+apt install tmux         # Ubuntu/Debian
+
+# Set your API key
+export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-This creates:
-- `.envs/.local/.django`
-- `.envs/.local/.postgres`
+## Installation
 
-## Step 2: Configure Environment
-
-Edit `.envs/.local/.django` and update:
-
+**Option 1: pip (recommended)**
 ```bash
-# Minimum required changes:
-SECRET_KEY=your-long-random-secret-key-here
-
-# Optional: Add your Stripe test keys if you want billing features
-STRIPE_SECRET_KEY=sk_test_your_key
-STRIPE_PUBLISHABLE_KEY=pk_test_your_key
+pip install quinnai
 ```
 
-Generate a secret key:
+**Option 2: Development setup**
 ```bash
-python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+git clone https://github.com/your-org/quinnai.git
+cd quinnai
+pip install -r requirements-dev.txt
 ```
 
-## Step 3: Start Services
+## Run Your First Org
 
 ```bash
-make up
+# 1. Go to the hello-world example
+cd example_orgs/org-scripts/hello-world
+
+# 2. Initialize the org
+./setup.sh
+
+# 3. Start it
+./run.sh
+
+# 4. Watch the CEO work
+./observe.sh
 ```
 
-First run will take 5-10 minutes to:
-- Download Docker images
-- Build custom images
-- Create database
-- Run migrations
-- Install dependencies
+## What Just Happened?
 
-## Step 4: Access Applications
+1. **setup.sh** created an org folder in `generated-orgs/hello-world/` with:
+   - `config/` - Provider and worker settings
+   - `live/` - Runtime database and session state
+   - `org-chart/` - Git-tracked hierarchy
+   - `storage/` - Persistent org files
 
-Once running, access:
+2. **run.sh** started the org:
+   - CEO session spawned in tmux
+   - Org transitioned to "running" state
 
-- **Django API**: http://localhost:8000/api/
-- **Django Admin**: http://localhost:8000/admin/ (admin@example.com / admin)
-- **Landing Page**: http://localhost:3000
-- **App Dashboard**: http://localhost:3001
+3. **observe.sh** shows real-time activity:
+   - CEO session output
+   - Work items and messages
 
-## Step 5: Verify Everything Works
+## Core Commands
 
 ```bash
-# Check all services are healthy
-make ps
+# Organization management (humans run these)
+qn org init <path>     # Initialize a new org
+qn org start           # Start the org
+qn org stop            # Stop the org
+qn org status          # Check org state
 
-# View logs
-make logs
-
-# Test Django API
-curl http://localhost:8000/api/health/
+# Worker operations (workers run these from sessions)
+qn wrkr get-work       # Get assigned work
+qn wrkr inbox          # View messages
+qn wrkr send <to> <msg> # Send message
+qn wrkr status         # Worker state
 ```
 
-## Common Tasks
+## Try More Examples
 
-### View Logs
+| Example | Time | What You'll Learn |
+|---------|------|-------------------|
+| [hello-world](./example_orgs/org-scripts/hello-world/) | 5 min | Basic org lifecycle |
+| [startup-team](./example_orgs/org-scripts/startup-team/) | 10 min | CEO hiring and delegation |
+| [okr-driven](./example_orgs/org-scripts/okr-driven/) | 15 min | Strategic goals cascading |
+
+## Cleanup
+
 ```bash
-# All services
-make logs
-
-# Specific service
-make logs-django
-make logs-landing
-make logs-app
-```
-
-### Django Management
-```bash
-# Open Django shell
-make shell
-
-# Create a superuser
-make createsuperuser
-
-# Run migrations
-make migrate
-
-# Run tests
-make test
-```
-
-### Database Operations
-```bash
-# Backup database
-make backup-db
-
-# Restore from backup
-make restore-db file=backup_20240101_120000.sql
-```
-
-### Stop Services
-```bash
-# Stop all containers
-make down
-
-# Stop and remove volumes (WARNING: deletes data)
-make clean-volumes
-```
-
-## Troubleshooting
-
-### Port already in use
-```bash
-# Find what's using port 8000
-lsof -i :8000
-
-# Kill the process or stop other Docker containers
-docker ps
-docker stop <container_id>
-```
-
-### Services not starting
-```bash
-# Check logs for errors
-make logs
-
-# Rebuild containers
-make build
-make up
-```
-
-### Database connection errors
-```bash
-# Verify PostgreSQL is running
-docker ps | grep postgres
-
-# Check credentials match in both .django and .postgres files
-cat .envs/.local/.django | grep POSTGRES
-cat .envs/.local/.postgres
-```
-
-### Permission errors (Linux)
-```bash
-sudo chown -R $USER:$USER .
-make build
+# From the example directory
+./cleanup.sh
 ```
 
 ## Next Steps
 
-1. Explore the Django API at http://localhost:8000/api/
-2. Check out the admin interface at http://localhost:8000/admin/
-3. Review the OpenSpec documentation in `openspec/`
-4. Read the full Docker guide in `DOCKER.md`
-5. Start building your features!
-
-## Development Workflow
-
-```bash
-# Start your day
-make up
-
-# Watch logs while developing
-make logs
-
-# Run tests
-make test
-
-# Create database migrations
-make makemigrations
-make migrate
-
-# End of day
-make down
-```
-
-## Help
-
-Run `make help` to see all available commands.
-
-For detailed documentation, see:
-- `DOCKER.md` - Complete Docker infrastructure guide
-- `README.md` - Project overview
-- `openspec/` - Feature specifications
+- Read [README.md](./README.md) for full concepts
+- Explore [example_orgs/](./example_orgs/) for more examples
+- See [DEVELOPMENT.md](./DEVELOPMENT.md) for contributor setup
+- Check [cli/README.md](./cli/README.md) for CLI details
