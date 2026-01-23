@@ -1,463 +1,491 @@
-# Production Deployment Checklist
+# QuinnAI Deployment Guide
 
-Complete guide for deploying the B2B SaaS template to production.
+Running QuinnAI orgs in different environments.
 
-## Pre-Deployment Checklist
+## Overview
 
-### Infrastructure Requirements
-- [ ] Linux server (Ubuntu 22.04 LTS recommended)
-- [ ] Minimum 2GB RAM, 2 CPU cores
-- [ ] 20GB+ storage
-- [ ] Domain name with DNS access
-- [ ] Docker and Docker Compose installed
-- [ ] Firewall configured (ports 80, 443 open)
+QuinnAI runs AI worker organizations locally. Each org is self-contained in a folder with its own database, config, and worker sessions. This guide covers deployment scenarios from local development to running orgs on a server.
 
-### Service Accounts
-- [ ] Stripe account (live mode enabled)
-- [ ] Email service (SendGrid, Mailgun, or SMTP)
-- [ ] AWS account for S3 (recommended)
-- [ ] Sentry account (optional but recommended)
+## Deployment Scenarios
 
-### DNS Configuration
-Point your domain records to your server IP:
+### 1. Local Development (Your Machine)
 
-```
-A     @               -> YOUR_SERVER_IP
-A     www             -> YOUR_SERVER_IP
-A     app             -> YOUR_SERVER_IP
-A     api             -> YOUR_SERVER_IP
-A     cdn             -> YOUR_SERVER_IP
-A     traefik         -> YOUR_SERVER_IP (optional)
-```
+The simplest setup. Run orgs directly on your laptop.
 
-Wait for DNS propagation (check with `dig yourdomain.com`).
+**Requirements:**
+- Python 3.11+
+- tmux
+- At least one provider API key
 
-## Server Setup
-
-### 1. Install Docker
+**Setup:**
 ```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
+# Install QuinnAI
+pip install quinnai
 
-# Install Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
+# Set API key
+export ANTHROPIC_API_KEY="sk-ant-..."
 
-# Install Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-
-# Add user to docker group
-sudo usermod -aG docker $USER
-newgrp docker
+# Run an org
+cd example_orgs/org-scripts/hello-world
+./setup.sh && ./run.sh
 ```
 
-### 2. Clone Repository
-```bash
-git clone <your-repo-url>
-cd b2b-saas-template
-```
+**Pros:** Zero config, immediate feedback, easy debugging
+**Cons:** Stops when laptop sleeps/closes
 
-### 3. Configure Firewall
-```bash
-# UFW (Ubuntu)
-sudo ufw allow 22/tcp   # SSH
-sudo ufw allow 80/tcp   # HTTP
-sudo ufw allow 443/tcp  # HTTPS
-sudo ufw enable
-```
+---
 
-## Environment Configuration
+### 2. Single-Machine Server
 
-### 1. Create Production Environment Files
+Run orgs on a Linux server for continuous operation. Good for personal use or small teams.
+
+**Requirements:**
+- Linux server (Ubuntu 22.04 LTS recommended)
+- Python 3.11+
+- tmux
+- SSH access
+
+#### Initial Setup
 
 ```bash
-# Create directories
-mkdir -p .envs/.production
+# On server - install dependencies
+sudo apt update
+sudo apt install -y python3.11 python3.11-venv tmux git
 
-# Copy templates
-cp .envs/.production/.django.example .envs/.production/.django
-cp .envs/.production/.postgres.example .envs/.production/.postgres
-cp .envs/.production/.traefik.example .envs/.production/.traefik
+# Create a dedicated user (optional but recommended)
+sudo useradd -m -s /bin/bash quinnai
+sudo -u quinnai -i
+
+# Install QuinnAI
+python3.11 -m venv ~/.quinnai-venv
+source ~/.quinnai-venv/bin/activate
+pip install quinnai
 ```
 
-### 2. Configure Django (.envs/.production/.django)
+#### Environment Variables
+
+Create `/home/quinnai/.quinnai-env`:
 
 ```bash
-# Generate a secure secret key
-python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+# Provider API keys
+export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENAI_API_KEY="sk-..."
+
+# Optional: logging level
+export QUINN_LOG_LEVEL="INFO"
 ```
 
-Critical settings:
-```env
-DEBUG=False
-SECRET_KEY=<generated-secret-key>
-ALLOWED_HOSTS=yourdomain.com,api.yourdomain.com,app.yourdomain.com
-
-# Database (use strong password)
-DATABASE_URL=postgres://saas_prod_user:STRONG_PASSWORD_HERE@postgres:5432/saas_production
-
-# Email (example with SendGrid)
-EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
-EMAIL_HOST=smtp.sendgrid.net
-EMAIL_PORT=587
-EMAIL_USE_TLS=True
-EMAIL_HOST_USER=apikey
-EMAIL_HOST_PASSWORD=<sendgrid-api-key>
-DEFAULT_FROM_EMAIL=noreply@yourdomain.com
-
-# CORS
-CORS_ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
-
-# Security
-CSRF_TRUSTED_ORIGINS=https://yourdomain.com,https://api.yourdomain.com,https://app.yourdomain.com
-SECURE_SSL_REDIRECT=True
-SESSION_COOKIE_SECURE=True
-CSRF_COOKIE_SECURE=True
-
-# Stripe (LIVE keys)
-STRIPE_SECRET_KEY=sk_live_<your-live-key>
-STRIPE_PUBLISHABLE_KEY=pk_live_<your-live-key>
-STRIPE_WEBHOOK_SECRET=whsec_<your-webhook-secret>
-
-# AWS S3 (recommended for production)
-USE_S3=True
-AWS_ACCESS_KEY_ID=<your-access-key>
-AWS_SECRET_ACCESS_KEY=<your-secret-key>
-AWS_STORAGE_BUCKET_NAME=<your-bucket-name>
-AWS_S3_REGION_NAME=us-east-1
-
-# Sentry (optional)
-SENTRY_DSN=https://<your-sentry-dsn>
-
-# Domain
-DOMAIN_NAME=yourdomain.com
-```
-
-### 3. Configure PostgreSQL (.envs/.production/.postgres)
-
-```env
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_DB=saas_production
-POSTGRES_USER=saas_prod_user
-POSTGRES_PASSWORD=<generate-strong-password>
-```
-
-Generate strong password:
+Source it in `.bashrc`:
 ```bash
-openssl rand -base64 32
+echo 'source ~/.quinnai-env' >> ~/.bashrc
 ```
 
-### 4. Configure Traefik (.envs/.production/.traefik)
+#### Running Orgs
 
-```env
-DOMAIN_NAME=yourdomain.com
-LETSENCRYPT_EMAIL=admin@yourdomain.com
-
-# Generate basic auth password
-# htpasswd -nb admin your_password | sed -e s/\\$/\\$\\$/g
-TRAEFIK_DASHBOARD_AUTH=admin:$$apr1$$...
-```
-
-## Build and Deploy
-
-### 1. Build Production Images
 ```bash
-docker-compose -f docker-compose.production.yml build
+# SSH into server
+ssh your-server
+
+# Activate environment
+source ~/.quinnai-venv/bin/activate
+
+# Initialize org in dedicated location
+mkdir -p ~/orgs
+cd ~/orgs
+qn org init my-startup
+
+# Start org (runs in tmux)
+qn org start my-startup
 ```
 
-### 2. Start Services
+#### Persisting Across SSH Disconnects
+
+Worker sessions run in tmux, which persists after SSH disconnect. However, you need a way to restart orgs after server reboot.
+
+**Option A: Manual start after reboot**
 ```bash
-docker-compose -f docker-compose.production.yml up -d
+# After reboot, reconnect and start
+qn org start my-startup
 ```
 
-### 3. Monitor Startup
+**Option B: systemd service (recommended)**
+
+Create `/etc/systemd/system/quinnai-org@.service`:
+
+```ini
+[Unit]
+Description=QuinnAI Org: %i
+After=network.target
+
+[Service]
+Type=forking
+User=quinnai
+Environment="PATH=/home/quinnai/.quinnai-venv/bin:/usr/bin"
+EnvironmentFile=/home/quinnai/.quinnai-env
+WorkingDirectory=/home/quinnai/orgs/%i
+ExecStart=/home/quinnai/.quinnai-venv/bin/qn org start
+ExecStop=/home/quinnai/.quinnai-venv/bin/qn org stop
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
 ```bash
-# Watch logs
-docker-compose -f docker-compose.production.yml logs -f
-
-# Check service health
-docker-compose -f docker-compose.production.yml ps
+sudo systemctl daemon-reload
+sudo systemctl enable quinnai-org@my-startup
+sudo systemctl start quinnai-org@my-startup
 ```
 
-### 4. Verify SSL Certificates
+---
+
+### 3. Multiple Orgs on One Server
+
+Run several independent orgs on the same machine.
+
+#### Folder Structure
+
+```
+/home/quinnai/orgs/
+├── startup-alpha/
+│   ├── config/
+│   ├── live/
+│   ├── org-chart/
+│   └── storage/
+├── startup-beta/
+│   └── ...
+└── research-lab/
+    └── ...
+```
+
+#### Resource Considerations
+
+Each active worker is a tmux session with an LLM context. Memory usage depends on:
+- Number of active workers across all orgs
+- Provider context sizes
+- Worker activity patterns
+
+**Rough sizing:**
+- Small org (CEO + 2 workers): ~500MB RAM active
+- Medium org (10 workers): ~2GB RAM active
+- Large org (50+ workers): Consider dedicated server or multiple machines
+
+#### Managing Multiple Orgs
+
 ```bash
-# Check Traefik logs for Let's Encrypt
-docker-compose -f docker-compose.production.yml logs traefik | grep -i "certificate"
+# Check status of all orgs
+for org in ~/orgs/*/; do
+  echo "=== $(basename $org) ==="
+  qn org status "$(basename $org)"
+done
 
-# Test HTTPS
-curl -I https://yourdomain.com
-curl -I https://api.yourdomain.com
+# Stop all orgs
+for org in ~/orgs/*/; do
+  qn org stop "$(basename $org)"
+done
 ```
 
-## Post-Deployment
+---
 
-### 1. Create Django Superuser
+## Worker Session Management
+
+Workers run in tmux sessions. Understanding tmux is key to debugging.
+
+### Viewing Worker Sessions
+
 ```bash
-docker-compose -f docker-compose.production.yml exec django python manage.py createsuperuser
+# List all tmux sessions
+tmux ls
+
+# Attach to a specific worker
+tmux attach -t org-name-worker-id
+
+# Detach without stopping: Ctrl+B, D
 ```
 
-### 2. Configure Stripe Webhooks
-1. Go to https://dashboard.stripe.com/webhooks
-2. Add endpoint: `https://api.yourdomain.com/api/webhooks/stripe/`
-3. Select events to listen for
-4. Copy webhook secret to `.envs/.production/.django`
+### Session Persistence
 
-### 3. Set Up Database Backups
+- **On SSH disconnect:** Sessions continue running
+- **On server reboot:** Sessions are lost (restart org with `qn org start`)
+- **On `qn org stop`:** Sessions are cleanly terminated
 
-Create backup script `/usr/local/bin/backup-saas-db.sh`:
+### Debugging a Stuck Worker
+
+```bash
+# Attach to worker session
+tmux attach -t my-org-ceo
+
+# View what it's doing (you'll see the Claude/OpenAI conversation)
+# Detach: Ctrl+B, D
+
+# If truly stuck, kill and restart
+tmux kill-session -t my-org-ceo
+qn wrkr restart ceo  # Respawn the worker
+```
+
+---
+
+## Environment Variables
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | Anthropic API key (for Claude-based workers) |
+
+### Optional
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | - | OpenAI API key (for GPT-based workers) |
+| `QUINN_LOG_LEVEL` | `INFO` | Logging verbosity: DEBUG, INFO, WARNING, ERROR |
+| `QUINN_DATA_DIR` | `~/.quinnai` | Default location for CLI data |
+
+### Per-Org Environment
+
+Each org can have its own `.env` file:
+
+```
+my-org/
+├── .env           # Org-specific overrides
+└── config/
+    └── providers.yaml
+```
+
+Org `.env` overrides system environment for that org only.
+
+---
+
+## Secrets Management
+
+**Never commit API keys to git.**
+
+### Local Development
+
+Use shell environment or `.envrc` with direnv:
+
+```bash
+# .envrc (gitignored)
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+### Server Deployment
+
+**Option A: Environment file**
+```bash
+# /home/quinnai/.quinnai-env (chmod 600)
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+**Option B: Secrets manager**
+
+For production, consider:
+- HashiCorp Vault
+- AWS Secrets Manager
+- 1Password CLI
+
+Example with 1Password:
+```bash
+export ANTHROPIC_API_KEY=$(op read "op://QuinnAI/Anthropic/api-key")
+```
+
+---
+
+## Monitoring and Logs
+
+### Org Status
+
+```bash
+# Quick status check
+qn org status my-org
+
+# Output shows:
+# - Org state (initialized, running, stopped)
+# - Active workers
+# - Recent activity
+```
+
+### Log Locations
+
+```
+my-org/
+└── live/
+    ├── quinn.db        # SQLite - all org data
+    ├── logs/
+    │   ├── org.log     # Org-level events
+    │   └── workers/
+    │       ├── ceo.log
+    │       └── dev-1.log
+    └── workers/
+        └── ceo/
+            └── session.log  # Raw tmux output
+```
+
+### Watching Logs
+
+```bash
+# Tail org log
+tail -f my-org/live/logs/org.log
+
+# Watch specific worker
+tail -f my-org/live/logs/workers/ceo.log
+```
+
+### Health Checks
+
+Simple cron-based monitoring:
+
+```bash
+# /etc/cron.d/quinnai-health
+*/5 * * * * quinnai /home/quinnai/.quinnai-venv/bin/qn org status my-org | grep -q "running" || echo "Org down" | mail -s "QuinnAI Alert" you@email.com
+```
+
+---
+
+## Backup and Recovery
+
+### What to Backup
+
+```
+my-org/
+├── config/           # BACKUP: Provider and worker settings
+├── live/
+│   └── quinn.db      # BACKUP: All org state (beads, messages, workers)
+├── org-chart/        # BACKUP: Hierarchy snapshots (git-tracked anyway)
+└── storage/          # BACKUP: Persistent org files
+```
+
+### Backup Script
+
 ```bash
 #!/bin/bash
-BACKUP_DIR="/var/backups/saas"
+# /usr/local/bin/backup-quinnai.sh
+
+ORG_DIR="/home/quinnai/orgs/my-org"
+BACKUP_DIR="/var/backups/quinnai"
 DATE=$(date +%Y%m%d_%H%M%S)
 
-mkdir -p $BACKUP_DIR
+mkdir -p "$BACKUP_DIR"
 
-docker-compose -f /path/to/b2b-saas-template/docker-compose.production.yml exec -T postgres \
-  pg_dump -U saas_prod_user saas_production | gzip > $BACKUP_DIR/backup_$DATE.sql.gz
+# Stop org briefly for consistent backup
+qn org stop my-org
 
-# Keep only last 7 days of backups
-find $BACKUP_DIR -name "backup_*.sql.gz" -mtime +7 -delete
+# Backup critical files
+tar -czf "$BACKUP_DIR/my-org-$DATE.tar.gz" \
+  "$ORG_DIR/config" \
+  "$ORG_DIR/live/quinn.db" \
+  "$ORG_DIR/org-chart" \
+  "$ORG_DIR/storage"
+
+# Restart org
+qn org start my-org
+
+# Keep last 7 days
+find "$BACKUP_DIR" -name "my-org-*.tar.gz" -mtime +7 -delete
 ```
 
 Add to crontab:
 ```bash
-# Daily backup at 2 AM
-0 2 * * * /usr/local/bin/backup-saas-db.sh
+0 3 * * * /usr/local/bin/backup-quinnai.sh
 ```
 
-### 4. Configure Monitoring
-
-Set up basic monitoring with cron:
-```bash
-# Health check every 5 minutes
-*/5 * * * * curl -f https://yourdomain.com/api/health/ || echo "Health check failed" | mail -s "Site Down" admin@yourdomain.com
-```
-
-## Security Hardening
-
-### 1. Update Traefik Dashboard Auth
-```bash
-# Generate new password
-htpasswd -nb admin new_secure_password | sed -e s/\\$/\\$\\$/g
-
-# Update .envs/.production/.traefik
-# Restart Traefik
-docker-compose -f docker-compose.production.yml restart traefik
-```
-
-### 2. Enable Automatic Updates
-```bash
-sudo apt install unattended-upgrades
-sudo dpkg-reconfigure --priority=low unattended-upgrades
-```
-
-### 3. Set Up Fail2Ban
-```bash
-sudo apt install fail2ban
-sudo systemctl enable fail2ban
-sudo systemctl start fail2ban
-```
-
-### 4. Regular Security Scans
-```bash
-# Install Trivy
-curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-
-# Scan images
-trivy image <image-name>
-```
-
-## Maintenance
-
-### Update Application
-```bash
-# Pull latest code
-git pull
-
-# Rebuild images
-docker-compose -f docker-compose.production.yml build
-
-# Rolling update (zero downtime)
-docker-compose -f docker-compose.production.yml up -d --no-deps --build django
-
-# Run migrations
-docker-compose -f docker-compose.production.yml exec django python manage.py migrate
-```
-
-### View Logs
-```bash
-# All services
-docker-compose -f docker-compose.production.yml logs -f
-
-# Specific service
-docker-compose -f docker-compose.production.yml logs -f django
-
-# Last 100 lines
-docker-compose -f docker-compose.production.yml logs --tail=100
-```
-
-### Database Maintenance
-```bash
-# Backup
-docker-compose -f docker-compose.production.yml exec -T postgres \
-  pg_dump -U saas_prod_user saas_production > backup.sql
-
-# Restore
-cat backup.sql | docker-compose -f docker-compose.production.yml exec -T postgres \
-  psql -U saas_prod_user saas_production
-
-# Vacuum
-docker-compose -f docker-compose.production.yml exec postgres \
-  vacuumdb -U saas_prod_user -d saas_production -v
-```
-
-### Scale Services
-```bash
-# Scale Celery workers
-docker-compose -f docker-compose.production.yml up -d --scale celery-worker=4
-```
-
-## Disaster Recovery
-
-### Full Backup
-```bash
-#!/bin/bash
-BACKUP_DIR="/var/backups/saas/full_$(date +%Y%m%d)"
-mkdir -p $BACKUP_DIR
-
-# Backup database
-docker-compose -f docker-compose.production.yml exec -T postgres \
-  pg_dump -U saas_prod_user saas_production | gzip > $BACKUP_DIR/database.sql.gz
-
-# Backup volumes
-docker run --rm \
-  -v saas-postgres-prod-data:/data \
-  -v $BACKUP_DIR:/backup \
-  alpine tar czf /backup/postgres-data.tar.gz /data
-
-docker run --rm \
-  -v saas-media-prod:/data \
-  -v $BACKUP_DIR:/backup \
-  alpine tar czf /backup/media-data.tar.gz /data
-
-# Backup config
-cp -r .envs $BACKUP_DIR/
-
-echo "Backup complete in $BACKUP_DIR"
-```
-
-### Restore
-```bash
-# Stop services
-docker-compose -f docker-compose.production.yml down
-
-# Restore volumes
-docker run --rm \
-  -v saas-postgres-prod-data:/data \
-  -v /path/to/backup:/backup \
-  alpine tar xzf /backup/postgres-data.tar.gz -C /
-
-# Restore database
-cat backup.sql | docker-compose -f docker-compose.production.yml exec -T postgres \
-  psql -U saas_prod_user saas_production
-
-# Start services
-docker-compose -f docker-compose.production.yml up -d
-```
-
-## Rollback Procedure
-
-If deployment fails:
+### Recovery
 
 ```bash
-# Stop new version
-docker-compose -f docker-compose.production.yml down
+# Extract backup
+tar -xzf my-org-20240115_030000.tar.gz -C /
 
-# Checkout previous version
-git checkout <previous-commit>
-
-# Rebuild
-docker-compose -f docker-compose.production.yml build
-
-# Start
-docker-compose -f docker-compose.production.yml up -d
-
-# If database migrations were run, restore from backup
-cat backup.sql | docker-compose -f docker-compose.production.yml exec -T postgres \
-  psql -U saas_prod_user saas_production
+# Restart org
+qn org start my-org
 ```
 
-## Performance Optimization
-
-### Enable CDN
-1. Set up CloudFront or similar CDN
-2. Point CDN to `cdn.yourdomain.com`
-3. Update `AWS_S3_CUSTOM_DOMAIN` in Django settings
-
-### Database Optimization
-```bash
-# Create indexes
-docker-compose -f docker-compose.production.yml exec django python manage.py sqlsequencereset app_name
-
-# Analyze query performance
-docker-compose -f docker-compose.production.yml exec postgres psql -U saas_prod_user saas_production -c "SELECT * FROM pg_stat_statements ORDER BY total_time DESC LIMIT 10;"
-```
-
-### Monitor Resource Usage
-```bash
-# Container stats
-docker stats
-
-# Disk usage
-docker system df
-```
+---
 
 ## Troubleshooting
 
-### SSL Certificate Issues
+### Org Won't Start
+
 ```bash
-# Check Traefik logs
-docker-compose -f docker-compose.production.yml logs traefik
+# Check org state
+qn org status my-org
 
-# Verify DNS
-dig yourdomain.com
+# Common issues:
+# 1. Missing API key
+echo $ANTHROPIC_API_KEY  # Should show key
 
-# Test Let's Encrypt staging first (edit traefik.yml)
-# Then switch to production
+# 2. tmux not installed
+which tmux  # Should return path
+
+# 3. Python environment not activated
+which qn  # Should show venv path
 ```
 
-### Database Connection Issues
-```bash
-# Check PostgreSQL logs
-docker-compose -f docker-compose.production.yml logs postgres
+### Workers Not Responding
 
-# Verify credentials
-docker-compose -f docker-compose.production.yml exec postgres \
-  psql -U saas_prod_user -d saas_production -c "\l"
+```bash
+# List tmux sessions
+tmux ls
+
+# If sessions exist but workers unresponsive:
+# 1. Check provider API status
+curl -s https://status.anthropic.com
+
+# 2. Check API key is valid
+qn provider test anthropic
+
+# 3. View worker session for errors
+tmux attach -t my-org-ceo
 ```
 
-### Memory Issues
-```bash
-# Increase swap
-sudo fallocate -l 4G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
+### High Memory Usage
 
-# Make permanent
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```bash
+# Check memory per worker
+ps aux | grep tmux
+
+# If runaway:
+# 1. Stop specific worker
+qn wrkr stop worker-id
+
+# 2. Or stop entire org
+qn org stop my-org
 ```
 
-## Support
+### Database Locked
 
-For issues:
-1. Check logs: `docker-compose -f docker-compose.production.yml logs`
-2. Verify environment files are correct
-3. Check DNS configuration
-4. Review DOCKER.md for detailed troubleshooting
+```bash
+# SQLite lock issues (rare)
+# 1. Stop all org activity
+qn org stop my-org
 
-## Security Contacts
+# 2. Check for stale locks
+lsof my-org/live/quinn.db
 
-Report security issues to: security@yourdomain.com
+# 3. Kill any orphaned processes
+kill <pid>
+
+# 4. Restart
+qn org start my-org
+```
+
+---
+
+## Security Considerations
+
+1. **API Keys**: Store securely, never commit to git
+2. **Server Access**: Use SSH keys, disable password auth
+3. **Worker Sessions**: Workers can execute commands - understand your provider's sandbox
+4. **Network**: Orgs make outbound API calls only; no inbound ports required
+5. **Backups**: Encrypt if storing off-server (backups contain org history)
+
+---
+
+## What's NOT Covered
+
+This deployment model is for CLI-based QuinnAI orgs. For future features:
+
+- **Web Dashboard**: Will have separate deployment docs when built
+- **Multi-Machine Clusters**: Not yet supported
+- **Kubernetes**: Not applicable to tmux-based workers
