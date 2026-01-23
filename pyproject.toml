@@ -30,6 +30,10 @@ qn = "cli.commands.main:qn"
 [tool.hatch.build.targets.wheel]
 packages = ["cli", "shared"]
 
+# Include beads binary in wheel
+[tool.hatch.build.targets.wheel.force-include]
+"cli/bin/bd" = "cli/bin/bd"
+
 # NOTE: Pytest configuration lives in pytest.ini (single source of truth)
 # pyproject.toml [tool.pytest.ini_options] is intentionally omitted to avoid conflicts.
 # Run: pytest (uses pytest.ini) or systemeval test (uses pytest adapter with pytest.ini)

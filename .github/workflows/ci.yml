@@ -169,18 +169,23 @@ jobs:
       - name: Build beads binary
         run: |
           chmod +x ./scripts/build-beads.sh
+          # Build to platform-specific directory
+          mkdir -p cli/bin/${{ matrix.platform }}
           PLATFORM=${{ matrix.os }} ARCH=${{ matrix.arch }} ./scripts/build-beads.sh
+          # Move to platform directory
+          mv cli/bin/bd cli/bin/${{ matrix.platform }}/bd
         env:
           BEADS_VERSION: '0.46.0'
 
       - name: Verify binary
         run: |
-          if [ -f cli/bin/bd ]; then
-            chmod +x cli/bin/bd
-            file cli/bin/bd
-            ls -lh cli/bin/bd
+          BINARY_PATH="cli/bin/${{ matrix.platform }}/bd"
+          if [ -f "$BINARY_PATH" ]; then
+            chmod +x "$BINARY_PATH"
+            file "$BINARY_PATH"
+            ls -lh "$BINARY_PATH"
           else
-            echo "Binary not found"
+            echo "Binary not found at $BINARY_PATH"
             exit 1
           fi
 
@@ -188,16 +193,26 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: beads-${{ matrix.platform }}
-          path: cli/bin/bd
+          path: cli/bin/${{ matrix.platform }}/bd
           retention-days: 7
           if-no-files-found: error
 
-  # Build Python wheel (only on main branch or release tags)
+  # Build Python wheels (one per platform, only on main branch or release tags)
   build-python:
-    name: Build Python Package
+    name: Build Python Package (${{ matrix.platform }})
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: build-beads
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            wheel_tag: macosx_11_0_arm64
+          - platform: darwin-amd64
+            wheel_tag: macosx_10_15_x86_64
+          - platform: linux-amd64
+            wheel_tag: manylinux_2_17_x86_64
 
     steps:
       - name: Checkout code
@@ -209,17 +224,18 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION_MAX }}
           cache: 'pip'
 
-      - name: Download beads artifacts
+      - name: Download beads artifact for platform
         uses: actions/download-artifact@v4
         with:
-          pattern: beads-*
+          name: beads-${{ matrix.platform }}
           path: cli/bin/
-          merge-multiple: true
 
-      - name: List downloaded artifacts
+      - name: Prepare binary
         run: |
-          echo "Downloaded beads binaries:"
-          ls -lh cli/bin/
+          chmod +x cli/bin/bd
+          echo "Binary for ${{ matrix.platform }}:"
+          file cli/bin/bd
+          ls -lh cli/bin/bd
 
       - name: Install build tools
         run: |
@@ -228,25 +244,25 @@ jobs:
 
       - name: Build wheel
         run: |
-          cd cli
-          python -m build --wheel
+          python -m build --wheel .
 
-      - name: List built wheels
+      - name: Rename wheel with platform tag
         run: |
-          ls -lh cli/dist/
+          cd dist
+          # Rename generic wheel to platform-specific
+          for wheel in *.whl; do
+            new_name=$(echo "$wheel" | sed 's/py3-none-any/py3-none-${{ matrix.wheel_tag }}/')
+            mv "$wheel" "$new_name"
+          done
+          ls -lh
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: python-wheel
-          path: cli/dist/*.whl
+          name: python-wheel-${{ matrix.platform }}
+          path: dist/*.whl
           retention-days: 30
           if-no-files-found: error
-
-      - name: Test wheel installation
-        run: |
-          python -m pip install cli/dist/*.whl
-          qn --version || echo "qn command not found in PATH"
 
   # Publish release (only on version tags)
   publish-release:
@@ -261,17 +277,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download Python wheel
+      - name: Download all Python wheels
         uses: actions/download-artifact@v4
         with:
-          name: python-wheel
+          pattern: python-wheel-*
           path: dist/
+          merge-multiple: true
 
       - name: Download beads binaries
         uses: actions/download-artifact@v4
         with:
           pattern: beads-*
           path: beads-binaries/
+
+      - name: List artifacts
+        run: |
+          echo "=== Python wheels ==="
+          ls -lh dist/
+          echo ""
+          echo "=== Beads binaries ==="
+          find beads-binaries/ -type f -exec ls -lh {} \;
 
       - name: Extract version from tag
         id: version
