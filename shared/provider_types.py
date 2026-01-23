@@ -344,6 +344,44 @@ class Provider(ABC):
         """
         pass
 
+    def get_token_costs(self, model_id: str) -> dict[str, float]:
+        """Get cost per 1K tokens for a model.
+
+        Default implementation returns zeros - providers should override
+        with their actual pricing.
+
+        Args:
+            model_id: Model ID to get costs for
+
+        Returns:
+            Dict with 'input' and 'output' costs per 1K tokens in USD
+        """
+        return {"input": 0.0, "output": 0.0}
+
+    def estimate_cost(
+        self,
+        model_id: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> float:
+        """Estimate cost for a completion request.
+
+        Uses get_token_costs() to calculate estimated cost based on
+        token counts.
+
+        Args:
+            model_id: Model ID for pricing
+            input_tokens: Number of input tokens
+            output_tokens: Number of output tokens
+
+        Returns:
+            Estimated cost in USD
+        """
+        costs = self.get_token_costs(model_id)
+        input_cost = (input_tokens / 1000) * costs.get("input", 0.0)
+        output_cost = (output_tokens / 1000) * costs.get("output", 0.0)
+        return input_cost + output_cost
+
 
 class ProviderError(Exception):
     """Base exception for provider errors.
