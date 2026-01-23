@@ -1,308 +1,585 @@
 """
 Tests for SessionStateSync.
+
+Tests session-to-worker state synchronization, crash detection, and heartbeat monitoring.
 """
 
 import pytest
+import tempfile
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
-from cli.core.sessions import (
-    SessionBindingManager,
+from cli.core.db import init_database
+from cli.core.queries import create_team, create_worker, update_worker_runtime_status
+from cli.core.session import SessionState
+from cli.core.sessions.binding_manager import SessionBindingManager
+from cli.core.sessions.state_sync import (
     SessionStateSync,
     StateSyncConfig,
+    DEFAULT_HEARTBEAT_THRESHOLD,
     get_state_sync,
     reset_state_sync,
-    reset_binding_manager,
 )
 
 
 @pytest.fixture
-def mock_db():
-    """Create a mock database."""
-    db = MagicMock()
-    return db
+def db_path():
+    """Create a temporary database path."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir) / "live" / "quinn.db"
 
 
 @pytest.fixture
-def binding_manager():
-    """Create a fresh binding manager."""
-    return SessionBindingManager()
+def db(db_path):
+    """Create and initialize a test database."""
+    database = init_database(db_path)
+    yield database
+    database.close()
 
 
 @pytest.fixture
-def state_sync(mock_db, binding_manager):
-    """Create a state sync instance."""
-    return SessionStateSync(mock_db, binding_manager)
+def team(db):
+    """Create a test team."""
+    return create_team(db, "Engineering")
 
 
-@pytest.fixture(autouse=True)
-def reset_defaults():
-    """Reset defaults after each test."""
-    yield
-    reset_state_sync()
-    reset_binding_manager()
+@pytest.fixture
+def worker(db, team):
+    """Create a test worker."""
+    return create_worker(db, "Alice", "Developer", team.id, 50)
 
 
-class TestSessionStateSync:
-    """Tests for SessionStateSync."""
+@pytest.fixture
+def binding_manager(db):
+    """Create a SessionBindingManager."""
+    return SessionBindingManager(db)
 
-    def test_register_session_sets_up_callback(
-        self, state_sync, binding_manager
-    ):
-        """Should register state change callback on session."""
-        from cli.core.session import SessionState
 
-        mock_session = MagicMock()
-        mock_session.id = "session-a"
-        mock_session.state = SessionState.IDLE
-        mock_session.on_state_change = MagicMock()
+@pytest.fixture
+def state_sync(db, binding_manager):
+    """Create a SessionStateSync."""
+    return SessionStateSync(db, binding_manager)
 
-        state_sync.register_session(mock_session, "worker-1")
 
+@pytest.fixture
+def mock_session():
+    """Create a mock session."""
+    session = MagicMock()
+    session.id = "session-123"
+    session.state = SessionState.RUNNING
+    session.on_state_change = MagicMock()
+    return session
+
+
+class TestStateSyncConfig:
+    """Tests for StateSyncConfig."""
+
+    def test_default_values(self):
+        """Should have default configuration values."""
+        config = StateSyncConfig()
+
+        assert config.heartbeat_threshold_seconds == DEFAULT_HEARTBEAT_THRESHOLD
+        assert config.check_interval_seconds == 10
+        assert config.auto_unbind_on_crash is True
+        assert config.auto_unbind_on_stop is False
+
+
+class TestSessionStateSyncInit:
+    """Tests for SessionStateSync initialization."""
+
+    def test_init_with_defaults(self, db, binding_manager):
+        """Should initialize with default config."""
+        sync = SessionStateSync(db, binding_manager)
+
+        assert sync._db is db
+        assert sync._binding_manager is binding_manager
+        assert isinstance(sync._config, StateSyncConfig)
+        assert len(sync._last_states) == 0
+
+    def test_init_with_custom_config(self, db, binding_manager):
+        """Should initialize with custom config."""
+        config = StateSyncConfig()
+        config.heartbeat_threshold_seconds = 120
+        config.auto_unbind_on_crash = False
+
+        sync = SessionStateSync(db, binding_manager, config)
+
+        assert sync._config.heartbeat_threshold_seconds == 120
+        assert sync._config.auto_unbind_on_crash is False
+
+
+class TestSessionStateSyncRegister:
+    """Tests for session registration."""
+
+    def test_register_session(self, state_sync, worker, mock_session):
+        """Should register session for monitoring."""
+        state_sync.register_session(mock_session, worker.id)
+
+        # Should set up callback
         mock_session.on_state_change.assert_called_once()
 
-    def test_state_change_updates_worker_state(
-        self, state_sync, mock_db, binding_manager
-    ):
-        """Should update worker runtime state on session state change."""
-        from cli.core.session import SessionState
+        # Should track initial state
+        assert "session-123" in state_sync._last_states
+        assert state_sync._last_states["session-123"] == SessionState.RUNNING
 
-        mock_session = MagicMock()
-        mock_session.id = "session-a"
-        mock_session.state = SessionState.IDLE
-        callback_holder = []
-        mock_session.on_state_change = lambda cb: callback_holder.append(cb)
+    def test_register_multiple_sessions(self, state_sync, db, team):
+        """Should register multiple sessions."""
+        worker1 = create_worker(db, "Alice", "Dev", team.id, 50)
+        worker2 = create_worker(db, "Bob", "Dev", team.id, 50)
 
-        state_sync.register_session(mock_session, "worker-1")
+        session1 = MagicMock()
+        session1.id = "session-1"
+        session1.state = SessionState.RUNNING
+        session1.on_state_change = MagicMock()
 
-        # Trigger state change callback
-        callback = callback_holder[0]
-        with patch(
-            "cli.core.queries.update_worker_runtime_status"
-        ) as mock_update:
-            callback(SessionState.IDLE, SessionState.RUNNING)
-            mock_update.assert_called_with(mock_db, "worker-1", "running")
+        session2 = MagicMock()
+        session2.id = "session-2"
+        session2.state = SessionState.IDLE
+        session2.on_state_change = MagicMock()
 
-    def test_on_crash_callback_called_on_crash(
-        self, state_sync, binding_manager
-    ):
-        """Should call crash callbacks when session crashes."""
-        from cli.core.session import SessionState
+        state_sync.register_session(session1, worker1.id)
+        state_sync.register_session(session2, worker2.id)
 
-        crash_events = []
-        state_sync.on_crash(
-            lambda worker_id, session_id: crash_events.append(
-                (worker_id, session_id)
-            )
-        )
-
-        mock_session = MagicMock()
-        mock_session.id = "session-a"
-        mock_session.state = SessionState.IDLE
-        callback_holder = []
-        mock_session.on_state_change = lambda cb: callback_holder.append(cb)
-
-        state_sync.register_session(mock_session, "worker-1")
-
-        # Trigger crash
-        callback = callback_holder[0]
-        with patch("cli.core.queries.update_worker_runtime_status"):
-            callback(SessionState.RUNNING, SessionState.CRASHED)
-
-        assert ("worker-1", "session-a") in crash_events
+        assert len(state_sync._last_states) == 2
 
 
-class TestCheckAll:
-    """Tests for check_all method."""
+class TestSessionStateSyncStateChange:
+    """Tests for state change handling."""
 
-    def test_check_all_with_no_bindings(self, state_sync):
-        """Should handle empty binding list."""
-        results = state_sync.check_all()
+    def test_state_change_updates_worker(self, state_sync, db, worker, mock_session):
+        """Should update worker runtime status on state change."""
+        from cli.core.queries import get_worker_state
 
-        assert results["healthy"] == []
-        assert results["crashed"] == []
-        assert results["unknown"] == []
+        state_sync.register_session(mock_session, worker.id)
 
-    def test_check_all_with_running_session(
-        self, state_sync, binding_manager
-    ):
-        """Should report running session as healthy."""
-        from cli.core.session import SessionState
+        # Get the callback
+        callback = mock_session.on_state_change.call_args[0][0]
 
-        mock_session = MagicMock()
-        mock_session.id = "session-a"
-        mock_session.state = SessionState.RUNNING
-        mock_session.on_state_change = MagicMock()
+        # Simulate state change
+        callback(SessionState.STARTING, SessionState.RUNNING)
 
-        binding_manager.bind("worker-1", "session-a", session=mock_session)
+        # Check worker state was updated
+        worker_state = get_worker_state(db, worker.id)
+        assert worker_state.runtime_status == "running"
 
-        results = state_sync.check_all()
+    def test_state_change_updates_tracking(self, state_sync, worker, mock_session):
+        """Should update last known state tracking."""
+        state_sync.register_session(mock_session, worker.id)
+        callback = mock_session.on_state_change.call_args[0][0]
 
-        assert ("worker-1", "session-a") in results["healthy"]
+        callback(SessionState.STARTING, SessionState.RUNNING)
 
-    def test_check_all_with_crashed_session(
-        self, state_sync, binding_manager
-    ):
-        """Should report crashed session as crashed."""
-        from cli.core.session import SessionState
+        assert state_sync._last_states["session-123"] == SessionState.RUNNING
 
-        mock_session = MagicMock()
-        mock_session.id = "session-a"
-        mock_session.state = SessionState.CRASHED
-        mock_session.on_state_change = MagicMock()
+    def test_state_change_to_crashed_triggers_callback(self, state_sync, worker, mock_session):
+        """Should trigger crash callbacks on CRASHED state."""
+        crash_callback = Mock()
+        state_sync.on_crash(crash_callback)
 
-        binding_manager.bind("worker-1", "session-a", session=mock_session)
+        state_sync.register_session(mock_session, worker.id)
+        callback = mock_session.on_state_change.call_args[0][0]
 
-        results = state_sync.check_all()
+        callback(SessionState.RUNNING, SessionState.CRASHED)
 
-        assert ("worker-1", "session-a") in results["crashed"]
+        crash_callback.assert_called_once_with(worker.id, "session-123")
 
-    @patch.object(SessionStateSync, "_is_process_alive")
-    def test_check_all_with_dead_pid(
-        self, mock_alive, state_sync, binding_manager, mock_db
-    ):
-        """Should detect crashed session via dead PID."""
-        mock_alive.return_value = False
+    def test_state_change_crashed_auto_unbinds(self, state_sync, binding_manager, worker, mock_session):
+        """Should auto-unbind on crash when configured."""
+        binding_manager.bind(worker.id, "session-123", session=mock_session)
+        state_sync.register_session(mock_session, worker.id)
 
-        binding_manager.bind("worker-1", "session-a", pid=12345)
+        callback = mock_session.on_state_change.call_args[0][0]
+        callback(SessionState.RUNNING, SessionState.CRASHED)
 
-        with patch("cli.core.queries.update_worker_runtime_status"):
-            results = state_sync.check_all()
+        assert not binding_manager.is_worker_bound(worker.id)
 
-        assert ("worker-1", "session-a") in results["crashed"]
-
-    @patch.object(SessionStateSync, "_is_process_alive")
-    def test_check_all_with_alive_pid(
-        self, mock_alive, state_sync, binding_manager
-    ):
-        """Should report alive PID as healthy."""
-        mock_alive.return_value = True
-
-        binding_manager.bind("worker-1", "session-a", pid=12345)
-
-        results = state_sync.check_all()
-
-        assert ("worker-1", "session-a") in results["healthy"]
-
-
-class TestCheckHeartbeats:
-    """Tests for check_heartbeats method."""
-
-    def test_check_heartbeats_with_recent_activity(
-        self, state_sync, binding_manager
-    ):
-        """Should report recent activity as active."""
-        mock_state = MagicMock()
-        mock_state.last_activity = datetime.now()
-
-        binding_manager.bind("worker-1", "session-a")
-
-        with patch("cli.core.queries.get_worker_state", return_value=mock_state):
-            results = state_sync.check_heartbeats()
-
-        assert "worker-1" in results["active"]
-
-    def test_check_heartbeats_with_stale_activity(
-        self, state_sync, binding_manager
-    ):
-        """Should report stale activity as stale."""
-        mock_state = MagicMock()
-        mock_state.last_activity = datetime.now() - timedelta(minutes=10)
-
-        binding_manager.bind("worker-1", "session-a")
-
-        with patch("cli.core.queries.get_worker_state", return_value=mock_state):
-            results = state_sync.check_heartbeats()
-
-        assert "worker-1" in results["stale"]
-
-    def test_check_heartbeats_with_no_state(self, state_sync, binding_manager):
-        """Should report missing state as stale."""
-        binding_manager.bind("worker-1", "session-a")
-
-        with patch("cli.core.queries.get_worker_state", return_value=None):
-            results = state_sync.check_heartbeats()
-
-        assert "worker-1" in results["stale"]
-
-
-class TestAutoUnbind:
-    """Tests for auto-unbind on crash/stop."""
-
-    def test_auto_unbind_on_crash(self, mock_db, binding_manager):
-        """Should auto-unbind when session crashes."""
-        from cli.core.session import SessionState
-
-        config = StateSyncConfig()
-        config.auto_unbind_on_crash = True
-        state_sync = SessionStateSync(mock_db, binding_manager, config)
-
-        mock_session = MagicMock()
-        mock_session.id = "session-a"
-        mock_session.state = SessionState.IDLE
-        callback_holder = []
-        mock_session.on_state_change = lambda cb: callback_holder.append(cb)
-
-        # Don't pass session to bind - state_sync handles the callback separately
-        binding_manager.bind("worker-1", "session-a")
-        state_sync.register_session(mock_session, "worker-1")
-
-        # Trigger crash via state_sync's callback
-        callback = callback_holder[0]
-        with patch("cli.core.queries.update_worker_runtime_status"):
-            callback(SessionState.RUNNING, SessionState.CRASHED)
-
-        assert not binding_manager.is_worker_bound("worker-1")
-
-    def test_no_auto_unbind_when_disabled(self, mock_db, binding_manager):
+    def test_state_change_crashed_no_auto_unbind(self, db, binding_manager, worker, mock_session):
         """Should not auto-unbind when disabled."""
-        from cli.core.session import SessionState
-
         config = StateSyncConfig()
         config.auto_unbind_on_crash = False
-        state_sync = SessionStateSync(mock_db, binding_manager, config)
+        sync = SessionStateSync(db, binding_manager, config)
 
-        mock_session = MagicMock()
-        mock_session.id = "session-a"
-        mock_session.state = SessionState.IDLE
-        callback_holder = []
-        mock_session.on_state_change = lambda cb: callback_holder.append(cb)
+        binding_manager.bind(worker.id, "session-123", session=mock_session)
+        sync.register_session(mock_session, worker.id)
 
-        # Don't pass session to bind - state_sync handles the callback separately
-        binding_manager.bind("worker-1", "session-a")
-        state_sync.register_session(mock_session, "worker-1")
+        callback = mock_session.on_state_change.call_args[0][0]
+        callback(SessionState.RUNNING, SessionState.CRASHED)
 
-        # Trigger crash via state_sync's callback
-        callback = callback_holder[0]
-        with patch("cli.core.queries.update_worker_runtime_status"):
-            callback(SessionState.RUNNING, SessionState.CRASHED)
+        assert binding_manager.is_worker_bound(worker.id)
 
-        assert binding_manager.is_worker_bound("worker-1")
+    def test_state_change_stopped_auto_unbind_when_configured(self, db, binding_manager, worker, mock_session):
+        """Should auto-unbind on stop when configured."""
+        config = StateSyncConfig()
+        config.auto_unbind_on_stop = True
+        sync = SessionStateSync(db, binding_manager, config)
+
+        binding_manager.bind(worker.id, "session-123", session=mock_session)
+        sync.register_session(mock_session, worker.id)
+
+        callback = mock_session.on_state_change.call_args[0][0]
+        callback(SessionState.RUNNING, SessionState.STOPPED)
+
+        assert not binding_manager.is_worker_bound(worker.id)
+
+    def test_crash_callback_error_handling(self, state_sync, worker, mock_session):
+        """Should handle errors in crash callbacks gracefully."""
+        bad_callback = Mock(side_effect=Exception("callback error"))
+        good_callback = Mock()
+
+        state_sync.on_crash(bad_callback)
+        state_sync.on_crash(good_callback)
+
+        state_sync.register_session(mock_session, worker.id)
+        callback = mock_session.on_state_change.call_args[0][0]
+
+        # Should not raise
+        callback(SessionState.RUNNING, SessionState.CRASHED)
+
+        # Good callback should still be called
+        good_callback.assert_called_once()
 
 
-class TestDefaultStateSync:
-    """Tests for default state sync singleton."""
+class TestSessionStateSyncCheckAll:
+    """Tests for checking all sessions for crashes."""
 
-    def test_get_state_sync_returns_instance(self, mock_db, binding_manager):
-        """Should return a state sync instance."""
-        sync = get_state_sync(mock_db, binding_manager)
+    @patch("os.kill")
+    def test_check_all_healthy_sessions(self, mock_kill, state_sync, binding_manager, worker):
+        """Should identify healthy sessions."""
+        mock_kill.return_value = None  # Process exists
+
+        binding_manager.bind(worker.id, "session-123", pid=12345)
+
+        results = state_sync.check_all()
+
+        assert (worker.id, "session-123") in results["healthy"]
+        assert len(results["crashed"]) == 0
+
+    @patch("os.kill")
+    def test_check_all_crashed_by_pid(self, mock_kill, state_sync, binding_manager, worker):
+        """Should detect crashed sessions via PID."""
+        mock_kill.side_effect = OSError("No such process")
+
+        binding_manager.bind(worker.id, "session-123", pid=12345)
+
+        results = state_sync.check_all()
+
+        assert (worker.id, "session-123") in results["crashed"]
+        assert len(results["healthy"]) == 0
+
+    def test_check_all_with_session_instance_running(self, state_sync, binding_manager, worker, mock_session):
+        """Should check session state directly when instance available."""
+        mock_session.state = SessionState.RUNNING
+
+        binding_manager.bind(worker.id, "session-123", session=mock_session)
+
+        results = state_sync.check_all()
+
+        assert (worker.id, "session-123") in results["healthy"]
+
+    def test_check_all_with_session_instance_crashed(self, state_sync, binding_manager, worker, mock_session):
+        """Should detect crashed sessions via session state."""
+        mock_session.state = SessionState.CRASHED
+
+        binding_manager.bind(worker.id, "session-123", session=mock_session)
+
+        results = state_sync.check_all()
+
+        assert (worker.id, "session-123") in results["crashed"]
+
+    def test_check_all_unknown_state(self, state_sync, binding_manager, worker):
+        """Should mark sessions as unknown when no PID or instance."""
+        binding_manager.bind(worker.id, "session-123", pid=None)
+
+        results = state_sync.check_all()
+
+        assert (worker.id, "session-123") in results["unknown"]
+
+    @patch("os.kill")
+    def test_check_all_marks_crashed_in_db(self, mock_kill, state_sync, db, binding_manager, worker):
+        """Should mark worker as crashed in database."""
+        from cli.core.queries import get_worker_state
+
+        mock_kill.side_effect = OSError("No such process")
+
+        binding_manager.bind(worker.id, "session-123", pid=12345)
+
+        state_sync.check_all()
+
+        worker_state = get_worker_state(db, worker.id)
+        assert worker_state.runtime_status == "crashed"
+
+    @patch("os.kill")
+    def test_check_all_triggers_crash_callback(self, mock_kill, state_sync, binding_manager, worker):
+        """Should trigger crash callbacks for detected crashes."""
+        mock_kill.side_effect = OSError("No such process")
+        crash_callback = Mock()
+        state_sync.on_crash(crash_callback)
+
+        binding_manager.bind(worker.id, "session-123", pid=12345)
+
+        state_sync.check_all()
+
+        crash_callback.assert_called_once_with(worker.id, "session-123")
+
+    def test_check_all_multiple_sessions(self, state_sync, binding_manager, db, team):
+        """Should check multiple sessions."""
+        worker1 = create_worker(db, "Alice", "Dev", team.id, 50)
+        worker2 = create_worker(db, "Bob", "Dev", team.id, 50)
+
+        session1 = MagicMock()
+        session1.id = "session-1"
+        session1.state = SessionState.RUNNING
+
+        session2 = MagicMock()
+        session2.id = "session-2"
+        session2.state = SessionState.CRASHED
+
+        binding_manager.bind(worker1.id, "session-1", session=session1)
+        binding_manager.bind(worker2.id, "session-2", session=session2)
+
+        results = state_sync.check_all()
+
+        assert (worker1.id, "session-1") in results["healthy"]
+        assert (worker2.id, "session-2") in results["crashed"]
+
+
+class TestSessionStateSyncHeartbeat:
+    """Tests for heartbeat checking."""
+
+    def test_check_heartbeats_active(self, state_sync, db, binding_manager, worker):
+        """Should identify active workers."""
+        from cli.core.queries import update_worker_runtime_status
+
+        # Update worker activity to now
+        update_worker_runtime_status(db, worker.id, "running")
+
+        binding_manager.bind(worker.id, "session-123")
+
+        results = state_sync.check_heartbeats()
+
+        assert worker.id in results["active"]
+        assert len(results["stale"]) == 0
+
+    def test_check_heartbeats_stale(self, state_sync, db, binding_manager, worker):
+        """Should identify stale workers."""
+        # Set last_activity to old timestamp
+        db.execute(
+            """UPDATE worker_state
+               SET last_activity = ?
+               WHERE worker_id = ?""",
+            (datetime.now() - timedelta(seconds=120), worker.id),
+        )
+        db.connection.commit()
+
+        binding_manager.bind(worker.id, "session-123")
+
+        results = state_sync.check_heartbeats()
+
+        assert worker.id in results["stale"]
+        assert len(results["active"]) == 0
+
+    def test_check_heartbeats_no_last_activity(self, state_sync, db, binding_manager, worker):
+        """Should mark as stale when no last_activity."""
+        # Clear last_activity
+        db.execute(
+            """UPDATE worker_state
+               SET last_activity = NULL
+               WHERE worker_id = ?""",
+            (worker.id,),
+        )
+        db.connection.commit()
+
+        binding_manager.bind(worker.id, "session-123")
+
+        results = state_sync.check_heartbeats()
+
+        assert worker.id in results["stale"]
+
+    def test_check_heartbeats_custom_threshold(self, db, binding_manager, worker):
+        """Should use custom heartbeat threshold."""
+        config = StateSyncConfig()
+        config.heartbeat_threshold_seconds = 30
+        sync = SessionStateSync(db, binding_manager, config)
+
+        # Set activity 45 seconds ago
+        db.execute(
+            """UPDATE worker_state
+               SET last_activity = ?
+               WHERE worker_id = ?""",
+            (datetime.now() - timedelta(seconds=45), worker.id),
+        )
+        db.connection.commit()
+
+        binding_manager.bind(worker.id, "session-123")
+
+        results = sync.check_heartbeats()
+
+        assert worker.id in results["stale"]
+
+    def test_check_heartbeats_multiple_workers(self, state_sync, db, team, binding_manager):
+        """Should check multiple workers."""
+        from cli.core.queries import update_worker_runtime_status
+
+        worker1 = create_worker(db, "Alice", "Dev", team.id, 50)
+        worker2 = create_worker(db, "Bob", "Dev", team.id, 50)
+
+        # Worker1 active
+        update_worker_runtime_status(db, worker1.id, "running")
+
+        # Worker2 stale
+        db.execute(
+            """UPDATE worker_state
+               SET last_activity = ?
+               WHERE worker_id = ?""",
+            (datetime.now() - timedelta(seconds=120), worker2.id),
+        )
+        db.connection.commit()
+
+        binding_manager.bind(worker1.id, "session-1")
+        binding_manager.bind(worker2.id, "session-2")
+
+        results = state_sync.check_heartbeats()
+
+        assert worker1.id in results["active"]
+        assert worker2.id in results["stale"]
+
+
+class TestSessionStateSyncDefaults:
+    """Tests for default state sync functions."""
+
+    def setup_method(self):
+        """Reset state sync before each test."""
+        reset_state_sync()
+
+    def teardown_method(self):
+        """Reset state sync after each test."""
+        reset_state_sync()
+
+    def test_get_state_sync_lazy_init(self, db, binding_manager):
+        """Should lazily initialize default sync."""
+        sync = get_state_sync(db, binding_manager)
 
         assert sync is not None
         assert isinstance(sync, SessionStateSync)
 
-    def test_get_state_sync_returns_same_instance(
-        self, mock_db, binding_manager
-    ):
-        """Should return same instance on repeated calls."""
-        sync1 = get_state_sync(mock_db, binding_manager)
-        sync2 = get_state_sync(mock_db, binding_manager)
+    def test_get_state_sync_singleton(self, db, binding_manager):
+        """Should return same instance on subsequent calls."""
+        sync1 = get_state_sync(db, binding_manager)
+        sync2 = get_state_sync(db, binding_manager)
 
         assert sync1 is sync2
 
-    def test_reset_state_sync_clears_instance(self, mock_db, binding_manager):
-        """Should clear singleton on reset."""
-        sync1 = get_state_sync(mock_db, binding_manager)
-        reset_state_sync()
-        sync2 = get_state_sync(mock_db, binding_manager)
+    def test_reset_state_sync(self, db, binding_manager):
+        """Should reset to None."""
+        initial = get_state_sync(db, binding_manager)
 
-        assert sync1 is not sync2
+        reset_state_sync()
+
+        new = get_state_sync(db, binding_manager)
+        assert new is not initial
+
+
+class TestSessionStateSyncThreadSafety:
+    """Tests for thread safety."""
+
+    def test_concurrent_register(self, state_sync, db, team):
+        """Should handle concurrent session registration."""
+        import threading
+
+        workers = [create_worker(db, f"Worker{i}", "Dev", team.id, 50) for i in range(10)]
+        sessions = []
+        for i in range(10):
+            session = MagicMock()
+            session.id = f"session-{i}"
+            session.state = SessionState.RUNNING
+            session.on_state_change = MagicMock()
+            sessions.append(session)
+
+        def register(session, worker):
+            state_sync.register_session(session, worker.id)
+
+        threads = [
+            threading.Thread(target=register, args=(sessions[i], workers[i]))
+            for i in range(10)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(state_sync._last_states) == 10
+
+
+class TestSessionStateSyncIntegration:
+    """Integration tests for SessionStateSync."""
+
+    def test_full_session_lifecycle(self, state_sync, binding_manager, db, worker, mock_session):
+        """Test complete session lifecycle monitoring."""
+        from cli.core.queries import get_worker_state
+
+        # Bind and register
+        binding_manager.bind(worker.id, "session-123", pid=12345, session=mock_session)
+        state_sync.register_session(mock_session, worker.id)
+
+        # Get callback
+        callback = mock_session.on_state_change.call_args[0][0]
+
+        # Session starts
+        callback(SessionState.STOPPED, SessionState.STARTING)
+        worker_state = get_worker_state(db, worker.id)
+        assert worker_state.runtime_status == "starting"
+
+        # Session runs
+        callback(SessionState.STARTING, SessionState.RUNNING)
+        worker_state = get_worker_state(db, worker.id)
+        assert worker_state.runtime_status == "running"
+
+        # Session goes idle
+        callback(SessionState.RUNNING, SessionState.IDLE)
+        worker_state = get_worker_state(db, worker.id)
+        assert worker_state.runtime_status == "idle"
+
+        # Session crashes
+        crash_callback = Mock()
+        state_sync.on_crash(crash_callback)
+
+        callback(SessionState.IDLE, SessionState.CRASHED)
+        worker_state = get_worker_state(db, worker.id)
+        assert worker_state.runtime_status == "crashed"
+
+        # Crash callback was triggered
+        crash_callback.assert_called_once_with(worker.id, "session-123")
+
+        # Auto-unbind happened
+        assert not binding_manager.is_worker_bound(worker.id)
+
+    @patch("os.kill")
+    def test_crash_detection_via_pid(self, mock_kill, state_sync, binding_manager, db, worker):
+        """Test crash detection via PID monitoring."""
+        from cli.core.queries import get_worker_state
+
+        crash_callback = Mock()
+        state_sync.on_crash(crash_callback)
+
+        # Bind with PID
+        binding_manager.bind(worker.id, "session-123", pid=12345)
+
+        # Process is alive
+        mock_kill.return_value = None
+        results = state_sync.check_all()
+        assert (worker.id, "session-123") in results["healthy"]
+
+        # Process dies
+        mock_kill.side_effect = OSError("No such process")
+        results = state_sync.check_all()
+
+        # Detected as crashed
+        assert (worker.id, "session-123") in results["crashed"]
+
+        # Worker marked crashed
+        worker_state = get_worker_state(db, worker.id)
+        assert worker_state.runtime_status == "crashed"
+
+        # Callback triggered
+        crash_callback.assert_called_once_with(worker.id, "session-123")
