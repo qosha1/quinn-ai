@@ -29,6 +29,13 @@ from .constants import (
     DEFAULT_SKILL_THRESHOLD_REASONING,
     DEFAULT_SKILL_THRESHOLD_RESEARCH,
     DEFAULT_WORKER_COST,
+    # Budget constants
+    COST_PER_1K_TOKENS_BUDGET,
+    COST_PER_1K_TOKENS_STANDARD,
+    COST_PER_1K_TOKENS_ADVANCED,
+    COST_PER_1K_TOKENS_PREMIUM,
+    DEFAULT_SESSION_SPAWN_TOKENS_INPUT,
+    DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT,
 )
 
 
@@ -54,6 +61,7 @@ class ThresholdSettings:
 class ProvidersConfig:
     """Configuration from providers.yaml."""
     default: str = "anthropic"
+    authorized_providers: list[str] = field(default_factory=list)
     providers: dict[str, ProviderSettings] = field(default_factory=dict)
     thresholds: ThresholdSettings = field(default_factory=ThresholdSettings)
 
@@ -71,6 +79,120 @@ class WorkerTemplatesConfig:
     """Configuration from worker-templates.yaml."""
     templates: dict[str, WorkerTemplate] = field(default_factory=dict)
 
+    def get_template(self, role: str) -> Optional["WorkerTemplate"]:
+        """Get template for a role.
+
+        Performs case-insensitive matching and normalizes role names
+        (e.g., 'CEO' -> 'ceo', 'Senior Engineer' -> 'senior_engineer').
+
+        Args:
+            role: Role name to look up
+
+        Returns:
+            WorkerTemplate if found, None otherwise
+        """
+        # Normalize role name: lowercase, replace spaces with underscores
+        normalized = role.lower().replace(" ", "_").replace("-", "_")
+        return self.templates.get(normalized)
+
+    def get_skills_and_cost(
+        self,
+        role: str,
+        skill_overrides: Optional[dict[str, int]] = None,
+        cost_override: Optional[int] = None,
+    ) -> tuple[dict[str, int], int]:
+        """Get skills and cost for a role from template with optional overrides.
+
+        Args:
+            role: Role name to look up
+            skill_overrides: Optional skill values to override template
+            cost_override: Optional cost to override template
+
+        Returns:
+            Tuple of (skills dict, cost int)
+
+        Raises:
+            KeyError: If role template not found
+        """
+        template = self.get_template(role)
+        if template is None:
+            raise KeyError(f"No template found for role: {role}")
+
+        # Start with template values
+        skills = dict(template.skills)
+        cost = template.cost
+
+        # Apply overrides
+        if skill_overrides:
+            skills.update(skill_overrides)
+        if cost_override is not None:
+            cost = cost_override
+
+        return skills, cost
+
+
+@dataclass
+class TierTokenCosts:
+    """Token costs for a single tier (per 1K tokens in USD)."""
+
+    input: float
+    output: float
+
+    def to_dict(self) -> dict[str, float]:
+        """Convert to dict format for budget calculations."""
+        return {"input": self.input, "output": self.output}
+
+
+@dataclass
+class BudgetConfig:
+    """Configuration for budget and cost estimation.
+
+    All values are injectable via config. Falls back to constants when not set.
+    """
+
+    # Token costs per tier (cost per 1K tokens in USD)
+    tier_costs: dict[str, TierTokenCosts] = field(default_factory=dict)
+
+    # Session spawn estimates (initial context setup)
+    session_spawn_tokens_input: int = DEFAULT_SESSION_SPAWN_TOKENS_INPUT
+    session_spawn_tokens_output: int = DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT
+
+    def get_tier_costs(self, tier: str) -> dict[str, float]:
+        """Get token costs for a tier, falling back to defaults.
+
+        Args:
+            tier: Cost tier name ('budget', 'standard', 'advanced', 'premium')
+
+        Returns:
+            Dict with 'input' and 'output' costs per 1K tokens
+        """
+        tier_lower = tier.lower()
+        if tier_lower in self.tier_costs:
+            return self.tier_costs[tier_lower].to_dict()
+
+        # Fall back to constants
+        defaults = {
+            "budget": COST_PER_1K_TOKENS_BUDGET,
+            "standard": COST_PER_1K_TOKENS_STANDARD,
+            "advanced": COST_PER_1K_TOKENS_ADVANCED,
+            "premium": COST_PER_1K_TOKENS_PREMIUM,
+        }
+        return defaults.get(tier_lower, defaults["standard"])
+
+    @classmethod
+    def default(cls) -> "BudgetConfig":
+        """Create BudgetConfig with all default values from constants."""
+        return cls(
+            tier_costs={
+                "budget": TierTokenCosts(**COST_PER_1K_TOKENS_BUDGET),
+                "standard": TierTokenCosts(**COST_PER_1K_TOKENS_STANDARD),
+                "advanced": TierTokenCosts(**COST_PER_1K_TOKENS_ADVANCED),
+                "premium": TierTokenCosts(**COST_PER_1K_TOKENS_PREMIUM),
+            },
+            session_spawn_tokens_input=DEFAULT_SESSION_SPAWN_TOKENS_INPUT,
+            session_spawn_tokens_output=DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT,
+        )
+
 
 @dataclass
 class OrgConfig:
@@ -78,8 +200,10 @@ class OrgConfig:
 
     Created by loading from explicit config directory path.
     """
+
     providers: ProvidersConfig
     worker_templates: WorkerTemplatesConfig
+    budget: BudgetConfig
     config_path: Path
 
 
@@ -125,6 +249,7 @@ def load_providers_config(config_path: Path) -> ProvidersConfig:
 
     config = ProvidersConfig(
         default=data.get("default", "anthropic"),
+        authorized_providers=data.get("authorized_providers", []),
     )
 
     # Load thresholds
@@ -190,6 +315,55 @@ def load_worker_templates_config(config_path: Path) -> WorkerTemplatesConfig:
     return config
 
 
+def load_budget_config(config_path: Path) -> BudgetConfig:
+    """Load budget configuration from explicit path.
+
+    Args:
+        config_path: Path to budget.yaml file
+
+    Returns:
+        BudgetConfig with loaded settings (or defaults if file missing)
+    """
+    if not config_path.exists():
+        # Budget config is optional - return defaults
+        return BudgetConfig.default()
+
+    with open(config_path) as f:
+        data = yaml.safe_load(f)
+
+    if not data:
+        return BudgetConfig.default()
+
+    # Parse tier costs
+    tier_costs: dict[str, TierTokenCosts] = {}
+    tier_data = data.get("tier_costs", {})
+    for tier_name, costs in tier_data.items():
+        if isinstance(costs, dict) and "input" in costs and "output" in costs:
+            tier_costs[tier_name.lower()] = TierTokenCosts(
+                input=float(costs["input"]),
+                output=float(costs["output"]),
+            )
+
+    # Use defaults for missing tiers
+    if not tier_costs:
+        tier_costs = {
+            "budget": TierTokenCosts(**COST_PER_1K_TOKENS_BUDGET),
+            "standard": TierTokenCosts(**COST_PER_1K_TOKENS_STANDARD),
+            "advanced": TierTokenCosts(**COST_PER_1K_TOKENS_ADVANCED),
+            "premium": TierTokenCosts(**COST_PER_1K_TOKENS_PREMIUM),
+        }
+
+    return BudgetConfig(
+        tier_costs=tier_costs,
+        session_spawn_tokens_input=data.get(
+            "session_spawn_tokens_input", DEFAULT_SESSION_SPAWN_TOKENS_INPUT
+        ),
+        session_spawn_tokens_output=data.get(
+            "session_spawn_tokens_output", DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT
+        ),
+    )
+
+
 def load_org_config(config_dir: Path) -> OrgConfig:
     """Load complete organization configuration from explicit directory.
 
@@ -214,6 +388,7 @@ def load_org_config(config_dir: Path) -> OrgConfig:
 
     providers_path = config_dir / "providers.yaml"
     templates_path = config_dir / "worker-templates.yaml"
+    budget_path = config_dir / "budget.yaml"
 
     providers = load_providers_config(providers_path)
 
@@ -223,9 +398,13 @@ def load_org_config(config_dir: Path) -> OrgConfig:
     except FileNotFoundError:
         templates = WorkerTemplatesConfig()
 
+    # Budget config is optional (defaults to constants)
+    budget = load_budget_config(budget_path)
+
     return OrgConfig(
         providers=providers,
         worker_templates=templates,
+        budget=budget,
         config_path=config_dir,
     )
 

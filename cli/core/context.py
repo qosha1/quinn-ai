@@ -129,7 +129,10 @@ class OrgContext:
         if self._budget_service is None:
             from .budget import BudgetService
 
-            self._budget_service = BudgetService(self._db)
+            self._budget_service = BudgetService(
+                self._db,
+                budget_config=self._config.budget,
+            )
         return self._budget_service
 
     @property

@@ -20,6 +20,13 @@ import uuid
 
 from .db import Database
 from .logging import get_logger, log_budget_check, log_budget_spend
+
+# Import TYPE_CHECKING for forward reference to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .config import BudgetConfig
+
 from .queries import (
     get_worker_balance,
     get_current_allocation,
@@ -113,6 +120,7 @@ def estimate_cost(
     model_tier: str,
     input_tokens: int,
     output_tokens: int,
+    budget_config: Optional["BudgetConfig"] = None,
 ) -> float:
     """Estimate cost for a provider operation.
 
@@ -120,15 +128,21 @@ def estimate_cost(
         model_tier: Model tier ('budget', 'standard', 'advanced', 'premium')
         input_tokens: Estimated input token count
         output_tokens: Estimated output token count
+        budget_config: Optional BudgetConfig for tier costs (falls back to constants)
 
     Returns:
         Estimated cost in dollars
     """
     tier = model_tier.lower()
-    if tier not in DEFAULT_COST_PER_1K_TOKENS:
-        tier = "standard"  # Default to standard pricing
 
-    rates = DEFAULT_COST_PER_1K_TOKENS[tier]
+    # Use config if provided, otherwise fall back to module-level defaults
+    if budget_config is not None:
+        rates = budget_config.get_tier_costs(tier)
+    else:
+        if tier not in DEFAULT_COST_PER_1K_TOKENS:
+            tier = "standard"  # Default to standard pricing
+        rates = DEFAULT_COST_PER_1K_TOKENS[tier]
+
     input_cost = (input_tokens / 1000) * rates["input"]
     output_cost = (output_tokens / 1000) * rates["output"]
 
@@ -463,13 +477,48 @@ class BudgetService:
     Each level can optionally delegate to subordinates if can_delegate=True.
     """
 
-    def __init__(self, db: Database):
+    def __init__(
+        self,
+        db: Database,
+        budget_config: Optional["BudgetConfig"] = None,
+    ):
         """Initialize budget service.
 
         Args:
             db: Database instance
+            budget_config: Optional budget configuration for cost estimates.
+                Falls back to constants if not provided.
         """
         self.db = db
+        self._budget_config = budget_config
+
+    @property
+    def budget_config(self) -> Optional["BudgetConfig"]:
+        """Get the budget configuration."""
+        return self._budget_config
+
+    def estimate_cost(
+        self,
+        model_tier: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> float:
+        """Estimate cost for a provider operation using config.
+
+        Args:
+            model_tier: Model tier ('budget', 'standard', 'advanced', 'premium')
+            input_tokens: Estimated input token count
+            output_tokens: Estimated output token count
+
+        Returns:
+            Estimated cost in dollars
+        """
+        return estimate_cost(
+            model_tier=model_tier,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            budget_config=self._budget_config,
+        )
 
     def allocate_from_pool(
         self,

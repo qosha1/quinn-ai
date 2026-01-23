@@ -714,6 +714,35 @@ class TestBudgetEnforcementFunctions:
         # Should be around $0.015 + $0.075 = $0.09
         assert cost == pytest.approx(0.09, rel=0.01)
 
+    def test_estimate_cost_with_budget_config(self):
+        """Should use BudgetConfig when provided."""
+        from cli.core.budget import estimate_cost
+        from cli.core.config import BudgetConfig, TierTokenCosts
+
+        # Create custom config with different rates
+        config = BudgetConfig(
+            tier_costs={
+                "budget": TierTokenCosts(input=0.001, output=0.002),
+            }
+        )
+
+        # With config: $0.001/1K input + $0.002/1K output = $0.003
+        cost = estimate_cost(
+            "budget",
+            input_tokens=1000,
+            output_tokens=1000,
+            budget_config=config,
+        )
+        assert cost == pytest.approx(0.003, rel=0.01)
+
+        # Without config: uses default ($0.00025 + $0.00125 = $0.0015)
+        cost_default = estimate_cost(
+            "budget",
+            input_tokens=1000,
+            output_tokens=1000,
+        )
+        assert cost_default == pytest.approx(0.0015, rel=0.01)
+
     def test_check_budget_sufficient(self, db, allocation_with_balance, developer):
         """Should approve when budget is sufficient."""
         from cli.core.budget import check_budget

@@ -13,11 +13,14 @@ import yaml
 from cli.core.config import (
     load_providers_config,
     load_worker_templates_config,
+    load_budget_config,
     load_org_config,
     get_org_config_path,
     ProvidersConfig,
     ProviderSettings,
     WorkerTemplatesConfig,
+    BudgetConfig,
+    TierTokenCosts,
     OrgConfig,
     validate_api_key_format,
     validate_url,
@@ -31,6 +34,14 @@ from cli.core.config import (
     mask_provider_settings,
     mask_providers_config,
     PlaintextApiKeyWarning,
+)
+from cli.core.constants import (
+    COST_PER_1K_TOKENS_BUDGET,
+    COST_PER_1K_TOKENS_STANDARD,
+    COST_PER_1K_TOKENS_ADVANCED,
+    COST_PER_1K_TOKENS_PREMIUM,
+    DEFAULT_SESSION_SPAWN_TOKENS_INPUT,
+    DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT,
 )
 from shared.exceptions import ConfigurationError
 
@@ -195,6 +206,74 @@ templates:
             load_worker_templates_config(temp_config_dir / "nonexistent.yaml")
 
 
+class TestLoadBudgetConfig:
+    """Test budget config loading."""
+
+    def test_load_budget_config(self, temp_config_dir):
+        """Should load budget config from YAML."""
+        config_path = temp_config_dir / "budget.yaml"
+        config_path.write_text("""
+tier_costs:
+  budget:
+    input: 0.001
+    output: 0.002
+  standard:
+    input: 0.01
+    output: 0.02
+session_spawn_tokens_input: 3000
+session_spawn_tokens_output: 1000
+""")
+        config = load_budget_config(config_path)
+        assert config.tier_costs["budget"].input == 0.001
+        assert config.tier_costs["budget"].output == 0.002
+        assert config.tier_costs["standard"].input == 0.01
+        assert config.session_spawn_tokens_input == 3000
+        assert config.session_spawn_tokens_output == 1000
+
+    def test_missing_budget_config_uses_defaults(self, temp_config_dir):
+        """Should use defaults when budget.yaml missing."""
+        config = load_budget_config(temp_config_dir / "nonexistent.yaml")
+        # Should get default tier costs
+        assert config.tier_costs["budget"].input == COST_PER_1K_TOKENS_BUDGET["input"]
+        assert config.tier_costs["premium"].output == COST_PER_1K_TOKENS_PREMIUM["output"]
+        assert config.session_spawn_tokens_input == DEFAULT_SESSION_SPAWN_TOKENS_INPUT
+        assert config.session_spawn_tokens_output == DEFAULT_SESSION_SPAWN_TOKENS_OUTPUT
+
+    def test_empty_budget_config_uses_defaults(self, temp_config_dir):
+        """Should use defaults for empty budget.yaml."""
+        config_path = temp_config_dir / "budget.yaml"
+        config_path.write_text("")
+        config = load_budget_config(config_path)
+        assert config.tier_costs["standard"].input == COST_PER_1K_TOKENS_STANDARD["input"]
+
+    def test_get_tier_costs_from_config(self, temp_config_dir):
+        """Should get tier costs from config."""
+        config = BudgetConfig(
+            tier_costs={
+                "budget": TierTokenCosts(input=0.001, output=0.002),
+            }
+        )
+        costs = config.get_tier_costs("budget")
+        assert costs["input"] == 0.001
+        assert costs["output"] == 0.002
+
+    def test_get_tier_costs_fallback(self):
+        """Should fall back to constants for unknown tier."""
+        config = BudgetConfig(tier_costs={})
+        costs = config.get_tier_costs("premium")
+        assert costs["input"] == COST_PER_1K_TOKENS_PREMIUM["input"]
+        assert costs["output"] == COST_PER_1K_TOKENS_PREMIUM["output"]
+
+    def test_budget_config_default_factory(self):
+        """Should create default config with all tiers."""
+        config = BudgetConfig.default()
+        assert "budget" in config.tier_costs
+        assert "standard" in config.tier_costs
+        assert "advanced" in config.tier_costs
+        assert "premium" in config.tier_costs
+        assert config.tier_costs["budget"].input == COST_PER_1K_TOKENS_BUDGET["input"]
+
+
 class TestLoadOrgConfig:
     """Test complete org config loading."""
 
@@ -221,6 +300,30 @@ templates:
         assert config.providers.default == "anthropic"
         assert "engineer" in config.worker_templates.templates
         assert config.config_path == temp_config_dir
+        # Budget should be present with defaults
+        assert config.budget is not None
+        assert isinstance(config.budget, BudgetConfig)
+
+    def test_load_with_budget_config(self, temp_config_dir):
+        """Should load budget config when present."""
+        # Create providers.yaml
+        providers_path = temp_config_dir / "providers.yaml"
+        providers_path.write_text("""
+default: anthropic
+providers: {}
+""")
+        # Create budget.yaml with custom values
+        budget_path = temp_config_dir / "budget.yaml"
+        budget_path.write_text("""
+tier_costs:
+  budget:
+    input: 0.0005
+    output: 0.001
+session_spawn_tokens_input: 5000
+""")
+        config = load_org_config(temp_config_dir)
+        assert config.budget.tier_costs["budget"].input == 0.0005
+        assert config.budget.session_spawn_tokens_input == 5000
 
     def test_optional_templates(self, temp_config_dir):
         """Should handle missing templates file gracefully."""
@@ -232,6 +335,8 @@ providers: {}
 """)
         config = load_org_config(temp_config_dir)
         assert len(config.worker_templates.templates) == 0
+        # Budget should still be present with defaults
+        assert config.budget is not None
 
     def test_missing_directory_raises(self):
         """Should raise FileNotFoundError for missing directory."""
