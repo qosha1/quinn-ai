@@ -131,7 +131,73 @@ CREATE TABLE IF NOT EXISTS message_refs (
     PRIMARY KEY (message_id, ref_type, ref_id),
     FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
 );
+```
 
+## Message Storage: Two Systems, Two Purposes
+
+QuinnAI has two distinct message storage systems serving different purposes:
+
+### 1. quinn.db `messages` Table (Inter-Worker Communication)
+
+**Purpose**: Persistent record of all worker-to-worker communication.
+
+**Characteristics**:
+- Stored in `live/quinn.db`
+- Never deleted (permanent knowledge)
+- Full-text search via FTS5
+- Organized by channels (team, topic, direct)
+- Priority and time-sensitivity attributes
+- Cross-worker visibility
+
+**Use Cases**:
+- Worker asks manager for guidance
+- Team broadcasts announcements
+- Direct messages between workers
+- Searchable institutional knowledge
+
+### 2. pyterm `Transcript` (AI Session Conversations)
+
+**Purpose**: Individual session transcript of AI agent interactions.
+
+**Location**: `shared/pyterm/conversation.py`
+
+**Characteristics**:
+- In-memory during session, persisted per-worker
+- Tracks prompts, responses, tool calls, tool results
+- Turn-based structure (prompt → response exchange)
+- Session-specific (one transcript per worker session)
+- Contains rich metadata (tokens, duration, ask_id, okr_id)
+
+**Use Cases**:
+- What did this worker's AI brain discuss?
+- Replay/debug session interactions
+- Track tool usage patterns
+- Link work to OKRs
+
+### Key Differences
+
+| Aspect | quinn.db messages | pyterm Transcript |
+|--------|-------------------|-------------------|
+| Scope | Org-wide | Per-worker session |
+| Lifetime | Permanent | Session lifetime |
+| Content | Inter-worker comms | AI prompts/responses |
+| Search | FTS5 full-text | In-memory iteration |
+| Schema | Relational | Dataclass/JSON |
+
+### Relationship
+
+These systems are **intentionally separate**:
+
+1. **No Synchronization Needed**: They track different things
+   - messages = what workers say to each other
+   - transcript = what happens inside a worker's "brain"
+
+2. **One-Way References**: A transcript turn can reference a message
+   (e.g., "worker received message X, processed it in turn Y")
+
+3. **Storage Isolation**: Follows principle "shared/ = org lifetime, workers/ = worker lifetime"
+
+```sql
 -- ===================
 -- CONFIG
 -- ===================

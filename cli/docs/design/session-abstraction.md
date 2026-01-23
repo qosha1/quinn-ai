@@ -47,8 +47,35 @@ class SessionState(Enum):
     IDLE = "idle"           # Waiting for input
     STOPPED = "stopped"     # Gracefully shutdown
     CRASHED = "crashed"     # Unexpected termination
+```
 
+### Session State vs Worker Runtime State
 
+**Important**: SessionState and worker runtime_status are the SAME thing at different layers:
+
+| Layer | Location | Values |
+|-------|----------|--------|
+| Session (in-memory) | `SessionInterface._state` | SessionState enum |
+| Worker (database) | `worker_state.runtime_status` | String: starting, running, idle, stopped, crashed |
+
+**Synchronization**: The `SessionStateSync` class (`cli/core/sessions/state_sync.py`) automatically
+synchronizes session state changes to the database. When a session transitions (e.g., IDLE → RUNNING),
+the corresponding worker's `runtime_status` is updated.
+
+**Why both?**
+- **SessionState**: In-memory, used by session implementations for lifecycle management
+- **runtime_status**: Persisted, survives process crashes, enables cross-process visibility (e.g., board UI)
+
+**State machine (identical for both)**:
+```
+STOPPED/CRASHED → STARTING → RUNNING ⇄ IDLE → STOPPED
+                     ↓
+                  CRASHED (on unexpected termination)
+```
+
+**Active sessions**: A worker is considered "awake" when runtime_status is: starting, running, or idle.
+
+```python
 @dataclass(frozen=True)
 class SessionId:
     """Unique session identifier.
