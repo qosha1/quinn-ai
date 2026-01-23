@@ -17,7 +17,6 @@ from .queries import (
     update_org_status,
     create_team,
     create_worker,
-    get_worker,
     create_budget_pool,
     create_budget_allocation,
     create_channel,
@@ -31,7 +30,6 @@ from .worker import Worker
 from shared import (
     ORG_TRANSITIONS,
     InvalidOrgTransition,
-    OrgNotInitialized,
 )
 from shared.enums import OrgStatus
 

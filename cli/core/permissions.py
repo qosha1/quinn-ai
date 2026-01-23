@@ -9,12 +9,9 @@ import json
 from enum import IntEnum
 from functools import wraps
 from typing import Callable, Optional, List
-from dataclasses import dataclass
-from datetime import datetime
 
 from .db import Database
 from .queries import (
-    generate_id,
     get_worker,
     get_channel,
     get_worker_team_memberships,

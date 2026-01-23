@@ -9,7 +9,6 @@ Falls back to hardcoded defaults if config file is missing.
 """
 
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 

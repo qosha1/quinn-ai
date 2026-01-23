@@ -13,7 +13,7 @@ Key components:
 """
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Type, TYPE_CHECKING
 
@@ -37,7 +37,6 @@ from cli.providers.base import (
     RateLimitError,
     ProviderConnectionError,
     ProviderTimeoutError,
-    APIError,
 )
 
 
