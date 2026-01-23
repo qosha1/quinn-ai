@@ -532,7 +532,9 @@ def start_org(
     else:
         cmd.extend(["--provider", provider])
 
-    if skip_config_validation:
+    # claude_code provider uses local Claude CLI auth, doesn't need API keys
+    # from providers.yaml - skip validation to avoid false "API key required" errors
+    if skip_config_validation or provider == "claude_code":
         cmd.append("--skip-config-validation")
 
     try:
