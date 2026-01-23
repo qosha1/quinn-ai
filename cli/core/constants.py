@@ -67,16 +67,16 @@ DEFAULT_WORKER_COST = 50
 DEFAULT_CEO_COST = 100
 """Cost score for CEO workers (highest tier)."""
 
-COST_TIER_BUDGET_MAX = 25
-"""Maximum cost for budget tier."""
+COST_TIER_BUDGET_MAX = 30
+"""Maximum cost for budget tier (0-30)."""
 
-COST_TIER_STANDARD_MAX = 50
-"""Maximum cost for standard tier."""
+COST_TIER_STANDARD_MAX = 60
+"""Maximum cost for standard tier (31-60)."""
 
-COST_TIER_ADVANCED_MAX = 75
-"""Maximum cost for advanced tier."""
+COST_TIER_ADVANCED_MAX = 80
+"""Maximum cost for advanced tier (61-80)."""
 
-# Premium tier is > 75
+# Premium tier is > 80 (81-100)
 
 
 # ===================

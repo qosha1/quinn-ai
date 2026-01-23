@@ -20,6 +20,12 @@ from typing import Optional, Type, TYPE_CHECKING
 if TYPE_CHECKING:
     from cli.core.session import SessionInterface
 
+from cli.core.constants import (
+    COST_TIER_BUDGET_MAX,
+    COST_TIER_STANDARD_MAX,
+    COST_TIER_ADVANCED_MAX,
+)
+
 from cli.providers.base import (
     CostTier,
     ModelInfo,
@@ -127,11 +133,11 @@ def cost_to_tier(cost: int) -> CostTier:
     Returns:
         CostTier enum value
     """
-    if cost <= 30:
+    if cost <= COST_TIER_BUDGET_MAX:
         return CostTier.BUDGET
-    elif cost <= 60:
+    elif cost <= COST_TIER_STANDARD_MAX:
         return CostTier.STANDARD
-    elif cost <= 80:
+    elif cost <= COST_TIER_ADVANCED_MAX:
         return CostTier.ADVANCED
     else:
         return CostTier.PREMIUM
@@ -452,6 +458,38 @@ class ProviderRegistry:
         self._default_provider: Optional[str] = None
         # Configurable thresholds with defaults (copy to avoid mutation)
         self._thresholds: dict[str, int] = dict(DEFAULT_THRESHOLDS)
+        # Authorized providers - empty list means all registered are authorized
+        self._authorized_providers: list[str] = []
+
+    @property
+    def authorized_providers(self) -> list[str]:
+        """Get authorized provider names.
+
+        Returns:
+            List of authorized provider names (empty = all authorized)
+        """
+        return self._authorized_providers
+
+    def set_authorized_providers(self, providers: list[str]) -> None:
+        """Set list of authorized providers.
+
+        Args:
+            providers: List of provider names (empty = all authorized)
+        """
+        self._authorized_providers = list(providers)
+
+    def is_authorized(self, name: str) -> bool:
+        """Check if a provider is authorized.
+
+        Args:
+            name: Provider name to check
+
+        Returns:
+            True if authorized (or no restrictions set)
+        """
+        if not self._authorized_providers:
+            return True
+        return name in self._authorized_providers
 
     @property
     def thresholds(self) -> dict[str, int]:
@@ -581,7 +619,7 @@ class ProviderRegistry:
         """Select best provider and model for a worker.
 
         Derives required capabilities from worker skills and finds the
-        best matching provider and model.
+        best matching provider and model. Only considers authorized providers.
 
         Args:
             cost: Worker cost score (0-100)
@@ -597,8 +635,12 @@ class ProviderRegistry:
         # Derive required capabilities from skills
         required = self._skills_to_capabilities(skills)
 
-        # Try preferred provider first
-        if preferred_provider and preferred_provider in self._providers:
+        # Try preferred provider first (if authorized)
+        if (
+            preferred_provider
+            and preferred_provider in self._providers
+            and self.is_authorized(preferred_provider)
+        ):
             provider = self._providers[preferred_provider]
             try:
                 model = provider.select_model(cost, required)
@@ -606,8 +648,12 @@ class ProviderRegistry:
             except ValueError:
                 pass  # Fall through to other providers
 
-        # Try default provider
-        if self._default_provider and self._default_provider != preferred_provider:
+        # Try default provider (if authorized)
+        if (
+            self._default_provider
+            and self._default_provider != preferred_provider
+            and self.is_authorized(self._default_provider)
+        ):
             provider = self._providers[self._default_provider]
             try:
                 model = provider.select_model(cost, required)
@@ -615,9 +661,11 @@ class ProviderRegistry:
             except ValueError:
                 pass
 
-        # Try all other providers
+        # Try all other authorized providers
         for name, provider in self._providers.items():
             if name == preferred_provider or name == self._default_provider:
+                continue
+            if not self.is_authorized(name):
                 continue
             try:
                 model = provider.select_model(cost, required)
@@ -1016,3 +1064,45 @@ def complete_with_budget(
         "cost": actual_cost,
         "budget_remaining": get_remaining_budget(db, worker_id),
     }
+
+
+def create_registry_from_config(config: "ProvidersConfig") -> ProviderRegistry:
+    """Create and configure a ProviderRegistry from ProvidersConfig.
+
+    Initializes the registry with:
+    - Skill thresholds from config
+    - Authorized providers list from config
+    - Default provider name from config (set after providers are registered)
+
+    Note: Provider instances must be registered separately after creation
+    since concrete Provider implementations are created elsewhere.
+
+    Args:
+        config: Loaded ProvidersConfig from providers.yaml
+
+    Returns:
+        Configured ProviderRegistry ready for provider registration
+
+    Example:
+        config = load_providers_config(config_path)
+        registry = create_registry_from_config(config)
+        registry.register(AnthropicProvider(provider_config))
+        registry.set_default(config.default)  # After registration
+    """
+    # Avoid circular import
+    from cli.core.config import ProvidersConfig
+
+    registry = ProviderRegistry()
+
+    # Set skill thresholds from config
+    registry.set_thresholds(
+        coding=config.thresholds.coding,
+        reasoning=config.thresholds.reasoning,
+        research=config.thresholds.research,
+    )
+
+    # Set authorized providers
+    if config.authorized_providers:
+        registry.set_authorized_providers(config.authorized_providers)
+
+    return registry

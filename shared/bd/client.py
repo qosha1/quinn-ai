@@ -370,10 +370,17 @@ class BdClient:
         for key, value in kwargs.items():
             args.append(f"--{key.replace('_', '-')}={value}")
 
+        # Use --json for structured output instead of fragile string parsing
+        args.append("--json")
+
         try:
             result = self.run(*args)
-            return result.get_created_id()
-        except BdCommandError as e:
+            # Parse JSON response to get the created ID
+            data = result.as_json()
+            if isinstance(data, dict):
+                return data.get("id")
+            return None
+        except (BdCommandError, BdParseError) as e:
             logger.warning("Failed to create issue: %s", e)
             return None
 
