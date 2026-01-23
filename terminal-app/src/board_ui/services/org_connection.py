@@ -49,17 +49,65 @@ class DatabaseNotFound(OrgConnectionError):
         super().__init__(f"Database not found: {db_path}")
 
 
+class DatabaseCorrupt(OrgConnectionError):
+    """Raised when database file is corrupt or malformed."""
+
+    def __init__(self, db_path: Path, original_error: Exception):
+        self.db_path = db_path
+        self.original_error = original_error
+        super().__init__(
+            f"Database is corrupt or malformed at {db_path}: {original_error}"
+        )
+
+
+class DatabaseLocked(OrgConnectionError):
+    """Raised when database is locked by another process."""
+
+    def __init__(self, db_path: Path, original_error: Exception):
+        self.db_path = db_path
+        self.original_error = original_error
+        super().__init__(
+            f"Database is locked at {db_path}. Another process may be using it: {original_error}"
+        )
+
+
 class _Sqlite3Wrapper:
     """Minimal wrapper around sqlite3 to match CLI Database interface.
 
     Used as a fallback when cli.core.db.Database is not available.
     Provides the same interface for fetchone, fetchall, execute, and close.
+
+    Raises:
+        DatabaseCorrupt: If database file is corrupt or malformed
+        DatabaseLocked: If database is locked by another process
+        OrgConnectionError: For other database connection errors
     """
 
     def __init__(self, db_path: Path):
         import sqlite3
-        self._conn = sqlite3.connect(str(db_path), timeout=10.0)
-        self._conn.row_factory = sqlite3.Row
+
+        self._db_path = db_path
+        try:
+            self._conn = sqlite3.connect(str(db_path), timeout=10.0)
+            self._conn.row_factory = sqlite3.Row
+            # Verify database is readable by executing a simple query
+            self._conn.execute("SELECT 1")
+        except sqlite3.DatabaseError as e:
+            error_msg = str(e).lower()
+            if "corrupt" in error_msg or "malformed" in error_msg:
+                raise DatabaseCorrupt(db_path, e)
+            raise OrgConnectionError(f"Database error at {db_path}: {e}")
+        except sqlite3.OperationalError as e:
+            error_msg = str(e).lower()
+            if "locked" in error_msg:
+                raise DatabaseLocked(db_path, e)
+            raise OrgConnectionError(f"Cannot open database at {db_path}: {e}")
+        except PermissionError as e:
+            raise OrgConnectionError(
+                f"Permission denied accessing database at {db_path}: {e}"
+            )
+        except Exception as e:
+            raise OrgConnectionError(f"Failed to connect to database at {db_path}: {e}")
 
     @property
     def connection(self):
@@ -138,24 +186,53 @@ class QuinnAIOrgConnection(OrgConnection):
 
         Raises:
             DatabaseNotFound: If database doesn't exist
+            DatabaseCorrupt: If database file is corrupt or malformed
+            DatabaseLocked: If database is locked by another process
+            OrgConnectionError: For other database connection errors
         """
+        import sqlite3
+
         db_path = self._get_db_path()
         if not db_path.exists():
             raise DatabaseNotFound(db_path)
 
         # Use provided factory or import Database from CLI core
-        if self._database_factory:
-            self._db = self._database_factory(db_path)
-        else:
-            # Try to import Database from CLI core (thread-safe with WAL mode)
-            # Fall back to raw sqlite3 if CLI module not available
-            try:
-                from cli.core.db import Database
-                self._db = Database(db_path)
-            except ImportError:
-                # CLI module not available - use sqlite3 directly
-                import sqlite3
-                self._db = _Sqlite3Wrapper(db_path)
+        try:
+            if self._database_factory:
+                self._db = self._database_factory(db_path)
+            else:
+                # Try to import Database from CLI core (thread-safe with WAL mode)
+                # Fall back to raw sqlite3 if CLI module not available
+                try:
+                    from cli.core.db import Database
+
+                    self._db = Database(db_path)
+                except ImportError:
+                    # CLI module not available - use sqlite3 directly
+                    # _Sqlite3Wrapper handles its own error conversion
+                    self._db = _Sqlite3Wrapper(db_path)
+        except (DatabaseCorrupt, DatabaseLocked, OrgConnectionError):
+            # Re-raise our custom exceptions as-is
+            raise
+        except sqlite3.DatabaseError as e:
+            error_msg = str(e).lower()
+            if "corrupt" in error_msg or "malformed" in error_msg:
+                raise DatabaseCorrupt(db_path, e)
+            raise OrgConnectionError(f"Database error at {db_path}: {e}")
+        except sqlite3.OperationalError as e:
+            error_msg = str(e).lower()
+            if "locked" in error_msg:
+                raise DatabaseLocked(db_path, e)
+            raise OrgConnectionError(f"Cannot open database at {db_path}: {e}")
+        except PermissionError as e:
+            raise OrgConnectionError(
+                f"Permission denied accessing database at {db_path}: {e}"
+            )
+        except Exception as e:
+            # Catch any other unexpected errors
+            if isinstance(e, OrgConnectionError):
+                raise
+            raise OrgConnectionError(f"Failed to connect to database at {db_path}: {e}")
 
         self._connected = True
 

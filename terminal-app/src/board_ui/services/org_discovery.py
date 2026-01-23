@@ -173,6 +173,42 @@ def _get_db_path(org_path: Path) -> Path:
     return org_path / "live" / "quinn.db"
 
 
+def validate_org_path(org_path: Path) -> tuple[bool, str]:
+    """Validate that org_path exists and looks like a valid org.
+
+    A valid org has either:
+    - live/quinn.db (initialized org)
+    - config/ directory (can be initialized)
+
+    Args:
+        org_path: Path to validate
+
+    Returns:
+        Tuple of (is_valid, error_message).
+        If valid: (True, "")
+        If invalid: (False, "helpful error message")
+    """
+    # Check that path exists
+    if not org_path.exists():
+        return False, f"Org path does not exist: {org_path}"
+
+    # Check that it's a directory
+    if not org_path.is_dir():
+        return False, f"Org path is not a directory: {org_path}"
+
+    # Check for valid org indicators
+    db_path = _get_db_path(org_path)
+    config_path = org_path / "config"
+
+    if not db_path.exists() and not config_path.exists():
+        return False, (
+            f"Not a valid org directory: {org_path}\n"
+            "Expected either live/quinn.db or config/ directory."
+        )
+
+    return True, ""
+
+
 def _read_org_status(db_path: Path) -> tuple[str, Optional[str], int, int]:
     """Read org status from quinn.db.
 
@@ -471,7 +507,16 @@ def start_org(
     Returns:
         StartResult with success status and message
     """
-    # Check CLI availability first
+    # Validate org path first
+    is_valid, validation_error = validate_org_path(org_path)
+    if not is_valid:
+        return StartResult(
+            success=False,
+            message=validation_error,
+            returncode=-1,
+        )
+
+    # Check CLI availability
     cli_available, cli_error = check_cli_available()
     if not cli_available:
         return StartResult(
@@ -548,7 +593,16 @@ def stop_org(
     Returns:
         StopResult with success status and message
     """
-    # Check CLI availability first
+    # Validate org path first
+    is_valid, validation_error = validate_org_path(org_path)
+    if not is_valid:
+        return StopResult(
+            success=False,
+            message=validation_error,
+            returncode=-1,
+        )
+
+    # Check CLI availability
     cli_available, cli_error = check_cli_available()
     if not cli_available:
         return StopResult(

@@ -22,6 +22,7 @@ from board_ui.services.org_discovery import (
     stop_org,
     get_org_status,
     refresh_org_info,
+    validate_org_path,
 )
 
 
@@ -282,3 +283,90 @@ class TestOrgDiscovery:
 
             assert result.success is False
             assert result.returncode == 1
+
+
+class TestValidateOrgPath:
+    """Tests for org path validation."""
+
+    def test_validate_org_path_with_db(self, temp_org_dir):
+        """Should validate org with live/quinn.db."""
+        is_valid, error = validate_org_path(temp_org_dir)
+
+        assert is_valid is True
+        assert error == ""
+
+    def test_validate_org_path_with_config(self, temp_config_dir):
+        """Should validate org with config/ directory."""
+        is_valid, error = validate_org_path(temp_config_dir)
+
+        assert is_valid is True
+        assert error == ""
+
+    def test_validate_org_path_nonexistent(self):
+        """Should fail validation for nonexistent path."""
+        is_valid, error = validate_org_path(Path("/nonexistent/org/path"))
+
+        assert is_valid is False
+        assert "does not exist" in error
+
+    def test_validate_org_path_not_directory(self):
+        """Should fail validation when path is a file, not directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "not-a-dir.txt"
+            file_path.write_text("just a file")
+
+            is_valid, error = validate_org_path(file_path)
+
+            assert is_valid is False
+            assert "not a directory" in error
+
+    def test_validate_org_path_missing_indicators(self):
+        """Should fail validation when missing org indicators."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            empty_dir = Path(tmpdir) / "empty-dir"
+            empty_dir.mkdir()
+
+            is_valid, error = validate_org_path(empty_dir)
+
+            assert is_valid is False
+            assert "Not a valid org directory" in error
+            assert "live/quinn.db" in error
+            assert "config/" in error
+
+    def test_start_org_validates_path_first(self):
+        """start_org should fail early with invalid path."""
+        result = start_org(Path("/nonexistent/org/path"))
+
+        assert result.success is False
+        assert "does not exist" in result.message
+        assert result.returncode == -1
+
+    def test_stop_org_validates_path_first(self):
+        """stop_org should fail early with invalid path."""
+        result = stop_org(Path("/nonexistent/org/path"))
+
+        assert result.success is False
+        assert "does not exist" in result.message
+        assert result.returncode == -1
+
+    def test_start_org_validates_not_empty_dir(self):
+        """start_org should fail for empty directory without org indicators."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            empty_dir = Path(tmpdir) / "empty-dir"
+            empty_dir.mkdir()
+
+            result = start_org(empty_dir)
+
+            assert result.success is False
+            assert "Not a valid org directory" in result.message
+
+    def test_stop_org_validates_not_empty_dir(self):
+        """stop_org should fail for empty directory without org indicators."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            empty_dir = Path(tmpdir) / "empty-dir"
+            empty_dir.mkdir()
+
+            result = stop_org(empty_dir)
+
+            assert result.success is False
+            assert "Not a valid org directory" in result.message
