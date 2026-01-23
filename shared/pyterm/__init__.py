@@ -87,6 +87,16 @@ from shared.pyterm.agent_session import (
     AgentSession,
     AgentSessionConfig,
 )
+from shared.pyterm.worker_bridge import (
+    WorkerBridge,
+    WorkerBridgeError,
+    WorkerNotFoundError,
+    PermissionDeniedError,
+    WorkItem,
+    Notification,
+    WorkerStatus,
+    SendResult,
+)
 
 __all__ = [
     # Configuration
@@ -170,4 +180,13 @@ __all__ = [
     # AgentSession
     "AgentSession",
     "AgentSessionConfig",
+    # WorkerBridge
+    "WorkerBridge",
+    "WorkerBridgeError",
+    "WorkerNotFoundError",
+    "PermissionDeniedError",
+    "WorkItem",
+    "Notification",
+    "WorkerStatus",
+    "SendResult",
 ]
