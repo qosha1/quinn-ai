@@ -31,6 +31,7 @@ from .views.no_org import (
     RefreshOrgList,
 )
 from .views.org_wizard import OrgInitWizard, OrgConfig
+from .views.org_tabs import OrgTabBar
 from .services import (
     QuinnAIOrgConnection,
     OrgConnectionError,
@@ -58,6 +59,8 @@ class BoardApp(App):
     - See cascading OKRs and progress
     - Jump into worker sessions for real-time meetings
     - Respond to escalated messages asynchronously
+
+    Multi-org support: Maintains connections to multiple orgs with tab switching.
     """
 
     TITLE = "QuinnAI Board"
@@ -168,12 +171,28 @@ class BoardApp(App):
         """
         super().__init__()
         self.config = config
-        self._org_connection: Optional[QuinnAIOrgConnection] = None
-        self._is_connected = False
+        # Multi-org support: store connections by path
+        self._org_connections: dict[Path, QuinnAIOrgConnection] = {}
+        self._active_org_path: Optional[Path] = None
+
+    @property
+    def org_connection(self) -> Optional[QuinnAIOrgConnection]:
+        """Get the current org connection for backward compatibility."""
+        if self._active_org_path:
+            return self._org_connections.get(self._active_org_path)
+        return None
+
+    @property
+    def _is_connected(self) -> bool:
+        """Check if connected to any org."""
+        return self._active_org_path is not None
 
     def compose(self) -> ComposeResult:
         """Compose the UI."""
         yield Header()
+
+        # Org tab bar for multi-org switching (hidden until connected)
+        yield OrgTabBar(id="org-tab-bar", classes="hidden")
 
         # Start with no-org view, will be replaced when connected
         yield NoOrgView(id="no-org-view")
@@ -197,11 +216,6 @@ class BoardApp(App):
 
         yield Footer()
 
-    @property
-    def org_connection(self) -> Optional[QuinnAIOrgConnection]:
-        """Get the current org connection if connected."""
-        return self._org_connection if self._is_connected else None
-
     def action_switch_tab(self, tab_id: str) -> None:
         """Switch to a specific tab."""
         if not self._is_connected:
@@ -209,11 +223,11 @@ class BoardApp(App):
         tabs = self.query_one("#org-tabs", TabbedContent)
         tabs.active = tab_id
 
-    def action_refresh(self) -> None:
+    async def action_refresh(self) -> None:
         """Refresh all views."""
         if self._is_connected:
             self.notify("Refreshing...")
-            # Views will implement their own refresh logic
+            await self._refresh_all_views()
         else:
             # Refresh org list
             self._refresh_org_list()
@@ -247,16 +261,25 @@ class BoardApp(App):
             org_path: Path to the org folder
         """
         try:
-            self._org_connection = QuinnAIOrgConnection(org_path)
-            self._is_connected = True
+            # Create connection and store in multi-org dict
+            connection = QuinnAIOrgConnection(org_path)
+            self._org_connections[org_path] = connection
+            self._active_org_path = org_path
 
-            # Hide no-org view, show tabs
+            # Hide no-org view, show tabs and org tab bar
             self.query_one("#no-org-view").add_class("hidden")
             self.query_one("#org-tabs").remove_class("hidden")
+            self.query_one("#org-tab-bar").remove_class("hidden")
 
-            org_info = self._org_connection.get_org_info()
+            org_info = connection.get_org_info()
             self.notify(f"Connected to {org_info.name}")
             self.sub_title = f"Connected: {org_info.name}"
+
+            # Update org tab bar
+            self._update_org_tab_bar()
+
+            # Refresh all views with new connection data
+            await self._refresh_all_views()
 
         except OrgNotFound:
             self.notify(f"Org not found at {org_path}", severity="error")
@@ -265,18 +288,69 @@ class BoardApp(App):
         except OrgConnectionError as e:
             self.notify(f"Connection failed: {e}", severity="error")
 
-    def _disconnect_from_org(self) -> None:
-        """Disconnect from the current org."""
-        if self._org_connection:
-            self._org_connection.close()
-            self._org_connection = None
-        self._is_connected = False
+    async def _refresh_all_views(self) -> None:
+        """Refresh all org views after connection or org switch."""
+        if not self._is_connected:
+            return
 
-        # Show no-org view, hide tabs
-        self.query_one("#no-org-view").remove_class("hidden")
-        self.query_one("#org-tabs").add_class("hidden")
+        dashboard = self.query_one("#dashboard-view", DashboardView)
+        await dashboard.refresh_data()
 
-        self.sub_title = "Organization Oversight"
+        team = self.query_one("#team-view", TeamView)
+        await team.refresh_workers()
+
+        okrs = self.query_one("#okrs-view", OKRsView)
+        okrs.refresh_okrs()
+
+        messages = self.query_one("#messages-view", MessagesView)
+        await messages.refresh_messages()
+
+    def _update_org_tab_bar(self) -> None:
+        """Update the org tab bar with current connections."""
+        tab_bar = self.query_one("#org-tab-bar", OrgTabBar)
+
+        # Build org dict: path -> name
+        orgs: dict[Path, str] = {}
+        for path, conn in self._org_connections.items():
+            try:
+                info = conn.get_org_info()
+                orgs[path] = info.name
+            except Exception:
+                orgs[path] = path.name  # Fallback to folder name
+
+        tab_bar.update_orgs(orgs, self._active_org_path)
+
+    def _disconnect_from_org(self, org_path: Optional[Path] = None) -> None:
+        """Disconnect from an org (or current org if not specified).
+
+        Args:
+            org_path: Path to disconnect. If None, disconnects active org.
+        """
+        path_to_disconnect = org_path or self._active_org_path
+        if not path_to_disconnect:
+            return
+
+        # Close and remove connection
+        if path_to_disconnect in self._org_connections:
+            self._org_connections[path_to_disconnect].close()
+            del self._org_connections[path_to_disconnect]
+
+        # If disconnecting active org, switch to another or go to no-org view
+        if path_to_disconnect == self._active_org_path:
+            if self._org_connections:
+                # Switch to another connected org
+                self._active_org_path = next(iter(self._org_connections.keys()))
+                org_info = self.org_connection.get_org_info()
+                self.sub_title = f"Connected: {org_info.name}"
+                self._update_org_tab_bar()
+            else:
+                # No more orgs connected
+                self._active_org_path = None
+                self.query_one("#no-org-view").remove_class("hidden")
+                self.query_one("#org-tabs").add_class("hidden")
+                self.query_one("#org-tab-bar").add_class("hidden")
+                self.sub_title = "Organization Oversight"
+
         self.notify("Disconnected from org")
 
     def _refresh_org_list(self) -> None:
@@ -414,3 +488,38 @@ class BoardApp(App):
     async def on_refresh_org_list(self, message: RefreshOrgList) -> None:
         """Handle request to refresh the org list."""
         self._refresh_org_list()
+
+    # Message handlers for OrgTabBar
+    async def on_org_tab_bar_org_selected(self, message: OrgTabBar.OrgSelected) -> None:
+        """Handle org tab selection - switch to that org."""
+        if message.org_path == self._active_org_path:
+            return  # Already active
+
+        self._active_org_path = message.org_path
+        self._update_org_tab_bar()
+
+        # Update subtitle
+        if self.org_connection:
+            org_info = self.org_connection.get_org_info()
+            self.sub_title = f"Connected: {org_info.name}"
+
+        # Refresh views with new org's data
+        await self._refresh_all_views()
+        self.notify(f"Switched to {self.sub_title.replace('Connected: ', '')}")
+
+    async def on_org_tab_bar_add_org_requested(
+        self, message: OrgTabBar.AddOrgRequested
+    ) -> None:
+        """Handle request to add a new org connection."""
+        # Show the no-org view for org selection (keeping tabs visible)
+        no_org_view = self.query_one("#no-org-view", NoOrgView)
+        no_org_view.remove_class("hidden")
+
+        # Refresh the org list to show available orgs
+        self._refresh_org_list()
+
+    async def on_org_tab_bar_close_org_requested(
+        self, message: OrgTabBar.CloseOrgRequested
+    ) -> None:
+        """Handle request to disconnect from an org."""
+        self._disconnect_from_org(message.org_path)

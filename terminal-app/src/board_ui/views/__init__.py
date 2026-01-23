@@ -10,6 +10,7 @@ from .team import TeamView
 from .messages import MessagesView
 from .no_org import NoOrgView, ConnectToOrg, StartOrg, ShowNewOrgWizard, RefreshOrgList
 from .org_wizard import OrgInitWizard, OrgConfig
+from .org_tabs import OrgTabBar
 
 __all__ = [
     "DashboardView",
@@ -23,4 +24,5 @@ __all__ = [
     "RefreshOrgList",
     "OrgInitWizard",
     "OrgConfig",
+    "OrgTabBar",
 ]
