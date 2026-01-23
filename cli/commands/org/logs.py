@@ -15,6 +15,7 @@ from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
 from cli.core.queries import get_worker_by_name
 from cli.core.constants import TMUX_SESSION_PREFIX
+from shared.exceptions import WorkerNotFound
 
 
 def get_tmux_session_name(worker_id: str) -> str:
@@ -140,9 +141,10 @@ def logs_cmd(ctx: Context, worker: str, lines: Optional[int], follow: bool):
         # Use Worker class to validate and check session state
         try:
             w = Worker.get(db, worker_id)
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, WorkerNotFound):
             # ValueError: invalid worker ID format
             # KeyError: worker not found in database
+            # WorkerNotFound: worker ID doesn't exist
             raise click.ClickException(
                 f"Worker '{worker}' not found.\n"
                 "Use 'qn org status' to see available workers."
