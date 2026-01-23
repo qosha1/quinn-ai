@@ -111,7 +111,7 @@ class QuinnAIOrgConnection(OrgConnection):
         else:
             # Import Database from CLI core
             # This creates a thread-safe connection with WAL mode
-            from quinnai.cli.core.db import Database
+            from cli.core.db import Database
             self._db = Database(db_path)
 
         self._connected = True
@@ -766,7 +766,7 @@ class QuinnAIOrgConnection(OrgConnection):
 
         try:
             # Import and use the Org class from CLI
-            from quinnai.cli.core.org import Org
+            from cli.core.org import Org
 
             org = Org.load(self._db)
 
@@ -792,7 +792,7 @@ class QuinnAIOrgConnection(OrgConnection):
 
         try:
             # Import and use the Org class from CLI
-            from quinnai.cli.core.org import Org
+            from cli.core.org import Org
 
             org = Org.load(self._db)
 
