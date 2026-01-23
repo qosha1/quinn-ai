@@ -7,10 +7,12 @@ help:
 	@echo "QuinnAI - Development Commands"
 	@echo ""
 	@echo "Setup & Development:"
-	@echo "  make setup      - Run development environment setup"
-	@echo "  make test       - Run pytest test suite"
-	@echo "  make lint       - Run ruff and black linters"
-	@echo "  make verify     - Verify installation is working"
+	@echo "  make setup              - Run development environment setup"
+	@echo "  make test               - Run CLI test suite"
+	@echo "  make test-terminal-app  - Run terminal-app test suite"
+	@echo "  make test-all           - Run ALL test suites (CLI + terminal-app)"
+	@echo "  make lint               - Run ruff and black linters"
+	@echo "  make verify             - Verify installation is working"
 	@echo ""
 	@echo "Running QuinnAI:"
 	@echo "  make board      - Launch the board terminal UI"
@@ -31,7 +33,27 @@ setup:
 
 # Run tests
 test:
-	pytest
+	.venv/bin/pytest
+
+# Run terminal-app tests (separate due to sys.path requirements)
+test-terminal-app:
+	cd terminal-app && ../.venv/bin/pytest
+
+# Run all tests (CLI + terminal-app)
+test-all:
+	@echo "Running CLI tests..."
+	@.venv/bin/pytest; CLI_EXIT=$$?; \
+	echo ""; \
+	echo "Running terminal-app tests..."; \
+	cd terminal-app && ../.venv/bin/pytest; TERM_EXIT=$$?; \
+	echo ""; \
+	if [ $$CLI_EXIT -eq 0 ] && [ $$TERM_EXIT -eq 0 ]; then \
+		echo "✓ All test suites passed"; \
+		exit 0; \
+	else \
+		echo "✗ Some tests failed (CLI exit: $$CLI_EXIT, terminal-app exit: $$TERM_EXIT)"; \
+		exit 1; \
+	fi
 
 # Launch board UI
 board:
