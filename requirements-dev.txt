@@ -3,3 +3,6 @@
 
 # Install CLI package in editable mode
 -e ./cli[dev]
+
+# Test framework
+systemeval>=0.3.0
