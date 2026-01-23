@@ -86,6 +86,7 @@ class OrgTabBar(Widget):
         super().__init__(**kwargs)
         self._orgs: dict[Path, str] = {}  # path -> org name
         self._active_path: Optional[Path] = None
+        self._tab_counter = 0  # Counter for unique tab IDs
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="org-tabs-container"):
@@ -110,18 +111,22 @@ class OrgTabBar(Widget):
         """Rebuild the tab buttons."""
         container = self.query_one("#org-tabs-container", Horizontal)
 
-        # Remove all existing org tabs (keep add button)
+        # Get the add button (always keep it)
+        add_btn = self.query_one("#add-org-btn", Button)
+
+        # Remove all org tabs (keep add button)
         for child in list(container.children):
             if child.id != "add-org-btn":
                 child.remove()
 
-        # Add tabs for each org
-        add_btn = self.query_one("#add-org-btn", Button)
+        # Add tabs for each org (before the add button)
         for path, name in self._orgs.items():
             is_active = path == self._active_path
+            # Use counter for unique ID each time (avoid duplicate ID errors)
+            self._tab_counter += 1
             tab = Button(
                 f"{name} ×",
-                id=f"org-tab-{hash(path)}",
+                id=f"org-tab-{self._tab_counter}",
                 classes=f"org-tab {'org-tab-active' if is_active else 'org-tab-inactive'}",
             )
             tab._org_path = path  # Store path on button
