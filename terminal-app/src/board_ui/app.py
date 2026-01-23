@@ -327,63 +327,122 @@ class BoardApp(App):
         no_org_view.remove_class("hidden")
 
     async def _create_org_from_config(self, config: OrgConfig) -> None:
-        """Create an org from wizard configuration."""
-        import subprocess
+        """Create an org from wizard configuration.
+
+        This performs full org initialization:
+        1. Create folder structure (config/, org-chart/, live/, storage/)
+        2. Write config files (providers.yaml, etc.)
+        3. Initialize database with schema
+        4. Create CEO worker
+        5. Generate org-chart
+        """
         import json
+        import yaml
 
         try:
-            # Create the org directory
-            if config.path:
-                config.path.mkdir(parents=True, exist_ok=True)
+            if not config.path:
+                raise ValueError("Org path is required")
 
-                # Create config directory
-                config_dir = config.path / "config"
-                config_dir.mkdir(exist_ok=True)
+            org_path = config.path
 
-                # Write providers.yaml
-                providers_content = "# AI Service Providers\n"
-                providers_content += "default: claude_code\n\n"
-                providers_content += "providers:\n"
-                for provider in config.providers:
-                    if provider.enabled:
-                        providers_content += f"  {provider.id}:\n"
-                        providers_content += f"    enabled: true\n"
-                        if provider.api_key:
-                            providers_content += f"    api_key: {provider.api_key}\n"
+            # 1. Create folder structure
+            (org_path / "config").mkdir(parents=True, exist_ok=True)
+            (org_path / "org-chart").mkdir(parents=True, exist_ok=True)
+            (org_path / "live").mkdir(parents=True, exist_ok=True)
+            (org_path / "live" / "workers").mkdir(exist_ok=True)
+            (org_path / "storage" / "shared").mkdir(parents=True, exist_ok=True)
+            (org_path / "storage" / "workers").mkdir(parents=True, exist_ok=True)
 
-                (config_dir / "providers.yaml").write_text(providers_content)
+            # 2. Write config files
+            config_dir = org_path / "config"
 
-                # Write initial OKRs if provided
-                if config.objectives:
-                    okrs_data = []
-                    for obj in config.objectives:
-                        okr = {
-                            "title": obj.title,
-                            "key_results": [
-                                {
-                                    "metric": kr.metric,
-                                    "target": kr.target,
-                                    "unit": kr.unit,
-                                }
-                                for kr in obj.key_results
-                            ],
+            # Write providers.yaml
+            providers_content = "# AI Service Providers\n"
+            providers_content += "default: claude_code\n\n"
+            providers_content += "providers:\n"
+            for provider in config.providers:
+                if provider.enabled:
+                    providers_content += f"  {provider.id}:\n"
+                    providers_content += f"    enabled: true\n"
+                    if provider.api_key:
+                        providers_content += f"    api_key: {provider.api_key}\n"
+            (config_dir / "providers.yaml").write_text(providers_content)
+
+            # Write initial OKRs if provided
+            if config.objectives:
+                okrs_data = []
+                for obj in config.objectives:
+                    okr = {
+                        "title": obj.title,
+                        "key_results": [
+                            {
+                                "metric": kr.metric,
+                                "target": kr.target,
+                                "unit": kr.unit,
+                            }
+                            for kr in obj.key_results
+                        ],
+                    }
+                    okrs_data.append(okr)
+                (config_dir / "initial_okrs.json").write_text(
+                    json.dumps(okrs_data, indent=2)
+                )
+
+            # Write CEO briefing if provided
+            if config.ceo_briefing:
+                briefing_md = config.ceo_briefing.to_markdown()
+                (config_dir / "ceo_briefing.md").write_text(briefing_md)
+
+            # 3. Initialize database
+            from cli.core.db import init_database, get_org_db_path
+            from cli.core.org import Org
+
+            db_path = get_org_db_path(org_path)
+            db = init_database(db_path)
+
+            try:
+                # 4. Create CEO worker
+                org = Org(db)
+                ceo = org.init("CEO", "CEO")
+
+                # 5. Create org-chart
+                org_chart = {
+                    "version": "1.0",
+                    "workers": {
+                        ceo.id: {
+                            "name": ceo.name,
+                            "role": ceo.role,
+                            "lifecycle": ceo.lifecycle_status,
+                            "manager": None,
+                            "reports": [],
                         }
-                        okrs_data.append(okr)
-                    (config_dir / "initial_okrs.json").write_text(
-                        json.dumps(okrs_data, indent=2)
-                    )
+                    },
+                    "hierarchy": {
+                        "root": ceo.id,
+                    }
+                }
+                chart_path = org_path / "org-chart" / "current.yaml"
+                with open(chart_path, "w") as f:
+                    yaml.dump(org_chart, f, default_flow_style=False, sort_keys=False)
 
-                # Write CEO briefing if provided
-                if config.ceo_briefing:
-                    briefing_md = config.ceo_briefing.to_markdown()
-                    (config_dir / "ceo_briefing.md").write_text(briefing_md)
+                self.notify(
+                    f"Org '{config.name}' initialized at {org_path}",
+                    severity="information"
+                )
 
-                self.notify(f"Org '{config.name}' created at {config.path}", severity="information")
+            finally:
+                db.close()
 
-                # Hide wizard and refresh org list
-                wizard = self.query_one("#org-wizard", OrgInitWizard)
-                wizard.add_class("hidden")
-                self._refresh_org_list()
+            # Hide wizard and show no-org view with new org
+            wizard = self.query_one("#org-wizard", OrgInitWizard)
+            wizard.add_class("hidden")
+
+            # Refresh to show the new org, then auto-connect
+            self._refresh_org_list()
+
+            # Don't auto-start - user can click "Start" when ready
+            no_org_view = self.query_one("#no-org-view", NoOrgView)
+            no_org_view.remove_class("hidden")
 
         except Exception as e:
             self.notify(f"Failed to create org: {e}", severity="error")
