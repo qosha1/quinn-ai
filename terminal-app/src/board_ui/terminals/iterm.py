@@ -5,6 +5,7 @@ Uses AppleScript to control iTerm2 on macOS.
 """
 
 import platform
+import shlex
 import shutil
 import subprocess
 import uuid
@@ -13,6 +14,18 @@ from typing import Optional
 
 from ..interfaces.terminal import TerminalProvider, TerminalType, WindowHandle
 from .registry import register_provider
+
+
+def _escape_applescript(text: str) -> str:
+    """Escape a string for safe use in AppleScript.
+
+    Escapes backslashes first, then quotes to prevent injection.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+# Timeout for subprocess operations (in seconds)
+SUBPROCESS_TIMEOUT = 5
 
 
 class ITermTerminal(TerminalProvider):
@@ -45,9 +58,10 @@ class ITermTerminal(TerminalProvider):
                 ["osascript", "-e", script],
                 check=True,
                 capture_output=True,
+                timeout=SUBPROCESS_TIMEOUT,
             )
             return True
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return False
 
     def open_window(
@@ -59,10 +73,15 @@ class ITermTerminal(TerminalProvider):
         """Open a new iTerm2 window running the command."""
         window_id = str(uuid.uuid4())[:8]
 
-        # Build the command with optional cd
-        full_command = command
+        # Build the command with optional cd (use shlex.quote for shell safety)
         if working_directory:
-            full_command = f"cd {working_directory} && {command}"
+            full_command = f"cd {shlex.quote(str(working_directory))} && {command}"
+        else:
+            full_command = command
+
+        # Escape for AppleScript injection safety
+        escaped_title = _escape_applescript(title)
+        escaped_cmd = _escape_applescript(full_command)
 
         # AppleScript to create new window with command
         script = f'''
@@ -70,8 +89,8 @@ class ITermTerminal(TerminalProvider):
             activate
             set newWindow to (create window with default profile)
             tell current session of newWindow
-                set name to "{title}"
-                write text "{full_command}"
+                set name to "{escaped_title}"
+                write text "{escaped_cmd}"
             end tell
         end tell
         '''
@@ -92,15 +111,20 @@ class ITermTerminal(TerminalProvider):
         """Open an iTerm2 window attached to a tmux session."""
         window_id = str(uuid.uuid4())[:8]
 
-        tmux_cmd = f"tmux attach-session -t {session_name}"
+        # Use shlex.quote to prevent shell injection in session name
+        tmux_cmd = f"tmux attach-session -t {shlex.quote(session_name)}"
+
+        # Escape for AppleScript injection safety
+        escaped_title = _escape_applescript(title)
+        escaped_cmd = _escape_applescript(tmux_cmd)
 
         script = f'''
         tell application "iTerm2"
             activate
             set newWindow to (create window with default profile)
             tell current session of newWindow
-                set name to "{title}"
-                write text "{tmux_cmd}"
+                set name to "{escaped_title}"
+                write text "{escaped_cmd}"
             end tell
         end tell
         '''

@@ -4,6 +4,7 @@ TmuxSession - Session implementation using tmux.
 Uses subprocess calls to tmux for session management.
 """
 
+import logging
 import subprocess
 import threading
 import time
@@ -17,6 +18,11 @@ from shared.pyterm.protocols import (
     SessionState,
 )
 from shared.pyterm.config import PytermConfig
+
+logger = logging.getLogger(__name__)
+
+# Timeout for tmux subprocess operations (in seconds)
+TMUX_TIMEOUT = 5
 
 
 class TmuxSession:
@@ -60,12 +66,16 @@ class TmuxSession:
         Returns:
             True if session exists
         """
-        result = subprocess.run(
-            ["tmux", "has-session", "-t", session_name],
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode == 0
+        try:
+            result = subprocess.run(
+                ["tmux", "has-session", "-t", session_name],
+                capture_output=True,
+                text=True,
+                timeout=TMUX_TIMEOUT,
+            )
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            return False
 
     @classmethod
     def connect(cls, session_name: str, config: PytermConfig | None = None) -> "TmuxSession":
@@ -96,10 +106,11 @@ class TmuxSession:
                 ["tmux", "display-message", "-t", session_name, "-p", "#{pane_pid}"],
                 capture_output=True,
                 text=True,
+                timeout=TMUX_TIMEOUT,
             )
             if result.returncode == 0 and result.stdout.strip():
                 session._pid = int(result.stdout.strip())
-        except (ValueError, subprocess.SubprocessError):
+        except (ValueError, subprocess.SubprocessError, subprocess.TimeoutExpired):
             pass  # PID extraction is optional
 
         return session
@@ -116,12 +127,16 @@ class TmuxSession:
         Returns:
             Current pane content, or empty string if capture fails
         """
-        result = subprocess.run(
-            ["tmux", "capture-pane", "-t", session_name, "-p"],
-            capture_output=True,
-            text=True,
-        )
-        return result.stdout if result.returncode == 0 else ""
+        try:
+            result = subprocess.run(
+                ["tmux", "capture-pane", "-t", session_name, "-p"],
+                capture_output=True,
+                text=True,
+                timeout=TMUX_TIMEOUT,
+            )
+            return result.stdout if result.returncode == 0 else ""
+        except subprocess.TimeoutExpired:
+            return ""
 
     @classmethod
     def attach(cls, session_name: str) -> None:
@@ -157,9 +172,11 @@ class TmuxSession:
                 cb(old_state, new_state)
 
     def _run_tmux(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-        """Run a tmux command."""
+        """Run a tmux command with timeout."""
         cmd = ["tmux"] + list(args)
-        return subprocess.run(cmd, capture_output=True, text=True, check=check)
+        return subprocess.run(
+            cmd, capture_output=True, text=True, check=check, timeout=TMUX_TIMEOUT
+        )
 
     def _session_exists(self) -> bool:
         """Check if tmux session exists."""
@@ -318,18 +335,27 @@ class TmuxSession:
                     output = self.extract()
                     if output.text != last_output:
                         last_output = output.text
-                        for cb in self._output_callbacks:
-                            cb(output)
-                except Exception:
-                    pass
+                        # Copy callbacks to avoid modification during iteration
+                        callbacks = list(self._output_callbacks)
+                        for cb in callbacks:
+                            try:
+                                cb(output)
+                            except Exception as e:
+                                logger.warning(f"Output callback failed: {e}")
+                except Exception as e:
+                    logger.debug(f"Poll loop error: {e}")
                 time.sleep(poll_interval)
 
         self._polling_thread = threading.Thread(target=poll_loop, daemon=True)
         self._polling_thread.start()
 
     def stop_polling(self) -> None:
-        """Stop polling for output."""
+        """Stop polling for output and wait for thread to exit."""
         self._stop_polling.set()
+        if self._polling_thread and self._polling_thread.is_alive():
+            self._polling_thread.join(timeout=2.0)
+            if self._polling_thread.is_alive():
+                logger.warning("Polling thread did not exit cleanly")
 
 
 # Verify it implements the protocol

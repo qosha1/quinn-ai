@@ -5,6 +5,7 @@ Uses AppleScript to control the built-in Terminal app.
 """
 
 import platform
+import shlex
 import subprocess
 import uuid
 from pathlib import Path
@@ -12,6 +13,18 @@ from typing import Optional
 
 from ..interfaces.terminal import TerminalProvider, TerminalType, WindowHandle
 from .registry import register_provider
+
+
+def _escape_applescript(text: str) -> str:
+    """Escape a string for safe use in AppleScript.
+
+    Escapes backslashes first, then quotes to prevent injection.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+# Timeout for subprocess operations (in seconds)
+SUBPROCESS_TIMEOUT = 5
 
 
 class MacOSTerminal(TerminalProvider):
@@ -35,9 +48,10 @@ class MacOSTerminal(TerminalProvider):
                 ["osascript", "-e", script],
                 check=True,
                 capture_output=True,
+                timeout=SUBPROCESS_TIMEOUT,
             )
             return True
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return False
 
     def open_window(
@@ -49,14 +63,15 @@ class MacOSTerminal(TerminalProvider):
         """Open a new Terminal.app window running the command."""
         window_id = str(uuid.uuid4())[:8]
 
-        # Build the command with optional cd
-        full_command = command
+        # Build the command with optional cd (use shlex.quote for shell safety)
         if working_directory:
-            full_command = f"cd {working_directory} && {command}"
+            full_command = f"cd {shlex.quote(str(working_directory))} && {command}"
+        else:
+            full_command = command
 
-        # Escape quotes for AppleScript
-        escaped_cmd = full_command.replace('"', '\\"')
-        escaped_title = title.replace('"', '\\"')
+        # Escape for AppleScript injection safety (backslash first, then quotes)
+        escaped_cmd = _escape_applescript(full_command)
+        escaped_title = _escape_applescript(title)
 
         script = f'''
         tell application "Terminal"
@@ -82,13 +97,17 @@ class MacOSTerminal(TerminalProvider):
         """Open a Terminal.app window attached to a tmux session."""
         window_id = str(uuid.uuid4())[:8]
 
-        tmux_cmd = f"tmux attach-session -t {session_name}"
-        escaped_title = title.replace('"', '\\"')
+        # Use shlex.quote to prevent shell injection in session name
+        tmux_cmd = f"tmux attach-session -t {shlex.quote(session_name)}"
+
+        # Escape for AppleScript injection safety
+        escaped_cmd = _escape_applescript(tmux_cmd)
+        escaped_title = _escape_applescript(title)
 
         script = f'''
         tell application "Terminal"
             activate
-            do script "{tmux_cmd}"
+            do script "{escaped_cmd}"
             set custom title of front window to "{escaped_title}"
         end tell
         '''

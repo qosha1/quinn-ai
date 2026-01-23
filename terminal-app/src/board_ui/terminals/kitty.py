@@ -5,6 +5,7 @@ Kitty has excellent remote control capabilities via `kitty @` commands.
 This allows us to spawn new windows with specific titles and commands.
 """
 
+import shlex
 import shutil
 import subprocess
 import uuid
@@ -13,6 +14,9 @@ from typing import Optional
 
 from ..interfaces.terminal import TerminalProvider, TerminalType, WindowHandle
 from .registry import register_provider
+
+# Timeout for subprocess operations (in seconds)
+SUBPROCESS_TIMEOUT = 5
 
 
 class KittyTerminal(TerminalProvider):
@@ -65,7 +69,19 @@ class KittyTerminal(TerminalProvider):
         # Add the command to run
         cmd.extend(["--", "sh", "-c", command])
 
-        subprocess.run(cmd, check=True)
+        try:
+            subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                timeout=SUBPROCESS_TIMEOUT,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to open Kitty window: {e.stderr.decode() if e.stderr else str(e)}"
+            ) from e
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Kitty command timed out") from None
 
         return WindowHandle(
             window_id=window_id,
@@ -87,7 +103,8 @@ class KittyTerminal(TerminalProvider):
 
         # tmux attach-session -t <session> will attach if exists
         # If window is closed, tmux just detaches - session keeps running
-        tmux_cmd = f"tmux attach-session -t {session_name}"
+        # Use shlex.quote to prevent shell injection in session name
+        tmux_cmd = f"tmux attach-session -t {shlex.quote(session_name)}"
 
         cmd = [
             "kitty", "@", "launch",
@@ -97,7 +114,19 @@ class KittyTerminal(TerminalProvider):
             "sh", "-c", tmux_cmd,
         ]
 
-        subprocess.run(cmd, check=True)
+        try:
+            subprocess.run(
+                cmd,
+                check=True,
+                capture_output=True,
+                timeout=SUBPROCESS_TIMEOUT,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to attach to tmux session: {e.stderr.decode() if e.stderr else str(e)}"
+            ) from e
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Kitty command timed out") from None
 
         return WindowHandle(
             window_id=window_id,

@@ -13,6 +13,7 @@ Best for:
 import os
 import signal
 import subprocess
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -32,12 +33,16 @@ class SubprocessSpawner(SpawnStrategy):
     Uses subprocess.Popen for simple, synchronous spawning.
     Sessions are ephemeral - they don't persist if the parent
     process dies.
+
+    Thread-safe: Uses a lock to protect the process dictionary.
     """
 
     def __init__(self):
         """Initialize subprocess spawner."""
         # Track running processes by session ID (pid as string)
         self._processes: dict[str, subprocess.Popen] = {}
+        # Lock for thread-safe access to _processes
+        self._lock = threading.Lock()
 
     @property
     def name(self) -> str:
@@ -77,7 +82,8 @@ class SubprocessSpawner(SpawnStrategy):
 
             # Use PID as session ID
             session_id = str(process.pid)
-            self._processes[session_id] = process
+            with self._lock:
+                self._processes[session_id] = process
 
             return SpawnResult(
                 success=True,
@@ -117,9 +123,10 @@ class SubprocessSpawner(SpawnStrategy):
         Returns:
             True if process was stopped
         """
-        process = self._processes.get(session_id)
-        if not process:
-            return False
+        with self._lock:
+            process = self._processes.get(session_id)
+            if not process:
+                return False
 
         try:
             if force:
@@ -135,7 +142,8 @@ class SubprocessSpawner(SpawnStrategy):
                 process.kill()
                 process.wait(timeout=2)
 
-            del self._processes[session_id]
+            with self._lock:
+                self._processes.pop(session_id, None)
             return True
 
         except OSError:
@@ -151,11 +159,17 @@ class SubprocessSpawner(SpawnStrategy):
         Returns:
             True if process is alive
         """
-        process = self._processes.get(session_id)
-        if not process:
-            return False
+        with self._lock:
+            process = self._processes.get(session_id)
+            if not process:
+                return False
 
-        return process.poll() is None
+        alive = process.poll() is None
+        # Clean up dead process from tracking
+        if not alive:
+            with self._lock:
+                self._processes.pop(session_id, None)
+        return alive
 
     def send_input(self, session_id: str, text: str) -> bool:
         """Send input to subprocess stdin.
@@ -167,9 +181,10 @@ class SubprocessSpawner(SpawnStrategy):
         Returns:
             True if input was sent
         """
-        process = self._processes.get(session_id)
-        if not process or process.stdin is None:
-            return False
+        with self._lock:
+            process = self._processes.get(session_id)
+            if not process or process.stdin is None:
+                return False
 
         try:
             process.stdin.write(text.encode())
@@ -184,22 +199,25 @@ class SubprocessSpawner(SpawnStrategy):
 
         Args:
             session_id: PID as string
-            timeout_ms: Optional timeout (note: basic implementation ignores this)
+            timeout_ms: Optional timeout in milliseconds
 
         Returns:
             Output text
         """
-        process = self._processes.get(session_id)
-        if not process or process.stdout is None:
-            return ""
+        with self._lock:
+            process = self._processes.get(session_id)
+            if not process or process.stdout is None:
+                return ""
 
         try:
             # Read available bytes without blocking
             import select
 
             # Use select to check if data is available
+            # Convert timeout_ms to seconds, default to 0.1
+            timeout_sec = (timeout_ms / 1000.0) if timeout_ms else 0.1
             if hasattr(select, 'select'):
-                readable, _, _ = select.select([process.stdout], [], [], 0.1)
+                readable, _, _ = select.select([process.stdout], [], [], timeout_sec)
                 if readable:
                     return process.stdout.read(4096).decode('utf-8', errors='replace')
             return ""
@@ -217,9 +235,10 @@ class SubprocessSpawner(SpawnStrategy):
         Returns:
             True if signal was sent
         """
-        process = self._processes.get(session_id)
-        if not process:
-            return False
+        with self._lock:
+            process = self._processes.get(session_id)
+            if not process:
+                return False
 
         try:
             process.send_signal(sig)
@@ -230,5 +249,7 @@ class SubprocessSpawner(SpawnStrategy):
 
     def cleanup(self) -> None:
         """Clean up all tracked processes."""
-        for session_id in list(self._processes.keys()):
+        with self._lock:
+            session_ids = list(self._processes.keys())
+        for session_id in session_ids:
             self.stop(session_id, force=True)

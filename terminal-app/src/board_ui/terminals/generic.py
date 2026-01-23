@@ -8,6 +8,7 @@ terminal provider is available.
 
 import os
 import platform
+import shlex
 import shutil
 import subprocess
 import uuid
@@ -16,6 +17,18 @@ from typing import Optional
 
 from ..interfaces.terminal import TerminalProvider, TerminalType, WindowHandle
 from .registry import register_provider
+
+
+def _escape_applescript(text: str) -> str:
+    """Escape a string for safe use in AppleScript.
+
+    Escapes backslashes first, then quotes to prevent injection.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+# Timeout for subprocess operations (in seconds)
+SUBPROCESS_TIMEOUT = 5
 
 
 class GenericTerminal(TerminalProvider):
@@ -68,17 +81,27 @@ class GenericTerminal(TerminalProvider):
 
         if system == "Linux":
             # Most Linux terminals support -e for command
+            # Use shlex.join for safe command construction
             term = self._get_terminal_command()[0]
             if term == "gnome-terminal":
                 cmd = [term, "--title", title, "--", "sh", "-c", command]
             else:
-                cmd = [term, "-e", f"sh -c '{command}'"]
+                # Use list form with sh -c to avoid shell injection
+                cmd = [term, "-e", "sh", "-c", command]
 
         elif system == "Darwin":
-            # Use osascript for macOS
-            escaped_cmd = command.replace('"', '\\"')
+            # Use osascript for macOS with proper escaping
+            escaped_cmd = _escape_applescript(command)
             script = f'tell application "Terminal" to do script "{escaped_cmd}"'
-            subprocess.run(["osascript", "-e", script])
+            try:
+                subprocess.run(
+                    ["osascript", "-e", script],
+                    check=False,
+                    capture_output=True,
+                    timeout=SUBPROCESS_TIMEOUT,
+                )
+            except subprocess.TimeoutExpired:
+                pass  # Best effort - window may have opened anyway
             return WindowHandle(
                 window_id=window_id,
                 terminal_type=self.terminal_type,
@@ -86,10 +109,11 @@ class GenericTerminal(TerminalProvider):
             )
 
         elif system == "Windows":
+            # Windows cmd - command is passed as argument, less injection risk
             cmd = ["cmd", "/c", "start", "cmd", "/k", command]
 
         else:
-            cmd = ["xterm", "-e", command]
+            cmd = ["xterm", "-e", "sh", "-c", command]
 
         # Set working directory via environment
         env = os.environ.copy()
@@ -109,7 +133,8 @@ class GenericTerminal(TerminalProvider):
         session_name: str,
     ) -> WindowHandle:
         """Open a terminal attached to a tmux session."""
-        tmux_cmd = f"tmux attach-session -t {session_name}"
+        # Use shlex.quote to prevent shell injection in session name
+        tmux_cmd = f"tmux attach-session -t {shlex.quote(session_name)}"
         return self.open_window(title, tmux_cmd)
 
 

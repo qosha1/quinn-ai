@@ -14,6 +14,7 @@ Best for:
 """
 
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -109,10 +110,11 @@ class TmuxSpawner(SpawnStrategy):
                     error=f"Session already exists: {session_name}",
                 )
 
-            # Build command string for tmux
-            cmd_str = config.command
+            # Build command string for tmux (use shlex.quote for safe escaping)
             if config.args:
-                cmd_str += " " + " ".join(f'"{arg}"' if " " in arg else arg for arg in config.args)
+                cmd_str = config.command + " " + " ".join(shlex.quote(arg) for arg in config.args)
+            else:
+                cmd_str = config.command
 
             # Build tmux new-session command
             tmux_args = [
