@@ -210,6 +210,7 @@ def create_default_registry() -> SessionRegistry:
     """
     from cli.core.sessions.claude_code import ClaudeCodeSession
     from cli.core.sessions.codex import CodexSession
+    from cli.core.sessions.gemini import GeminiSession
     from cli.core.sessions.openai import OpenAISession
 
     registry = SessionRegistry()
@@ -226,6 +227,13 @@ def create_default_registry() -> SessionRegistry:
         "codex",
         CodexSession,
         aliases=["codex-cli"],
+    )
+
+    # Register Gemini adapter
+    registry.register(
+        "gemini",
+        GeminiSession,
+        aliases=["gemini-pro", "google"],
     )
 
     # Register OpenAI adapter (API-based, not CLI)

@@ -4,6 +4,7 @@ Concrete SessionInterface implementations and registry.
 
 from .claude_code import ClaudeCodeSession
 from .codex import CodexSession
+from .gemini import GeminiSession
 from .openai import OpenAISession
 from .registry import (
     SessionRegistry,
@@ -83,6 +84,7 @@ __all__ = [
     # Adapters
     "ClaudeCodeSession",
     "CodexSession",
+    "GeminiSession",
     "OpenAISession",
     # Registry
     "SessionRegistry",
