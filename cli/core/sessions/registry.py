@@ -209,6 +209,7 @@ def create_default_registry() -> SessionRegistry:
     This is the explicit way to get a populated registry.
     """
     from cli.core.sessions.claude_code import ClaudeCodeSession
+    from cli.core.sessions.openai import OpenAISession
 
     registry = SessionRegistry()
 
@@ -217,6 +218,13 @@ def create_default_registry() -> SessionRegistry:
         "claude_code",
         ClaudeCodeSession,
         aliases=["claude", "anthropic", "claude-code"],
+    )
+
+    # Register OpenAI adapter
+    registry.register(
+        "openai",
+        OpenAISession,
+        aliases=["gpt", "gpt-4", "gpt-4o"],
     )
 
     return registry

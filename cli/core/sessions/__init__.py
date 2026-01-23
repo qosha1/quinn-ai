@@ -3,6 +3,7 @@ Concrete SessionInterface implementations and registry.
 """
 
 from .claude_code import ClaudeCodeSession
+from .openai import OpenAISession
 from .registry import (
     SessionRegistry,
     AdapterNotFoundError,
@@ -67,17 +68,20 @@ from .persistence import (
 from .cleanup import (
     OrphanedSession,
     CleanupResult,
+    StopAllSessionsResult,
     TMUX_SESSION_PREFIX,
     find_orphaned_tmux_sessions,
     find_stale_db_sessions,
     find_all_orphans,
     cleanup_orphaned_sessions,
     run_startup_cleanup,
+    stop_all_sessions,
 )
 
 __all__ = [
     # Adapters
     "ClaudeCodeSession",
+    "OpenAISession",
     # Registry
     "SessionRegistry",
     "AdapterNotFoundError",
@@ -131,10 +135,12 @@ __all__ = [
     # Cleanup
     "OrphanedSession",
     "CleanupResult",
+    "StopAllSessionsResult",
     "TMUX_SESSION_PREFIX",
     "find_orphaned_tmux_sessions",
     "find_stale_db_sessions",
     "find_all_orphans",
     "cleanup_orphaned_sessions",
     "run_startup_cleanup",
+    "stop_all_sessions",
 ]
