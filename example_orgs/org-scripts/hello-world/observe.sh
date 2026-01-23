@@ -48,5 +48,38 @@ if [[ -f "$ORG_DIR/live/quinn.db" ]]; then
 fi
 
 echo
+echo "--- Budget Status ---"
+if [[ -f "$ORG_DIR/live/quinn.db" ]]; then
+    # Show budget pool info
+    pool_info=$(sqlite3 "$ORG_DIR/live/quinn.db" \
+        "SELECT name, total_credits FROM budget_pools LIMIT 1;" 2>/dev/null)
+    if [[ -n "$pool_info" ]]; then
+        pool_name=$(echo "$pool_info" | cut -d'|' -f1)
+        pool_total=$(echo "$pool_info" | cut -d'|' -f2)
+        echo "Pool: $pool_name ($pool_total credits)"
+    fi
+
+    # Show CEO budget
+    ceo_budget=$(sqlite3 "$ORG_DIR/live/quinn.db" \
+        "SELECT w.name, ba.allocated_credits,
+                ABS(COALESCE((SELECT SUM(amount) FROM budget_transactions WHERE worker_id = w.id AND type = 'spend'), 0)) as spent
+         FROM workers w
+         JOIN budget_allocations ba ON ba.worker_id = w.id
+         WHERE w.manager_id IS NULL
+         LIMIT 1;" 2>/dev/null)
+    if [[ -n "$ceo_budget" ]]; then
+        ceo_name=$(echo "$ceo_budget" | cut -d'|' -f1)
+        allocated=$(echo "$ceo_budget" | cut -d'|' -f2)
+        spent=$(echo "$ceo_budget" | cut -d'|' -f3)
+        available=$(echo "$allocated - $spent" | bc 2>/dev/null || echo "?")
+        echo "$ceo_name: $allocated allocated, $spent spent, $available available"
+    else
+        echo "(no budget allocations found)"
+    fi
+else
+    echo "(database not found)"
+fi
+
+echo
 echo "Press Ctrl+C to stop observing"
 echo "To attach to CEO session: tmux attach -t <session-name>"
