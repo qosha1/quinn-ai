@@ -49,20 +49,17 @@ class ClaudeCodeSession(SessionInterface):
         session.stop()
     """
 
-    def __init__(self, config: SessionConfig, pyterm_config: PytermConfig):
+    def __init__(self, config: SessionConfig, pyterm_config: Optional[PytermConfig] = None):
         """Initialize Claude Code session.
 
         Args:
             config: SessionConfig with provider settings
-            pyterm_config: Pyterm configuration for terminal behavior
-
-        Note:
-            pyterm_config is required - no internal defaults. Use
-            PytermConfig.standard() if you need standard values.
+            pyterm_config: Pyterm configuration for terminal behavior.
+                          Defaults to PytermConfig.standard() if not provided.
         """
         super().__init__(config)
 
-        self._pyterm_config = pyterm_config
+        self._pyterm_config = pyterm_config or PytermConfig.standard()
 
         # AgentSession will be created on start()
         self._agent_session: Optional[AgentSession] = None

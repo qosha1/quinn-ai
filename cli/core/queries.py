@@ -135,7 +135,7 @@ def get_org_state(db: Database) -> Optional[OrgState]:
 
     return OrgState(
         id=row["id"],
-        name=row.get("name", "My Organization"),
+        name=row["name"] if row["name"] else "My Organization",
         status=row["status"],
         ceo_worker_id=row["ceo_worker_id"],
         started_at=row["started_at"],
@@ -210,7 +210,15 @@ def create_team(
     now = datetime.now()
     channel_id = None
 
-    # Auto-create a channel for the team first
+    # Create the team first (before channel, due to foreign key constraint)
+    db.execute(
+        """INSERT INTO teams (id, name, parent_team_id, lead_id, channel_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (team_id, name, parent_team_id, lead_id, None, now)
+    )
+    db.connection.commit()
+
+    # Then create a channel for the team and update the team
     if auto_create_channel:
         channel_name = name.lower().replace(" ", "-")
         channel = create_channel(
@@ -220,13 +228,12 @@ def create_team(
             team_id=team_id,
         )
         channel_id = channel.id
-
-    db.execute(
-        """INSERT INTO teams (id, name, parent_team_id, lead_id, channel_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (team_id, name, parent_team_id, lead_id, channel_id, now)
-    )
-    db.connection.commit()
+        # Update team with channel_id
+        db.execute(
+            "UPDATE teams SET channel_id = ? WHERE id = ?",
+            (channel_id, team_id)
+        )
+        db.connection.commit()
 
     return Team(
         id=team_id,
@@ -256,8 +263,8 @@ def get_team(db: Database, team_id: str) -> Optional[Team]:
         id=row["id"],
         name=row["name"],
         parent_team_id=row["parent_team_id"],
-        lead_id=row.get("lead_id"),
-        channel_id=row.get("channel_id"),
+        lead_id=row["lead_id"],
+        channel_id=row["channel_id"],
         created_at=row["created_at"],
     )
 

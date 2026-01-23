@@ -171,7 +171,7 @@ class AuthorizationManager:
             (worker.id,)
         )
 
-        can_delegate = row and row.get("can_delegate", False) if row else False
+        can_delegate = bool(row["can_delegate"]) if row else False
 
         if not can_delegate:
             return AuthorizationResult.deny(
