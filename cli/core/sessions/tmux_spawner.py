@@ -27,6 +27,7 @@ from .spawner import (
     SessionNotFoundError,
     SpawnFailedError,
 )
+from ..constants import TMUX_SESSION_PREFIX
 
 
 class TmuxSpawner(SpawnStrategy):
@@ -97,7 +98,7 @@ class TmuxSpawner(SpawnStrategy):
             )
 
         # Generate session name
-        session_name = config.session_name or f"qn-{config.worker_id or 'session'}"
+        session_name = config.session_name or f"{TMUX_SESSION_PREFIX}{config.worker_id or 'session'}"
 
         try:
             # Check if session already exists

@@ -27,9 +27,7 @@ from .persistence import (
 if TYPE_CHECKING:
     from ..db import Database
 
-
-# Prefix used for quinnai tmux sessions
-TMUX_SESSION_PREFIX = "qn-"
+from ..constants import TMUX_SESSION_PREFIX
 
 
 @dataclass
@@ -310,3 +308,98 @@ def run_startup_cleanup(
         update_db=True,
         delete_stale=False,
     )
+
+
+@dataclass
+class StopAllSessionsResult:
+    """Result of stopping all sessions."""
+
+    sessions_found: int
+    """Number of active sessions found."""
+
+    sessions_stopped: int
+    """Number of sessions successfully stopped."""
+
+    tmux_sessions_killed: int
+    """Number of tmux sessions killed."""
+
+    errors: list[str]
+    """Errors encountered during stop."""
+
+
+def stop_all_sessions(
+    db: "Database",
+    tmux_spawner: Optional[TmuxSpawner] = None,
+    force: bool = False,
+    timeout_seconds: int = 5,
+) -> StopAllSessionsResult:
+    """Stop all active sessions gracefully.
+
+    Called during org stop to ensure all worker sessions are terminated
+    before the org transitions to stopped state.
+
+    For each active session:
+    1. If has tmux_session_name, kills the tmux session
+    2. Updates database state to 'stopped'
+    3. Updates worker runtime state
+
+    Args:
+        db: Database instance
+        tmux_spawner: Optional TmuxSpawner instance (creates default if None)
+        force: If True, force kill without waiting for graceful shutdown
+        timeout_seconds: Seconds to wait for graceful shutdown (unused for now)
+
+    Returns:
+        StopAllSessionsResult with summary of actions taken
+    """
+    if tmux_spawner is None:
+        tmux_spawner = TmuxSpawner()
+
+    result = StopAllSessionsResult(
+        sessions_found=0,
+        sessions_stopped=0,
+        tmux_sessions_killed=0,
+        errors=[],
+    )
+
+    # Get all active sessions
+    active_sessions = get_active_sessions(db)
+    result.sessions_found = len(active_sessions)
+
+    for session in active_sessions:
+        session_id = session.get("id")
+        worker_id = session.get("worker_id")
+        tmux_name = session.get("tmux_session_name")
+
+        try:
+            # Kill tmux session if it exists
+            if tmux_name and tmux_spawner.is_alive(tmux_name):
+                if tmux_spawner.stop(tmux_name, force=force):
+                    result.tmux_sessions_killed += 1
+                else:
+                    result.errors.append(
+                        f"Failed to kill tmux session: {tmux_name}"
+                    )
+
+            # Update session state to stopped
+            if session_id:
+                update_session_state(
+                    db=db,
+                    session_id=session_id,
+                    state="stopped",
+                    stopped_at=datetime.now(),
+                )
+
+            # Update worker runtime state
+            if worker_id:
+                from cli.core.queries import update_worker_runtime_status
+                update_worker_runtime_status(db, worker_id, "stopped")
+
+            result.sessions_stopped += 1
+
+        except Exception as e:
+            result.errors.append(
+                f"Error stopping session {session_id}: {e}"
+            )
+
+    return result

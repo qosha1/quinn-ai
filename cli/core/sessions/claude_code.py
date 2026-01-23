@@ -17,6 +17,7 @@ from cli.core.session import (
     SessionSpawnError,
     SessionTimeoutError,
 )
+from cli.core.constants import TMUX_SESSION_PREFIX
 
 from shared.pyterm import (
     AgentSession,
@@ -84,7 +85,7 @@ class ClaudeCodeSession(SessionInterface):
     @property
     def platform_session_name(self) -> Optional[str]:
         """Tmux session name used for this session."""
-        return f"qn-{self._config.worker_id}"
+        return f"{TMUX_SESSION_PREFIX}{self._config.worker_id}"
 
     # =========================================================================
     # Abstract method implementations
@@ -98,7 +99,7 @@ class ClaudeCodeSession(SessionInterface):
                 worker_id=self._config.worker_id,
                 provider="claude_code",
                 db_path=self._config.transcript_db_path,
-                session_name=f"qn-{self._config.worker_id}",
+                session_name=f"{TMUX_SESSION_PREFIX}{self._config.worker_id}",
                 pyterm_config=self._pyterm_config,
             )
 

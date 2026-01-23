@@ -13,6 +13,7 @@ from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
 from cli.core.queries import get_worker_by_name, get_worker
+from cli.core.constants import TMUX_SESSION_PREFIX
 from shared import WorkerNotFound
 from shared.pyterm.tmux_session import TmuxSession
 
@@ -26,9 +27,9 @@ def get_tmux_session_name(worker_id: str) -> str:
         worker_id: Worker ID
 
     Returns:
-        tmux session name in format qn-{worker_id}
+        tmux session name in format {TMUX_SESSION_PREFIX}{worker_id}
     """
-    return f"qn-{worker_id}"
+    return f"{TMUX_SESSION_PREFIX}{worker_id}"
 
 
 def stream_session_output(session_name: str, poll_interval: float = 0.5) -> None:

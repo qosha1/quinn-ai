@@ -154,6 +154,9 @@ DEFAULT_TERMINAL_ROWS = 40
 DEFAULT_MAX_CONTEXT_TOKENS = 100000
 """Maximum context tokens for sessions."""
 
+TMUX_SESSION_PREFIX = "qn-"
+"""Prefix for tmux session names. Session names are formatted as {prefix}{worker_id}."""
+
 
 # ===================
 # BUDGET
