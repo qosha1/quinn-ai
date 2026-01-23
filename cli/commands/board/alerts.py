@@ -13,6 +13,7 @@ import click
 
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
+from shared.enums import Priority
 from cli.core.queries import (
     get_all_budget_pools,
     get_current_allocation,
@@ -35,7 +36,7 @@ def _get_active_alerts(db) -> list[dict]:
     for state in crashed:
         alerts.append({
             "id": f"alert-crash-{state.worker_id[:8]}",
-            "priority": "P0",
+            "priority": Priority.P0.value,
             "category": "session",
             "title": f"Worker session crashed",
             "details": f"Worker {state.worker_id} session crashed",
@@ -54,7 +55,7 @@ def _get_active_alerts(db) -> list[dict]:
             if idle_hours > 2:
                 alerts.append({
                     "id": f"alert-idle-{state.worker_id[:8]}",
-                    "priority": "P2",
+                    "priority": Priority.P2.value,
                     "category": "performance",
                     "title": f"Worker idle for {idle_hours:.1f}h",
                     "details": f"Worker {state.worker_id} has been idle for extended period",
@@ -75,7 +76,7 @@ def _get_active_alerts(db) -> list[dict]:
                 if budget_pct >= 95:
                     alerts.append({
                         "id": f"alert-budget-critical",
-                        "priority": "P0",
+                        "priority": Priority.P0.value,
                         "category": "budget",
                         "title": f"Budget nearly exhausted ({budget_pct:.1f}%)",
                         "details": f"Spent {alloc.spent_credits:.2f} of {alloc.allocated_credits:.2f} credits",
@@ -84,7 +85,7 @@ def _get_active_alerts(db) -> list[dict]:
                 elif budget_pct >= 80:
                     alerts.append({
                         "id": f"alert-budget-warning",
-                        "priority": "P1",
+                        "priority": Priority.P1.value,
                         "category": "budget",
                         "title": f"Budget at {budget_pct:.1f}%",
                         "details": f"Spent {alloc.spent_credits:.2f} of {alloc.allocated_credits:.2f} credits",
@@ -139,9 +140,9 @@ def alerts_cmd(ctx: Context, priority: Optional[str], as_json: bool, unresolved:
             return
 
         # Group by priority
-        p0_alerts = [a for a in alerts if a["priority"] == "P0"]
-        p1_alerts = [a for a in alerts if a["priority"] == "P1"]
-        p2_alerts = [a for a in alerts if a["priority"] == "P2"]
+        p0_alerts = [a for a in alerts if a["priority"] == Priority.P0.value]
+        p1_alerts = [a for a in alerts if a["priority"] == Priority.P1.value]
+        p2_alerts = [a for a in alerts if a["priority"] == Priority.P2.value]
 
         if p0_alerts:
             click.echo("=== P0 (Requires Immediate Attention) ===")

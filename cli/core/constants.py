@@ -137,8 +137,8 @@ ORG_CHART_DIR = "org-chart"
 DEFAULT_NOTIFICATION_RETENTION_DAYS = 7
 """Days to retain closed notifications before purge."""
 
-DEFAULT_NOTIFICATION_PRIORITY = 2
-"""Default priority for notifications (0-4, 0=highest)."""
+DEFAULT_NOTIFICATION_PRIORITY = 2  # Corresponds to Priority.P2 from shared.enums
+"""Default priority for notifications (0-4, 0=highest). Maps to Priority.P2."""
 
 
 # ===================
