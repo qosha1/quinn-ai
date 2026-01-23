@@ -13,5 +13,6 @@ from .okr import okr_cmd
 from .budget import budget_cmd
 from .chart import chart_cmd
 from .hire import hire_cmd
+from .fire import fire_cmd
 
-__all__ = ["init_cmd", "start_cmd", "stop_cmd", "status_cmd", "cleanup_cmd", "logs_cmd", "observe_cmd", "okr_cmd", "budget_cmd", "chart_cmd", "hire_cmd"]
+__all__ = ["init_cmd", "start_cmd", "stop_cmd", "status_cmd", "cleanup_cmd", "logs_cmd", "observe_cmd", "okr_cmd", "budget_cmd", "chart_cmd", "hire_cmd", "fire_cmd"]
