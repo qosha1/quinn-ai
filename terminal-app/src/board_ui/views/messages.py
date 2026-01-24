@@ -136,8 +136,9 @@ class MessagesView(Widget):
 
             with Container(id="reply-area"):
                 yield Label("Reply (async - worker will be notified)")
-                yield TextArea(id="reply-input", disabled=True)
-                with Horizontal():
+                yield Static("No messages. Select a message from the list to reply.", id="reply-placeholder")
+                yield TextArea(id="reply-input", disabled=True, classes="hidden")
+                with Horizontal(classes="hidden", id="reply-buttons"):
                     yield Button("Send Reply", id="send-reply-btn", variant="primary", disabled=True)
                     yield Button("Mark Resolved", id="resolve-btn", disabled=True)
 
@@ -243,8 +244,12 @@ class MessagesView(Widget):
             f"{self._selected_message.content}"
         )
 
-        # Enable reply controls
-        self.query_one("#reply-input", TextArea).disabled = False
+        # Show and enable reply controls
+        self.query_one("#reply-placeholder", Static).add_class("hidden")
+        reply_input = self.query_one("#reply-input", TextArea)
+        reply_input.remove_class("hidden")
+        reply_input.disabled = False
+        self.query_one("#reply-buttons").remove_class("hidden")
         self.query_one("#send-reply-btn", Button).disabled = False
         self.query_one("#resolve-btn", Button).disabled = False
 

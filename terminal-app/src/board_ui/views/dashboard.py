@@ -212,11 +212,14 @@ class DashboardView(Widget):
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
+        self.app.notify(f"DEBUG: Button pressed: {event.button.id}", severity="information")
         if event.button.id == "chat-ceo-btn":
             await self._open_ceo_chat()
 
     async def _open_ceo_chat(self) -> None:
         """Open a chat window with the CEO."""
+        self.app.notify("DEBUG: _open_ceo_chat called", severity="information")
+
         if not self._ceo or not self._ceo.tmux_session_name:
             self.app.notify("CEO has no active session", severity="warning")
             return
@@ -229,6 +232,7 @@ class DashboardView(Widget):
             return
 
         try:
+            self.app.notify(f"DEBUG: Attaching to {self._ceo.tmux_session_name}", severity="information")
             terminal.attach_to_session(
                 title="Chat with CEO",
                 session_name=self._ceo.tmux_session_name,
