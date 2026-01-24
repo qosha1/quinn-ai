@@ -211,11 +211,11 @@ class TeamView(Widget):
     async def on_data_table_cell_selected(self, event: DataTable.CellSelected) -> None:
         """Handle cell selection - check if it's the Chat button."""
         if event.coordinate.column == 5:  # Actions column
-            table = self.query_one("#workers-data", DataTable)
-            row_key = table.get_row_key(event.coordinate.row)
+            # Get worker ID from row key
+            worker_id = str(event.cell_key.row_key)
 
             # Find worker by ID
-            worker = next((w for w in self._workers if w.id == row_key), None)
+            worker = next((w for w in self._workers if w.id == worker_id), None)
             if worker:
                 await self._open_worker_chat(worker)
 
