@@ -675,9 +675,11 @@ class QuinnAIOrgConnection(OrgConnection):
             # Join with notification_beads to check read status
             # Board messages are "unread" if they have pending notification beads
             rows = self._db.fetchall(
-                """SELECT DISTINCT m.*, w.name as from_worker_name, c.name as channel_name
+                """SELECT DISTINCT m.*,
+                          COALESCE(w.name, m.from_worker_id) as from_worker_name,
+                          c.name as channel_name
                    FROM messages m
-                   JOIN workers w ON m.from_worker_id = w.id
+                   LEFT JOIN workers w ON m.from_worker_id = w.id
                    JOIN channels c ON m.channel_id = c.id
                    JOIN notification_beads nb ON nb.message_id = m.id
                    WHERE m.channel_id = ? AND nb.status = 'pending'
@@ -686,9 +688,11 @@ class QuinnAIOrgConnection(OrgConnection):
             )
         else:
             rows = self._db.fetchall(
-                """SELECT m.*, w.name as from_worker_name, c.name as channel_name
+                """SELECT m.*,
+                          COALESCE(w.name, m.from_worker_id) as from_worker_name,
+                          c.name as channel_name
                    FROM messages m
-                   JOIN workers w ON m.from_worker_id = w.id
+                   LEFT JOIN workers w ON m.from_worker_id = w.id
                    JOIN channels c ON m.channel_id = c.id
                    WHERE m.channel_id = ?
                    ORDER BY m.priority DESC, m.created_at DESC""",
@@ -952,6 +956,259 @@ class QuinnAIOrgConnection(OrgConnection):
 
         result = subprocess_stop_org(self._org_path)
         return result.success
+
+    # ==================
+    # BOARD INTERVENTIONS
+    # ==================
+
+    def pause_worker(self, worker_id: str, reason: Optional[str] = None) -> bool:
+        """Pause a worker via CLI command."""
+        self._ensure_connected()
+
+        try:
+            cmd = ["qn", "board", "pause", worker_id, "--org-path", str(self._org_path)]
+            if reason:
+                cmd.extend(["--reason", reason])
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                # Update session state to stopped
+                self._db.execute(
+                    "UPDATE sessions SET state = 'stopped' WHERE worker_id = ?",
+                    (worker_id,)
+                )
+                self._db.connection.commit()
+
+                self._log_intervention("pause", worker_id, reason or "Board paused worker")
+                return True
+            else:
+                logger.error(f"Failed to pause worker {worker_id}: {result.stderr}")
+                return False
+        except Exception as e:
+            logger.error(f"Error pausing worker {worker_id}: {e}")
+            return False
+
+    def resume_worker(self, worker_id: str) -> bool:
+        """Resume a worker via CLI command."""
+        self._ensure_connected()
+
+        try:
+            result = subprocess.run(
+                ["qn", "board", "resume", worker_id, "--org-path", str(self._org_path)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                # Update session state to running
+                self._db.execute(
+                    "UPDATE sessions SET state = 'running' WHERE worker_id = ?",
+                    (worker_id,)
+                )
+                self._db.connection.commit()
+
+                self._log_intervention("resume", worker_id, "Board resumed worker")
+                return True
+            else:
+                logger.error(f"Failed to resume worker {worker_id}: {result.stderr}")
+                return False
+        except Exception as e:
+            logger.error(f"Error resuming worker {worker_id}: {e}")
+            return False
+
+    def fire_worker(self, worker_id: str, reason: Optional[str] = None) -> bool:
+        """Terminate a worker via CLI command."""
+        self._ensure_connected()
+
+        try:
+            cmd = ["qn", "board", "fire", worker_id, "--force", "--org-path", str(self._org_path)]
+            if reason:
+                cmd.extend(["--reason", reason])
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode == 0:
+                # Update worker status to terminated and session to stopped
+                self._db.execute(
+                    "UPDATE workers SET status = 'terminated' WHERE id = ?",
+                    (worker_id,)
+                )
+                self._db.execute(
+                    "UPDATE sessions SET state = 'stopped' WHERE worker_id = ?",
+                    (worker_id,)
+                )
+                self._db.connection.commit()
+
+                self._log_intervention("fire", worker_id, reason or "Board fired worker")
+                self._notify_ceo_of_intervention("fire", worker_id, reason or "No reason provided")
+                return True
+            else:
+                logger.error(f"Failed to fire worker {worker_id}: {result.stderr}")
+                return False
+        except Exception as e:
+            logger.error(f"Error firing worker {worker_id}: {e}")
+            return False
+
+    def _log_intervention(self, action: str, worker_id: str, reason: str) -> None:
+        """Log intervention to board-channel."""
+        try:
+            now = datetime.now()
+            import uuid
+
+            channel_id = self._get_board_channel_id()
+            if not channel_id:
+                return
+
+            message_id = f"msg-{str(uuid.uuid4())[:8]}"
+
+            content = (
+                f"**INTERVENTION: {action.upper()}**\n\n"
+                f"Worker: {worker_id}\n"
+                f"Reason: {reason}\n"
+                f"Time: {now.isoformat()}"
+            )
+
+            self._db.execute(
+                """INSERT INTO messages
+                   (id, channel_id, from_worker_id, content, priority, time_sensitivity, created_at)
+                   VALUES (?, ?, 'board', ?, 3, 'immediate', ?)""",
+                (message_id, channel_id, content, now),
+            )
+            self._db.connection.commit()
+        except Exception as e:
+            logger.warning(f"Failed to log intervention: {e}")
+
+    def _notify_ceo_of_intervention(self, action: str, worker_id: str, reason: str) -> None:
+        """Notify CEO of board intervention by creating notification bead."""
+        try:
+            import uuid
+
+            channel_id = self._get_board_channel_id()
+            if not channel_id:
+                return
+
+            message_id = f"msg-{str(uuid.uuid4())[:8]}"
+            now = datetime.now()
+
+            content = (
+                f"**BOARD INTERVENTION NOTIFICATION**\n\n"
+                f"Action: {action.upper()}\n"
+                f"Worker: {worker_id}\n"
+                f"Reason: {reason}\n"
+                f"Time: {now.isoformat()}"
+            )
+
+            # Create message
+            self._db.execute(
+                """INSERT INTO messages
+                   (id, channel_id, from_worker_id, content, priority, time_sensitivity, created_at)
+                   VALUES (?, ?, 'board', ?, 4, 'immediate', ?)""",
+                (message_id, channel_id, content, now),
+            )
+
+            # Create notification bead for CEO
+            ceo = self.get_ceo()
+            if ceo:
+                notification_id = f"nb-{str(uuid.uuid4())[:8]}"
+                self._db.execute(
+                    """INSERT INTO notification_beads
+                       (id, worker_id, message_id, channel_id, status, priority, created_at, read_at, expires_at)
+                       VALUES (?, ?, ?, ?, 'pending', 4, ?, NULL, NULL)""",
+                    (notification_id, ceo.id, message_id, channel_id, now),
+                )
+
+            self._db.connection.commit()
+        except Exception as e:
+            logger.warning(f"Failed to notify CEO: {e}")
+
+    # ==================
+    # CEO BRIEFING
+    # ==================
+
+    def send_ceo_briefing(self, briefing_content: str) -> bool:
+        """Send briefing to CEO as high-priority message."""
+        self._ensure_connected()
+
+        try:
+            from cli.core.queries import create_message, generate_id
+            from cli.core.notifications import create_notification_bead
+
+            ceo = self.get_ceo()
+            if not ceo:
+                return False
+
+            channel_id = self._get_board_channel_id()
+            if not channel_id:
+                return False
+
+            # Ensure content has CEO Briefing header if it doesn't already
+            if "CEO Briefing" not in briefing_content:
+                content = f"# CEO Briefing\n\n{briefing_content}"
+            else:
+                content = briefing_content
+
+            # Create message from CEO
+            message = create_message(
+                db=self._db,
+                channel_id=channel_id,
+                from_worker_id=ceo.id,
+                content=content,
+                priority=0,
+                time_sensitivity="immediate",
+                message_id=generate_id("msg"),
+            )
+
+            # Create notification for CEO (normally sender doesn't get notified)
+            # But for briefing, we want the CEO to see it as a notification
+            create_notification_bead(
+                db=self._db,
+                worker_id=ceo.id,
+                message_id=message.id,
+                channel_id=channel_id,
+                priority=0,
+            )
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send CEO briefing: {e}")
+            return False
+
+    def get_current_briefing(self) -> Optional[str]:
+        """Get current CEO briefing from config."""
+        self._ensure_connected()
+
+        briefing_path = self._org_path / "config" / "ceo_briefing.md"
+        if briefing_path.exists():
+            return briefing_path.read_text()
+        return None
+
+    def update_briefing(self, briefing_content: str) -> bool:
+        """Update CEO briefing and notify CEO."""
+        self._ensure_connected()
+
+        try:
+            # Save to config
+            config_path = self._org_path / "config" / "ceo_briefing.md"
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(briefing_content)
+
+            # Send to CEO
+            return self.send_ceo_briefing(briefing_content)
+        except Exception as e:
+            logger.error(f"Failed to update briefing: {e}")
+            return False
 
     # ==================
     # SUBSCRIPTIONS

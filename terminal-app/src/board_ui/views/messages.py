@@ -12,6 +12,7 @@ Shows:
 
 from datetime import datetime
 from typing import Optional
+import re
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -19,6 +20,33 @@ from textual.widgets import Button, DataTable, Input, Label, Static, TextArea
 from textual.widget import Widget
 
 from ..interfaces.org_connection import Message
+
+
+def _parse_intervention_command(text: str) -> Optional[dict]:
+    """Parse intervention commands from reply text.
+
+    Returns:
+        Dict with {action, worker_id, reason} or None
+    """
+    # Patterns: "pause worker-123 because XYZ", "fire worker-abc: reason", "resume worker-xyz"
+    patterns = [
+        (r'pause\s+([a-zA-Z0-9-]+)(?:\s+(?:because|reason:?)\s+(.+))?', 'pause'),
+        (r'fire\s+([a-zA-Z0-9-]+)(?:\s*:?\s*(.+))?', 'fire'),
+        (r'resume\s+([a-zA-Z0-9-]+)', 'resume'),
+    ]
+
+    for pattern, action in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            worker_id = match.group(1)
+            reason = match.group(2) if len(match.groups()) > 1 else None
+            return {
+                'action': action,
+                'worker_id': worker_id,
+                'reason': reason or f"Board intervention via message reply"
+            }
+
+    return None
 
 
 class MessagesView(Widget):
@@ -224,6 +252,34 @@ class MessagesView(Widget):
         if hasattr(self.app, 'org_connection') and self.app.org_connection:
             self.app.org_connection.mark_message_read(self._selected_message.id)
 
+    async def _execute_intervention(self, intervention: dict) -> tuple[bool, str]:
+        """Execute board intervention.
+
+        Returns:
+            (success, message)
+        """
+        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+            return False, "Not connected to org"
+
+        action = intervention['action']
+        worker_id = intervention['worker_id']
+        reason = intervention.get('reason', '')
+
+        try:
+            if action == 'pause':
+                success = self.app.org_connection.pause_worker(worker_id, reason)
+                return success, f"Worker {worker_id} paused" if success else "Pause failed"
+            elif action == 'resume':
+                success = self.app.org_connection.resume_worker(worker_id)
+                return success, f"Worker {worker_id} resumed" if success else "Resume failed"
+            elif action == 'fire':
+                success = self.app.org_connection.fire_worker(worker_id, reason)
+                return success, f"Worker {worker_id} terminated" if success else "Termination failed"
+            else:
+                return False, f"Unknown action: {action}"
+        except Exception as e:
+            return False, str(e)
+
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
         if event.button.id == "send-reply-btn":
@@ -237,21 +293,35 @@ class MessagesView(Widget):
             return
 
         reply_input = self.query_one("#reply-input", TextArea)
-        reply_text = reply_input.text
+        reply_text = reply_input.text.strip()
 
-        if not reply_text.strip():
+        if not reply_text:
             self.app.notify("Please enter a reply", severity="warning")
             return
 
-        # Send via org connection
+        # Parse for intervention commands
+        intervention = _parse_intervention_command(reply_text)
+
+        if intervention:
+            # Execute intervention
+            success, message = await self._execute_intervention(intervention)
+            if success:
+                self.app.notify(message, severity="information")
+                # Also send the reply as a message for audit trail
+                # ... fall through to send message ...
+            else:
+                self.app.notify(f"Intervention failed: {message}", severity="error")
+                return
+
+        # Send reply (existing logic continues)
         if hasattr(self.app, 'org_connection') and self.app.org_connection:
             success = self.app.org_connection.send_board_response(
                 self._selected_message.id,
                 reply_text,
             )
             if success:
-                self.app.notify("Reply sent! Worker will be notified.")
-                reply_input.clear()
+                self.app.notify("Reply sent successfully", severity="information")
+                reply_input.text = ""
                 await self.refresh_messages()
             else:
                 self.app.notify("Failed to send reply", severity="error")

@@ -32,6 +32,7 @@ from .views.no_org import (
 )
 from .views.org_wizard import OrgInitWizard, OrgConfig
 from .views.org_tabs import OrgTabBar
+from .widgets.ceo_briefing import CEOBriefingWidget
 from .services import (
     QuinnAIOrgConnection,
     OrgConnectionError,
@@ -554,3 +555,33 @@ class BoardApp(App):
     ) -> None:
         """Handle request to disconnect from an org."""
         self._disconnect_from_org(message.org_path)
+
+    async def on_ceo_briefing_widget_briefing_queued(
+        self, message: CEOBriefingWidget.BriefingQueued
+    ) -> None:
+        """Handle CEO briefing queued for delivery."""
+        if not self._is_connected or not self.org_connection:
+            self.notify("Cannot queue briefing: not connected to org", severity="error")
+            return
+
+        try:
+            # Save briefing to config/ceo_briefing.md
+            briefing_md = message.content.to_markdown()
+            config_path = self.org_connection.org_path / "config" / "ceo_briefing.md"
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(briefing_md)
+
+            # If org is running, deliver briefing immediately
+            from cli.core.constants import OrgStatus
+            org_info = self.org_connection.get_org_info()
+            if org_info.status == OrgStatus.RUNNING:
+                success = self.org_connection.send_ceo_briefing(briefing_md)
+                if success:
+                    self.notify("CEO briefing saved and delivered", severity="information")
+                else:
+                    self.notify("Briefing saved but delivery failed", severity="warning")
+            else:
+                self.notify("CEO briefing saved (will be delivered on org start)",
+                           severity="information")
+        except Exception as e:
+            self.notify(f"Failed to save briefing: {e}", severity="error")

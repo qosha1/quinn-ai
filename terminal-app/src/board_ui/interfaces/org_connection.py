@@ -292,6 +292,85 @@ class OrgConnection(ABC):
         ...
 
     # ==================
+    # BOARD INTERVENTIONS
+    # ==================
+
+    @abstractmethod
+    def pause_worker(self, worker_id: str, reason: Optional[str] = None) -> bool:
+        """Pause a worker.
+
+        Args:
+            worker_id: Worker ID to pause
+            reason: Optional reason for pausing
+
+        Returns:
+            True if worker was paused successfully
+        """
+        ...
+
+    @abstractmethod
+    def resume_worker(self, worker_id: str) -> bool:
+        """Resume a paused worker.
+
+        Args:
+            worker_id: Worker ID to resume
+
+        Returns:
+            True if worker was resumed successfully
+        """
+        ...
+
+    @abstractmethod
+    def fire_worker(self, worker_id: str, reason: Optional[str] = None) -> bool:
+        """Terminate a worker immediately.
+
+        Args:
+            worker_id: Worker ID to terminate
+            reason: Optional reason for termination
+
+        Returns:
+            True if worker was terminated successfully
+        """
+        ...
+
+    # ==================
+    # CEO BRIEFING
+    # ==================
+
+    @abstractmethod
+    def send_ceo_briefing(self, briefing_content: str) -> bool:
+        """Send briefing to CEO as high-priority message.
+
+        Args:
+            briefing_content: Markdown content for briefing
+
+        Returns:
+            True if briefing was sent successfully
+        """
+        ...
+
+    @abstractmethod
+    def get_current_briefing(self) -> Optional[str]:
+        """Get current CEO briefing from config.
+
+        Returns:
+            Briefing markdown content or None if no briefing exists
+        """
+        ...
+
+    @abstractmethod
+    def update_briefing(self, briefing_content: str) -> bool:
+        """Update CEO briefing and notify CEO.
+
+        Args:
+            briefing_content: New briefing markdown content
+
+        Returns:
+            True if briefing was updated and CEO notified successfully
+        """
+        ...
+
+    # ==================
     # SUBSCRIPTIONS (FOR REAL-TIME UPDATES)
     # ==================
 

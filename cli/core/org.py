@@ -6,6 +6,7 @@ Organizations have a single lifecycle state machine:
 """
 
 from typing import Optional
+from pathlib import Path
 
 from datetime import datetime, timedelta
 
@@ -239,6 +240,11 @@ class Org:
                 ceo.start_onboarding()
                 ceo.complete_onboarding()
 
+            # Deliver CEO briefing if it exists
+            briefing_path = self._get_briefing_path()
+            if briefing_path.exists():
+                self._deliver_ceo_briefing(ceo.id, briefing_path)
+
             update_org_status(self.db, OrgStatus.RUNNING.value, self.ceo_worker_id)
             log_org_state_change(_logger, current, OrgStatus.RUNNING.value)
 
@@ -252,6 +258,61 @@ class Org:
             self._validate_transition(OrgStatus.RUNNING.value)
 
         self._state_data = None  # Invalidate cache
+
+    def _get_briefing_path(self) -> Path:
+        """Get path to CEO briefing markdown file."""
+        db_path = Path(self.db.db_path)
+        org_path = db_path.parent.parent  # live/quinn.db -> org_path
+        return org_path / "config" / "ceo_briefing.md"
+
+    def _deliver_ceo_briefing(self, ceo_id: str, briefing_path: Path) -> None:
+        """Deliver CEO briefing as initial message with notification.
+
+        Args:
+            ceo_id: CEO worker ID
+            briefing_path: Path to briefing markdown file
+        """
+        from .queries import create_message, generate_id
+        from .notifications import create_notification_bead
+
+        briefing_content = briefing_path.read_text()
+
+        # Get board-channel ID
+        channel_row = self.db.fetchone(
+            "SELECT id FROM channels WHERE name = 'board-channel'"
+        )
+        if not channel_row:
+            return  # Board channel doesn't exist yet
+
+        # Check if briefing already delivered (prevent duplicates on restart)
+        existing = self.db.fetchone(
+            """SELECT id FROM messages
+               WHERE channel_id = ? AND content LIKE '# CEO Briefing%'""",
+            (channel_row["id"],)
+        )
+        if existing:
+            return  # Already delivered
+
+        # Create message from CEO
+        message = create_message(
+            db=self.db,
+            channel_id=channel_row["id"],
+            from_worker_id=ceo_id,
+            content=f"# CEO Briefing\n\n{briefing_content}",
+            priority=0,  # Highest priority
+            time_sensitivity="immediate",
+            message_id=generate_id("msg"),
+        )
+
+        # Create notification for CEO (normally sender doesn't get notified)
+        # But for briefing, we want the CEO to see it as a notification
+        create_notification_bead(
+            db=self.db,
+            worker_id=ceo_id,
+            message_id=message.id,
+            channel_id=channel_row["id"],
+            priority=0,
+        )
 
     def _init_beads(self) -> None:
         """Initialize beads database for work tracking.

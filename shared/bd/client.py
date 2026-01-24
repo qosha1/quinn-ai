@@ -376,7 +376,7 @@ class BdClient:
         try:
             result = self.run(*args)
             # Parse JSON response to get the created ID
-            data = result.as_json()
+            data = result.json()
             if isinstance(data, dict):
                 return data.get("id")
             return None

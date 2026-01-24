@@ -278,6 +278,49 @@ class BoardNotifier:
         if not bead_id:
             logger.warning("Failed to create board escalation bead for: %s", issue[:50])
 
+        # Create message in board-channel for board to see
+        try:
+            from cli.core.queries import create_message_with_notifications, generate_id
+            from cli.core.constants import DEFAULT_BOARD_CHANNEL
+            from cli.core.db import Database
+
+            # Get database connection from BdClient's db_path
+            if self._client._db_path:
+                db = Database(self._client._db_path)
+
+                # Get board-channel ID
+                board_channel_row = db.fetchone(
+                    "SELECT id FROM channels WHERE name = ?",
+                    (DEFAULT_BOARD_CHANNEL,)
+                )
+
+                if board_channel_row:
+                    # Format escalation message
+                    from_worker_id = context.get("worker_id", "system")
+                    escalation_path = " → ".join(context.get("escalation_path", []))
+                    message_content = (
+                        f"**ESCALATION**\n\n"
+                        f"{issue}\n\n"
+                        f"**Path:** {escalation_path}\n\n"
+                        f"**Context:**\n```json\n{json.dumps(context, indent=2)}\n```"
+                    )
+
+                    # Create message with notifications
+                    create_message_with_notifications(
+                        db=db,
+                        channel_id=board_channel_row["id"],
+                        from_worker_id=from_worker_id,
+                        content=message_content,
+                        priority=4,  # Critical priority
+                        time_sensitivity="immediate",
+                        message_id=generate_id("msg"),
+                    )
+
+                db.close()
+        except Exception as e:
+            # Don't fail escalation if message creation fails
+            logger.warning(f"Failed to create board-channel message for escalation: {e}")
+
         # Invoke callback for immediate notification
         if self._callback:
             self._callback(issue, context)
