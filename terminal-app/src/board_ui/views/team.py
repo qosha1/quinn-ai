@@ -122,31 +122,43 @@ class TeamView(Widget):
             table.add_row(*row)
 
     def _get_status_icon(self, state: Optional[SessionState]) -> str:
-        """Get status icon for session state."""
+        """Get status icon for session state.
+
+        Gracefully handles unknown states without crashing.
+        """
         if state is None:
             return "⚫"  # No session
         if state == SessionState.RUNNING:
             return "🟢"  # Active
         if state == SessionState.IDLE:
             return "🟡"  # Idle
-        if state == SessionState.BLOCKED:
-            return "🔴"  # Blocked
         if state == SessionState.STARTING:
             return "🔵"  # Starting
-        return "⚫"
+        if state == SessionState.STOPPED:
+            return "⚫"  # Stopped
+        if state == SessionState.CRASHED:
+            return "🔴"  # Crashed
+        # Unknown state - return question mark instead of crashing
+        return "❓"
 
     def _get_status_text(self, state: Optional[SessionState]) -> str:
-        """Get status text for session state."""
+        """Get status text for session state.
+
+        Gracefully handles unknown states without crashing.
+        """
         if state is None:
             return "No session"
         if state == SessionState.RUNNING:
             return "Working..."
         if state == SessionState.IDLE:
             return "Idle"
-        if state == SessionState.BLOCKED:
-            return "Blocked"
         if state == SessionState.STARTING:
             return "Starting..."
+        if state == SessionState.STOPPED:
+            return "Stopped"
+        if state == SessionState.CRASHED:
+            return "Crashed"
+        # Unknown state - return descriptive text instead of crashing
         return "Unknown"
 
     def _passes_filter(self, worker: WorkerInfo) -> bool:

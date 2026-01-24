@@ -367,3 +367,184 @@ class TestE2EOrgDiscovery:
 
                 # App should be running
                 assert app.is_running
+
+    @pytest.mark.asyncio
+    async def test_discover_orgs_with_empty_search_paths(self):
+        """Config with org_paths=[] should NOT crash and show helpful error message."""
+        config = BoardConfig(org_paths=[])
+        app = BoardApp(config)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+
+            # App should be running
+            assert app.is_running
+
+            # Should NOT be connected to any org
+            assert app._active_org_path is None
+
+            # Should show no-org view
+            from board_ui.views.no_org import NoOrgView
+            no_org_view = app.query_one("#no-org-view", NoOrgView)
+            assert "hidden" not in no_org_view.classes
+
+            # Available orgs should be empty
+            assert len(no_org_view.available_orgs) == 0
+
+    @pytest.mark.asyncio
+    async def test_discover_orgs_when_home_orgs_missing(self):
+        """When ~/orgs doesn't exist, should still search cwd and show search paths attempted."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create an org in current directory
+            cwd_org = Path(tmpdir) / "cwd-org"
+            create_mock_org_db(cwd_org, status="stopped")
+
+            # Use only tmpdir as search path (simulating cwd)
+            config = BoardConfig(org_paths=[Path(tmpdir)])
+            app = BoardApp(config)
+
+            async with app.run_test() as pilot:
+                await pilot.pause()
+
+                # Should discover the org in cwd
+                from board_ui.views.no_org import NoOrgView
+                no_org_view = app.query_one("#no-org-view", NoOrgView)
+
+                # Should find the org
+                assert len(no_org_view.available_orgs) == 1
+                assert no_org_view.available_orgs[0][0] == cwd_org
+
+                # App should be running (not crashed)
+                assert app.is_running
+
+    @pytest.mark.asyncio
+    async def test_discover_orgs_handles_permission_denied(self):
+        """Create directory user can't read - should log warning, continue, NOT crash."""
+        import os
+        import stat
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a normal org
+            normal_org = Path(tmpdir) / "normal-org"
+            create_mock_org_db(normal_org, status="stopped")
+
+            # Create a directory with restricted permissions
+            restricted_dir = Path(tmpdir) / "restricted"
+            restricted_dir.mkdir()
+            restricted_org = restricted_dir / "restricted-org"
+            restricted_org.mkdir()
+
+            # Remove read permissions (will cause PermissionError)
+            try:
+                os.chmod(restricted_dir, stat.S_IWUSR | stat.S_IXUSR)
+
+                config = BoardConfig(org_paths=[Path(tmpdir)])
+                app = BoardApp(config)
+
+                async with app.run_test() as pilot:
+                    await pilot.pause()
+
+                    # App should still be running (didn't crash)
+                    assert app.is_running
+
+                    # Should have found the normal org
+                    from board_ui.views.no_org import NoOrgView
+                    no_org_view = app.query_one("#no-org-view", NoOrgView)
+
+                    # Should find at least the normal org (restricted one may be skipped)
+                    assert len(no_org_view.available_orgs) >= 1
+                    org_paths = [org[0] for org in no_org_view.available_orgs]
+                    assert normal_org in org_paths
+            finally:
+                # Restore permissions for cleanup
+                try:
+                    os.chmod(restricted_dir, stat.S_IRWXU)
+                except:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_discover_orgs_in_current_directory(self):
+        """Create temp org in cwd - should auto-discover and connect successfully."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a running org in the temp directory (simulating cwd)
+            org_path = Path(tmpdir) / "local-org"
+            create_mock_org_db(org_path, status="running")
+
+            # Configure board to search only this directory
+            config = BoardConfig(org_paths=[Path(tmpdir)])
+            app = BoardApp(config)
+
+            async with app.run_test() as pilot:
+                await pilot.pause()
+
+                # Should auto-discover and connect
+                assert app._active_org_path == org_path
+                assert app._is_connected
+
+                # Should show org tabs
+                from textual.widgets import TabbedContent
+                tabs = app.query_one("#org-tabs", TabbedContent)
+                assert "hidden" not in tabs.classes
+
+                # App should be running
+                assert app.is_running
+
+    @pytest.mark.asyncio
+    async def test_discover_multiple_orgs(self):
+        """Create 2 orgs in search path - should find both and show in org list."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create two orgs (one running, one stopped)
+            org1_path = Path(tmpdir) / "org-alpha"
+            org2_path = Path(tmpdir) / "org-beta"
+
+            create_mock_org_db(org1_path, status="running")
+            create_mock_org_db(org2_path, status="stopped")
+
+            config = BoardConfig(org_paths=[Path(tmpdir)])
+            app = BoardApp(config)
+
+            async with app.run_test() as pilot:
+                await pilot.pause()
+
+                # Should find both orgs
+                from board_ui.views.no_org import NoOrgView
+                no_org_view = app.query_one("#no-org-view", NoOrgView)
+
+                assert len(no_org_view.available_orgs) == 2
+                org_paths = {org[0] for org in no_org_view.available_orgs}
+                assert org1_path in org_paths
+                assert org2_path in org_paths
+
+                # Should auto-connect to the running org
+                assert app._active_org_path == org1_path
+
+                # App should be running
+                assert app.is_running
+
+    @pytest.mark.asyncio
+    async def test_no_orgs_shows_helpful_message(self):
+        """Empty search paths - should show 'Searched in: ...' and suggest 'Create ~/orgs or use --org-path'."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create config with empty directory (no orgs)
+            empty_dir = Path(tmpdir) / "empty"
+            empty_dir.mkdir()
+
+            config = BoardConfig(org_paths=[empty_dir])
+            app = BoardApp(config)
+
+            async with app.run_test() as pilot:
+                await pilot.pause()
+
+                # Should not be connected
+                assert app._active_org_path is None
+
+                # Should show no-org view
+                from board_ui.views.no_org import NoOrgView
+                no_org_view = app.query_one("#no-org-view", NoOrgView)
+                assert "hidden" not in no_org_view.classes
+
+                # Should have no orgs available
+                assert len(no_org_view.available_orgs) == 0
+
+                # App should still be running
+                assert app.is_running
