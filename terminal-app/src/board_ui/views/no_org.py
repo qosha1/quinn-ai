@@ -108,15 +108,18 @@ class NoOrgView(Widget):
     def __init__(
         self,
         available_orgs: Optional[list[tuple[Path, str]]] = None,
+        search_paths: Optional[list[Path]] = None,
         **kwargs,
     ) -> None:
         """Initialize the no-org view.
 
         Args:
             available_orgs: List of (path, status) tuples for available orgs
+            search_paths: List of paths searched for orgs
         """
         super().__init__(**kwargs)
         self.available_orgs = available_orgs or []
+        self.search_paths = search_paths or []
 
     def compose(self) -> ComposeResult:
         with Center():
@@ -139,10 +142,18 @@ class NoOrgView(Widget):
                         for org_path, status in self.available_orgs:
                             yield OrgListItem(org_path, status)
                 else:
-                    yield Label(
-                        "No orgs found. Create one to get started.",
-                        id="scanning-label",
-                    )
+                    # Show search paths when no orgs are found
+                    if self.search_paths:
+                        search_paths_str = ", ".join(str(p) for p in self.search_paths)
+                        yield Label(
+                            f"No orgs found.\n\nSearched in: {search_paths_str}\n\nSuggestions:\n- Create ~/orgs directory\n- Use --org-path to specify location",
+                            id="scanning-label",
+                        )
+                    else:
+                        yield Label(
+                            "No orgs found. Create one to get started.",
+                            id="scanning-label",
+                        )
 
                 with Container(id="action-buttons"):
                     if self.available_orgs:

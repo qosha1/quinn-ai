@@ -198,14 +198,14 @@ class Org:
         )
         subscribe_to_channel(self.db, general_channel.id, ceo_data.id)
 
-        # #escalations - channel for escalation messages
-        escalations_channel = create_channel(
+        # #board-channel - channel for board communications and escalations
+        board_channel = create_channel(
             self.db,
-            name="escalations",
+            name="board-channel",
             channel_type="topic",
-            team_id=None,  # Org-wide for escalations
+            team_id=None,  # Org-wide for board communications
         )
-        subscribe_to_channel(self.db, escalations_channel.id, ceo_data.id)
+        subscribe_to_channel(self.db, board_channel.id, ceo_data.id)
 
         # Initialize beads database for work tracking
         self._init_beads()

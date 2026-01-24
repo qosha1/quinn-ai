@@ -9,6 +9,7 @@ Shows:
 - Filter by team/status
 """
 
+import logging
 from typing import Optional
 
 from textual.app import ComposeResult
@@ -17,6 +18,8 @@ from textual.widgets import Button, DataTable, Label, Static
 from textual.widget import Widget
 
 from ..interfaces.org_connection import WorkerInfo, SessionState
+
+logger = logging.getLogger(__name__)
 
 
 class TeamView(Widget):
@@ -70,21 +73,42 @@ class TeamView(Widget):
         await self.refresh_workers()
 
     async def refresh_workers(self) -> None:
-        """Refresh the worker list from org connection."""
+        """Refresh worker list from org connection."""
+        # Check if org connected
+        if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+            self._populate_no_org_state()
+            return
+
+        try:
+            conn = self.app.org_connection
+            workers = conn.get_workers()
+
+            if not workers:
+                self._populate_empty_workers_state()
+                return
+
+            self._populate_workers(workers)
+        except Exception as e:
+            logger.error(f"Error refreshing workers: {e}")
+            self._populate_error_state(str(e))
+
+    def _populate_no_org_state(self) -> None:
+        """Populate table with no org connected message."""
         table = self.query_one("#workers-data", DataTable)
         table.clear()
+        table.add_row("🟢", "No Org Connected", "-", "-", "Connect to an org to see workers", "-")
 
-        # Try to get workers from org connection
-        if hasattr(self.app, 'org_connection') and self.app.org_connection:
-            self._workers = self.app.org_connection.get_workers()
-            self._populate_table_from_connection()
-        else:
-            # Placeholder data when no org connected
-            self._populate_placeholder_data()
-
-    def _populate_table_from_connection(self) -> None:
-        """Populate table with real worker data."""
+    def _populate_empty_workers_state(self) -> None:
+        """Populate table with empty workers message."""
         table = self.query_one("#workers-data", DataTable)
+        table.clear()
+        # Show nothing - empty table for empty org
+
+    def _populate_workers(self, workers: list[WorkerInfo]) -> None:
+        """Populate table with actual worker data."""
+        table = self.query_one("#workers-data", DataTable)
+        table.clear()
+        self._workers = workers
 
         for worker in self._workers:
             # Apply filter
@@ -110,16 +134,11 @@ class TeamView(Widget):
                 key=worker.id,  # Store worker ID as row key
             )
 
-    def _populate_placeholder_data(self) -> None:
-        """Populate table with placeholder data."""
+    def _populate_error_state(self, error: str) -> None:
+        """Populate table with error message."""
         table = self.query_one("#workers-data", DataTable)
-
-        placeholders = [
-            ("🟢", "No Org Connected", "-", "-", "Connect to an org to see workers", "-"),
-        ]
-
-        for row in placeholders:
-            table.add_row(*row)
+        table.clear()
+        table.add_row("🔴", "Error", "-", "-", f"Error loading workers: {error}", "-")
 
     def _get_status_icon(self, state: Optional[SessionState]) -> str:
         """Get status icon for session state.

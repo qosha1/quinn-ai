@@ -471,10 +471,10 @@ class TestOrgChannelAutoCreation:
         assert channel["team_id"] is None  # org-wide
 
     def test_init_creates_escalations_channel(self, org):
-        """Init should create escalations channel for escalation messages."""
+        """Init should create board-channel for board communications."""
         org.init("Alice")
         channel = org.db.fetchone(
-            "SELECT * FROM channels WHERE name = 'escalations'"
+            "SELECT * FROM channels WHERE name = 'board-channel'"
         )
         assert channel is not None
         assert channel["type"] == "topic"
@@ -493,14 +493,14 @@ class TestOrgChannelAutoCreation:
         assert subscription is not None
 
     def test_init_subscribes_ceo_to_escalations(self, org):
-        """Init should subscribe CEO to escalations channel."""
+        """Init should subscribe CEO to board-channel."""
         ceo = org.init("Alice")
-        escalations = org.db.fetchone(
-            "SELECT * FROM channels WHERE name = 'escalations'"
+        board_channel = org.db.fetchone(
+            "SELECT * FROM channels WHERE name = 'board-channel'"
         )
         subscription = org.db.fetchone(
             "SELECT * FROM channel_subscriptions WHERE channel_id = ? AND worker_id = ?",
-            (escalations["id"], ceo.id)
+            (board_channel["id"], ceo.id)
         )
         assert subscription is not None
 

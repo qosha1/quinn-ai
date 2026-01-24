@@ -239,6 +239,7 @@ class BoardApp(App):
         # Update no-org view with discovered orgs
         no_org_view = self.query_one("#no-org-view", NoOrgView)
         no_org_view.available_orgs = org_list
+        no_org_view.search_paths = self.config.org_paths
         no_org_view.refresh(recompose=True)
 
         # If we have a running org, auto-connect
@@ -361,6 +362,7 @@ class BoardApp(App):
 
         no_org_view = self.query_one("#no-org-view", NoOrgView)
         no_org_view.available_orgs = org_list
+        no_org_view.search_paths = self.config.org_paths
         no_org_view.refresh(recompose=True)
         self.notify("Org list refreshed")
 

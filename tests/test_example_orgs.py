@@ -587,20 +587,20 @@ class TestCommunication:
             db.close()
 
     def test_init_creates_escalations_channel(self, temp_org_dir):
-        """Org init should create a #escalations channel for escalation handling."""
+        """Org init should create a #board-channel for board communications."""
         run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
 
-        # Check DB for #escalations channel
+        # Check DB for #board-channel
         from cli.core.db import open_database
         db_path = temp_org_dir / "live" / "quinn.db"
         db = open_database(db_path)
 
         try:
             row = db.fetchone(
-                "SELECT * FROM channels WHERE name = 'escalations'"
+                "SELECT * FROM channels WHERE name = 'board-channel'"
             )
-            assert row is not None, "Expected #escalations channel to exist"
-            assert row["type"] == "topic", "Expected #escalations to be a topic channel"
+            assert row is not None, "Expected #board-channel to exist"
+            assert row["type"] == "topic", "Expected #board-channel to be a topic channel"
         finally:
             db.close()
 
@@ -626,7 +626,7 @@ class TestCommunication:
             db.close()
 
     def test_ceo_subscribed_to_escalations(self, temp_org_dir):
-        """CEO should be auto-subscribed to #escalations."""
+        """CEO should be auto-subscribed to #board-channel."""
         run_qn("org", "init", "--ceo-name", "Alice", org_path=temp_org_dir)
 
         from cli.core.db import open_database
@@ -641,8 +641,8 @@ class TestCommunication:
             channels = get_worker_channels(db, ceo.id)
             channel_names = [ch.name for ch in channels]
 
-            assert "escalations" in channel_names, \
-                f"CEO should be subscribed to #escalations, got: {channel_names}"
+            assert "board-channel" in channel_names, \
+                f"CEO should be subscribed to #board-channel, got: {channel_names}"
         finally:
             db.close()
 

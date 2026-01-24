@@ -154,8 +154,9 @@ class QuinnAIOrgConnection(OrgConnection):
     # Database path pattern relative to org root
     DB_RELATIVE_PATH = Path("live") / "quinn.db"
 
-    # Escalations channel name for board messages
-    ESCALATIONS_CHANNEL = "escalations"
+    # Board channel names (preferred first, then fallback)
+    BOARD_CHANNEL = "board-channel"
+    ESCALATIONS_CHANNEL = "escalations"  # Backward compatibility
 
     def __init__(self, org_path: Path, database_factory: Optional[Callable] = None):
         """Initialize connection to an org.
@@ -404,9 +405,16 @@ class QuinnAIOrgConnection(OrgConnection):
             (pool_id,),
         )
 
-        total_allocated = float(totals_row["total_allocated"] or 0)
-        total_spent = float(totals_row["total_spent"] or 0)
-        total_available = float(totals_row["total_available"] or 0)
+        # Fallback to zeros if budget_balances is empty
+        # This handles orgs initialized before budget_balances was properly created
+        if totals_row["total_allocated"] is None:
+            total_allocated = 0.0
+            total_spent = 0.0
+            total_available = 0.0
+        else:
+            total_allocated = float(totals_row["total_allocated"] or 0)
+            total_spent = float(totals_row["total_spent"] or 0)
+            total_available = float(totals_row["total_available"] or 0)
 
         # Calculate spend today
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -625,10 +633,28 @@ class QuinnAIOrgConnection(OrgConnection):
     # MESSAGES (BOARD INBOX)
     # ==================
 
+    def _get_board_channel_id(self) -> Optional[str]:
+        """Get board channel ID, trying board-channel first, then escalations."""
+        # Try board-channel first (preferred)
+        channel = self._db.fetchone(
+            "SELECT id FROM channels WHERE name = ?",
+            (self.BOARD_CHANNEL,),
+        )
+        if channel:
+            return channel["id"]
+
+        # Fallback to escalations (backward compat)
+        channel = self._db.fetchone(
+            "SELECT id FROM channels WHERE name = ?",
+            (self.ESCALATIONS_CHANNEL,),
+        )
+        return channel["id"] if channel else None
+
     def get_board_messages(self, unread_only: bool = False) -> list[Message]:
         """Get messages escalated to the board.
 
-        Messages from the escalations channel are treated as board messages.
+        Messages from the board channel are treated as board messages.
+        Tries board-channel first, then falls back to escalations for backward compatibility.
 
         Args:
             unread_only: If True, only return unread messages
@@ -638,25 +664,21 @@ class QuinnAIOrgConnection(OrgConnection):
         """
         self._ensure_connected()
 
-        # Get escalations channel
-        channel_row = self._db.fetchone(
-            "SELECT id FROM channels WHERE name = ?",
-            (self.ESCALATIONS_CHANNEL,),
-        )
+        # Get board channel (tries board-channel first, then escalations)
+        channel_id = self._get_board_channel_id()
 
-        if not channel_row:
+        if not channel_id:
             return []
-
-        channel_id = channel_row["id"]
 
         # Build query for messages
         if unread_only:
             # Join with notification_beads to check read status
             # Board messages are "unread" if they have pending notification beads
             rows = self._db.fetchall(
-                """SELECT DISTINCT m.*, w.name as from_worker_name
+                """SELECT DISTINCT m.*, w.name as from_worker_name, c.name as channel_name
                    FROM messages m
                    JOIN workers w ON m.from_worker_id = w.id
+                   JOIN channels c ON m.channel_id = c.id
                    JOIN notification_beads nb ON nb.message_id = m.id
                    WHERE m.channel_id = ? AND nb.status = 'pending'
                    ORDER BY m.priority DESC, m.created_at DESC""",
@@ -664,9 +686,10 @@ class QuinnAIOrgConnection(OrgConnection):
             )
         else:
             rows = self._db.fetchall(
-                """SELECT m.*, w.name as from_worker_name
+                """SELECT m.*, w.name as from_worker_name, c.name as channel_name
                    FROM messages m
                    JOIN workers w ON m.from_worker_id = w.id
+                   JOIN channels c ON m.channel_id = c.id
                    WHERE m.channel_id = ?
                    ORDER BY m.priority DESC, m.created_at DESC""",
                 (channel_id,),
@@ -682,7 +705,7 @@ class QuinnAIOrgConnection(OrgConnection):
                     id=row["id"],
                     from_worker_id=row["from_worker_id"],
                     from_worker_name=row["from_worker_name"],
-                    channel_name=self.ESCALATIONS_CHANNEL,
+                    channel_name=row["channel_name"],
                     content=row["content"],
                     priority=row["priority"],
                     created_at=self._parse_datetime(row["created_at"]) or datetime.now(),
@@ -701,13 +724,10 @@ class QuinnAIOrgConnection(OrgConnection):
         """
         self._ensure_connected()
 
-        # Get escalations channel
-        channel_row = self._db.fetchone(
-            "SELECT id FROM channels WHERE name = ?",
-            (self.ESCALATIONS_CHANNEL,),
-        )
+        # Get board channel (tries board-channel first, then escalations)
+        channel_id = self._get_board_channel_id()
 
-        if not channel_row:
+        if not channel_id:
             return 0
 
         # Count messages with pending notification beads
@@ -716,7 +736,7 @@ class QuinnAIOrgConnection(OrgConnection):
                FROM messages m
                JOIN notification_beads nb ON nb.message_id = m.id
                WHERE m.channel_id = ? AND nb.status = 'pending'""",
-            (channel_row["id"],),
+            (channel_id,),
         )
 
         return count_row["count"] if count_row else 0

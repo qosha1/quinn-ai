@@ -6,6 +6,7 @@ to the existing CLI. The board is independent of org lifecycle - it can run
 without any org, and starting/stopping orgs is done through the qn CLI.
 """
 
+import logging
 import shutil
 import sqlite3
 import subprocess
@@ -13,6 +14,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # Module-level cache for the qn command
 _qn_command_cache: Optional[list[str]] = None
@@ -332,30 +335,41 @@ def discover_available_orgs(search_paths: list[Path]) -> list[OrgInfo]:
     Returns:
         List of OrgInfo for all discoverable orgs (running and stopped)
     """
+    logger.debug(f"Starting org discovery with search paths: {search_paths}")
     orgs: list[OrgInfo] = []
     seen_paths: set[Path] = set()
 
     for search_path in search_paths:
-        if not search_path.exists():
+        try:
+            if not search_path.exists():
+                logger.debug(f"Search path does not exist: {search_path}")
+                continue
+
+            # Check if search_path itself is an org
+            if _is_org_folder(search_path):
+                if search_path not in seen_paths:
+                    seen_paths.add(search_path)
+                    orgs.append(_build_org_info(search_path))
+                continue
+
+            # Search subdirectories
+            if search_path.is_dir():
+                for child in search_path.iterdir():
+                    try:
+                        if not child.is_dir():
+                            continue
+
+                        if _is_org_folder(child) and child not in seen_paths:
+                            seen_paths.add(child)
+                            orgs.append(_build_org_info(child))
+                    except (PermissionError, OSError) as e:
+                        logger.warning(f"Permission denied accessing {child}: {e}")
+                        continue
+        except (PermissionError, OSError) as e:
+            logger.warning(f"Permission denied accessing {search_path}: {e}")
             continue
 
-        # Check if search_path itself is an org
-        if _is_org_folder(search_path):
-            if search_path not in seen_paths:
-                seen_paths.add(search_path)
-                orgs.append(_build_org_info(search_path))
-            continue
-
-        # Search subdirectories
-        if search_path.is_dir():
-            for child in search_path.iterdir():
-                if not child.is_dir():
-                    continue
-
-                if _is_org_folder(child) and child not in seen_paths:
-                    seen_paths.add(child)
-                    orgs.append(_build_org_info(child))
-
+    logger.info(f"Discovery complete: found {len(orgs)} org(s)")
     return orgs
 
 
@@ -372,13 +386,17 @@ def _is_org_folder(path: Path) -> bool:
     Returns:
         True if path is an org folder
     """
-    if not path.is_dir():
+    try:
+        if not path.is_dir():
+            return False
+
+        db_path = _get_db_path(path)
+        config_path = path / "config"
+
+        return db_path.exists() or config_path.exists()
+    except (PermissionError, OSError) as e:
+        logger.warning(f"Permission denied checking {path}: {e}")
         return False
-
-    db_path = _get_db_path(path)
-    config_path = path / "config"
-
-    return db_path.exists() or config_path.exists()
 
 
 def _build_org_info(org_path: Path) -> OrgInfo:
