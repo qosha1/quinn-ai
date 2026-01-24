@@ -210,25 +210,19 @@ class TeamView(Widget):
 
     async def on_data_table_cell_selected(self, event: DataTable.CellSelected) -> None:
         """Handle cell selection - check if it's the Chat button."""
-        self.app.notify(f"DEBUG: Cell clicked - row={event.coordinate.row}, col={event.coordinate.column}", severity="information")
-
         if event.coordinate.column == 5:  # Actions column
-            # Get worker ID from row key
-            worker_id = str(event.cell_key.row_key)
-            self.app.notify(f"DEBUG: Chat clicked for worker {worker_id}", severity="information")
+            # Get worker ID from row key - need to access .value attribute
+            worker_id = event.cell_key.row_key.value
 
             # Find worker by ID
             worker = next((w for w in self._workers if w.id == worker_id), None)
             if worker:
-                self.app.notify(f"DEBUG: Opening chat for {worker.name}", severity="information")
                 await self._open_worker_chat(worker)
             else:
-                self.app.notify(f"DEBUG: Worker {worker_id} not found in {[w.id for w in self._workers]}", severity="error")
+                self.app.notify(f"Worker {worker_id} not found", severity="error")
 
     async def _open_worker_chat(self, worker: WorkerInfo) -> None:
         """Open a chat window with a worker."""
-        self.app.notify(f"DEBUG: _open_worker_chat called for {worker.name}", severity="information")
-
         from ..terminals import get_terminal_provider
 
         if not worker.tmux_session_name:
@@ -241,7 +235,6 @@ class TeamView(Widget):
             return
 
         try:
-            self.app.notify(f"DEBUG: Attaching to session {worker.tmux_session_name}", severity="information")
             terminal.attach_to_session(
                 title=f"Chat with {worker.name}",
                 session_name=worker.tmux_session_name,
