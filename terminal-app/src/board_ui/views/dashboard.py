@@ -48,11 +48,23 @@ class DashboardView(Widget):
 
     .metric-card {
         width: 20;
-        height: 5;
+        height: auto;
         border: solid $secondary;
         padding: 1;
         margin-right: 1;
-        content-align: center middle;
+        layout: vertical;
+        align: center middle;
+    }
+
+    .metric-value {
+        text-align: center;
+        width: 100%;
+    }
+
+    .metric-label {
+        text-align: center;
+        width: 100%;
+        color: $text-muted;
     }
 
     #activity-panel {

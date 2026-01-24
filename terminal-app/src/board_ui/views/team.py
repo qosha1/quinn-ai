@@ -32,13 +32,14 @@ class TeamView(Widget):
     }
 
     #team-header {
-        height: auto;
+        height: 5;
         padding: 1;
         border-bottom: solid $secondary;
     }
 
     #workers-table {
         height: 1fr;
+        overflow-y: auto;
     }
 
     DataTable {

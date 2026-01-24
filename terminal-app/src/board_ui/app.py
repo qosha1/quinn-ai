@@ -70,6 +70,7 @@ class BoardApp(App):
 
     TabPane {
         padding: 1 2;
+        height: 1fr;
     }
 
     .panel {
@@ -210,7 +211,18 @@ class BoardApp(App):
         yield Footer()
 
     def action_switch_tab(self, tab_id: str) -> None:
-        """Switch to a specific tab."""
+        """Switch to a specific tab.
+
+        Don't switch if user is typing in an input field.
+        """
+        # Check if focus is on an input widget
+        focused = self.focused
+        if focused and hasattr(focused, '__class__'):
+            from textual.widgets import Input, TextArea
+            if isinstance(focused, (Input, TextArea)):
+                # User is typing - don't switch tabs
+                return
+
         if not self._is_connected:
             return
         tabs = self.query_one("#org-tabs", TabbedContent)
