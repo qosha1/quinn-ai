@@ -79,6 +79,9 @@ class SessionConfig:
     persist_transcript: bool = True
     transcript_db_path: Optional[Path] = None
 
+    # Onboarding
+    welcome_message: Optional[str] = None  # Message to display on spawn
+
 
 @dataclass
 class SessionMetrics:

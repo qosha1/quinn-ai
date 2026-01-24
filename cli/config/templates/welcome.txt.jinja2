@@ -1,0 +1,35 @@
+╔════════════════════════════════════════════════════════════════╗
+║                  QuinnAI Worker Session                        ║
+╠════════════════════════════════════════════════════════════════╣
+║ Worker:  {{ worker_name }} ({{ worker_id }})
+║ Role:    {{ worker_role }}
+║ Team:    {{ team_name }}
+║ Manager: {{ manager_name or "Board" }}
+╠════════════════════════════════════════════════════════════════╣
+║ MISSION                                                        ║
+║ {{ org_mission[:60] }}{{ '...' if org_mission|length > 60 else '' }}
+║                                                                ║
+{% if okrs %}
+║ CURRENT FOCUS                                                  ║
+{% for okr in okrs[:2] %}
+║ ☐ {{ okr.title[:58] }}{{ '...' if okr.title|length > 58 else '' }}
+{% endfor %}
+║                                                                ║
+{% endif %}
+║ YOUR WORKSPACE                                                 ║
+║ Current dir:  {{ worker_storage_short }}
+║ Shared docs:  $SHARED_STORAGE
+║ Your briefing: cat BRIEFING.md                                ║
+║                                                                ║
+║ QUICK START                                                    ║
+║ • Read briefing:  cat BRIEFING.md                             ║
+║ • View OKRs:      bd list --assignee={{ worker_id }}
+║ • Check tasks:    bd ready                                    ║
+║ • Learn storage:  cat STORAGE.md                              ║
+║ • Architecture:   cat CLAUDE.md                               ║
+╚════════════════════════════════════════════════════════════════╝
+
+Type 'help' for available commands.
+
+Ready to begin? Start by reading your briefing:
+  cat BRIEFING.md

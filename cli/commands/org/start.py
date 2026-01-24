@@ -149,8 +149,30 @@ def _spawn_ceo_session(
         command: CLI command for the session
         args_str: Space-separated additional args
     """
+    from cli.core.onboarding import (
+        prepare_worker_onboarding,
+        get_worker_env_vars,
+        generate_welcome_message,
+    )
+
     # Parse args
     args = args_str.split() if args_str else []
+
+    # Prepare onboarding (creates worker directory, briefing, docs)
+    db = open_database(get_org_db_path(org_path))
+    try:
+        onboarding_ctx = prepare_worker_onboarding(db, ceo.id, org_path)
+    finally:
+        db.close()
+
+    # Get worker directory (not org root)
+    worker_dir = org_path / "storage" / "workers" / ceo.id
+
+    # Get environment variables
+    env_vars = get_worker_env_vars(onboarding_ctx, org_path)
+
+    # Generate welcome message
+    welcome = generate_welcome_message(onboarding_ctx, worker_dir)
 
     # Create session config
     config = SessionConfig(
@@ -158,7 +180,9 @@ def _spawn_ceo_session(
         provider=provider,
         command=command,
         args=args,
-        working_directory=org_path,
+        working_directory=worker_dir,  # Worker dir, not org root
+        env_vars=env_vars,
+        welcome_message=welcome,
     )
 
     # Get registry and ensure provider is available

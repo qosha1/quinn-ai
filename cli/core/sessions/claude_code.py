@@ -103,10 +103,19 @@ class ClaudeCodeSession(SessionInterface):
             # Create and start the agent session
             self._agent_session = AgentSession(agent_config)
 
+            # Build shell command - if welcome message provided, cat it first
+            shell_cmd = self._config.command
+            if self._config.welcome_message and self._config.working_directory:
+                # Write welcome message to WELCOME.txt
+                welcome_path = Path(self._config.working_directory) / "WELCOME.txt"
+                welcome_path.write_text(self._config.welcome_message)
+                # Cat welcome before starting claude
+                shell_cmd = f"cat {welcome_path} && {self._config.command}"
+
             # Start with session config that includes our command and args
             from shared.pyterm.protocols import SessionConfig as PytermSessionConfig
             session_config = PytermSessionConfig(
-                shell=self._config.command,
+                shell=shell_cmd,
                 args=self._config.args,
                 cwd=str(self._config.working_directory) if self._config.working_directory else None,
                 env=self._config.env_vars,
