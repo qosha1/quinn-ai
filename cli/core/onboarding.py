@@ -4,15 +4,17 @@ Provides onboarding context and materials to workers on spawn.
 Creates briefings, documentation, and welcome messages for new workers.
 """
 
-from pathlib import Path
-from typing import Optional
+import json
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from cli.core.db import Database
 from cli.core.worker import Worker
+from cli.core.queries import get_team
 
 
 @dataclass
@@ -47,6 +49,7 @@ def prepare_worker_onboarding(
     - STORAGE.md (storage architecture guide)
     - Symlinks to CLAUDE.md and AGENTS.md
     - Onboarding directory structure
+    - Initialization marker
 
     Args:
         db: Database instance
@@ -79,7 +82,22 @@ def prepare_worker_onboarding(
     # 6. Symlink architecture docs
     _link_architecture_docs(worker_dir, org_path)
 
+    # 7. Record onboarding initialization marker
+    marker_path = onboarding_dir / "initialized"
+    if not marker_path.exists():
+        marker_path.write_text(context.timestamp)
+
     return context
+
+
+def load_onboarding_context(
+    db: Database,
+    worker_id: str,
+    org_path: Path,
+) -> OnboardingContext:
+    """Load onboarding context without writing files."""
+    worker = Worker.get(db, worker_id)
+    return _load_onboarding_context(db, worker, org_path)
 
 
 def _load_onboarding_context(
@@ -108,8 +126,14 @@ def _load_onboarding_context(
         except Exception:
             pass
 
-    # Get team name (default to role if not set)
-    team_name = worker.team or worker.role
+    # Get team name (default to role if team lookup fails)
+    team_name = worker.role
+    try:
+        team = get_team(db, worker.team_id)
+        if team and team.name:
+            team_name = team.name
+    except Exception:
+        pass
 
     # Get org mission from config or use default
     org_mission = _load_org_mission(org_path)
@@ -194,9 +218,43 @@ def _load_worker_okrs(db: Database, worker_id: str) -> list[dict]:
     Returns:
         List of OKR dicts with title and key_results
     """
-    # For now, return empty - will be populated when OKR system is implemented
-    # TODO: Query okrs table when it exists
-    return []
+    try:
+        rows = db.fetchall(
+            """
+            SELECT id, title, description, status, key_results
+            FROM okrs
+            WHERE owner_worker_id = ?
+            ORDER BY created_at DESC
+            """,
+            (worker_id,),
+        )
+    except Exception:
+        return []
+
+    okrs: list[dict] = []
+    for row in rows:
+        kr_json = row["key_results"]
+        kr_list = []
+        if kr_json:
+            try:
+                parsed = json.loads(kr_json)
+                if isinstance(parsed, list):
+                    for kr in parsed:
+                        if isinstance(kr, dict):
+                            kr_list.append(kr)
+            except json.JSONDecodeError:
+                pass
+
+        okrs.append(
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"] or "",
+                "status": row["status"],
+                "key_results": kr_list,
+            }
+        )
+    return okrs
 
 
 def _create_briefing(worker_dir: Path, ctx: OnboardingContext) -> None:
@@ -258,10 +316,11 @@ def _link_architecture_docs(worker_dir: Path, org_path: Path) -> None:
         org_path: Organization root path
     """
     # Find repo root (go up from cli/core/onboarding.py)
-    repo_root = Path(__file__).parent.parent.parent
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    onboarding_configs = repo_root / "shared" / "onboarding" / "configs"
 
-    # Symlink CLAUDE.md
-    claude_md = repo_root / "CLAUDE.md"
+    # Symlink CLAUDE.md (deployment rules)
+    claude_md = onboarding_configs / "CLAUDE.md"
     if claude_md.exists():
         link = worker_dir / "CLAUDE.md"
         if not link.exists():
@@ -272,7 +331,7 @@ def _link_architecture_docs(worker_dir: Path, org_path: Path) -> None:
                 link.write_text(claude_md.read_text())
 
     # Symlink AGENTS.md if it exists
-    agents_md = repo_root / "backend" / "AGENTS.md"
+    agents_md = onboarding_configs / "AGENTS.md"
     if agents_md.exists():
         link = worker_dir / "AGENTS.md"
         if not link.exists():
@@ -297,8 +356,12 @@ def get_worker_env_vars(
     """
     worker_dir = org_path / "storage" / "workers" / ctx.worker_id
 
+    # Determine session mode - CEOs and managers default to autonomous
+    session_mode = "autonomous" if (ctx.is_ceo or ctx.is_manager) else "interactive"
+
     return {
         "WORKER_ID": ctx.worker_id,
+        "QUINN_WORKER_ID": ctx.worker_id,
         "WORKER_NAME": ctx.worker_name,
         "WORKER_ROLE": ctx.worker_role,
         "TEAM_NAME": ctx.team_name,
@@ -310,6 +373,7 @@ def get_worker_env_vars(
         "BRIEFING_PATH": str(worker_dir / "BRIEFING.md"),
         "WORKER_BUDGET_ALLOCATED": str(ctx.budget_allocated),
         "WORKER_COST_TIER": str(ctx.cost_tier),
+        "QUINN_SESSION_MODE": session_mode,
     }
 
 
@@ -343,4 +407,27 @@ def generate_welcome_message(ctx: OnboardingContext, worker_dir: Path) -> str:
         org_mission=ctx.org_mission,
         okrs=ctx.okrs,
         worker_storage_short=worker_storage_short,
+        is_ceo=ctx.is_ceo,
+        is_manager=ctx.is_manager,
+    )
+
+
+def generate_returning_message(ctx: OnboardingContext) -> str:
+    """Generate a brief welcome-back message for new sessions."""
+    mode_reminder = ""
+    if ctx.is_ceo or ctx.is_manager:
+        mode_reminder = (
+            "\nMode: AUTONOMOUS - Continue working based on OKRs.\n"
+            "Make best-guess decisions, document in beads, only stop for critical blockers.\n"
+        )
+
+    return (
+        "New workday started.\n\n"
+        f"Worker: {ctx.worker_name} ({ctx.worker_role})\n"
+        f"Team: {ctx.team_name}\n"
+        f"{mode_reminder}\n"
+        "Quick start:\n"
+        "- Review your briefing: cat BRIEFING.md\n"
+        "- Check tasks: bd ready\n"
+        "- Store durable work: shared/\n"
     )

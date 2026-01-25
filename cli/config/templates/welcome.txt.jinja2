@@ -5,6 +5,9 @@
 ║ Role:    {{ worker_role }}
 ║ Team:    {{ team_name }}
 ║ Manager: {{ manager_name or "Board" }}
+{% if is_ceo or is_manager %}
+║ Mode:    AUTONOMOUS (continue working based on OKRs)           ║
+{% endif %}
 ╠════════════════════════════════════════════════════════════════╣
 ║ MISSION                                                        ║
 ║ {{ org_mission[:60] }}{{ '...' if org_mission|length > 60 else '' }}
