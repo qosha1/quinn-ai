@@ -479,21 +479,30 @@ class QuinnAIOrgConnection(OrgConnection):
         for row in rows:
             worker_id = row["id"]
             session_info = session_states.get(worker_id, {})
+            is_ceo = (worker_id == ceo_id)
+            role = row["role"]
+            manager_id = row["manager_id"]
+
+            # Determine session mode: CEOs and managers default to autonomous
+            # is_manager = no manager_id AND not CEO
+            is_manager = (manager_id is None) and not is_ceo
+            session_mode = "autonomous" if (is_ceo or is_manager) else "interactive"
 
             workers.append(
                 WorkerInfo(
                     id=worker_id,
                     name=row["name"],
-                    role=row["role"],
+                    role=role,
                     team_name=row["team_name"],
                     status=self._parse_worker_status(row["status"]),
                     session_state=self._parse_session_state(
                         session_info.get("state")
                     ),
                     tmux_session_name=session_info.get("tmux_session_name"),
-                    manager_id=row["manager_id"],
+                    manager_id=manager_id,
                     current_task=session_info.get("current_task_id"),
-                    is_ceo=(worker_id == ceo_id),
+                    is_ceo=is_ceo,
+                    session_mode=session_mode,
                 )
             )
 
@@ -529,6 +538,12 @@ class QuinnAIOrgConnection(OrgConnection):
             "SELECT ceo_worker_id FROM org_state WHERE id = 'default'"
         )
         ceo_id = org_row["ceo_worker_id"] if org_row else None
+        is_ceo = (worker_id == ceo_id)
+        manager_id = row["manager_id"]
+
+        # Determine session mode
+        is_manager = (manager_id is None) and not is_ceo
+        session_mode = "autonomous" if (is_ceo or is_manager) else "interactive"
 
         return WorkerInfo(
             id=worker_id,
@@ -538,9 +553,10 @@ class QuinnAIOrgConnection(OrgConnection):
             status=self._parse_worker_status(row["status"]),
             session_state=self._parse_session_state(session_info.get("state")),
             tmux_session_name=session_info.get("tmux_session_name"),
-            manager_id=row["manager_id"],
+            manager_id=manager_id,
             current_task=session_info.get("current_task_id"),
-            is_ceo=(worker_id == ceo_id),
+            is_ceo=is_ceo,
+            session_mode=session_mode,
         )
 
     def get_ceo(self) -> Optional[WorkerInfo]:
@@ -1144,7 +1160,13 @@ class QuinnAIOrgConnection(OrgConnection):
         try:
             from cli.core.queries import create_message, generate_id
             from cli.core.notifications import create_notification_bead
+        except ImportError:
+            logger.warning(
+                "CLI module not available; falling back to direct SQL for CEO briefing."
+            )
+            return self._send_ceo_briefing_fallback(briefing_content)
 
+        try:
             ceo = self.get_ceo()
             if not ceo:
                 return False
@@ -1183,6 +1205,46 @@ class QuinnAIOrgConnection(OrgConnection):
             return True
         except Exception as e:
             logger.error(f"Failed to send CEO briefing: {e}")
+            return False
+
+    def _send_ceo_briefing_fallback(self, briefing_content: str) -> bool:
+        """Fallback to direct SQL when CLI helpers are unavailable."""
+        try:
+            import uuid
+
+            ceo = self.get_ceo()
+            if not ceo:
+                return False
+
+            channel_id = self._get_board_channel_id()
+            if not channel_id:
+                return False
+
+            if "CEO Briefing" not in briefing_content:
+                content = f"# CEO Briefing\n\n{briefing_content}"
+            else:
+                content = briefing_content
+
+            now = datetime.now()
+            message_id = f"msg-{str(uuid.uuid4())[:8]}"
+            self._db.execute(
+                """INSERT INTO messages
+                   (id, channel_id, from_worker_id, content, priority, time_sensitivity, created_at)
+                   VALUES (?, ?, ?, ?, 0, 'immediate', ?)""",
+                (message_id, channel_id, ceo.id, content, now),
+            )
+
+            notification_id = f"nb-{str(uuid.uuid4())[:8]}"
+            self._db.execute(
+                """INSERT INTO notification_beads
+                   (id, worker_id, message_id, channel_id, status, priority, created_at, read_at, expires_at)
+                   VALUES (?, ?, ?, ?, 'pending', 0, ?, NULL, NULL)""",
+                (notification_id, ceo.id, message_id, channel_id, now),
+            )
+            self._db.connection.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send CEO briefing (fallback): {e}")
             return False
 
     def get_current_briefing(self) -> Optional[str]:

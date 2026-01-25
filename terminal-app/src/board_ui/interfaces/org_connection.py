@@ -58,6 +58,7 @@ class WorkerInfo:
     manager_id: Optional[str]
     current_task: Optional[str] = None
     is_ceo: bool = False
+    session_mode: Optional[str] = None  # "autonomous" or "interactive"
 
 
 @dataclass

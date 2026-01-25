@@ -122,8 +122,8 @@ class TeamView(Widget):
             # Format role with CEO indicator
             role = f"★ {worker.role}" if worker.is_ceo else worker.role
 
-            # Current task or status
-            task = worker.current_task or self._get_status_text(worker.session_state)
+            # Current task or status with session mode
+            task = worker.current_task or self._get_status_text(worker.session_state, worker.session_mode)
 
             table.add_row(
                 status_icon,
@@ -161,17 +161,25 @@ class TeamView(Widget):
         # Unknown state - return question mark instead of crashing
         return "❓"
 
-    def _get_status_text(self, state: Optional[SessionState]) -> str:
-        """Get status text for session state.
+    def _get_status_text(self, state: Optional[SessionState], mode: Optional[str] = None) -> str:
+        """Get status text for session state with optional mode.
 
         Gracefully handles unknown states without crashing.
+
+        Args:
+            state: Current session state
+            mode: Session mode ("autonomous" or "interactive")
         """
+        mode_suffix = ""
+        if mode and state in (SessionState.RUNNING, SessionState.IDLE):
+            mode_suffix = f" [{mode[:4]}]"  # Show "auto" or "inte"
+
         if state is None:
             return "No session"
         if state == SessionState.RUNNING:
-            return "Working..."
+            return f"Working...{mode_suffix}"
         if state == SessionState.IDLE:
-            return "Idle"
+            return f"Idle{mode_suffix}"
         if state == SessionState.STARTING:
             return "Starting..."
         if state == SessionState.STOPPED:
