@@ -16,8 +16,6 @@ from cli.core.db import open_database, get_org_db_path
 from cli.core.org import Org
 from cli.core.org_chart import update_org_chart
 from cli.core.onboarding import (
-    generate_returning_message,
-    generate_welcome_message,
     get_worker_env_vars,
     load_onboarding_context,
     prepare_worker_onboarding,
@@ -140,7 +138,6 @@ def start_cmd(
 
             onboarding_ctx = load_onboarding_context(db, worker_obj.id, org_path)
             env_vars = get_worker_env_vars(onboarding_ctx, org_path, db)
-            welcome = generate_returning_message(onboarding_ctx)
 
             spawn_worker_session(
                 worker=worker_obj,
@@ -149,7 +146,6 @@ def start_cmd(
                 args_str=session_args,
                 working_directory=worker_dir,
                 env_vars=env_vars,
-                welcome_message=welcome,
                 force_restart=True,
             )
             click.echo(f"Session started for {worker_obj.name}")
@@ -210,7 +206,6 @@ def _spawn_ceo_session(
     from cli.core.onboarding import (
         prepare_worker_onboarding,
         get_worker_env_vars,
-        generate_welcome_message,
     )
 
     # Parse args
@@ -228,9 +223,6 @@ def _spawn_ceo_session(
 
         # Get environment variables
         env_vars = get_worker_env_vars(onboarding_ctx, org_path, db)
-
-        # Generate welcome message
-        welcome = generate_welcome_message(onboarding_ctx, worker_dir)
     finally:
         db.close()
 
@@ -242,7 +234,6 @@ def _spawn_ceo_session(
         args=args,
         working_directory=worker_dir,  # Worker dir, not org root
         env_vars=env_vars,
-        welcome_message=welcome,
     )
 
     # Get registry and ensure provider is available

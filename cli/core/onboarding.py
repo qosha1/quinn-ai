@@ -80,10 +80,13 @@ def prepare_worker_onboarding(
     # 5. Create STORAGE.md guide
     _create_storage_guide(worker_dir, context)
 
-    # 6. Symlink architecture docs
+    # 6. Create WELCOME.md file
+    _create_welcome_file(worker_dir, context)
+
+    # 7. Symlink architecture docs
     _link_architecture_docs(worker_dir, org_path)
 
-    # 7. Record onboarding initialization marker
+    # 8. Record onboarding initialization marker
     marker_path = onboarding_dir / "initialized"
     if not marker_path.exists():
         marker_path.write_text(context.timestamp)
@@ -307,6 +310,40 @@ def _create_storage_guide(worker_dir: Path, ctx: OnboardingContext) -> None:
         content = content.replace("{your-id}", ctx.worker_id)
         content = content.replace("{your-team}", ctx.team_name)
         (worker_dir / "STORAGE.md").write_text(content)
+
+
+def _create_welcome_file(worker_dir: Path, ctx: OnboardingContext) -> None:
+    """Create WELCOME.md file in worker directory.
+
+    Args:
+        worker_dir: Worker's directory path
+        ctx: Onboarding context
+    """
+    template_dir = Path(__file__).parent.parent / "config" / "templates"
+    env = Environment(
+        loader=FileSystemLoader(str(template_dir)),
+        autoescape=select_autoescape()
+    )
+
+    template = env.get_template("welcome.md.jinja2")
+
+    # Shorten worker storage path for display
+    worker_storage_short = f"~/orgs/.../workers/{ctx.worker_id}"
+
+    content = template.render(
+        worker_id=ctx.worker_id,
+        worker_name=ctx.worker_name,
+        worker_role=ctx.worker_role,
+        team_name=ctx.team_name,
+        manager_name=ctx.manager_name,
+        org_mission=ctx.org_mission,
+        okrs=ctx.okrs,
+        worker_storage_short=worker_storage_short,
+        is_ceo=ctx.is_ceo,
+        is_manager=ctx.is_manager,
+    )
+
+    (worker_dir / "WELCOME.md").write_text(content)
 
 
 def _link_architecture_docs(worker_dir: Path, org_path: Path) -> None:
