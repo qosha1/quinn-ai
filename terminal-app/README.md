@@ -28,14 +28,17 @@ pip install quinnai-board
 ## Usage
 
 ```bash
-# Launch the board UI
-qn-board
+# Launch the board UI (new command)
+qn board ui
 
 # Connect to a specific org
-qn-board -o ~/my-org
+qn board ui -o ~/my-org
 
 # Use a specific terminal for chat windows
-qn-board --terminal kitty
+qn board ui --terminal kitty
+
+# Legacy command (deprecated, will show warning)
+qn-board
 ```
 
 ## Terminal Support

@@ -149,8 +149,9 @@ def board(ctx, org_path: Optional[Path]):
         ctx.obj.org_path = org_path
 
 
-from cli.commands.board import status_cmd as board_status_cmd, alerts_cmd, pause_cmd, resume_cmd, fire_cmd
+from cli.commands.board import ui_cmd, status_cmd as board_status_cmd, alerts_cmd, pause_cmd, resume_cmd, fire_cmd
 
+board.add_command(ui_cmd, name="ui")
 board.add_command(board_status_cmd, name="status")
 board.add_command(alerts_cmd, name="alerts")
 board.add_command(pause_cmd, name="pause")

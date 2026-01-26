@@ -1,21 +1,15 @@
 """
-Board UI entry point.
+Board TUI command.
 
-DEPRECATED: Use `qn board ui` instead of `qn-board`.
-
-This entry point is maintained for backward compatibility but will be removed
-in a future version. The board TUI is now integrated with the main qn CLI.
+Launches the interactive board terminal UI for organization oversight.
 """
 
-import sys
 from pathlib import Path
 from typing import Optional
 
 import click
 
-from .app import BoardApp
-from .config import BoardConfig
-from .interfaces.terminal import TerminalType
+from cli.commands.context import pass_context
 
 
 @click.command()
@@ -33,16 +27,11 @@ from .interfaces.terminal import TerminalType
     default="auto",
     help="Preferred terminal emulator for chat windows",
 )
-@click.version_option()
-def main(
-    org_path: tuple[Path, ...],
-    terminal: str,
-) -> None:
-    """QuinnAI Board - Interactive oversight for AI organizations.
+@pass_context
+def ui_cmd(ctx, org_path: tuple[Path, ...], terminal: str) -> None:
+    """Launch the board terminal UI.
 
-    DEPRECATED: Use `qn board ui` instead.
-
-    Launch the board terminal UI to monitor and interact with running orgs.
+    Interactive dashboard for monitoring and managing AI organizations.
 
     \b
     Examples:
@@ -51,12 +40,18 @@ def main(
         qn board ui -o ~/org1 -o ~/org2   # Monitor multiple orgs
         qn board ui --terminal kitty      # Use Kitty for chat windows
     """
-    # Show deprecation warning
-    click.echo(
-        "Warning: 'qn-board' is deprecated. Use 'qn board ui' instead.",
-        err=True,
-    )
-    click.echo("", err=True)
+    try:
+        from board_ui.app import BoardApp
+        from board_ui.config import BoardConfig
+        from board_ui.interfaces.terminal import TerminalType
+    except ImportError as e:
+        click.echo(
+            "Error: Board UI not installed. "
+            "Install with: pip install -e terminal-app",
+            err=True,
+        )
+        raise click.Abort() from e
+
     # Build configuration
     config = BoardConfig(
         org_paths=list(org_path) if org_path else [],
@@ -65,18 +60,27 @@ def main(
 
     # If no org paths specified, use default search paths
     if not config.org_paths:
-        cwd = Path.cwd()
-        # Always provide search paths even if they don't exist yet
-        default_orgs_dir = Path.home() / "orgs"
-        config.org_paths = [default_orgs_dir, cwd]
+        # Use context org_path if available
+        if ctx.org_path:
+            config.org_paths = [ctx.org_path]
+        else:
+            # Fall back to default search paths
+            cwd = Path.cwd()
+            default_orgs_dir = Path.home() / "orgs"
+            config.org_paths = [default_orgs_dir, cwd]
 
     # Launch the app
     app = BoardApp(config)
     app.run()
 
 
-def _parse_terminal(terminal: str) -> Optional[TerminalType]:
+def _parse_terminal(terminal: str) -> Optional["TerminalType"]:
     """Parse terminal choice to TerminalType."""
+    try:
+        from board_ui.interfaces.terminal import TerminalType
+    except ImportError:
+        return None
+
     if terminal == "auto":
         return None
     elif terminal == "kitty":
@@ -86,7 +90,3 @@ def _parse_terminal(terminal: str) -> Optional[TerminalType]:
     elif terminal == "terminal":
         return TerminalType.MACOS_TERMINAL
     return None
-
-
-if __name__ == "__main__":
-    main()

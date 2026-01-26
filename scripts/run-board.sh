@@ -4,7 +4,7 @@
 # This script sets up the correct Python path and launches the board.
 # Usage: ./scripts/run-board.sh [OPTIONS]
 #
-# Options are passed through to qn-board (e.g., -o /path/to/org)
+# Options are passed through to qn board ui (e.g., -o /path/to/org)
 
 set -e
 
@@ -27,5 +27,5 @@ if [ -f "$ENV_FILE" ]; then
     set +a
 fi
 
-# Run the board
-exec python -m board_ui.main "$@"
+# Run the board using the new qn board ui command
+exec qn board ui "$@"
