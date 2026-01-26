@@ -169,9 +169,11 @@ def track_usage(usage_type_slug, quantity=1, metadata_func=None):
             if metadata_func:
                 try:
                     metadata = metadata_func(request)
-                except Exception:
+                except Exception as e:
                     # Don't fail request if metadata generation fails
-                    pass
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to generate usage metadata: {e}")
 
             # Execute view
             response = view_func(request, *args, **kwargs)
