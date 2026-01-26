@@ -17,7 +17,6 @@ from cli.core.queries import (
     create_worker,
     create_budget_pool,
     create_budget_allocation,
-    create_session,
     get_worker_state,
 )
 from cli.core.worker import Worker
@@ -178,13 +177,13 @@ class TestInvariantI3OneActiveSession:
         worker.start_onboarding()
         worker.complete_onboarding()
 
-        # Create existing active session
-        create_session(
-            worker.db,
-            worker_id=worker.id,
-            provider="claude-code",
-            state="running"
+        # Create existing active session record in sessions table
+        worker.db.execute(
+            """INSERT INTO sessions (id, worker_id, provider, state, started_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            ("test-session-123", worker.id, "claude-code", "running", datetime.now())
         )
+        worker.db.connection.commit()
 
         # Try to spawn another
         mock_session = MagicMock()

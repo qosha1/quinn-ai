@@ -811,6 +811,66 @@ class TestWorkerRegistryIntegration:
         assert active_worker_with_budget.session is None
 
 
+class TestWorkerOnboardingSpawn:
+    """Test onboarding preparation during worker session spawn."""
+
+    @pytest.fixture
+    def org_db(self):
+        """Create a database rooted at an org path with /live/quinn.db."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            org_path = Path(tmpdir)
+            (org_path / "live").mkdir(parents=True, exist_ok=True)
+            database = init_database(org_path / "live" / "quinn.db")
+            yield database, org_path
+            database.close()
+
+    @pytest.fixture
+    def worker_with_budget(self, org_db):
+        """Create an active worker with budget allocation."""
+        db, org_path = org_db
+        team = create_team(db, "Engineering")
+        worker_data = create_worker(db, "Alice", "Developer", team.id, 50)
+        worker = Worker(db, worker_data.id, org_path=org_path)
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        now = datetime.now()
+        period_end = now + timedelta(days=30)
+        pool = create_budget_pool(db, "test-pool", 1000.0, now, period_end)
+        create_budget_allocation(
+            db,
+            worker_id=worker.id,
+            allocated_credits=100.0,
+            period_start=now,
+            period_end=period_end,
+            pool_id=pool.id,
+        )
+        return worker, org_path
+
+    def test_spawn_prepares_onboarding_context(self, worker_with_budget):
+        """spawn() should prepare onboarding context when missing."""
+        from cli.core.session import SessionConfig
+
+        worker, org_path = worker_with_budget
+        registry = MockSessionRegistry()
+        worker.set_registry(registry)
+
+        config = SessionConfig(
+            worker_id=worker.id,
+            provider="mock",
+            command="mock-cli",
+        )
+        config.env_vars = {"CUSTOM": "1"}
+
+        worker.spawn(config)
+
+        worker_dir = org_path / "storage" / "workers" / worker.id
+        assert config.working_directory == worker_dir
+        assert (worker_dir / "BRIEFING.md").exists()
+        assert "BRIEFING_PATH" in config.env_vars
+        assert config.env_vars["CUSTOM"] == "1"
+        assert config.welcome_message
+
+
 # ===================
 # CONCURRENT SESSION PROTECTION TESTS
 # ===================

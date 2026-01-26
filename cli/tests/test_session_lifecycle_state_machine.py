@@ -134,15 +134,14 @@ class TestSessionT1NotSpawnedToStarting:
     def test_t1_checks_existing_session(self, active_worker):
         """T1 must raise if active session already exists."""
         from cli.core.worker import ActiveSessionExistsError
-        from cli.core.queries import create_session
 
-        # Create existing active session
-        create_session(
-            active_worker.db,
-            worker_id=active_worker.id,
-            provider="claude-code",
-            state="running"
+        # Create existing active session record in sessions table
+        active_worker.db.execute(
+            """INSERT INTO sessions (id, worker_id, provider, state, started_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            ("test-session-123", active_worker.id, "claude-code", "running", datetime.now())
         )
+        active_worker.db.connection.commit()
 
         mock_session = MagicMock()
 

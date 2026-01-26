@@ -111,6 +111,33 @@ class TestOrgGroup:
         ])
         assert result.exit_code == 0
         assert "Organization started" in result.output
+ 
+    def test_org_start_worker_requires_running(self, runner, temp_org):
+        """qn org start --worker should require running org."""
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "start", "--worker", "ceo", "--skip-config-validation"
+        ])
+
+        assert result.exit_code != 0
+        assert "not running" in result.output.lower()
+
+    def test_org_start_worker_runs(self, runner, temp_org):
+        """qn org start --worker should start workday via session spawn."""
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "start", "--no-spawn-ceo", "--skip-config-validation"])
+
+        with patch("cli.commands.org.session_utils.spawn_worker_session") as mock_spawn:
+            result = runner.invoke(qn, [
+                "--org-path", str(temp_org),
+                "org", "start", "--worker", "ceo", "--skip-config-validation"
+            ])
+
+        assert result.exit_code == 0
+        assert "Starting workday for" in result.output
+        mock_spawn.assert_called_once()
 
     def test_org_start_requires_init(self, runner, temp_org):
         """qn org start should require org to be initialized."""
@@ -155,6 +182,32 @@ class TestOrgGroup:
         ])
         assert result.exit_code == 0
         assert "Organization stopped" in result.output
+
+    def test_org_stop_worker_sends_wrapup(self, runner, temp_org):
+        """qn org stop --worker should request wrap-up and close session."""
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import get_channel_by_name, get_channel_messages
+
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "start", "--no-spawn-ceo", "--skip-config-validation"])
+
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "stop", "--worker", "ceo"
+        ])
+
+        assert result.exit_code == 0
+        assert "Workday stopped for" in result.output
+
+        db = open_database(get_org_db_path(temp_org))
+        try:
+            general = get_channel_by_name(db, "general")
+            assert general is not None
+            messages = get_channel_messages(db, general.id, limit=1)
+            assert messages
+            assert "Workday ending" in messages[0].content
+        finally:
+            db.close()
 
     def test_org_stop_requires_init(self, runner, temp_org):
         """qn org stop should require org to be initialized."""
