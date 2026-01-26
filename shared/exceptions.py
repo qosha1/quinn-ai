@@ -93,3 +93,34 @@ class ConfigurationError(Exception):
         else:
             full_message = f"Configuration error: {message}"
         super().__init__(full_message)
+
+
+class OrgStartError(Exception):
+    """Base error for org start failures."""
+    pass
+
+
+class OrgStructureError(OrgStartError):
+    """Org directory structure is invalid."""
+
+    def __init__(self, message: str):
+        super().__init__(f"Organization structure error: {message}")
+
+
+class SessionSpawnError(OrgStartError):
+    """Session spawn failed."""
+
+    def __init__(self, worker_id: str, message: str):
+        self.worker_id = worker_id
+        super().__init__(f"Failed to spawn session for {worker_id}: {message}")
+
+
+class SessionStartTimeout(OrgStartError):
+    """Session did not reach ready state within timeout."""
+
+    def __init__(self, worker_id: str, timeout: int):
+        self.worker_id = worker_id
+        self.timeout = timeout
+        super().__init__(
+            f"Session for {worker_id} did not reach ready state within {timeout} seconds"
+        )

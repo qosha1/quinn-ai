@@ -220,18 +220,21 @@ class Org:
 
         return Worker.get(self.db, ceo_data.id)
 
-    def start(self) -> None:
+    def start(self) -> tuple[str, str]:
         """Start the org (begin operations).
 
         Transitions org to running state. From initialized, also
         activates the CEO worker.
 
+        Returns:
+            Tuple of (old_status, new_status) for rollback support
+
         Raises:
             InvalidOrgTransition: If org cannot be started
         """
-        current = self.status
+        old_status = self.status
 
-        if current == OrgStatus.INITIALIZED.value:
+        if old_status == OrgStatus.INITIALIZED.value:
             self._validate_transition(OrgStatus.RUNNING.value)
 
             # Activate CEO
@@ -246,17 +249,29 @@ class Org:
                 self._deliver_ceo_briefing(ceo.id, briefing_path)
 
             update_org_status(self.db, OrgStatus.RUNNING.value, self.ceo_worker_id)
-            log_org_state_change(_logger, current, OrgStatus.RUNNING.value)
+            log_org_state_change(_logger, old_status, OrgStatus.RUNNING.value)
 
-        elif current == OrgStatus.STOPPED.value:
+        elif old_status == OrgStatus.STOPPED.value:
             self._validate_transition(OrgStatus.RUNNING.value)
             update_org_status(self.db, OrgStatus.RUNNING.value, self.ceo_worker_id)
-            log_org_state_change(_logger, current, OrgStatus.RUNNING.value)
+            log_org_state_change(_logger, old_status, OrgStatus.RUNNING.value)
 
         else:
             # Will raise InvalidOrgTransition
             self._validate_transition(OrgStatus.RUNNING.value)
 
+        self._state_data = None  # Invalidate cache
+        new_status = self.status
+        return (old_status, new_status)
+
+    def rollback_to_status(self, target_status: str) -> None:
+        """Rollback org to previous status (for error recovery).
+
+        Args:
+            target_status: Status to rollback to
+        """
+        update_org_status(self.db, target_status, self.ceo_worker_id)
+        log_org_state_change(_logger, self.status, target_status, note="Rollback after error")
         self._state_data = None  # Invalidate cache
 
     def _get_briefing_path(self) -> Path:

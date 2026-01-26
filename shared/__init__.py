@@ -29,6 +29,10 @@ from .exceptions import (
     OrgNotInitialized,
     ActiveSessionExistsError,
     ConfigurationError,
+    OrgStartError,
+    OrgStructureError,
+    SessionSpawnError,
+    SessionStartTimeout,
 )
 
 from .provider_types import (
@@ -58,6 +62,10 @@ __all__ = [
     "OrgNotInitialized",
     "ActiveSessionExistsError",
     "ConfigurationError",
+    "OrgStartError",
+    "OrgStructureError",
+    "SessionSpawnError",
+    "SessionStartTimeout",
     # Provider types
     "ModelCapabilities",
     "ModelInfo",
