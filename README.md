@@ -190,23 +190,75 @@ qn org <command>     # WE run (humans/system managing the org)
 qn wrkr <command>    # WORKERS run (from within their sessions)
 ```
 
-**Org commands:**
-```bash
-qn org init <path>     # Initialize org folder
-qn org start           # Start the org
-qn org stop            # Stop the org
-qn org status          # Check org state
-```
+### Command Map
 
-**Worker commands:**
-```bash
-qn wrkr get-work <id>    # Get my assigned beads
-qn wrkr inbox <id>       # Get my messages
-qn wrkr send <to> <msg>  # Send message
-qn wrkr status <id>      # My current state
-```
+| Command | Target | Action | Notes |
+| --- | --- | --- | --- |
+| `qn org init` | Org | Initialize org | Creates org structure + CEO |
+| `qn org start` | Org | Start org | Spawns CEO session by default |
+| `qn org start --worker <name>` | Worker | Start workday | Fresh session + wakeup nudge |
+| `qn org stop` | Org | Stop org | Stops all worker sessions |
+| `qn org stop --worker <name>` | Worker | Stop workday | Request wrap-up then close session |
+| `qn org status` | Org | Show org status | Lifecycle + workers/sessions |
+| `qn org hire` | Worker | Hire worker | Hire == spawn + start + onboard |
+| `qn org fire` | Worker | Terminate worker | Stops session + offboarding |
+| `qn org observe` | Worker | Attach/stream session | tmux-based |
+| `qn org logs` | Worker | View session scrollback | tmux capture |
+| `qn org cleanup` | Org | Cleanup sessions/notifications | Orphans + stale |
+| `qn org chart show` | Org | Show org chart | Tree view |
+| `qn org chart diff` | Org | Chart git diff | Requires git |
+| `qn org chart history` | Org | Chart git history | Requires git |
+| `qn org chart export` | Org | Export chart | yaml/json |
+| `qn org budget status` | Org | Budget summary | Pools + CEO balance |
+| `qn org budget tree` | Org | Budget cascade | From CEO or worker |
+| `qn org budget allocate` | Worker | Delegate budget | Manager -> report |
+| `qn org budget transactions` | Worker | Spend history | Optional filters |
+| `qn org okr list` | Org | List OKRs | beads or db |
+| `qn org okr show` | OKR | Show OKR details | beads/db |
+| `qn org okr add` | OKR | Add OKR | creates new |
+| `qn org okr set` | OKR | Update OKR | edit metadata |
+| `qn org okr cascade` | OKR | Cascade from root | |
+| `qn org okr progress` | OKR | Show progress | |
+| `qn org okr update-kr` | KR | Update KR metric | |
+| `qn org okr link` | Work/OKR | Link work to OKR | serves |
+| `qn wrkr status` | Self | Show worker status | lifecycle + runtime |
+| `qn wrkr get-work` | Work queue | Pull next work | requires `--worker-id` or `QUINN_WORKER_ID` |
+| `qn wrkr report` | Work | Post status update | requires `--worker-id` or `QUINN_WORKER_ID` |
+| `qn wrkr inbox` | Messages | View notifications | requires `--worker-id` or `QUINN_WORKER_ID` |
+| `qn wrkr send` | Channel | Send message | requires `--worker-id` or `QUINN_WORKER_ID` |
+| `qn wrkr search` | Messages | Search history | requires `--worker-id` or `QUINN_WORKER_ID` |
+| `qn wrkr delegate` | Worker | Delegate hiring authority | requires `--worker-id` or `QUINN_WORKER_ID` |
 
-Workers use `qn-bd` (bundled beads CLI) for work manipulation (create, update, close beads).
+### Notes and Clarifications
+
+- Hire means start: `qn org hire` immediately spawns a session and runs onboarding.
+- Workday start means new session: `qn org start --worker <name>` always creates a fresh session and provides a quick wakeup nudge.
+- Workday stop requests wrap-up: `qn org stop --worker <name>` sends a wrap-up request, then closes the session.
+- Worker commands require identity: use `qn wrkr --worker-id <id> ...` or set `QUINN_WORKER_ID`. Each new worker session (via `qn org hire` or `qn org start --worker`) seeds that environment variable so commands like `qn wrkr get-work` know who is asking. 
+
+### Worker & Org Action Matrix
+
+| Action | Actor | Command | Effect | Notes (future beads) |
+| --- | --- | --- | --- | --- |
+| Initialize QuinnAI org | Board | `qn org init` | Create org structure, shared storage folders, CEO worker placeholder and provisioning scripts | Base action; no beads yet |
+| Start org / spawn CEO session | Board | `qn org start` | Ensures CEO has a fresh session, onboarding nudges, and CLAUDE/AGENTS guidance loaded into shared storage | Related to onboarding epic `quinnai-tiqb` |
+| Hire worker (spawn + start + onboarding) | Board / delegated manager | `qn org hire --name <name> --role <role> --manager <manager>` | Worker record created, workspace bootstrapped, session spawned, and onboarding docs delivered | Doc alignment bead: `quinnai-17ms` ensures we keep deployed AGENTS/CLAUDE guidance in `shared/onboarding/configs` |
+| Start workday (fresh session) | Org controller | `qn org start --worker <name>` | Always spawns a new session, issues a fresh wakeup nudge, and sets `QUINN_WORKER_ID` for that terminal | Reinforces quick nudge described in onboarding epic `quinnai-tiqb` |
+| Stop workday (wrap-up + shutdown) | Org controller | `qn org stop --worker <name>` | Requests worker to wrap up, closes tmux/session, and records end-of-day state | Ensures sessions close cleanly; document session/terminal teardown expectations |
+| Observe session | Org controller | `qn org observe --worker <name>` | Attach to the worker's tmux view for real-time oversight | |
+| Pull next assigned work | Worker | `qn wrkr get-work [--worker-id <id>]` | Query assigned beads, ordered by priority; uses `--worker-id` or `QUINN_WORKER_ID` to know which worker is asking | Worker identity setup is critical; ensure onboarding seeds `QUINN_WORKER_ID` (see above) |
+| Report progress | Worker | `qn wrkr report [--worker-id <id>]` | Post status updates / blockers to the board and bead log | |
+| Document deployed org onboarding rules | Maintainer | n/a (documentation) | Clarify which instructions belong to repo vs deployed org and point to `shared/onboarding/configs` for worker-facing docs | Bookmarked by `quinnai-17ms`, also tracks how we present OKRs |
+| Feed onboarding briefings with OKRs | Maintainer | n/a | Populate `_load_worker_okrs` so the briefing template shows measurable goals | `quinnai-kdn2` |
+| Prevent firing mid-critical work | Maintainer | n/a | Authorization check must flag critical work in progress before allowing a fire | `quinnai-ji0h` |
+| Track cumulative hiring cost | Maintainer | n/a | Record every hire cost and compare to available budget before approving another hire | `quinnai-3s49` |
+
+### Worker Command Guidelines
+
+- `qn wrkr get-work`, `qn wrkr report`, `qn wrkr inbox`, `qn wrkr send`, `qn wrkr search`, and similar worker commands all require a worker identity. Use `--worker-id <id>` or rely on the `QUINN_WORKER_ID` environment variable that onboarding/worker-start scripts populate.
+- Every worker session begins with a quick wakeup nudge (e.g., “you are an engineer in QuinnAI’s org”) so they know the current priorities. The nudge happens every `qn org start --worker` call and does not replay the full onboarding package.
+- To stop working, the org-level controllers (`qn org stop --worker`) ask the worker to wrap up, then shut down the underlying terminal (tmux/session). Workers should close any terminals they manually opened.
+- Workers use `qn-bd` (bundled beads CLI) to create/update/close work.
 
 ---
 

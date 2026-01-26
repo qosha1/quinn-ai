@@ -73,8 +73,8 @@ Files created on spawn:
 ```
 workers/{worker-id}/
 ├── BRIEFING.md          # Role-specific mission & context
-├── CLAUDE.md            # Symlink to ../../CLAUDE.md
-├── AGENTS.md            # Symlink to ../../AGENTS.md
+├── CLAUDE.md            # Symlink to shared/onboarding/configs/CLAUDE.md
+├── AGENTS.md            # Symlink to shared/onboarding/configs/AGENTS.md
 ├── STORAGE.md           # Storage architecture guide
 ├── TEAM.md              # Team structure (if manager)
 └── .onboarding/         # Onboarding state
@@ -480,14 +480,14 @@ def _link_architecture_docs(worker_dir: Path, org_path: Path):
     repo_root = Path(__file__).parent.parent.parent
 
     # Symlink CLAUDE.md
-    claude_md = repo_root / "CLAUDE.md"
+    claude_md = repo_root / "shared" / "onboarding" / "configs" / "CLAUDE.md"
     if claude_md.exists():
         link = worker_dir / "CLAUDE.md"
         if not link.exists():
             link.symlink_to(claude_md)
 
     # Symlink AGENTS.md
-    agents_md = repo_root / "backend" / "AGENTS.md"
+    agents_md = repo_root / "shared" / "onboarding" / "configs" / "AGENTS.md"
     if agents_md.exists():
         link = worker_dir / "AGENTS.md"
         if not link.exists():
@@ -532,76 +532,45 @@ def generate_welcome_message(ctx: OnboardingContext) -> str:
 
 ### Phase 2: Integration Points
 
-**1. Update `cli/commands/org/start.py`:**
+The "worker onboarding" flow now distinguishes between first-time onboarding (full briefing + doc delivery) and returning workdays (fresh nudge + quick context).
 
-```python
-def _spawn_ceo_session(ceo, org_path, provider, command, args_str):
-    # NEW: Prepare onboarding
-    from cli.core.onboarding import (
-        prepare_worker_onboarding,
-        get_worker_env_vars,
-        generate_welcome_message,
-    )
+1. **CEOs and newly hired workers** call `prepare_worker_onboarding()` before the first session spawn. The helper ensures the worker directory exists, writes `BRIEFING.md`, `STORAGE.md`, and symlinks `CLAUDE.md`/`AGENTS.md`. It also calls `_load_worker_okrs()` to read the assigned OKRs (and their key results) from the `okrs` table so the briefing can reference measurable goals.
 
-    db = open_database(get_org_db_path(org_path))
+   ```python
+   config = SessionConfig(
+       worker_id=ceo.id,
+       provider=provider,
+       command=command,
+       args=args_str.split(),
+       working_directory=worker_dir,
+       env_vars=get_worker_env_vars(onboarding_ctx, org_path),
+       welcome_message=generate_welcome_message(onboarding_ctx, worker_dir),
+   )
+   ceo.spawn(config)
+   ```
 
-    # Create worker directory and briefing
-    onboarding_ctx = prepare_worker_onboarding(db, ceo.id, org_path)
+   The `SessionConfig` now accepts optional `working_directory`, `env_vars`, and `welcome_message`, and `Worker.spawn()` will ensure the onboarding context is in place even if the CLI forgot to pass them.
 
-    # Get worker directory (not org root)
-    worker_dir = org_path / "storage" / "workers" / ceo.id
+2. **Returning workdays** (via `qn org start --worker <name>`) reuse the saved context. They call `load_onboarding_context()` (no side effects) to rebuild the briefing metadata, then pass that context to `get_worker_env_vars()` and `generate_returning_message()`. `spawn_worker_session()` accepts the custom working directory, env, and welcome message so the session always starts inside `workers/{id}` with `QUINN_WORKER_ID` exposed and a short wakeup nudge that references the worker's role, manager, and OKRs.
 
-    # Get environment variables
-    env_vars = get_worker_env_vars(onboarding_ctx, org_path)
+   ```python
+   onboarding_ctx = load_onboarding_context(db, worker_obj.id, org_path)
+   env_vars = get_worker_env_vars(onboarding_ctx, org_path)
+   welcome = generate_returning_message(onboarding_ctx)
 
-    # Generate welcome message
-    welcome = generate_welcome_message(onboarding_ctx)
+   spawn_worker_session(
+       worker=worker_obj,
+       provider=provider,
+       command=session_command,
+       args_str=session_args,
+       working_directory=worker_dir,
+       env_vars=env_vars,
+       welcome_message=welcome,
+       force_restart=True,
+   )
+   ```
 
-    config = SessionConfig(
-        worker_id=ceo.id,
-        provider=provider,
-        command=command,
-        args=args_str.split(),
-        working_directory=worker_dir,  # ← FIXED: worker dir not org root
-        env_vars=env_vars,  # ← NEW: environment context
-        welcome_message=welcome,  # ← NEW: welcome message
-    )
-
-    ceo.spawn(config)
-
-    db.close()
-```
-
-**2. Update `SessionConfig` dataclass:**
-
-```python
-@dataclass
-class SessionConfig:
-    worker_id: str
-    provider: str
-    command: str
-    args: list[str] = field(default_factory=list)
-    working_directory: Optional[Path] = None
-    env_vars: dict[str, str] = field(default_factory=dict)
-    welcome_message: Optional[str] = None  # ← NEW
-```
-
-**3. Update `tmux_spawner.py` to send welcome:**
-
-```python
-def spawn(self, config: SpawnerConfig) -> SpawnResult:
-    # ... existing spawn code ...
-
-    # After session created, send welcome message
-    if config.options.get("welcome_message"):
-        time.sleep(0.5)  # Wait for session to be ready
-        self.send_input(
-            session_name,
-            config.options["welcome_message"] + "\n"
-        )
-
-    return SpawnResult(...)
-```
+3. **Identity propagation** – `get_worker_env_vars()` now returns `QUINN_WORKER_ID` alongside `WORKER_ID`, so every terminal session already knows which worker is asking and `qn wrkr` commands work out of the box.
 
 ### Phase 3: Template Files
 
@@ -628,6 +597,7 @@ Use Jinja2 for variable substitution:
 rm -rf ~/orgs/test-onboarding
 qn org init ~/orgs/test-onboarding
 qn org start
+qn org start --worker <name>  # Start a worker workday (fresh session)
 ```
 
 **Verify:**
@@ -652,6 +622,29 @@ cat BRIEFING.md  # Should show mission
 cat STORAGE.md  # Should explain storage
 cat CLAUDE.md  # Should show architecture rules
 echo $WORKER_ID  # Should print worker ID
+```
+
+### Test 2b: Workday Stop/Start
+
+```bash
+qn org stop --worker ceo
+qn org start --worker ceo
+```
+
+**Verify:**
+- [ ] Session is restarted (new workday)
+- [ ] Welcome message is a brief wakeup nudge
+
+### Workday Start/Stop (Diagram)
+
+```
+qn org start --worker <name>
+  -> spawn new session
+  -> brief wakeup nudge
+
+qn org stop --worker <name>
+  -> send wrap-up request
+  -> close session
 ```
 
 ### Test 3: Multiple Workers

@@ -33,6 +33,7 @@ from .views.no_org import (
 from .views.org_wizard import OrgInitWizard, OrgConfig
 from .views.org_tabs import OrgTabBar
 from .widgets.ceo_briefing import CEOBriefingWidget
+from .interfaces.org_connection import OrgStatus
 from .services import (
     QuinnAIOrgConnection,
     OrgConnectionError,
@@ -584,7 +585,6 @@ class BoardApp(App):
             config_path.write_text(briefing_md)
 
             # If org is running, deliver briefing immediately
-            from cli.core.constants import OrgStatus
             org_info = self.org_connection.get_org_info()
             if org_info.status == OrgStatus.RUNNING:
                 success = self.org_connection.send_ceo_briefing(briefing_md)

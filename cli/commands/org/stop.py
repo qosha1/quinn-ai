@@ -3,6 +3,7 @@ qn org stop command.
 """
 
 import click
+from typing import Optional
 
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
@@ -21,13 +22,17 @@ from shared.enums import OrgStatus
     help="Run notification cleanup on stop (default: True).",
 )
 @click.option(
+    "--worker",
+    help="Stop a workday for a specific worker (name or ID).",
+)
+@click.option(
     "--force",
     is_flag=True,
     default=False,
     help="Force kill sessions without waiting for graceful shutdown.",
 )
 @pass_context
-def stop_cmd(ctx: Context, cleanup: bool, force: bool):
+def stop_cmd(ctx: Context, cleanup: bool, worker: Optional[str], force: bool):
     """Stop the organization.
 
     Gracefully stops all worker sessions and transitions the organization
@@ -49,6 +54,61 @@ def stop_cmd(ctx: Context, cleanup: bool, force: bool):
 
     try:
         org = Org.load(db)
+
+        if worker:
+            if org.status != OrgStatus.RUNNING.value:
+                raise click.ClickException(
+                    "Organization is not running.\n"
+                    "Start the org before stopping a worker workday."
+                )
+
+            from cli.core.queries import get_worker_by_name, get_channel_by_name, create_default_org_channels, create_message
+            from cli.core.notifications import create_notification_bead
+            from cli.core.worker import Worker
+
+            worker_data = get_worker_by_name(db, worker)
+            if not worker_data:
+                try:
+                    worker_obj = Worker.get(db, worker)
+                except (ValueError, KeyError):
+                    raise click.ClickException(
+                        f"Worker '{worker}' not found.\n"
+                        "Use 'qn org status' to see available workers."
+                    )
+            else:
+                worker_obj = Worker(db, worker_data.id, org_path=org_path)
+
+            # Request wrap-up before stopping session
+            general = get_channel_by_name(db, "general")
+            if general is None:
+                create_default_org_channels(db)
+                general = get_channel_by_name(db, "general")
+
+            if general:
+                sender_id = worker_obj.manager_id or (org.ceo.id if org.ceo else worker_obj.id)
+                message = create_message(
+                    db,
+                    channel_id=general.id,
+                    from_worker_id=sender_id,
+                    content=(
+                        f"Workday ending for {worker_obj.name} ({worker_obj.role}).\n\n"
+                        "Please wrap up your current work and save any durable outputs to shared/."
+                    ),
+                    priority=2,
+                    time_sensitivity="hours",
+                )
+                create_notification_bead(
+                    db,
+                    worker_id=worker_obj.id,
+                    message_id=message.id,
+                    channel_id=general.id,
+                    priority=2,
+                )
+
+            # Close session after wrap-up request
+            worker_obj.terminate_session(force=force)
+            click.echo(f"Workday stopped for {worker_obj.name}")
+            return
 
         if org.status == OrgStatus.STOPPED.value:
             click.echo("Organization is already stopped.")

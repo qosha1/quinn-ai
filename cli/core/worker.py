@@ -1464,6 +1464,8 @@ class Worker:
             )
             session = worker.spawn(config)
         """
+        self._ensure_onboarding(config)
+
         # Get registry - use instance registry or fall back to default
         registry = self._session_registry
         if registry is None:
@@ -1477,6 +1479,56 @@ class Worker:
         self.spawn_session(session)
 
         return session
+
+    def _ensure_onboarding(self, config: "SessionConfig") -> None:
+        """Ensure onboarding artifacts and session context are prepared."""
+        from cli.core.onboarding import (
+            prepare_worker_onboarding,
+            load_onboarding_context,
+            get_worker_env_vars,
+            generate_welcome_message,
+            generate_returning_message,
+        )
+
+        welcome_message = getattr(config, "welcome_message", None)
+        env_vars = getattr(config, "env_vars", None)
+        working_directory = getattr(config, "working_directory", None)
+
+        if env_vars is None:
+            config.env_vars = {}
+            env_vars = config.env_vars
+
+        if (
+            welcome_message
+            and working_directory
+            and isinstance(env_vars, dict)
+            and "BRIEFING_PATH" in env_vars
+        ):
+            return
+
+        org_path = self._get_org_path()
+        worker_dir = org_path / "storage" / "workers" / self.id
+        onboarding_dir = worker_dir / ".onboarding"
+        marker = onboarding_dir / "initialized"
+
+        has_onboarding = marker.exists() and (worker_dir / "BRIEFING.md").exists()
+        if has_onboarding:
+            ctx = load_onboarding_context(self.db, self.id, org_path)
+        else:
+            ctx = prepare_worker_onboarding(self.db, self.id, org_path)
+
+        onboarding_env = get_worker_env_vars(ctx, org_path)
+        for key, value in onboarding_env.items():
+            env_vars.setdefault(key, value)
+
+        if working_directory is None:
+            config.working_directory = worker_dir
+
+        if not welcome_message:
+            if has_onboarding:
+                config.welcome_message = generate_returning_message(ctx)
+            else:
+                config.welcome_message = generate_welcome_message(ctx, worker_dir)
 
     # ==================
     # CLASS METHODS

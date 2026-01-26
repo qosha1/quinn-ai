@@ -6,7 +6,9 @@
 
 ## Executive Summary
 
-**Workers spawn with ZERO onboarding context**. They receive no briefing, no docs, no storage guidance, no OKRs, no welcome message. Just a bare claude CLI session.
+**Before this work**, workers spawned in `qn org start` with zero onboarding context—no worker directory, no briefing/storage docs, no CLAUDE/AGENTS guidance, no measurable OKRs, and no welcome messaging.
+
+**Current state**: `prepare_worker_onboarding()` (plus `_ensure_onboarding()` inside `Worker.spawn()`) already creates the worker storage directory, writes `BRIEFING.md`/`STORAGE.md`, symlinks the architecture rules from `shared/onboarding/configs`, loads the worker’s OKRs via `_load_worker_okrs()`, and seeds the session environment (including `QUINN_WORKER_ID`) so the `qn wrkr` commands work immediately. `qn org start --worker` now loads the saved context and emits a short wakeup nudge (`generate_returning_message()`) instead of re-running the full onboarding checklist.
 
 ## Complete Spawn Flow
 
@@ -98,7 +100,11 @@ def spawn_session(self, session: SessionInterface) -> None:
 
 **No onboarding here** - just budget checks
 
-### 5. Session Start
+### Onboarding enforcement in `Worker.spawn()`
+
+`Worker.spawn()` now calls `_ensure_onboarding()` before the budget logic runs. That method checks for the `.onboarding/initialized` marker and either calls `prepare_worker_onboarding()` (for new workers) or `load_onboarding_context()` (for returning sessions), then merges `get_worker_env_vars()` into `SessionConfig.env_vars`, sets the working directory to `storage/workers/{id}`, and injects either `generate_welcome_message()` or `generate_returning_message()` so the session sees the quick nudge.
+
+### 5. Session Start (Workday Start)
 
 **File:** `cli/core/worker.py:1260-1279`
 
@@ -114,6 +120,18 @@ def _start_session(self, session: SessionInterface) -> None:
 ```
 
 **Calls:** `session.start()` on ClaudeCodeSession
+
+### Workday Start/Stop (Diagram)
+
+```
+qn org start --worker <name>
+  -> spawn new session
+  -> brief wakeup nudge
+
+qn org stop --worker <name>
+  -> wrap-up request
+  -> close session
+```
 
 ### 6. ClaudeCodeSession._spawn_process()
 
@@ -318,8 +336,8 @@ config = SessionConfig(
 
 2. **Copy/Link documentation**
    ```bash
-   ln -s ../../../../CLAUDE.md CLAUDE.md
-   ln -s ../../../../backend/AGENTS.md AGENTS.md
+   ln -s ../../../../shared/onboarding/configs/CLAUDE.md CLAUDE.md
+   ln -s ../../../../shared/onboarding/configs/AGENTS.md AGENTS.md
    ```
 
 3. **Create worker briefing**
@@ -423,6 +441,7 @@ Send initial text to session after spawn.
    rm -rf ~/orgs/test-onboarding
    qn org init ~/orgs/test-onboarding
    qn org start
+   qn org start --worker <name>  # Start a specific worker workday
    ```
 
 2. **Attach to CEO session**

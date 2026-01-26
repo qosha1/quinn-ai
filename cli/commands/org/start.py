@@ -15,6 +15,13 @@ from cli.core.config import (
 from cli.core.db import open_database, get_org_db_path
 from cli.core.org import Org
 from cli.core.org_chart import update_org_chart
+from cli.core.onboarding import (
+    generate_returning_message,
+    generate_welcome_message,
+    get_worker_env_vars,
+    load_onboarding_context,
+    prepare_worker_onboarding,
+)
 from cli.core.session import SessionConfig
 from cli.core.sessions.registry import get_default_registry
 from shared import InvalidOrgTransition, ConfigurationError
@@ -26,6 +33,10 @@ from shared.enums import OrgStatus
     "--spawn-ceo/--no-spawn-ceo",
     default=True,
     help="Spawn CEO session after starting org (default: True)",
+)
+@click.option(
+    "--worker",
+    help="Start a workday for a specific worker (name or ID).",
 )
 @click.option(
     "--provider",
@@ -54,6 +65,7 @@ from shared.enums import OrgStatus
 def start_cmd(
     ctx: Context,
     spawn_ceo: bool,
+    worker: Optional[str],
     provider: str,
     session_command: str,
     session_args: str,
@@ -96,6 +108,50 @@ def start_cmd(
 
     try:
         org = Org.load(db)
+
+        if worker:
+            if org.status != OrgStatus.RUNNING.value:
+                raise click.ClickException(
+                    "Organization is not running.\n"
+                    "Run 'qn org start' first or start the org before starting a worker."
+                )
+
+            from cli.core.queries import get_worker_by_name
+            from cli.core.worker import Worker
+            from cli.commands.org.session_utils import spawn_worker_session
+
+            worker_data = get_worker_by_name(db, worker)
+            if not worker_data:
+                try:
+                    worker_obj = Worker.get(db, worker)
+                except (ValueError, KeyError):
+                    raise click.ClickException(
+                        f"Worker '{worker}' not found.\n"
+                        "Use 'qn org status' to see available workers."
+                    )
+            else:
+                worker_obj = Worker(db, worker_data.id, org_path=org_path)
+
+            click.echo(f"Starting workday for {worker_obj.name}...")
+            worker_dir = org_path / "storage" / "workers" / worker_obj.id
+            worker_dir.mkdir(parents=True, exist_ok=True)
+
+            onboarding_ctx = load_onboarding_context(db, worker_obj.id, org_path)
+            env_vars = get_worker_env_vars(onboarding_ctx, org_path)
+            welcome = generate_returning_message(onboarding_ctx)
+
+            spawn_worker_session(
+                worker=worker_obj,
+                provider=provider,
+                command=session_command,
+                args_str=session_args,
+                working_directory=worker_dir,
+                env_vars=env_vars,
+                welcome_message=welcome,
+                force_restart=True,
+            )
+            click.echo(f"Session started for {worker_obj.name}")
+            return
 
         if org.status == OrgStatus.RUNNING.value:
             click.echo("Organization is already running.")

@@ -43,11 +43,6 @@ from cli.core.queries import get_worker_by_name
     default="{}",
     help='Skills as JSON object (e.g., \'{"coding": 80, "reasoning": 60}\').',
 )
-@click.option(
-    "--start",
-    is_flag=True,
-    help="Start the worker session immediately after hiring.",
-)
 @pass_context
 def hire_cmd(
     ctx: Context,
@@ -56,7 +51,6 @@ def hire_cmd(
     manager: str,
     cost: int,
     skills: str,
-    start: bool,
 ):
     """Hire a new worker into the organization.
 
@@ -68,7 +62,7 @@ def hire_cmd(
       qn org hire --name alice --role developer --manager ceo
       qn org hire --name bob --role qa --manager alice --cost 30
       qn org hire --name carol --role designer --manager ceo --skills '{"design": 90}'
-      qn org hire --name dave --role developer --manager alice --start
+      qn org hire --name dave --role developer --manager alice
     """
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)
@@ -150,23 +144,43 @@ def hire_cmd(
         if skills_dict:
             click.echo(f"  Skills: {json.dumps(skills_dict)}")
 
-        # Start session if requested
-        if start:
-            click.echo("")
-            click.echo("Starting worker session...")
-            try:
-                new_worker.start_session()
-                click.echo(f"Session started for {new_worker.name}")
-            except Exception as e:
-                click.echo(f"Warning: Failed to start session: {e}")
-                click.echo("You can start manually with: qn org start")
+        # Start session (hire == spawn + start + onboard)
+        click.echo("")
+        click.echo("Starting worker session...")
+        try:
+            _start_workday_for_hire(ctx, new_worker)
+            click.echo(f"Session started for {new_worker.name}")
+        except Exception as e:
+            click.echo(f"Warning: Failed to start session: {e}")
+            click.echo("You can start manually with: qn org start")
 
         click.echo("")
         click.echo("Next steps:")
         click.echo(f"  qn org status                    # See org status")
-        if not start:
-            click.echo(f"  qn org start                     # Start all workers")
         click.echo(f"  qn org observe {new_worker.name}  # Watch worker activity")
 
     finally:
         db.close()
+
+
+def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
+    """Start a worker session using org provider defaults."""
+    from cli.core.config import get_org_config_path
+    from cli.core.provider import load_providers_from_config
+    from cli.commands.org.session_utils import spawn_worker_session
+
+    config_path = get_org_config_path(ctx.org_path) / "providers.yaml"
+    registry = load_providers_from_config(config_path)
+    provider = registry.select_for_worker(worker.cost, worker.skills)[0]
+
+    # Transition lifecycle for onboarding on first hire
+    if worker.lifecycle_status == "pending":
+        worker.start_onboarding()
+        worker.complete_onboarding()
+
+    spawn_worker_session(
+        worker=worker,
+        provider=provider.name,
+        command=provider.cli_command,
+        args_str="--dangerously-skip-permissions",
+    )

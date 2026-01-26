@@ -387,7 +387,11 @@ class BoardEscalation:
             summary: Brief description.
             metadata: Optional additional data.
         """
-        pass
+        logger.info(
+            "Board report: %s",
+            summary,
+            extra={"metadata": metadata} if metadata else {},
+        )
 
     def can_handle(self, issue: str) -> bool:
         """

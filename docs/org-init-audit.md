@@ -61,6 +61,28 @@
    - **No onboarding checklist**
    - **No context about the project**
 
+### `qn org start --worker <name>`
+
+Starts a worker workday by spawning a fresh session and sending a brief wakeup
+nudge. This does not re-run full onboarding unless it's the worker's first
+session.
+
+### `qn org stop --worker <name>`
+
+Requests wrap-up (message + notification), then closes the worker session.
+
+### Workday Start/Stop (Diagram)
+
+```
+qn org start --worker <name>
+  -> spawn new session
+  -> brief wakeup nudge
+
+qn org stop --worker <name>
+  -> wrap-up request
+  -> close session
+```
+
 ## What's Broken
 
 ### 1. Briefing File is a Template
@@ -168,8 +190,8 @@ if not channel_row:
    ```
    workers/{id}/
    ├── BRIEFING.md (org mission)
-   ├── CLAUDE.md (symlink to project CLAUDE.md)
-   ├── AGENTS.md (symlink to backend/AGENTS.md)
+   ├── CLAUDE.md (symlink to shared/onboarding/configs/CLAUDE.md)
+   ├── AGENTS.md (symlink to shared/onboarding/configs/AGENTS.md)
    └── STORAGE.md (explain shared/ vs workers/)
    ```
 
