@@ -115,8 +115,13 @@ def create_folder_structure(org_path: Path) -> None:
         │   └── workers/        # Per-worker session state
         └── storage/            # Abstracted storage
             ├── shared/         # Org lifetime (topics, teams)
+            │   ├── engineering/
+            │   ├── legal/
+            │   └── company/
             └── workers/        # Worker lifetime (mirrors org-chart)
     """
+    from cli.core.storage import StorageManager
+
     # Config directory
     (org_path / "config").mkdir(parents=True, exist_ok=True)
 
@@ -127,9 +132,9 @@ def create_folder_structure(org_path: Path) -> None:
     (org_path / "live").mkdir(parents=True, exist_ok=True)
     (org_path / "live" / "workers").mkdir(exist_ok=True)
 
-    # Storage directories
-    (org_path / "storage" / "shared").mkdir(parents=True, exist_ok=True)
-    (org_path / "storage" / "workers").mkdir(parents=True, exist_ok=True)
+    # Storage directories with default topics
+    storage = StorageManager(org_path, db=None)
+    storage.initialize_storage()
 
 
 def copy_default_configs(org_path: Path) -> None:
