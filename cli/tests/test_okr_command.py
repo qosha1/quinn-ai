@@ -19,6 +19,7 @@ import pytest
 from click.testing import CliRunner
 
 from cli.commands.main import qn
+from cli.core.constants import BEAD_TYPE_EPIC
 
 
 @pytest.fixture
@@ -234,7 +235,7 @@ class TestOkrSetCommand:
         call_args = mock_run_bd.call_args[0][0]
         assert "create" in call_args
         assert "Test OKR" in call_args
-        assert "--type=epic" in call_args
+        assert f"--type={BEAD_TYPE_EPIC}" in call_args
         assert "--label=okr" in call_args
 
     @patch('cli.commands.org.okr.run_bd')

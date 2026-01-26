@@ -13,6 +13,17 @@ from enum import Enum
 from typing import Any, Callable, Iterator, Optional
 
 from .db import Database
+from .constants import (
+    ENTITY_TYPE_ORG,
+    ENTITY_TYPE_WORKER,
+    ENTITY_TYPE_SESSION,
+    ENTITY_TYPE_TEAM,
+    ENTITY_TYPE_OKR,
+    ENTITY_TYPE_MESSAGE,
+    ENTITY_TYPE_WORK,
+    ENTITY_TYPE_OFFBOARDING,
+    ENTITY_TYPE_BUDGET,
+)
 
 
 class EventType(Enum):
@@ -72,8 +83,15 @@ class EventType(Enum):
 
 # Entity types for type safety
 ENTITY_TYPES = frozenset({
-    "org", "worker", "session", "team", "okr",
-    "message", "work", "offboarding", "budget"
+    ENTITY_TYPE_ORG,
+    ENTITY_TYPE_WORKER,
+    ENTITY_TYPE_SESSION,
+    ENTITY_TYPE_TEAM,
+    ENTITY_TYPE_OKR,
+    ENTITY_TYPE_MESSAGE,
+    ENTITY_TYPE_WORK,
+    ENTITY_TYPE_OFFBOARDING,
+    ENTITY_TYPE_BUDGET,
 })
 
 
@@ -181,7 +199,7 @@ class EventBus:
         bus.subscribe(EventType.WORKER_HIRED, on_worker_hired)
         bus.publish(
             event_type=EventType.WORKER_HIRED,
-            entity_type="worker",
+            entity_type=ENTITY_TYPE_WORKER,
             entity_id="worker-123",
             payload={"name": "Alice", "role": "engineer"},
             actor_id="ceo-001"

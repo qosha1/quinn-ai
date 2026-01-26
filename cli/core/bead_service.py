@@ -12,6 +12,7 @@ from typing import Optional, List, Any, TYPE_CHECKING
 import subprocess
 
 from .db import Database
+from .constants import BEAD_TYPE_TASK
 from .permissions import (
     PermissionLevel,
     PermissionDenied,
@@ -170,7 +171,7 @@ class BeadService:
         self,
         worker_id: str,
         title: str,
-        bead_type: str = "task",
+        bead_type: str = BEAD_TYPE_TASK,
         priority: int = 2,
         description: Optional[str] = None,
         assignee: Optional[str] = None,

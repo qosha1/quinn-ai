@@ -11,6 +11,7 @@ from typing import Optional
 
 from cli.commands.context import pass_context, Context
 from cli.core.bd_wrapper import run_bd
+from cli.core.constants import BEAD_TYPE_EPIC
 from cli.core.db import get_org_db_path, open_database
 
 
@@ -247,7 +248,7 @@ def _create_okr(
 
     # Build bd create command
     # Use epic type with okr label since 'okr' is not a valid beads type
-    args = ["create", title, "--type=epic", f"--priority={priority}", "--label=okr"]
+    args = ["create", title, f"--type={BEAD_TYPE_EPIC}", f"--priority={priority}", "--label=okr"]
 
     if description:
         args.extend(["--description", description])

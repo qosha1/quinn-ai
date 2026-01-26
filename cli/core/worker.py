@@ -24,6 +24,7 @@ from .constants import (
     COST_TIER_ADVANCED_MAX,
     DEFAULT_MAX_REPORTS,
     DEFAULT_DELEGATED_BUDGET,
+    BEAD_TYPE_ASK,
 )
 from .budget import (
     enforce_budget,
@@ -816,7 +817,7 @@ class Worker:
             # Create the 'ask' bead with metadata linking to worker
             result = beads_client.create(
                 title=f"Offboard storage review: {self.id}",
-                type="ask",
+                type=BEAD_TYPE_ASK,
                 priority="P1",  # High priority
                 description=(
                     f"Review frozen storage for terminated worker {self.name} ({self.id}).\n\n"

@@ -10,6 +10,7 @@ from typing import List
 import pytest
 
 from cli.core.db import init_database
+from cli.core.constants import ENTITY_TYPE_WORKER
 from cli.core.events import (
     ENTITY_TYPES,
     Event,
@@ -105,7 +106,7 @@ class TestEvent:
         """Should create event with all fields."""
         event = Event(
             event_type=EventType.WORKER_HIRED,
-            entity_type="worker",
+            entity_type=ENTITY_TYPE_WORKER,
             entity_id="worker-123",
             payload={"name": "Alice", "role": "engineer"},
             actor_id="ceo-001",
@@ -143,7 +144,7 @@ class TestEvent:
         """Should convert event to dictionary."""
         event = Event(
             event_type=EventType.WORKER_HIRED,
-            entity_type="worker",
+            entity_type=ENTITY_TYPE_WORKER,
             entity_id="worker-123",
             payload={"name": "Alice"},
             actor_id="ceo-001",

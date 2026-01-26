@@ -12,6 +12,7 @@ from cli.core.db import init_database
 from cli.core.queries import create_team, create_worker, grant_permission
 from cli.core.permissions import PermissionLevel, PermissionDenied
 from cli.core.bead_service import BeadService, BeadResult
+from cli.core.constants import GRANTEE_TYPE_WORKER, BEAD_TYPE_TASK, BEAD_TYPE_BUG
 
 
 @pytest.fixture
@@ -62,7 +63,7 @@ class TestBeadServicePermissions:
         """Should allow get_bead when worker has READ permission."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.READ,
             bead_id="bead-123",
@@ -81,7 +82,7 @@ class TestBeadServicePermissions:
         # Grant READ but not WRITE
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.READ,
             bead_id="bead-123",
@@ -97,7 +98,7 @@ class TestBeadServicePermissions:
         """Should allow update_bead when worker has WRITE permission."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.WRITE,
             bead_id="bead-123",
@@ -116,7 +117,7 @@ class TestBeadServicePermissions:
         # Grant WRITE but not APPROVE
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.WRITE,
             bead_id="bead-123",
@@ -132,7 +133,7 @@ class TestBeadServicePermissions:
         """Should allow close_bead when worker has APPROVE permission."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.APPROVE,
             bead_id="bead-123",
@@ -159,7 +160,7 @@ class TestBeadServicePermissions:
         # Grant APPROVE but not ADMIN
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.APPROVE,
             bead_id="bead-123",
@@ -191,7 +192,7 @@ class TestBeadServiceOperations:
             result = service.create_bead(
                 worker.id,
                 title="New Task",
-                bead_type="task",
+                bead_type=BEAD_TYPE_TASK,
                 priority=2,
             )
 
@@ -212,7 +213,7 @@ class TestBeadServiceOperations:
         """Should return worker's permission level on bead."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.WRITE,
             bead_id="bead-123",
@@ -226,7 +227,7 @@ class TestBeadServiceOperations:
         """Should return True when worker has permission."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.READ,
             bead_id="bead-123",
@@ -246,7 +247,7 @@ class TestBeadServiceBdCommands:
         """Should build correct bd command for update."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.WRITE,
             bead_id="bead-123",
@@ -279,7 +280,7 @@ class TestBeadServiceBdCommands:
             service.create_bead(
                 worker.id,
                 title="Test Task",
-                bead_type="bug",
+                bead_type=BEAD_TYPE_BUG,
                 priority=0,
                 description="Fix this",
                 parent="bead-parent",
@@ -299,7 +300,7 @@ class TestBeadServiceBdCommands:
         """Should include reason in close command."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.APPROVE,
             bead_id="bead-123",

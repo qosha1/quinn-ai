@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from cli.core.db import init_database
+from cli.core.constants import GRANTEE_TYPE_WORKER
 from cli.core.queries import (
     # Teams and workers (for setup)
     create_team,
@@ -167,7 +168,7 @@ class TestPermissionQueries:
         """Should grant a permission to a worker."""
         perm = grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=3,
             bead_id="bead-123",
@@ -196,7 +197,7 @@ class TestPermissionQueries:
         """Should grant a global permission (no bead_id)."""
         perm = grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=5,
         )
@@ -206,7 +207,7 @@ class TestPermissionQueries:
     def test_get_permission(self, db, worker):
         """Should get a permission by ID."""
         created = grant_permission(
-            db, grantee_type="worker", grantee_id=worker.id, level=3
+            db, grantee_type=GRANTEE_TYPE_WORKER, grantee_id=worker.id, level=3
         )
         fetched = get_permission(db, created.id)
         assert fetched is not None
@@ -222,7 +223,7 @@ class TestPermissionQueries:
         """Should get permission for a specific grantee on a bead."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=3,
             bead_id="bead-123",
@@ -235,7 +236,7 @@ class TestPermissionQueries:
         """Should get global permission for a grantee."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=5,
             bead_id=None,
@@ -247,7 +248,7 @@ class TestPermissionQueries:
     def test_revoke_permission(self, db, worker):
         """Should revoke a permission by ID."""
         perm = grant_permission(
-            db, grantee_type="worker", grantee_id=worker.id, level=3
+            db, grantee_type=GRANTEE_TYPE_WORKER, grantee_id=worker.id, level=3
         )
         result = revoke_permission(db, perm.id)
         assert result is True
@@ -262,7 +263,7 @@ class TestPermissionQueries:
         """Should revoke permission for a specific grantee on a bead."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=3,
             bead_id="bead-123",
@@ -275,7 +276,7 @@ class TestPermissionQueries:
         """Should get all permissions for a bead."""
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=3,
             bead_id="bead-123",
@@ -293,10 +294,10 @@ class TestPermissionQueries:
     def test_get_permissions_for_worker(self, db, worker):
         """Should get all direct permissions for a worker."""
         grant_permission(
-            db, grantee_type="worker", grantee_id=worker.id, level=3, bead_id="bead-1"
+            db, grantee_type=GRANTEE_TYPE_WORKER, grantee_id=worker.id, level=3, bead_id="bead-1"
         )
         grant_permission(
-            db, grantee_type="worker", grantee_id=worker.id, level=1, bead_id="bead-2"
+            db, grantee_type=GRANTEE_TYPE_WORKER, grantee_id=worker.id, level=1, bead_id="bead-2"
         )
         perms = get_permissions_for_worker(db, worker.id)
         assert len(perms) == 2
@@ -461,7 +462,7 @@ class TestRequiresPermissionDecorator:
         # Grant worker WRITE permission
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.WRITE,
             bead_id="bead-123",
@@ -546,7 +547,7 @@ class TestRequiresPermissionDecorator:
 
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.READ,
             bead_id="bead-456",
@@ -569,7 +570,7 @@ class TestRequiresPermissionDecorator:
 
         grant_permission(
             db,
-            grantee_type="worker",
+            grantee_type=GRANTEE_TYPE_WORKER,
             grantee_id=worker.id,
             level=PermissionLevel.READ,
             bead_id="bead-789",

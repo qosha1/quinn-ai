@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from cli.core.db import Database, init_database
+from cli.core.constants import REFERENCE_TYPE_TASK
 from cli.core.queries import (
     # Workers and teams (for setup)
     create_team,
@@ -359,7 +360,7 @@ class TestBudgetTransactionQueries:
             model="claude-3-5-sonnet",
             input_tokens=5000,
             output_tokens=2000,
-            reference_type="task",
+            reference_type=REFERENCE_TYPE_TASK,
             reference_id="task-123",
             description="API call for task",
         )
@@ -812,7 +813,7 @@ class TestBudgetEnforcementFunctions:
             model="claude-3-5-sonnet",
             input_tokens=1000,
             output_tokens=500,
-            reference_type="task",
+            reference_type=REFERENCE_TYPE_TASK,
             reference_id="task-123",
         )
 
@@ -954,7 +955,7 @@ class TestBudgetEnforcer:
                 model="claude-3-5-sonnet",
                 input_tokens=1000,
                 output_tokens=500,
-                reference_type="task",
+                reference_type=REFERENCE_TYPE_TASK,
                 reference_id="task-abc-123",
                 description="Processing customer request",
             )

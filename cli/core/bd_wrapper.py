@@ -24,6 +24,14 @@ from .constants import (
     PERM_LEVEL_NAMES,
     PERM_LEVEL_READ,
     PERM_LEVEL_WRITE,
+    BEAD_TYPE_TASK,
+    BEAD_TYPE_EPIC,
+    BEAD_TYPE_GATE,
+    BEAD_TYPE_AGENT,
+    BEAD_TYPE_ROLE,
+    BEAD_TYPE_RIG,
+    BEAD_TYPE_CONVOY,
+    BEAD_TYPE_EVENT,
 )
 from .lifecycle import (
     BeadBlockedError,
@@ -528,7 +536,7 @@ def check_okr_linking(
         return
 
     # Get bead type from args
-    bead_type = "task"  # default
+    bead_type = BEAD_TYPE_TASK  # default
     for i, arg in enumerate(args):
         if arg in ("-t", "--type") and i + 1 < len(args):
             bead_type = args[i + 1]
@@ -538,7 +546,7 @@ def check_okr_linking(
             break
 
     # Skip for epics and non-work types
-    if bead_type in ("epic", "gate", "agent", "role", "rig", "convoy", "event"):
+    if bead_type in (BEAD_TYPE_EPIC, BEAD_TYPE_GATE, BEAD_TYPE_AGENT, BEAD_TYPE_ROLE, BEAD_TYPE_RIG, BEAD_TYPE_CONVOY, BEAD_TYPE_EVENT):
         return
 
     if okr_config.get("strict_mode", False):
