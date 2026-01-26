@@ -7,18 +7,33 @@ QuinnAI uses a hierarchical storage system that mirrors the org chart.
 ```
 org/
 ├── storage/
-│   ├── shared/           # Org lifetime - permanent knowledge
-│   │   ├── topics/       # By topic (e.g., topics/architecture/)
-│   │   └── teams/        # By team (e.g., teams/engineering/)
-│   └── workers/          # Worker lifetime - deleted on fire
-│       └── {worker-id}/  # Your private workspace
-├── live/                 # Runtime state (database, logs)
-└── config/               # Org configuration
+│   ├── shared/                      # Org lifetime - permanent knowledge
+│   │   ├── engineering/             # Default shared topics
+│   │   ├── legal/
+│   │   ├── company/
+│   │   └── archive/                 # Offboarded worker files
+│   └── workers/                     # Worker lifetime - mirrors org chart
+│       └── ceo/                     # CEO at root
+│           ├── director-abc/        # Director reports to CEO
+│           │   └── engineer-xyz/    # Engineer reports to director
+│           └── manager-def/         # Manager reports to CEO
+├── live/                            # Runtime state (database, logs)
+└── config/                          # Org configuration
 ```
+
+**Worker storage mirrors org-chart hierarchy:**
+- CEO: `workers/ceo/`
+- Directors: `workers/ceo/director-{id}/`
+- Their reports: `workers/ceo/director-{id}/engineer-{id}/`
 
 ## Storage Tiers
 
-### Your Workspace (`workers/{your-id}/`)
+### Your Workspace (`$WORKER_STORAGE`)
+
+**Location:** Mirrors your position in the org chart
+- If you're CEO: `workers/ceo/`
+- If you report to CEO: `workers/ceo/{your-id}/`
+- If you report to a director: `workers/ceo/director-{id}/{your-id}/`
 
 **Lifetime:** Deleted when you're fired (after teammate review)
 
@@ -31,7 +46,7 @@ org/
 **Examples:**
 ```bash
 # Your workspace (you're already here)
-pwd  # shows workers/{your-id}/
+pwd  # shows your hierarchical path
 
 # Create notes
 echo "Research findings" > research-notes.md
