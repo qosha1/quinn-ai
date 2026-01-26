@@ -10,12 +10,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Before EVERY response that modifies code, run the appropriate test suite:**
 
 ```bash
-# Python projects
-systemeval test
+# QuinnAI is Python - run pytest
+python -m pytest cli/tests/
+python -m pytest shared/tests/
+python -m pytest terminal-app/tests/
 
-# TypeScript/NextJS projects
-npm run test --prefix app
-npm run test --prefix e2e
+# Or use systemeval if available
+systemeval test
 ```
 
 Do NOT mark tasks complete until tests pass.
@@ -23,7 +24,7 @@ Do NOT mark tasks complete until tests pass.
 ### No Magic Strings
 - All configuration values must come from environment variables or config files
 - No hardcoded URLs, API keys, secrets, or environment-specific values in code
-- Use constants for repeated string literals
+- Use constants for repeated string literals (see `cli/core/constants.py`)
 
 ### No Duplicate Functionality
 - One codebase, one architecture
@@ -34,17 +35,18 @@ Do NOT mark tasks complete until tests pass.
 ### No Dead Code
 - Remove unused imports, functions, and variables
 - No commented-out code blocks (use git history)
-- No `// TODO` without an associated issue/task
+- No `# TODO` without an associated beads issue
 
 ### Type Safety
-- TypeScript: strict mode, no `any` types without justification
 - Python: type hints on all function signatures
+- Use `from typing import` annotations
 - No implicit type coercion in comparisons
 
 ### Error Handling
 - No silent failures - log or propagate errors
-- No empty catch blocks
+- No empty except blocks
 - Validate inputs at system boundaries
+- Use specific exception classes (see `shared/exceptions.py`)
 
 ### File Management
 - Never create task-specific MD files in root (no `ARCHITECTURE_REVIEW.md`, etc.)
@@ -58,128 +60,87 @@ Do NOT mark tasks complete until tests pass.
 
 ---
 
-## Template Sync (For Forked Repos)
+## QuinnAI Project Truth
 
-This project is based on a template. To pull updates from the upstream template:
+**QuinnAI is a hierarchical AI organization management system.**
 
-### Initial Setup (once per fork)
-```bash
-# Add template as upstream remote
-git remote add template https://github.com/YOUR_ORG/b2b-saas-template.git
-git fetch template
-```
+It's NOT:
+- A Claude Code wrapper (it's CLI-agnostic)
+- A Django/NextJS app (it's a Python CLI tool)
+- A B2B SaaS template (it's open-source tooling)
 
-### Syncing Updates
-```bash
-# Fetch latest template changes
-git fetch template main
-
-# Create a sync branch
-git checkout -b template-sync
-
-# Merge template changes (resolve conflicts as needed)
-git merge template/main --allow-unrelated-histories
-
-# Review changes, run tests
-systemeval test
-
-# If all passes, merge to main
-git checkout main
-git merge template-sync
-git branch -d template-sync
-```
-
-### What Gets Synced
-- Infrastructure configs (Docker, CI/CD)
-- Base components and utilities
-- Test infrastructure
-- CLAUDE.md rules and conventions
-
-### What Stays Local
-- Business logic in `apps/`
-- Custom components
-- Environment-specific configs
-- `.envs/` contents
+It IS:
+- Python CLI tool (`qn` command)
+- Terminal UI dashboard (`qn-board`)
+- Multi-worker AI organization orchestration
+- Session provider abstraction (supports claude_code, cursor, aider, etc.)
+- Beads-based work tracking integration
 
 ---
 
-## Versioning & Releases
+## Architecture Overview
 
-This project follows [Semantic Versioning](https://semver.org/):
-- **MAJOR** (x.0.0): Breaking changes, major architecture shifts
-- **MINOR** (0.x.0): New features, backward-compatible additions
-- **PATCH** (0.0.x): Bug fixes, minor improvements
+### Project Structure
 
-### Current Version
-Check `VERSION` file in project root.
-
-### Version Bump Process
-
-```bash
-# Patch release (bug fixes) - auto-generates from commits
-./scripts/bump-version.sh patch
-
-# Minor release (new features) - requires changelog + release notes
-./scripts/bump-version.sh minor
-
-# Major release (breaking changes) - requires changelog + release notes
-./scripts/bump-version.sh major
+```
+quinnai/
+├── cli/                    # QuinnAI CLI (`qn` command)
+│   ├── commands/           # Click command groups
+│   │   ├── org/            # Org lifecycle (init, start, stop, status, hire, fire)
+│   │   └── wrkr/           # Worker operations
+│   ├── core/               # Core business logic
+│   │   ├── constants.py    # ALL magic values go here
+│   │   ├── db.py           # Database layer
+│   │   ├── worker.py       # Worker state machine
+│   │   ├── org.py          # Org state machine
+│   │   ├── session.py      # Session abstraction
+│   │   ├── onboarding.py   # Worker onboarding system
+│   │   └── storage.py      # Hierarchical storage manager
+│   ├── config/             # Default configs and templates
+│   └── tests/              # Pytest tests
+├── shared/                 # Shared business logic
+│   ├── exceptions.py       # All custom exceptions
+│   ├── state_machines.py   # State transition rules
+│   └── enums.py            # Enums (OrgStatus, RuntimeStatus, etc.)
+├── terminal-app/           # TUI dashboard (Textual)
+└── example_orgs/           # Example org configurations
 ```
 
-### AI Release Documentation Requirements
+### Core Concepts
 
-**For MAJOR and MINOR releases:**
-1. Update `CHANGELOG.md` [Unreleased] section with all changes
-2. Create `release-notes/vX.Y.Z.md` with:
-   - Overview (2-3 sentence summary)
-   - Highlights (key features)
-   - Breaking changes (if any)
-   - Migration guide (if needed)
-   - Detailed feature descriptions
-3. Run `systemeval test` - must pass
-4. Run `./scripts/bump-version.sh [major|minor]`
+**Organization (Org):**
+- Lifecycle: UNINITIALIZED → INITIALIZED → RUNNING ⇄ STOPPED
+- Has CEO, teams, workers
+- Manages shared storage and communication channels
 
-**For PATCH releases:**
-- Changelog auto-generated from git commit messages
-- No release notes file required
-- Run `./scripts/bump-version.sh patch`
+**Worker:**
+- Dual state machines:
+  - Lifecycle: pending → onboarding → active → offboarding → terminated
+  - Runtime: starting → running ⇄ idle → stopped/crashed
+- Has hierarchical storage: `storage/workers/{org-chart-path}/{worker-id}/`
+- Has onboarding materials: BRIEFING.md, STORAGE.md, WELCOME.md
 
-### Changelog Format (Keep a Changelog)
+**Session:**
+- Abstract interface for AI CLI sessions
+- Providers: claude_code, cursor, aider (extensible)
+- Registry pattern for provider selection
+- 1:1 relationship with worker
 
-```markdown
-## [Unreleased]
+**Storage:**
+- Hierarchical worker storage mirrors org-chart
+  - CEO: `workers/ceo/`
+  - Director: `workers/ceo/director-{id}/`
+  - Engineer: `workers/ceo/director-{id}/engineer-{id}/`
+- Shared storage: `shared/topics/{topic}/`, `shared/teams/{team}/`
+- Environment variables: `$WORKER_STORAGE`, `$SHARED_STORAGE` (absolute paths)
 
-### Added
-- New features
-
-### Changed
-- Changes to existing features
-
-### Deprecated
-- Features to be removed
-
-### Removed
-- Removed features
-
-### Fixed
-- Bug fixes
-
-### Security
-- Security fixes
-```
-
-### Tagging Convention
-- Tags: `v0.1.0`, `v1.0.0`, `v1.2.3`
-- Always use annotated tags: `git tag -a v1.0.0 -m "Release v1.0.0"`
+**Beads:**
+- Work tracking system (issues, tasks, OKRs)
+- Org-aware with permissions
+- JSONL-backed with SQLite cache
+- Integrated with bd CLI
 
 ---
-
-## QuinnAI Product Truth
-**QuinnAI watches coding CLI sessions - NOT "Claude Code sessions".**
-
-This is a CLI-agnostic AI assistant layer. It monitors ANY terminal where a developer is working (vim, nvim, emacs, vscode terminal, raw shell, aider, claude code, cursor, etc).
-
-Do NOT assume or hardcode Claude Code specifics. The architecture must be terminal/editor agnostic.
 
 ## CRITICAL: No Provider Lock-in (Architectural Law)
 
@@ -196,24 +157,36 @@ Our Abstract Interface (we define)
         ↓
 Provider Adapter (they implement our contract)
         ↓
-[OpenAI, Anthropic, Ollama, etc.] ← swappable via config
+[claude_code, cursor, aider, etc.] ← swappable via config
 ```
 
 **Every external dependency gets wrapped in OUR abstraction:**
-- `AIProvider` base class → `OpenAIProvider`, `AnthropicProvider` subclasses
-- `TerminalCapture` base class → `AllTermCapture`, `PTYCapture`, `LogCapture` subclasses
-- `ResponseInjector` base class → `SocketInjector`, `ClipboardInjector`, `APIInjector` subclasses
+- `SessionInterface` base class → `ClaudeCodeSession`, `CursorSession` adapters
+- `StorageProvider` base class → `LocalStorage`, `S3Storage` adapters
+- Never import provider-specific code outside adapter modules
 
 **Config-driven provider selection. Zero code changes to swap providers.**
 
-If you find yourself writing `import OpenAI` or `import Anthropic` anywhere except inside a provider adapter, you are doing it wrong.
+---
 
-## Learned Anti-Patterns (from dev-hq & bottas failures)
+## Learned Anti-Patterns (Applied to QuinnAI)
 
 ### 1. No Magic Strings, Values, or Numbers. EVER.
 **Violation:** `/workspace`, `.beads/`, `timeout=30`, `max_retries=3`, port numbers, directory names buried in code.
 **Result:** Cannot configure without code changes, values scattered and inconsistent.
-**Fix:** ALL values go in config. Hierarchy: system-wide config → object/class config → module-level constants (worst case). Zero literals in function bodies.
+**Fix:** ALL values go in `cli/core/constants.py`. Zero literals in function bodies.
+
+**QuinnAI Example:**
+```python
+# BAD
+timeout = 60
+worker_dir = org_path / "storage" / "workers" / worker_id
+
+# GOOD
+from cli.core.constants import DEFAULT_TIMEOUT
+timeout = DEFAULT_TIMEOUT
+worker_dir = storage_manager.get_worker_path(worker_id)
+```
 
 ### 2. Configuration Discovery Instead of Explicit Injection
 **Violation:** Searching cwd and parent dirs for config files, env var expansion magic.
@@ -230,15 +203,29 @@ If you find yourself writing `import OpenAI` or `import Anthropic` anywhere exce
 **Result:** Adding providers means editing core code, typos cause silent failures.
 **Fix:** Provider classes implement interface. Registry returns instance. Zero string matching in business logic.
 
+**QuinnAI Example:**
+```python
+# BAD
+if provider == "claude_code":
+    session = spawn_claude_code_session(...)
+elif provider == "cursor":
+    session = spawn_cursor_session(...)
+
+# GOOD
+registry = get_default_registry()
+adapter = registry.get(provider)
+session = adapter.spawn(config)
+```
+
 ### 5. Direct Instantiation Instead of Injection
 **Violation:** `WorkerQueue(self.worker_dir)` created inside classes that use them.
 **Result:** Cannot swap implementations, cannot test in isolation.
 **Fix:** Dependencies passed to constructors. Factories create configured instances.
 
 ### 6. Implementation-Shaped "Interfaces"
-**Violation:** `BeadsMemory` interface shaped around JSONL files, `WorkerQueue` shaped around filesystem.
-**Result:** Interface exists but it's just the implementation with a different name. Can't swap.
-**Fix:** Design interface FIRST as a true contract. Even with one provider, build as if there will be 10. Interface defines OUR needs, not the provider's shape.
+**Violation:** Interface shaped around specific implementation details.
+**Result:** Interface exists but can't swap implementations.
+**Fix:** Design interface FIRST as a true contract. Build as if there will be 10 providers.
 
 ### 7. Cascading Configuration Fallbacks
 **Violation:** Check settings → check overrides → check env vars → check defaults → silent fallback.
@@ -250,141 +237,297 @@ If you find yourself writing `import OpenAI` or `import Anthropic` anywhere exce
 **Result:** Business logic cannot run outside specific infrastructure.
 **Fix:** Infrastructure behind adapters. Business logic is pure.
 
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
+---
 
-These instructions are for AI assistants working in this project.
+## Development Workflow
 
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
-## Project Overview
-
-B2B SaaS template with Django backend, two NextJS frontends (landing + app), Docker infrastructure.
-
-**Stack:**
-- Backend: Django 5.1+, DRF, Celery, PostgreSQL 16, Redis 7
-- Landing: NextJS 15, Tailwind, shadcn/ui
-- App: NextJS 15, JWT auth, Stripe, Zustand
-- Infrastructure: Docker Compose, Nginx, Traefik (production)
-
-## Template Sync Workflow
-
-This repo was forked from `qosha1/b2b-saas-template`. To pull upstream updates:
+### Running Tests
 
 ```bash
-make template-fetch      # Fetch latest from template
-make template-diff       # See what changed
-make template-merge      # Merge updates (review before committing)
-make template-cherry COMMIT=<sha>  # Cherry-pick specific commit
+# All tests
+python -m pytest
+
+# Specific test file
+python -m pytest cli/tests/test_worker.py
+
+# Specific test
+python -m pytest cli/tests/test_worker.py::test_worker_lifecycle
+
+# With coverage
+python -m pytest --cov=cli --cov=shared
 ```
 
-**Flow:**
-1. `make template-fetch` - Get latest template changes
-2. `make template-diff` - Review what's new
-3. Decide: merge all (`template-merge`) or cherry-pick specific commits
-4. Resolve conflicts if any
-5. Run `systemeval test` before committing
-
-**Remote:** `template` → `https://github.com/qosha1/b2b-saas-template.git`
-
-## Development Commands
+### Working with Beads
 
 ```bash
-# Docker (primary development method)
-make up                    # Start all services
-make down                  # Stop services (preserves volumes)
-make logs                  # View logs
-make shell                 # Django shell
-make migrate               # Run migrations
-make test                  # Run tests
+# List work
+bd list --status=open --priority=0,1
 
-# Manual Docker
-docker-compose -f docker-compose.local.yml up --build
-docker-compose -f docker-compose.local.yml down  # No -v flag!
+# Find ready work
+bd ready
 
-# OpenSpec (spec-driven development)
-openspec list              # View active changes
-openspec list --specs      # View existing capabilities
-openspec show <change>     # View change details
-openspec validate --strict # Validate specs
+# Claim work
+bd update <bead-id> --status=in_progress
 
-# Testing with systemeval (REQUIRED at checkpoints)
-pip install systemeval[pytest]
-systemeval test                    # Run tests - must PASS before marking tasks complete
-systemeval test --json             # Machine-readable output for CI
-systemeval test --template markdown # Human-readable report
+# Close work
+bd close <bead-id> --reason "Description of what was done"
+
+# Sync with remote
+bd sync
 ```
 
-## Validation Checkpoints (systemeval)
-
-All implementation checkpoints MUST use `systemeval` for success criteria:
+### Org Operations
 
 ```bash
-# Exit codes: 0=PASS, 1=FAIL, 2=ERROR
-systemeval test
+# Initialize org
+qn org init --ceo-name="Alice" --ceo-role="CEO"
+
+# Start org (activates CEO)
+qn org start
+
+# Check status
+qn org status
+
+# Stop org (graceful shutdown)
+qn org stop --graceful-timeout=30
+
+# Hire worker
+qn org hire --name="Bob" --role="Engineer" --manager=ceo
+
+# Fire worker
+qn org fire worker-id --reason="Performance"
 ```
 
-**Required checkpoints:**
-1. Before marking any task as complete in `tasks.md`
-2. Before requesting proposal approval
-3. Before archiving a change
+### Session Providers
 
-Do NOT mark tasks complete unless `systemeval test` returns exit code 0 (PASS).
+Configure in `org/config/providers.yaml`:
+```yaml
+providers:
+  claude_code:
+    enabled: true
+    model: claude-sonnet-4-5
+    api_key_env: ANTHROPIC_API_KEY
 
-## Architecture
-
-### Multi-Tenancy Model
+  cursor:
+    enabled: true
+    model: gpt-4
+    api_key_env: OPENAI_API_KEY
 ```
-Company (root tenant)
-├── Teams (workspaces)
-│   └── TeamMembers (user + role)
-└── Users
-```
-Roles: `owner` > `admin` > `member` > `viewer`
-
-### API Conventions
-- JWT: `Authorization: Bearer {token}`
-- API keys: `X-API-Key: {key}`
-- Token refresh: `/api/v1/token/refresh/`
-- URLs: kebab-case (`/api/v1/team-members/`)
-
-### Naming Conventions
-
-**Django:** Apps lowercase singular (`user`, `team`), Models PascalCase (`TeamMember`), ViewSets `{Model}ViewSet`, Serializers `{Model}Serializer`
-
-**NextJS:** Components PascalCase (`UserProfile.tsx`), utilities camelCase (`fetchApi.ts`), types with suffix (`UserResponse`)
-
-**Docker:** Services kebab-case (`celery-worker`), volumes `{project}-{service}-{type}`
-
-## Environment Variables
-
-Required in `.envs/.local/.django`:
-- `SECRET_KEY`, `DATABASE_URL`, `REDIS_URL`
-- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
-
-## OpenSpec Workflow
-
-This project uses spec-driven development. Before implementing new features:
-
-1. Check existing specs: `openspec list --specs`
-2. Check pending changes: `openspec list`
-3. For new capabilities, create a proposal in `openspec/changes/<change-id>/`
-4. Validate: `openspec validate <change-id> --strict`
-5. Get approval before implementing
-
-Skip proposals for: bug fixes, typos, dependency updates, config changes.
 
 ---
 
+## Key Design Decisions (ADRs)
+
+See `docs/architecture-decisions/` for full details:
+
+- **ADR 001**: Storage architecture (hierarchical paths mirror org-chart)
+- **ADR 002**: Worker onboarding 3-layer system (files + env vars + working dir)
+- **ADR 003**: Onboarding modifies session spawn (env vars provide runtime identity)
+- **ADR 004**: Use absolute paths in environment variables (convenience over portability)
+
+---
+
+## Constants Pattern
+
+ALL magic values go in `cli/core/constants.py`:
+
+```python
+# Timeouts (seconds)
+DEFAULT_TIMEOUT = 60
+DEFAULT_STARTUP_TIMEOUT = 30
+DEFAULT_GRACEFUL_TIMEOUT = 30
+
+# Bead types
+BEAD_TYPE_TASK = "task"
+BEAD_TYPE_BUG = "bug"
+BEAD_TYPE_FEATURE = "feature"
+BEAD_TYPE_ASK = "ask"
+
+# Entity types
+ENTITY_TYPE_WORKER = "worker"
+ENTITY_TYPE_ORG = "org"
+ENTITY_TYPE_SESSION = "session"
+
+# Permission levels
+PERM_LEVEL_READ = 1
+PERM_LEVEL_WRITE = 3
+PERM_LEVEL_ADMIN = 5
+```
+
+Never hardcode these values anywhere else. Import from constants.
+
+---
+
+## Exception Hierarchy
+
+See `shared/exceptions.py` for all custom exceptions:
+
+```
+Exception
+├── InvalidStateTransition
+├── InvalidOrgTransition
+├── WorkerNotFound
+├── OrgStartError
+│   ├── OrgStructureError
+│   ├── SessionSpawnError
+│   └── SessionStartTimeout
+└── ConfigurationError
+```
+
+Use specific exceptions, not generic `Exception` or `ValueError`.
+
+---
+
+## State Machines
+
+Defined in `shared/state_machines.py`:
+
+- `ORG_TRANSITIONS`: Valid org state transitions
+- `LIFECYCLE_TRANSITIONS`: Worker lifecycle transitions
+- `RUNTIME_TRANSITIONS`: Worker runtime transitions
+- `LIFECYCLE_STATES`: Per-bead-type lifecycle states
+
+Never modify state without checking valid transitions.
+
+---
+
+## Testing Requirements
+
+- All new code must have tests
+- Test files in `cli/tests/`, `shared/tests/`
+- Use pytest fixtures for common setup
+- Mock external dependencies (don't hit real APIs)
+- Test both happy path and error cases
+
+Example test structure:
+```python
+def test_worker_lifecycle_transition(db, org, ceo):
+    """Test valid worker lifecycle transition."""
+    # Setup
+    assert ceo.lifecycle_status == "pending"
+
+    # Execute
+    ceo.start_onboarding()
+
+    # Verify
+    assert ceo.lifecycle_status == "onboarding"
+```
+
+---
+
+## Git Workflow
+
+1. Work on beads task (bd ready)
+2. Claim task (bd update <id> --status=in_progress)
+3. Make changes
+4. Run tests (pytest)
+5. Commit with clear message
+6. Close bead (bd close <id> --reason="...")
+7. Sync beads (bd sync)
+8. Push to remote (git push)
+
+---
+
+## Common Gotchas
+
+**Path handling:**
+- Always use `Path` from pathlib, never string concatenation
+- Worker paths are hierarchical, use `StorageManager.get_worker_path()`
+- Environment variables are absolute paths (ADR 004)
+
+**Database:**
+- SQLite is thread-safe but not process-safe
+- Always use context managers or try/finally for db.close()
+- Database path: `org_path / "live" / "quinn.db"`
+
+**Sessions:**
+- 1:1 relationship with worker (enforced by ActiveSessionExistsError)
+- Session spawning goes through registry, never direct instantiation
+- Sessions are provider-agnostic
+
+**Workers:**
+- Dual state machines (lifecycle + runtime) are independent
+- Lifecycle transitions modify database (persistent)
+- Runtime transitions are process state (volatile)
+
+**Beads:**
+- bd CLI is org-aware (uses org's .beads directory)
+- Permissions are enforced on write operations
+- Types must be valid (use constants from cli/core/constants.py)
+
+---
+
+## When to Create New Files
+
+**DO create new files when:**
+- Adding a new command group (commands/org/, commands/wrkr/)
+- Adding a new session provider (core/sessions/new_provider.py)
+- Adding a new module with distinct responsibility
+
+**DON'T create new files when:**
+- The functionality belongs in an existing module
+- You want to "improve" existing code (edit it instead)
+- Creating test-specific outputs (use temp dirs)
+
+---
+
+## Documentation Standards
+
+- Docstrings for all public functions/classes
+- Use Google-style docstrings
+- Keep README.md updated with new features
+- ADRs for architectural decisions (docs/architecture-decisions/)
+- Design docs for complex features (docs/)
+
+**Docstring example:**
+```python
+def spawn_worker_session(
+    worker: Worker,
+    provider: str,
+    config: SessionConfig,
+) -> None:
+    """Spawn a session for a worker.
+
+    Args:
+        worker: Worker instance to spawn session for
+        provider: Session provider name (claude_code, cursor, etc.)
+        config: Session configuration
+
+    Raises:
+        SessionSpawnError: If session spawn fails
+        ActiveSessionExistsError: If worker already has active session
+    """
+```
+
+---
+
+## Performance Considerations
+
+- SQLite is fast for single-org use case
+- Worker count limited by system resources (tmux sessions)
+- Session spawning is expensive (LLM context setup)
+- Beads JSONL is append-only (fast writes)
+
+Don't prematurely optimize. Profile first.
+
+---
+
+## Security Considerations
+
+- Never commit API keys or secrets
+- Use environment variables for credentials
+- Worker storage is isolated (hierarchical paths)
+- Permissions enforced on beads operations
+- Sessions run in user's context (no privilege escalation)
+
+---
+
+## Future-Proofing
+
+When adding new features, ask:
+1. Is this extensible? (can we add more providers/types later?)
+2. Is this configurable? (no hardcoded values)
+3. Is this testable? (dependencies injected, not instantiated)
+4. Is this documented? (docstrings, ADRs if architectural)
+
+Build for the system we want, not just today's requirements.
