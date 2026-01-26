@@ -222,10 +222,15 @@ def fire_cmd(
         click.echo(f"  Authorized by: {auth_manager.name}")
 
         if not keep_storage:
+            from cli.core.storage import StorageManager
+            storage = StorageManager(org_path, db)
+            worker_path = storage.get_worker_path(target_worker.id)
+            frozen_path = worker_path.parent / f"{worker_path.name}.frozen"
+
             click.echo("  Storage: Frozen for review")
             click.echo("")
             click.echo("To review and clean up storage:")
-            click.echo(f"  ls {org_path}/storage/workers/{target_worker.id}/")
+            click.echo(f"  ls {frozen_path}")
         else:
             click.echo("  Storage: Kept (--keep-storage was specified)")
 
