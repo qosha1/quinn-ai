@@ -21,7 +21,7 @@ from typing import Any, Callable, Generator, Optional
 import weakref
 
 # Current schema version - increment when schema changes
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 16
 
 # Connection configuration
 DEFAULT_BUSY_TIMEOUT_MS = 5000  # 5 seconds
@@ -933,6 +933,20 @@ CREATE INDEX IF NOT EXISTS idx_escalations_worker ON escalations(worker_id);
 CREATE INDEX IF NOT EXISTS idx_escalations_escalated_to ON escalations(escalated_to_id);
 CREATE INDEX IF NOT EXISTS idx_escalations_state ON escalations(state);
 CREATE INDEX IF NOT EXISTS idx_escalations_created_at ON escalations(created_at);
+
+-- ===================
+-- LIFECYCLE CONFIGURATIONS
+-- ===================
+
+-- Org-configurable lifecycle states for bead types
+-- Allows each org to define custom lifecycle flows per bead type
+-- Format: JSON configuration with states, terminal_states, initial_state, transitions
+CREATE TABLE IF NOT EXISTS lifecycle_configs (
+    bead_type TEXT PRIMARY KEY,
+    config TEXT NOT NULL,  -- JSON: {states: [], terminal_states: [], initial_state: str, transitions: {}}
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -1330,6 +1344,15 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
         15: [
             "ALTER TABLE okrs ADD COLUMN key_results TEXT",  # JSON array of {metric, target, current, unit}
             "ALTER TABLE okrs ADD COLUMN due_date DATE",
+        ],
+        # Version 16: Add lifecycle_configs table for org-configurable bead lifecycle states
+        16: [
+            """CREATE TABLE IF NOT EXISTS lifecycle_configs (
+                bead_type TEXT PRIMARY KEY,
+                config TEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""",
         ],
     }
 

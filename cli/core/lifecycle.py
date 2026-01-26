@@ -4,10 +4,15 @@ Lifecycle state validation for beads.
 Enforces valid state transitions based on bead type configuration.
 Validates that beads can only be closed when in terminal states.
 
-Lifecycle rules are loaded from config/lifecycle.yaml for per-org customization.
-Falls back to hardcoded defaults if config file is missing.
+Lifecycle rules are loaded in this priority order:
+1. Database (org-specific lifecycle_configs table) - highest priority
+2. config/lifecycle.yaml (project-specific customization) - medium priority
+3. Hardcoded constants (LIFECYCLE_STATES) - fallback
+
+This allows each org to customize their lifecycle states without modifying code.
 """
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -19,6 +24,7 @@ from .constants import LIFECYCLE_INITIAL_STATES, LIFECYCLE_STATES
 
 # Cache for loaded lifecycle config
 _lifecycle_config_cache: dict | None = None
+_db_path: Optional[Path] = None
 
 
 def _get_config_path() -> Path:
@@ -59,10 +65,46 @@ def _load_lifecycle_config() -> dict:
         return _lifecycle_config_cache
 
 
+def _load_from_database(bead_type: str) -> Optional[dict]:
+    """Load lifecycle config from database table.
+
+    Args:
+        bead_type: The bead type to load config for
+
+    Returns:
+        Config dict or None if not found in database
+    """
+    if _db_path is None:
+        return None
+
+    try:
+        from .db import open_database
+
+        db = open_database(_db_path)
+        try:
+            row = db.fetchone(
+                "SELECT config FROM lifecycle_configs WHERE bead_type = ?",
+                (bead_type,),
+            )
+            if row:
+                config_json = row["config"]
+                return json.loads(config_json)
+        finally:
+            db.close()
+    except Exception:
+        # Database error, fall through to other sources
+        return None
+
+    return None
+
+
 def _get_lifecycle_for_type(bead_type: str) -> dict:
     """Get lifecycle configuration for a specific bead type.
 
-    Tries to load from config file first, falls back to hardcoded constants.
+    Tries in priority order:
+    1. Database (org-specific)
+    2. YAML file (project-specific)
+    3. Hardcoded constants (fallback)
 
     Args:
         bead_type: The bead type (task, bug, feature, etc.)
@@ -70,9 +112,18 @@ def _get_lifecycle_for_type(bead_type: str) -> dict:
     Returns:
         Dict with states, terminal_states, initial_state, transitions
     """
-    yaml_config = _load_lifecycle_config()
+    # Try database first (highest priority - org-specific)
+    db_config = _load_from_database(bead_type)
+    if db_config:
+        return {
+            "states": db_config.get("states", []),
+            "terminal": db_config.get("terminal_states", []),
+            "initial": db_config.get("initial_state", db_config.get("states", ["open"])[0]),
+            "transitions": db_config.get("transitions", {}),
+        }
 
-    # Try YAML config first
+    # Try YAML config (medium priority - project-specific)
+    yaml_config = _load_lifecycle_config()
     if bead_type in yaml_config:
         cfg = yaml_config[bead_type]
         return {
@@ -92,7 +143,17 @@ def _get_lifecycle_for_type(bead_type: str) -> dict:
             "transitions": cfg.get("transitions", {}),
         }
 
-    # Fall back to hardcoded constants
+    # Try database default (org-specific default)
+    db_default = _load_from_database("default")
+    if db_default:
+        return {
+            "states": db_default.get("states", []),
+            "terminal": db_default.get("terminal_states", []),
+            "initial": db_default.get("initial_state", db_default.get("states", ["open"])[0]),
+            "transitions": db_default.get("transitions", {}),
+        }
+
+    # Fall back to hardcoded constants (lowest priority - built-in defaults)
     config = LIFECYCLE_STATES.get(bead_type, LIFECYCLE_STATES["default"])
     initial = LIFECYCLE_INITIAL_STATES.get(
         bead_type, LIFECYCLE_INITIAL_STATES["default"]
@@ -105,10 +166,21 @@ def _get_lifecycle_for_type(bead_type: str) -> dict:
     }
 
 
+def set_database_path(db_path: Path) -> None:
+    """Set the database path for loading lifecycle configs.
+
+    Args:
+        db_path: Path to quinn.db
+    """
+    global _db_path
+    _db_path = db_path
+    clear_lifecycle_cache()
+
+
 def clear_lifecycle_cache() -> None:
     """Clear the cached lifecycle configuration.
 
-    Call this if the config file has been modified and needs to be reloaded.
+    Call this if the config file or database has been modified and needs to be reloaded.
     """
     global _lifecycle_config_cache
     _lifecycle_config_cache = None
@@ -488,3 +560,91 @@ def parse_status_from_args(args: list[str]) -> Optional[str]:
             return arg.split("=", 1)[1]
         i += 1
     return None
+
+
+def save_lifecycle_config(db_path: Path, bead_type: str, config: dict) -> None:
+    """Save lifecycle configuration to database.
+
+    Args:
+        db_path: Path to quinn.db
+        bead_type: Bead type to configure (task, bug, feature, etc. or "default")
+        config: Configuration dict with states, terminal_states, initial_state, transitions
+
+    Example:
+        config = {
+            "states": ["open", "in_progress", "review", "done"],
+            "terminal_states": ["done", "rejected"],
+            "initial_state": "open",
+            "transitions": {
+                "open": ["in_progress", "rejected"],
+                "in_progress": ["review", "rejected"],
+                "review": ["done", "in_progress"],
+                "done": [],
+                "rejected": []
+            }
+        }
+        save_lifecycle_config(db_path, "task", config)
+    """
+    from .db import open_database
+
+    config_json = json.dumps(config)
+    db = open_database(db_path)
+    try:
+        db.execute(
+            """INSERT INTO lifecycle_configs (bead_type, config, updated_at)
+               VALUES (?, ?, datetime('now'))
+               ON CONFLICT(bead_type) DO UPDATE SET
+                   config = excluded.config,
+                   updated_at = datetime('now')""",
+            (bead_type, config_json),
+        )
+        db.connection.commit()
+    finally:
+        db.close()
+
+    # Clear cache so next read gets the updated config
+    clear_lifecycle_cache()
+
+
+def get_lifecycle_config_from_db(db_path: Path, bead_type: str) -> Optional[dict]:
+    """Get lifecycle configuration from database.
+
+    Args:
+        db_path: Path to quinn.db
+        bead_type: Bead type to get config for
+
+    Returns:
+        Configuration dict or None if not found
+    """
+    from .db import open_database
+
+    db = open_database(db_path)
+    try:
+        row = db.fetchone(
+            "SELECT config FROM lifecycle_configs WHERE bead_type = ?",
+            (bead_type,),
+        )
+        if row:
+            return json.loads(row["config"])
+        return None
+    finally:
+        db.close()
+
+
+def list_lifecycle_configs_from_db(db_path: Path) -> dict[str, dict]:
+    """List all lifecycle configurations from database.
+
+    Args:
+        db_path: Path to quinn.db
+
+    Returns:
+        Dict mapping bead_type to configuration dict
+    """
+    from .db import open_database
+
+    db = open_database(db_path)
+    try:
+        rows = db.fetchall("SELECT bead_type, config FROM lifecycle_configs")
+        return {row["bead_type"]: json.loads(row["config"]) for row in rows}
+    finally:
+        db.close()
