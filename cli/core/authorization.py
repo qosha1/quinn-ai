@@ -6,7 +6,9 @@ permission validation. All authorization logic should go through this module.
 """
 
 import json
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,8 +38,9 @@ class AuthorizationManager:
     consistent authorization logic across the codebase.
     """
 
-    def __init__(self, db: "Database"):
+    def __init__(self, db: "Database", org_path: Optional[Path] = None):
         self._db = db
+        self._org_path = org_path
 
     def can(
         self,
@@ -106,6 +109,57 @@ class AuthorizationManager:
         scope = self._parse_hiring_scope(worker)
         return len(scope["allowed_roles"]) > 0
 
+    def _has_critical_work(self, worker_id: str) -> tuple[bool, Optional[str]]:
+        """Check if worker has critical work in progress.
+
+        Args:
+            worker_id: Worker ID to check
+
+        Returns:
+            Tuple of (has_critical_work, details_message)
+        """
+        from .bd_wrapper import run_bd
+
+        # Check if org_path is available
+        if not self._org_path:
+            # No org_path available, can't check beads
+            return False, None
+
+        try:
+
+            # Query for in_progress beads assigned to this worker
+            result = run_bd(
+                args=["list", "--assignee", worker_id, "--status", "in_progress", "--json"],
+                org_path=self._org_path,
+                worker_id=None,  # Admin check, skip permission
+                capture_output=True,
+                skip_permission_check=True,
+                skip_lifecycle_check=True,
+                skip_okr_check=True,
+            )
+
+            if result.returncode != 0:
+                # Failed to query beads, allow firing (fail open)
+                return False, None
+
+            # Parse JSON output
+            import json
+            beads_data = json.loads(result.stdout) if result.stdout.strip() else []
+
+            if not beads_data:
+                return False, None
+
+            # Worker has active work - list the beads
+            bead_ids = [bead.get("id", "unknown") for bead in beads_data]
+            return True, f"Worker has {len(bead_ids)} active work item(s): {', '.join(bead_ids[:3])}"
+
+        except Exception as e:
+            # On any error, log and allow firing (fail open for safety)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to check critical work for {worker_id}: {e}")
+            return False, None
+
     def _can_hire(self, worker, target_id: Optional[str]) -> AuthorizationResult:
         """Check if worker can hire new workers."""
         # Check authority via hiring_authority_scope
@@ -152,7 +206,13 @@ class AuthorizationManager:
                 f"{target.name} is not a direct report of {worker.name}"
             )
 
-        # TODO: Add check for critical work in progress
+        # Check for critical work in progress
+        has_work, work_details = self._has_critical_work(target_id)
+        if has_work:
+            return AuthorizationResult.deny(
+                f"Cannot fire {target.name}: {work_details}. "
+                "Worker must complete or hand off active work before termination."
+            )
 
         return AuthorizationResult.allow(
             f"{worker.name} authorized to fire {target.name}"
