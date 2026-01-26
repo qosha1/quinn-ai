@@ -81,8 +81,7 @@ class OKRsView(Widget):
 
     async def on_mount(self) -> None:
         """Load OKRs when view mounts."""
-        # TODO: Load from org connection
-        pass
+        self.refresh_okrs()
 
     def refresh_okrs(self) -> None:
         """Refresh OKRs from org connection."""
