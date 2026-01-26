@@ -10,7 +10,7 @@ import pytest
 
 from cli.core.db import init_database
 from cli.core.queries import create_team, create_worker, create_budget_pool, create_budget_allocation
-from cli.core.worker import Worker
+from cli.core.worker import Worker, HiringScope
 from cli.core.session import SessionState
 from shared import (
     InvalidStateTransition,
@@ -2465,3 +2465,87 @@ class TestOffboardingAskBeadIntegration:
         cleanup_events = bus.get_events_for_entity("offboarding", worker.id, limit=10)
         cleanup_done = [e for e in cleanup_events if e.event_type == EventType.OFFBOARDING_CLEANUP_DONE]
         assert len(cleanup_done) >= 1
+
+
+class TestCumulativeBudgetTracking:
+    """Test cumulative hiring cost budget enforcement."""
+
+    def test_cumulative_cost_within_budget(self, db, team):
+        """Test that hiring succeeds when cumulative cost is within budget."""
+        # Create manager with total budget of 150
+        scope = HiringScope(
+            allowed_roles=["Developer"],
+            max_cost=100,
+            max_total_budget=150
+        )
+        manager_data = create_worker(
+            db, "Manager", "Lead", team.id, cost=50,
+            hiring_authority_scope=scope.to_json()
+        )
+        manager = Worker(db, manager_data.id)
+        
+        # First hire: cost 70 (cumulative: 70 <= 150) - should succeed
+        can_hire, reason = manager.can_hire("Developer", 70)
+        assert can_hire, f"Should allow first hire: {reason}"
+        
+        dev1 = manager.hire("Dev1", "Developer", {"coding": 80}, 70)
+        assert dev1 is not None
+        
+        # Second hire: cost 60 (cumulative: 130 <= 150) - should succeed
+        can_hire2, reason2 = manager.can_hire("Developer", 60)
+        assert can_hire2, f"Should allow second hire: {reason2}"
+
+    def test_cumulative_cost_exceeds_budget(self, db, team):
+        """Test that hiring fails when cumulative cost would exceed budget."""
+        # Create manager with total budget of 150
+        scope = HiringScope(
+            allowed_roles=["Developer"],
+            max_cost=100,
+            max_total_budget=150
+        )
+        manager_data = create_worker(
+            db, "Manager", "Lead", team.id, cost=50,
+            hiring_authority_scope=scope.to_json()
+        )
+        manager = Worker(db, manager_data.id)
+        
+        # First hire: cost 70
+        dev1 = manager.hire("Dev1", "Developer", {"coding": 80}, 70)
+        
+        # Second hire: cost 60
+        dev2 = manager.hire("Dev2", "Developer", {"coding": 75}, 60)
+        
+        # Third hire: cost 30 (cumulative: 130+30=160 > 150) - should fail
+        can_hire, reason = manager.can_hire("Developer", 30)
+        assert not can_hire, "Should deny hire when budget exceeded"
+        assert "Budget exceeded" in reason
+        assert "cumulative cost 130" in reason
+
+    def test_terminated_workers_excluded_from_cumulative_cost(self, db, team):
+        """Test that terminated workers don't count toward cumulative cost."""
+        # Create manager with total budget of 150
+        scope = HiringScope(
+            allowed_roles=["Developer"],
+            max_cost=100,
+            max_total_budget=150
+        )
+        manager_data = create_worker(
+            db, "Manager", "Lead", team.id, cost=50,
+            hiring_authority_scope=scope.to_json()
+        )
+        manager = Worker(db, manager_data.id)
+        
+        # Hire developer: cost 80
+        dev1 = manager.hire("Dev1", "Developer", {"coding": 80}, 80)
+
+        # Move developer through lifecycle to terminated
+        dev1_worker = Worker(db, dev1.id)
+        dev1_worker.start_onboarding()
+        dev1_worker.complete_onboarding()
+        dev1_worker.start_offboarding()
+        dev1_worker.terminate()
+        
+        # Now should be able to hire another expensive developer
+        # (cumulative should be 0 since previous is terminated)
+        can_hire, reason = manager.can_hire("Developer", 80)
+        assert can_hire, f"Should allow hire after terminating previous: {reason}"
