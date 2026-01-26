@@ -13,5 +13,5 @@ class CoreConfig(AppConfig):
     verbose_name = "Core"
 
     def ready(self):
-        """Import signal handlers when app is ready."""
+        """Called when app is ready. No initialization needed."""
         pass
