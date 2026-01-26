@@ -14,7 +14,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from cli.core.db import Database
 from cli.core.worker import Worker
-from cli.core.queries import get_team
+from cli.core.queries import get_team, get_worker
+from cli.core.storage import StorageManager
 
 
 @dataclass
@@ -62,9 +63,9 @@ def prepare_worker_onboarding(
     # 1. Load worker from database
     worker = Worker.get(db, worker_id)
 
-    # 2. Create worker directory
-    worker_dir = org_path / "storage" / "workers" / worker_id
-    worker_dir.mkdir(parents=True, exist_ok=True)
+    # 2. Create worker directory using StorageManager (hierarchical structure)
+    storage = StorageManager(org_path, db)
+    worker_dir = storage.ensure_worker_storage(worker_id)
 
     # Create onboarding subdirectory
     onboarding_dir = worker_dir / ".onboarding"
@@ -344,17 +345,21 @@ def _link_architecture_docs(worker_dir: Path, org_path: Path) -> None:
 def get_worker_env_vars(
     ctx: OnboardingContext,
     org_path: Path,
+    db: Database,
 ) -> dict[str, str]:
     """Get environment variables for worker session.
 
     Args:
         ctx: Onboarding context
         org_path: Organization root path
+        db: Database instance for storage hierarchy lookup
 
     Returns:
         Dictionary of environment variable key-value pairs
     """
-    worker_dir = org_path / "storage" / "workers" / ctx.worker_id
+    # Use StorageManager to get hierarchical worker path
+    storage = StorageManager(org_path, db)
+    worker_dir = storage.get_worker_path(ctx.worker_id)
 
     # Determine session mode - CEOs and managers default to autonomous
     session_mode = "autonomous" if (ctx.is_ceo or ctx.is_manager) else "interactive"

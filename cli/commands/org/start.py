@@ -133,11 +133,13 @@ def start_cmd(
                 worker_obj = Worker(db, worker_data.id, org_path=org_path)
 
             click.echo(f"Starting workday for {worker_obj.name}...")
-            worker_dir = org_path / "storage" / "workers" / worker_obj.id
-            worker_dir.mkdir(parents=True, exist_ok=True)
+            # Get hierarchical worker directory from StorageManager
+            from cli.core.storage import StorageManager
+            storage = StorageManager(org_path, db)
+            worker_dir = storage.ensure_worker_storage(worker_obj.id)
 
             onboarding_ctx = load_onboarding_context(db, worker_obj.id, org_path)
-            env_vars = get_worker_env_vars(onboarding_ctx, org_path)
+            env_vars = get_worker_env_vars(onboarding_ctx, org_path, db)
             welcome = generate_returning_message(onboarding_ctx)
 
             spawn_worker_session(
@@ -218,17 +220,19 @@ def _spawn_ceo_session(
     db = open_database(get_org_db_path(org_path))
     try:
         onboarding_ctx = prepare_worker_onboarding(db, ceo.id, org_path)
+
+        # Get hierarchical worker directory from StorageManager
+        from cli.core.storage import StorageManager
+        storage = StorageManager(org_path, db)
+        worker_dir = storage.get_worker_path(ceo.id)
+
+        # Get environment variables
+        env_vars = get_worker_env_vars(onboarding_ctx, org_path, db)
+
+        # Generate welcome message
+        welcome = generate_welcome_message(onboarding_ctx, worker_dir)
     finally:
         db.close()
-
-    # Get worker directory (not org root)
-    worker_dir = org_path / "storage" / "workers" / ceo.id
-
-    # Get environment variables
-    env_vars = get_worker_env_vars(onboarding_ctx, org_path)
-
-    # Generate welcome message
-    welcome = generate_welcome_message(onboarding_ctx, worker_dir)
 
     # Create session config
     config = SessionConfig(

@@ -1538,7 +1538,7 @@ class Worker:
         else:
             ctx = prepare_worker_onboarding(self.db, self.id, org_path)
 
-        onboarding_env = get_worker_env_vars(ctx, org_path)
+        onboarding_env = get_worker_env_vars(ctx, org_path, self.db)
         for key, value in onboarding_env.items():
             env_vars.setdefault(key, value)
 

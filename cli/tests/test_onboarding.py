@@ -75,7 +75,7 @@ def test_onboarding_environment_includes_worker_identity(tmp_path: Path) -> None
         _create_sample_okr(db, ceo.id)
 
         ctx = load_onboarding_context(db, ceo.id, org_path)
-        env_vars = get_worker_env_vars(ctx, org_path)
+        env_vars = get_worker_env_vars(ctx, org_path, db)
 
         assert env_vars["WORKER_ID"] == ceo.id
         assert env_vars["QUINN_WORKER_ID"] == ceo.id
