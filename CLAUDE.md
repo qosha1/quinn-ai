@@ -388,12 +388,3 @@ Skip proposals for: bug fixes, typos, dependency updates, config changes.
 
 ---
 
-## Deployed Org Worker Guidance
-
-The following guidance applies to workers inside deployed QuinnAI orgs. These are
-org-facing concepts (OKRs, escalation, storage rules), not contributor workflow.
-
-- Follow cascaded OKRs; keep work scoped to your role and objectives.
-- Escalate early when off-track; use the org message/bead system.
-- Save durable knowledge to `shared/`; keep drafts in your worker folder.
-- Use the deployed org's `CLAUDE.md` and `AGENTS.md` as the source of truth.
