@@ -484,7 +484,10 @@ def _wait_for_ready(worker: Worker, timeout: int) -> None:
 
     start_time = time.time()
     while time.time() - start_time < timeout:
-        if worker.runtime_status == RuntimeStatus.RUNNING.value:
+        # Check if session is in a ready state (RUNNING or IDLE)
+        # Sessions transition: starting → running → idle
+        # Both RUNNING and IDLE indicate the session is ready for work
+        if worker.runtime_status in (RuntimeStatus.RUNNING.value, RuntimeStatus.IDLE.value):
             elapsed = int(time.time() - start_time)
             click.echo(f"✓ {worker.name} session ready (after {elapsed}s)")
             return
