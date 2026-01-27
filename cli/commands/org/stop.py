@@ -296,7 +296,7 @@ def _send_wrap_up_notifications(
                     "After timeout, your session will be terminated."
                 ),
                 priority=1,  # High priority
-                time_sensitivity="minutes",
+                time_sensitivity="immediate",
             )
 
             create_notification_bead(
@@ -513,7 +513,7 @@ def _stop_worker(
                         f"Timeout: {graceful_timeout} seconds"
                     ),
                     priority=1,
-                    time_sensitivity="minutes",
+                    time_sensitivity="immediate",
                 )
                 create_notification_bead(
                     db,

@@ -164,3 +164,6 @@ yarn-error.log*
 coverage/
 .nyc_output/
 .venv/
+
+# QuinnAI build artifacts
+cli/beads-org/
