@@ -146,6 +146,15 @@ class SessionState(str, Enum):
     CRASHED = "crashed"
 
 
+class RuntimeStatus(str, Enum):
+    """Worker session runtime status values."""
+    STARTING = "starting"
+    RUNNING = "running"
+    IDLE = "idle"
+    STOPPED = "stopped"
+    CRASHED = "crashed"
+
+
 class IdleBehavior(str, Enum):
     """Worker idle behavior options."""
     EXIT = "exit"
