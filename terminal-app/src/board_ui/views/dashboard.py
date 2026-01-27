@@ -118,6 +118,11 @@ class DashboardView(Widget):
             yield Label("Recent Activity", classes="panel-title")
             yield Static("Connect to an org to see activity", id="activity-content")
 
+        with Container(id="actions-panel", classes="panel"):
+            yield Label("Org Actions", classes="panel-title")
+            with Horizontal(classes="action-buttons"):
+                yield Button("Restart Org", id="restart-org-btn", variant="warning")
+
     async def on_mount(self) -> None:
         """Load data when view mounts."""
         await self.refresh_data()
@@ -214,6 +219,8 @@ class DashboardView(Widget):
         """Handle button presses."""
         if event.button.id == "chat-ceo-btn":
             await self._open_ceo_chat()
+        elif event.button.id == "restart-org-btn":
+            await self._restart_org()
 
     async def _open_ceo_chat(self) -> None:
         """Open a chat window with the CEO."""
@@ -221,18 +228,59 @@ class DashboardView(Widget):
             self.app.notify("CEO has no active session", severity="warning")
             return
 
-        from ..terminals import get_terminal_provider
-
-        terminal = get_terminal_provider()
-        if terminal is None:
-            self.app.notify("No terminal available", severity="error")
-            return
-
         try:
+            from ..terminals import get_terminal_provider
+
+            terminal = get_terminal_provider()
+            if terminal is None:
+                self.app.notify(
+                    "No terminal emulator available. Supported: iTerm2, Kitty, Terminal.app",
+                    severity="error"
+                )
+                return
+
+            # Validate terminal type
+            self.app.notify(f"Opening {terminal.terminal_type.value} window...", timeout=2)
+
             terminal.attach_to_session(
                 title="Chat with CEO",
                 session_name=self._ceo.tmux_session_name,
             )
-            self.app.notify("Opened CEO chat window")
+            self.app.notify("Opened CEO chat window", severity="success")
+
+        except ValueError as e:
+            # Specific error from tmux session validation
+            self.app.notify(f"Session error: {e}", severity="error")
+        except ImportError as e:
+            # Terminal module import failed
+            self.app.notify(f"Terminal module error: {e}", severity="error")
         except Exception as e:
-            self.app.notify(f"Failed to open chat: {e}", severity="error")
+            # Generic error
+            self.app.notify(f"Failed to open chat: {type(e).__name__}: {e}", severity="error")
+
+    async def _restart_org(self) -> None:
+        """Restart the organization."""
+        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+            self.app.notify("No org connected", severity="error")
+            return
+
+        # Confirm with user
+        from textual.app import ComposeResult
+        from textual.containers import Container
+        from textual.widgets import Static
+
+        # Show notification that restart is happening
+        self.app.notify("Restarting organization...", severity="information")
+
+        # Perform restart in background
+        conn = self.app.org_connection
+        try:
+            success = await self.app.run_worker(conn.restart_org)
+            if success:
+                self.app.notify("Organization restarted successfully", severity="success")
+                # Refresh dashboard data
+                await self.refresh_data()
+            else:
+                self.app.notify("Failed to restart organization", severity="error")
+        except Exception as e:
+            self.app.notify(f"Error restarting org: {e}", severity="error")

@@ -684,6 +684,62 @@ def stop_org(
         )
 
 
+def restart_org(
+    org_path: Path,
+    spawn_ceo: bool = True,
+    provider: str = "claude_code",
+    skip_config_validation: bool = False,
+    graceful_timeout: int = 10,
+) -> StartResult:
+    """Restart an org by stopping then starting it.
+
+    Args:
+        org_path: Path to org folder
+        spawn_ceo: Whether to spawn CEO session on restart (default True)
+        provider: Session provider for CEO (default: claude_code)
+        skip_config_validation: Skip provider validation
+        graceful_timeout: Seconds to wait for graceful shutdown
+
+    Returns:
+        StartResult with success status and message
+    """
+    # First, stop the org
+    stop_result = stop_org(
+        org_path=org_path,
+        force=False,  # Try graceful first
+        cleanup=True,
+    )
+
+    if not stop_result.success:
+        # Stop failed - return the error
+        return StartResult(
+            success=False,
+            message=f"Failed to stop org during restart: {stop_result.message}",
+            returncode=stop_result.returncode,
+        )
+
+    # Stop succeeded, now start it
+    start_result = start_org(
+        org_path=org_path,
+        spawn_ceo=spawn_ceo,
+        provider=provider,
+        skip_config_validation=skip_config_validation,
+    )
+
+    if start_result.success:
+        return StartResult(
+            success=True,
+            message="Organization restarted successfully",
+            returncode=0,
+        )
+    else:
+        return StartResult(
+            success=False,
+            message=f"Org stopped but failed to restart: {start_result.message}",
+            returncode=start_result.returncode,
+        )
+
+
 def get_org_status(org_path: Path) -> OrgInfo:
     """Get current status of a specific org.
 

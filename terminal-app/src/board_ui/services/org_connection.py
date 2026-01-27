@@ -986,6 +986,32 @@ class QuinnAIOrgConnection(OrgConnection):
         result = subprocess_stop_org(self._org_path)
         return result.success
 
+    def restart_org(self) -> bool:
+        """Restart the org (stop then start).
+
+        Uses subprocess calls to qn CLI for proper state transitions.
+
+        Returns:
+            True if org was restarted successfully
+        """
+        self._ensure_connected()
+
+        # Check current status
+        org_info = self.get_org_info()
+        if org_info.status not in (OrgStatus.RUNNING, OrgStatus.STOPPED):
+            return False
+
+        # Use subprocess-based restart from org_discovery
+        from .org_discovery import restart_org as subprocess_restart_org
+
+        result = subprocess_restart_org(
+            org_path=self._org_path,
+            spawn_ceo=True,
+            provider="claude_code",
+            skip_config_validation=True,
+        )
+        return result.success
+
     # ==================
     # BOARD INTERVENTIONS
     # ==================

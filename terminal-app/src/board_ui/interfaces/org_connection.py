@@ -292,6 +292,15 @@ class OrgConnection(ABC):
         """
         ...
 
+    @abstractmethod
+    def restart_org(self) -> bool:
+        """Restart the org (stop then start).
+
+        Returns:
+            True if org was restarted successfully
+        """
+        ...
+
     # ==================
     # BOARD INTERVENTIONS
     # ==================
