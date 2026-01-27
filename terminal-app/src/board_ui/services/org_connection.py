@@ -989,7 +989,7 @@ class QuinnAIOrgConnection(OrgConnection):
     def restart_org(self) -> tuple[bool, str]:
         """Restart the org (stop then start).
 
-        Uses subprocess calls to qn CLI for proper state transitions.
+        Uses subprocess call to qn CLI for proper state transitions.
 
         Returns:
             Tuple of (success: bool, message: str)
@@ -1001,16 +1001,38 @@ class QuinnAIOrgConnection(OrgConnection):
         if org_info.status not in (OrgStatus.RUNNING, OrgStatus.STOPPED):
             return False, f"Cannot restart org in status: {org_info.status.value}"
 
-        # Use subprocess-based restart from org_discovery
-        from .org_discovery import restart_org as subprocess_restart_org
+        # Call qn org restart via subprocess
+        import subprocess
+        from .org_discovery import _get_qn_command
 
-        result = subprocess_restart_org(
-            org_path=self._org_path,
-            spawn_ceo=True,
-            provider="claude_code",
-            skip_config_validation=True,
-        )
-        return result.success, result.message
+        cmd = _get_qn_command() + [
+            "--org-path", str(self._org_path),
+            "org", "restart",
+            "--skip-config-validation",
+            "--yes" if "--yes" in dir() else "",  # Skip confirmation if available
+        ]
+        # Remove empty string if --yes not available
+        cmd = [c for c in cmd if c]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,  # Restart can take a while
+                cwd=str(self._org_path),
+            )
+
+            if result.returncode == 0:
+                return True, "Organization restarted successfully"
+            else:
+                error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()
+                return False, error_msg or f"Restart failed with code {result.returncode}"
+
+        except subprocess.TimeoutExpired:
+            return False, "Restart timed out after 60 seconds"
+        except Exception as e:
+            return False, f"Failed to run restart command: {e}"
 
     # ==================
     # BOARD INTERVENTIONS
