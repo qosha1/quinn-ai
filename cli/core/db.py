@@ -1359,7 +1359,14 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
     for version in range(from_version + 1, to_version + 1):
         if version in migrations:
             for sql in migrations[version]:
-                db.execute(sql)
+                try:
+                    db.execute(sql)
+                except sqlite3.OperationalError as e:
+                    # Skip if column/table already exists (idempotent migrations)
+                    if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
+                        continue
+                    # Re-raise other operational errors
+                    raise
 
     # Update schema version
     db.execute(
