@@ -69,6 +69,25 @@ class GenericTerminal(TerminalProvider):
 
         return ["xterm"]
 
+    def _validate_tmux_session(self, session_name: str) -> bool:
+        """Check if a tmux session exists and is valid.
+
+        Args:
+            session_name: Name of the tmux session to validate
+
+        Returns:
+            True if session exists and is valid, False otherwise
+        """
+        try:
+            result = subprocess.run(
+                ["tmux", "has-session", "-t", session_name],
+                capture_output=True,
+                timeout=2,
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
     def open_window(
         self,
         title: str,
@@ -133,6 +152,14 @@ class GenericTerminal(TerminalProvider):
         session_name: str,
     ) -> WindowHandle:
         """Open a terminal attached to a tmux session."""
+        # Validate session exists before attempting attach
+        if not self._validate_tmux_session(session_name):
+            raise ValueError(
+                f"tmux session '{session_name}' not found or invalid. "
+                "Session may have died or been killed. "
+                "Try restarting the worker session."
+            )
+
         # Use shlex.quote to prevent shell injection in session name
         tmux_cmd = f"tmux attach-session -t {shlex.quote(session_name)}"
         return self.open_window(title, tmux_cmd)

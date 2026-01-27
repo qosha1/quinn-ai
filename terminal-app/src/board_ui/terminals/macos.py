@@ -94,8 +94,20 @@ class MacOSTerminal(TerminalProvider):
         title: str,
         session_name: str,
     ) -> WindowHandle:
-        """Open a Terminal.app window attached to a tmux session."""
+        """Open a Terminal.app window attached to a tmux session.
+
+        Raises:
+            ValueError: If tmux session doesn't exist or is invalid
+        """
         window_id = str(uuid.uuid4())[:8]
+
+        # Validate session exists before attempting attach
+        if not self._validate_tmux_session(session_name):
+            raise ValueError(
+                f"tmux session '{session_name}' not found or invalid. "
+                "Session may have died or been killed. "
+                "Try restarting the worker session."
+            )
 
         # Use shlex.quote to prevent shell injection in session name
         tmux_cmd = f"tmux attach-session -t {shlex.quote(session_name)}"
@@ -120,6 +132,25 @@ class MacOSTerminal(TerminalProvider):
             title=title,
             session_name=session_name,
         )
+
+    def _validate_tmux_session(self, session_name: str) -> bool:
+        """Check if a tmux session exists and is valid.
+
+        Args:
+            session_name: Name of the tmux session to validate
+
+        Returns:
+            True if session exists and is valid, False otherwise
+        """
+        try:
+            result = subprocess.run(
+                ["tmux", "has-session", "-t", session_name],
+                capture_output=True,
+                timeout=2,
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
 
 
 # Register this provider

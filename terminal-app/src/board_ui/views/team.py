@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 class TeamView(Widget):
     """Team view with worker list and jump-in buttons."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Track open session windows for cleanup
+        self._open_windows: dict[str, any] = {}  # worker_id -> WindowHandle
+
     DEFAULT_CSS = """
     TeamView {
         layout: vertical;
@@ -243,10 +248,26 @@ class TeamView(Widget):
             return
 
         try:
-            terminal.attach_to_session(
+            # Attempt to attach to session (validates session exists)
+            window_handle = terminal.attach_to_session(
                 title=f"Chat with {worker.name}",
                 session_name=worker.tmux_session_name,
             )
+
+            # Track the window for potential cleanup
+            self._open_windows[worker.id] = window_handle
+
             self.app.notify(f"Opened chat window with {worker.name}")
+        except ValueError as e:
+            # Session doesn't exist or is invalid
+            logger.warning(f"Session validation failed for {worker.name}: {e}")
+            self.app.notify(
+                f"Session for {worker.name} is dead or invalid. "
+                f"Use 'qn wrkr cleanup {worker.id}' then 'qn wrkr restart {worker.id}' to recover.",
+                severity="error",
+                timeout=10,
+            )
         except Exception as e:
+            # Other errors (AppleScript, permissions, etc.)
+            logger.error(f"Failed to open chat for {worker.name}: {e}")
             self.app.notify(f"Failed to open chat: {e}", severity="error")
