@@ -176,7 +176,7 @@ class QuinnAIOrgConnection(OrgConnection):
 
         # Real-time update tracking
         self._subscribers: list[Callable[[str, Any], None]] = []
-        self._last_change_count: Optional[int] = None
+        self._last_wal_pages: Optional[int] = None
         self._polling_enabled = False
 
         # Validate org path exists
@@ -250,7 +250,7 @@ class QuinnAIOrgConnection(OrgConnection):
         # Clear subscribers and disable polling
         self._subscribers.clear()
         self._polling_enabled = False
-        self._last_change_count = None
+        self._last_wal_pages = None
 
         if self._db is not None:
             self._db.close()
@@ -1293,7 +1293,8 @@ class QuinnAIOrgConnection(OrgConnection):
         """Subscribe to real-time org updates via SQLite WAL polling.
 
         Polls the database for changes and notifies subscribers when detected.
-        Uses the data_version field from PRAGMA data_version to detect changes.
+        Uses PRAGMA wal_checkpoint(PASSIVE) to track WAL page count, which
+        increments on any database write (even from the same connection).
 
         Args:
             callback: Function called with (event_type, event_data) when changes detected.
@@ -1310,8 +1311,8 @@ class QuinnAIOrgConnection(OrgConnection):
         self._subscribers.append(callback)
 
         # Initialize last_change_count on first subscriber
-        if self._last_change_count is None:
-            self._last_change_count = self._get_data_version()
+        if self._last_wal_pages is None:
+            self._last_wal_pages = self._get_wal_page_count()
 
         # Enable polling if this is the first subscriber
         if len(self._subscribers) == 1:
@@ -1325,7 +1326,7 @@ class QuinnAIOrgConnection(OrgConnection):
             # Disable polling if no more subscribers
             if len(self._subscribers) == 0:
                 self._polling_enabled = False
-                self._last_change_count = None
+                self._last_wal_pages = None
                 logger.info(f"Real-time updates disabled for {self._org_path}")
 
         return unsubscribe
@@ -1333,7 +1334,8 @@ class QuinnAIOrgConnection(OrgConnection):
     def check_for_updates(self) -> bool:
         """Check if database has changed since last check.
 
-        Uses SQLite's PRAGMA data_version to detect changes.
+        Uses SQLite's PRAGMA wal_checkpoint(PASSIVE) to track WAL page count.
+        The page count increments on any write, even from the same connection.
         Should be called periodically (e.g., every 100-500ms) to poll for updates.
 
         Returns:
@@ -1346,45 +1348,48 @@ class QuinnAIOrgConnection(OrgConnection):
             return False
 
         try:
-            current_version = self._get_data_version()
+            current_version = self._get_wal_page_count()
 
-            # Check if version changed
-            if self._last_change_count is not None and current_version != self._last_change_count:
-                self._last_change_count = current_version
+            # Check if WAL page count changed
+            if self._last_wal_pages is not None and current_version != self._last_wal_pages:
+                self._last_wal_pages = current_version
                 # Notify all subscribers
                 for subscriber in list(self._subscribers):  # Copy list to avoid modification during iteration
                     try:
-                        subscriber("database_changed", {"version": current_version})
+                        subscriber("database_changed", {"wal_pages": current_version})
                     except Exception as e:
                         logger.error(f"Error notifying subscriber: {e}")
                 return True
 
-            self._last_change_count = current_version
+            self._last_wal_pages = current_version
             return False
 
         except Exception as e:
             logger.error(f"Error checking for database updates: {e}")
             return False
 
-    def _get_data_version(self) -> int:
-        """Get the current SQLite data_version.
+    def _get_wal_page_count(self) -> int:
+        """Get the current WAL page count to detect database changes.
 
-        The data_version increments whenever any change is made to the database.
-        This provides a lightweight way to detect if any data has changed.
+        Uses PRAGMA wal_checkpoint(PASSIVE) which returns the number of pages
+        in the WAL file. This increments whenever writes occur to the database,
+        even from the same connection.
 
         Returns:
-            Current data_version value
+            Current WAL page count, or 0 if WAL not enabled or on error
         """
         if not self._db:
             return 0
 
         try:
-            row = self._db.fetchone("PRAGMA data_version")
-            if row:
-                return int(row[0])
+            # PRAGMA wal_checkpoint(PASSIVE) returns (busy, log, checkpointed)
+            # log = number of pages in WAL file (increments on writes)
+            row = self._db.fetchone("PRAGMA wal_checkpoint(PASSIVE)")
+            if row and len(row) >= 2:
+                return int(row[1])  # WAL page count
             return 0
         except Exception as e:
-            logger.error(f"Error fetching data_version: {e}")
+            logger.error(f"Error fetching WAL page count: {e}")
             return 0
 
     # ==================
