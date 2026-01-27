@@ -293,11 +293,11 @@ class OrgConnection(ABC):
         ...
 
     @abstractmethod
-    def restart_org(self) -> bool:
+    def restart_org(self) -> tuple[bool, str]:
         """Restart the org (stop then start).
 
         Returns:
-            True if org was restarted successfully
+            Tuple of (success: bool, message: str)
         """
         ...
 

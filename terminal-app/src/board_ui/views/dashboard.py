@@ -276,12 +276,12 @@ class DashboardView(Widget):
         conn = self.app.org_connection
         try:
             worker = self.app.run_worker(conn.restart_org, thread=True)
-            success = await worker.wait()
+            success, message = await worker.wait()
             if success:
-                self.app.notify("Organization restarted successfully", severity="success")
+                self.app.notify(message, severity="success")
                 # Refresh dashboard data
                 await self.refresh_data()
             else:
-                self.app.notify("Failed to restart organization", severity="error")
+                self.app.notify(f"Failed to restart: {message}", severity="error")
         except Exception as e:
             self.app.notify(f"Error restarting org: {e}", severity="error")
