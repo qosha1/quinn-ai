@@ -240,6 +240,9 @@ class BoardApp(App):
 
     async def on_mount(self) -> None:
         """Handle app mount."""
+        # Set up real-time update polling (300ms interval)
+        self.set_interval(0.3, self._poll_for_updates)
+
         # Discover available orgs
         await self._discover_and_show_orgs()
 
@@ -303,6 +306,22 @@ class BoardApp(App):
             self.notify(error_msg, severity="error")
             no_org_view = self.query_one("#no-org-view", NoOrgView)
             no_org_view.show_error(error_msg)
+
+    def _poll_for_updates(self) -> None:
+        """Poll all org connections for database changes.
+
+        Called periodically (300ms) by set_interval timer.
+        Refreshes views when changes are detected.
+        """
+        if not self._is_connected:
+            return
+
+        # Check active org for changes
+        if self._active_org_path:
+            conn = self._org_connections.get(self._active_org_path)
+            if conn and conn.check_for_updates():
+                # Changes detected - schedule refresh
+                self.call_later(self._refresh_all_views)
 
     async def _refresh_all_views(self) -> None:
         """Refresh all org views after connection or org switch."""

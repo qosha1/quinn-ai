@@ -174,6 +174,11 @@ class QuinnAIOrgConnection(OrgConnection):
         self._connected = False
         self._database_factory = database_factory
 
+        # Real-time update tracking
+        self._subscribers: list[Callable[[str, Any], None]] = []
+        self._last_change_count: Optional[int] = None
+        self._polling_enabled = False
+
         # Validate org path exists
         if not self._org_path.exists():
             raise OrgNotFound(self._org_path)
@@ -242,6 +247,11 @@ class QuinnAIOrgConnection(OrgConnection):
 
     def _disconnect(self) -> None:
         """Disconnect from the org database."""
+        # Clear subscribers and disable polling
+        self._subscribers.clear()
+        self._polling_enabled = False
+        self._last_change_count = None
+
         if self._db is not None:
             self._db.close()
             self._db = None
@@ -1280,25 +1290,102 @@ class QuinnAIOrgConnection(OrgConnection):
         self,
         callback: Callable[[str, Any], None],
     ) -> Callable[[], None]:
-        """Subscribe to real-time org updates.
+        """Subscribe to real-time org updates via SQLite WAL polling.
 
-        Currently returns a no-op unsubscribe function since real-time
-        updates require additional infrastructure (file watching, sqlite
-        triggers, or event bus).
-
-        The board UI should poll for updates in the meantime.
+        Polls the database for changes and notifies subscribers when detected.
+        Uses the data_version field from PRAGMA data_version to detect changes.
 
         Args:
-            callback: Function called with (event_type, event_data)
+            callback: Function called with (event_type, event_data) when changes detected.
+                     event_type will be "database_changed"
 
         Returns:
             Function to call to unsubscribe
         """
-        # TODO: Implement real-time subscriptions via:
-        # 1. SQLite WAL polling
-        # 2. File system watching on quinn.db-wal
-        # 3. Event bus subscription
-        return lambda: None
+        if not self._connected:
+            logger.warning("Cannot subscribe: not connected to database")
+            return lambda: None
+
+        # Add subscriber to list
+        self._subscribers.append(callback)
+
+        # Initialize last_change_count on first subscriber
+        if self._last_change_count is None:
+            self._last_change_count = self._get_data_version()
+
+        # Enable polling if this is the first subscriber
+        if len(self._subscribers) == 1:
+            self._polling_enabled = True
+            logger.info(f"Real-time updates enabled for {self._org_path}")
+
+        # Return unsubscribe function
+        def unsubscribe():
+            if callback in self._subscribers:
+                self._subscribers.remove(callback)
+            # Disable polling if no more subscribers
+            if len(self._subscribers) == 0:
+                self._polling_enabled = False
+                self._last_change_count = None
+                logger.info(f"Real-time updates disabled for {self._org_path}")
+
+        return unsubscribe
+
+    def check_for_updates(self) -> bool:
+        """Check if database has changed since last check.
+
+        Uses SQLite's PRAGMA data_version to detect changes.
+        Should be called periodically (e.g., every 100-500ms) to poll for updates.
+
+        Returns:
+            True if changes were detected and subscribers notified
+        """
+        if not self._polling_enabled or not self._connected:
+            return False
+
+        if len(self._subscribers) == 0:
+            return False
+
+        try:
+            current_version = self._get_data_version()
+
+            # Check if version changed
+            if self._last_change_count is not None and current_version != self._last_change_count:
+                self._last_change_count = current_version
+                # Notify all subscribers
+                for subscriber in list(self._subscribers):  # Copy list to avoid modification during iteration
+                    try:
+                        subscriber("database_changed", {"version": current_version})
+                    except Exception as e:
+                        logger.error(f"Error notifying subscriber: {e}")
+                return True
+
+            self._last_change_count = current_version
+            return False
+
+        except Exception as e:
+            logger.error(f"Error checking for database updates: {e}")
+            return False
+
+    def _get_data_version(self) -> int:
+        """Get the current SQLite data_version.
+
+        The data_version increments whenever any change is made to the database.
+        This provides a lightweight way to detect if any data has changed.
+
+        Returns:
+            Current data_version value
+        """
+        if not self._db:
+            return 0
+
+        try:
+            row = self._db.fetchone("PRAGMA data_version")
+            if row:
+                return int(row[0])
+            return 0
+        except Exception as e:
+            logger.error(f"Error fetching data_version: {e}")
+            return 0
 
     # ==================
     # HELPER METHODS
