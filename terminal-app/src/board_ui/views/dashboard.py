@@ -275,7 +275,7 @@ class DashboardView(Widget):
         # Perform restart in background
         conn = self.app.org_connection
         try:
-            success = await self.app.run_worker(conn.restart_org)
+            success = await self.app.run_worker(conn.restart_org, thread=True)
             if success:
                 self.app.notify("Organization restarted successfully", severity="success")
                 # Refresh dashboard data
