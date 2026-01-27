@@ -11,6 +11,7 @@ board can connect/disconnect at will.
 import json
 import logging
 import subprocess
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -178,6 +179,7 @@ class QuinnAIOrgConnection(OrgConnection):
         self._subscribers: list[Callable[[str, Any], None]] = []
         self._last_wal_pages: Optional[int] = None
         self._polling_enabled = False
+        self._subscriber_lock = threading.Lock()  # Protects subscriber list modifications
 
         # Validate org path exists
         if not self._org_path.exists():
@@ -247,10 +249,11 @@ class QuinnAIOrgConnection(OrgConnection):
 
     def _disconnect(self) -> None:
         """Disconnect from the org database."""
-        # Clear subscribers and disable polling
-        self._subscribers.clear()
-        self._polling_enabled = False
-        self._last_wal_pages = None
+        # Clear subscribers and disable polling (thread-safe)
+        with self._subscriber_lock:
+            self._subscribers.clear()
+            self._polling_enabled = False
+            self._last_wal_pages = None
 
         if self._db is not None:
             self._db.close()
@@ -1307,27 +1310,29 @@ class QuinnAIOrgConnection(OrgConnection):
             logger.warning("Cannot subscribe: not connected to database")
             return lambda: None
 
-        # Add subscriber to list
-        self._subscribers.append(callback)
+        # Add subscriber to list (thread-safe)
+        with self._subscriber_lock:
+            self._subscribers.append(callback)
 
-        # Initialize last_change_count on first subscriber
-        if self._last_wal_pages is None:
-            self._last_wal_pages = self._get_wal_page_count()
+            # Initialize last_change_count on first subscriber
+            if self._last_wal_pages is None:
+                self._last_wal_pages = self._get_wal_page_count()
 
-        # Enable polling if this is the first subscriber
-        if len(self._subscribers) == 1:
-            self._polling_enabled = True
-            logger.info(f"Real-time updates enabled for {self._org_path}")
+            # Enable polling if this is the first subscriber
+            if len(self._subscribers) == 1:
+                self._polling_enabled = True
+                logger.info(f"Real-time updates enabled for {self._org_path}")
 
         # Return unsubscribe function
         def unsubscribe():
-            if callback in self._subscribers:
-                self._subscribers.remove(callback)
-            # Disable polling if no more subscribers
-            if len(self._subscribers) == 0:
-                self._polling_enabled = False
-                self._last_wal_pages = None
-                logger.info(f"Real-time updates disabled for {self._org_path}")
+            with self._subscriber_lock:
+                if callback in self._subscribers:
+                    self._subscribers.remove(callback)
+                # Disable polling if no more subscribers
+                if len(self._subscribers) == 0:
+                    self._polling_enabled = False
+                    self._last_wal_pages = None
+                    logger.info(f"Real-time updates disabled for {self._org_path}")
 
         return unsubscribe
 
@@ -1344,8 +1349,11 @@ class QuinnAIOrgConnection(OrgConnection):
         if not self._polling_enabled or not self._connected:
             return False
 
-        if len(self._subscribers) == 0:
-            return False
+        # Get subscriber list snapshot (thread-safe)
+        with self._subscriber_lock:
+            if len(self._subscribers) == 0:
+                return False
+            subscribers_copy = list(self._subscribers)
 
         try:
             current_version = self._get_wal_page_count()
@@ -1354,7 +1362,7 @@ class QuinnAIOrgConnection(OrgConnection):
             if self._last_wal_pages is not None and current_version != self._last_wal_pages:
                 self._last_wal_pages = current_version
                 # Notify all subscribers
-                for subscriber in list(self._subscribers):  # Copy list to avoid modification during iteration
+                for subscriber in subscribers_copy:
                     try:
                         subscriber("database_changed", {"wal_pages": current_version})
                     except Exception as e:
