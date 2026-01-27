@@ -117,7 +117,7 @@ org.add_command(chart_cmd, name="chart")
 org.add_command(hire_cmd, name="hire")
 org.add_command(fire_cmd, name="fire")
 
-from cli.commands.wrkr import get_work_cmd, inbox_cmd, search_cmd, send_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd
+from cli.commands.wrkr import get_work_cmd, inbox_cmd, search_cmd, send_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd
 
 wrkr.add_command(get_work_cmd, name="get-work")
 wrkr.add_command(inbox_cmd, name="inbox")
@@ -126,6 +126,8 @@ wrkr.add_command(send_cmd, name="send")
 wrkr.add_command(wrkr_status_cmd, name="status")
 wrkr.add_command(delegate_cmd, name="delegate")
 wrkr.add_command(report_cmd, name="report")
+wrkr.add_command(wrkr_cleanup_cmd, name="cleanup")
+wrkr.add_command(restart_cmd, name="restart")
 
 
 # Board commands - human oversight when org is off-track

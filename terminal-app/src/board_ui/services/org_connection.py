@@ -1434,6 +1434,134 @@ class QuinnAIOrgConnection(OrgConnection):
             return None
 
     # ==================
+    # SESSION CLEANUP
+    # ==================
+
+    def cleanup_stale_session(self, worker_id: str, tmux_session_name: Optional[str]) -> bool:
+        """Cleanup a stale session for a worker.
+
+        Called when session validation fails (tmux session doesn't exist but
+        database still has references). Performs cleanup:
+        1. Clear tmux_session_name from sessions table
+        2. Update worker runtime status to 'stopped'
+        3. Unbind worker-session binding (best-effort)
+
+        Args:
+            worker_id: Worker ID with stale session
+            tmux_session_name: The stale tmux session name (for verification)
+
+        Returns:
+            True if cleanup succeeded, False otherwise
+        """
+        self._ensure_connected()
+
+        try:
+            # Step 1: Clear tmux_session_name from sessions table
+            self._db.execute(
+                """UPDATE sessions
+                   SET tmux_session_name = NULL,
+                       state = 'stopped',
+                       stopped_at = CURRENT_TIMESTAMP
+                   WHERE worker_id = ?""",
+                (worker_id,)
+            )
+            self._db.connection.commit()
+
+            # Step 2: Update worker runtime status
+            self._db.execute(
+                """UPDATE worker_state
+                   SET runtime_status = 'stopped',
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE worker_id = ?""",
+                (worker_id,)
+            )
+            self._db.connection.commit()
+
+            # Step 3: Unbind worker-session (best-effort, may not exist)
+            # Try to import and use the binding manager
+            try:
+                from cli.core.sessions.binding_manager import get_binding_manager
+                manager = get_binding_manager(self._db)
+                manager.unbind(worker_id)
+            except (ImportError, Exception) as e:
+                # Best-effort - log but don't fail cleanup
+                logger.debug(f"Could not unbind session for {worker_id}: {e}")
+
+            logger.info(f"Cleaned up stale session for worker {worker_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup stale session for {worker_id}: {e}")
+            return False
+
+    def validate_all_sessions(self) -> dict[str, list[str]]:
+        """Validate all tmux sessions and identify stale ones.
+
+        Checks all workers with tmux_session_name and verifies the session
+        still exists using `tmux has-session`. Useful for health checks.
+
+        Returns:
+            Dict with:
+            - 'valid': List of worker IDs with valid sessions
+            - 'stale': List of worker IDs with stale sessions (need cleanup)
+            - 'no_session': List of worker IDs with no tmux session
+        """
+        self._ensure_connected()
+
+        result = {
+            'valid': [],
+            'stale': [],
+            'no_session': [],
+        }
+
+        # Get all workers with potential sessions
+        rows = self._db.fetchall(
+            """SELECT w.id, s.tmux_session_name, ws.runtime_status
+               FROM workers w
+               LEFT JOIN sessions s ON w.id = s.worker_id
+               LEFT JOIN worker_state ws ON w.id = ws.worker_id
+               WHERE w.status = 'active'"""
+        )
+
+        for row in rows:
+            worker_id = row['id']
+            tmux_name = row['tmux_session_name']
+            runtime_status = row['runtime_status']
+
+            if not tmux_name:
+                result['no_session'].append(worker_id)
+                continue
+
+            # Validate tmux session exists
+            if self._validate_tmux_session(tmux_name):
+                result['valid'].append(worker_id)
+            else:
+                # Session is stale - should be cleaned up
+                result['stale'].append(worker_id)
+                logger.warning(f"Stale session detected for worker {worker_id}: {tmux_name}")
+
+        return result
+
+    def _validate_tmux_session(self, session_name: str) -> bool:
+        """Check if a tmux session exists.
+
+        Args:
+            session_name: Name of the tmux session to validate
+
+        Returns:
+            True if session exists, False otherwise
+        """
+        try:
+            result = subprocess.run(
+                ["tmux", "has-session", "-t", session_name],
+                capture_output=True,
+                timeout=2,
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
+    # ==================
     # CONTEXT MANAGER
     # ==================
 

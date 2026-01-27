@@ -234,6 +234,28 @@ class TeamView(Widget):
             else:
                 self.app.notify(f"Worker {worker_id} not found", severity="error")
 
+    async def _cleanup_stale_session(self, worker: WorkerInfo) -> bool:
+        """Auto-cleanup a stale session when validation fails.
+
+        Clears stale tmux session name and unbinds worker-session binding.
+
+        Args:
+            worker: Worker with stale session
+
+        Returns:
+            True if cleanup succeeded, False otherwise
+        """
+        if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+            return False
+
+        try:
+            conn = self.app.org_connection
+            # Delegate to org connection's cleanup method
+            return conn.cleanup_stale_session(worker.id, worker.tmux_session_name)
+        except Exception as e:
+            logger.error(f"Failed to cleanup stale session for {worker.name}: {e}")
+            return False
+
     async def _open_worker_chat(self, worker: WorkerInfo) -> None:
         """Open a chat window with a worker."""
         from ..terminals import get_terminal_provider
@@ -259,14 +281,29 @@ class TeamView(Widget):
 
             self.app.notify(f"Opened chat window with {worker.name}")
         except ValueError as e:
-            # Session doesn't exist or is invalid
+            # Session doesn't exist or is invalid - auto-cleanup stale session
             logger.warning(f"Session validation failed for {worker.name}: {e}")
-            self.app.notify(
-                f"Session for {worker.name} is dead or invalid. "
-                f"Use 'qn wrkr cleanup {worker.id}' then 'qn wrkr restart {worker.id}' to recover.",
-                severity="error",
-                timeout=10,
-            )
+
+            # Trigger automatic cleanup of stale session
+            cleanup_success = await self._cleanup_stale_session(worker)
+
+            if cleanup_success:
+                self.app.notify(
+                    f"Session for {worker.name} was stale and has been cleaned up. "
+                    f"Use 'qn wrkr restart {worker.id}' to spawn a new session.",
+                    severity="warning",
+                    timeout=10,
+                )
+            else:
+                self.app.notify(
+                    f"Session for {worker.name} is dead or invalid. "
+                    f"Use 'qn wrkr cleanup {worker.id}' then 'qn wrkr restart {worker.id}' to recover.",
+                    severity="error",
+                    timeout=10,
+                )
+
+            # Refresh workers to show updated state
+            await self.refresh_workers()
         except Exception as e:
             # Other errors (AppleScript, permissions, etc.)
             logger.error(f"Failed to open chat for {worker.name}: {e}")
