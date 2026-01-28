@@ -7,6 +7,181 @@ These are the expectations for workers inside a deployed QuinnAI org.
 2. Read `STORAGE.md` for where durable outputs and shared knowledge belongs.
 3. Review `CLAUDE.md` for architectural constraints and what is off-limits.
 
+## OKRs vs Operational Work
+
+QuinnAI tracks two types of work in beads:
+
+### **OKRs (Strategic Objectives)**
+**What they are:** Quarterly objectives with measurable key results (e.g., "Q1 2026: Build Core Data Infrastructure - 60/100 data sources operational").
+
+**Characteristics:**
+- Large, strategic goals spanning weeks/months
+- Have measurable key results with targets
+- Created by CEO/managers
+- Type: `epic`, Label: `okr`
+
+**When to use:**
+- Setting quarterly goals
+- Defining strategic initiatives
+- Creating objectives with measurable outcomes
+- Aligning team work to company strategy
+
+**How to query:**
+```bash
+qn-bd list --label=okr                    # List all OKRs
+qn org okr list                           # OKR-specific CLI (shows progress)
+qn org okr list --from-db                 # Shows key results with metrics
+qn-bd list --label=okr --assignee=ceo     # Your OKRs
+```
+
+**How to create (CEO/managers):**
+```bash
+qn org okr create "Q2 2026: Launch Product" --owner=ceo
+qn org okr add-kr <okr-id> "Beta users" --target=100 --unit="users"
+```
+
+---
+
+### **Operational Work (Day-to-Day Tasks)**
+**What they are:** Actionable work items that advance OKRs (e.g., "Fix authentication bug", "Implement feature X").
+
+**Characteristics:**
+- Small, concrete tasks/bugs/features
+- Completable in hours/days
+- Created by all workers
+- Type: `task`, `bug`, `feature` (no special label)
+
+**When to use:**
+- Daily execution work
+- Bug fixes
+- Feature implementation
+- Sprint tasks
+
+**How to query:**
+```bash
+qn-bd ready                                      # Find available work
+qn-bd list --type=task,bug,feature               # All operational work
+qn-bd list --type=task --assignee=$WORKER_ID     # Your tasks
+qn-bd list --status=open --priority=0,1          # High-priority open work
+```
+
+**How to create:**
+```bash
+qn-bd create "Fix login bug" --type=bug --priority=1 --deps "serves:<okr-id>"
+qn-bd create "Add search feature" --type=feature --deps "serves:quinnai-abc"
+```
+
+---
+
+### **Linking Work to OKRs**
+
+**ALL operational work should link to an OKR** via `serves` dependency:
+
+```bash
+# Create work linked to OKR
+qn-bd create "Implement API endpoint" \
+  --type=task \
+  --priority=1 \
+  --deps "serves:quinnai-q1-2026"
+
+# Link existing work to OKR
+qn-bd dep add <task-id> <okr-id>  # task serves okr
+```
+
+**OKR linking enforcement:**
+- Config: `workflow.yaml` in org directory
+- `require_okr_link: true` - Warns if work created without OKR link
+- `strict_mode: true` - Blocks creation if no OKR link
+- Makes work traceable to strategic goals
+
+**If no OKR exists:** Escalate to your manager:
+- "This work has no OKR parent. Should I create one or link to an existing objective?"
+
+---
+
+### **qn-bd vs bd**
+
+**Use `qn-bd` (not raw `bd`):**
+
+| Feature | **bd** (raw CLI) | **qn-bd** (QuinnAI wrapper) |
+|---------|------------------|---------------------------|
+| Org awareness | ❌ No | ✅ Auto-sets to org's .beads |
+| Permissions | ❌ No checks | ✅ Worker permissions enforced |
+| OKR linking | ❌ No enforcement | ✅ Warns/errors if missing link |
+| State validation | ❌ No checks | ✅ Validates transitions |
+| **When to use** | Never (admin only) | **Always (workers)** |
+
+**Key commands:**
+```bash
+# Finding work
+qn-bd ready                          # Show work with no blockers
+qn-bd list --type=task --status=open # List operational work
+qn-bd list --label=okr               # List OKRs
+
+# Claiming work
+qn-bd update <id> --status=in_progress
+
+# Completing work
+qn-bd close <id>                     # Closes and validates
+
+# Getting details
+qn-bd show <id>                      # View full issue details
+```
+
+---
+
+### **CEO & Manager Responsibilities**
+
+**Daily:**
+- Review operational work: `qn-bd list --type=task --status=open --priority=0,1`
+- Unblock workers: Check `qn-bd list --status=blocked`
+- Assign work: `qn-bd update <id> --assignee=<worker>`
+
+**Weekly:**
+- Review OKR progress: `qn org okr list --from-db`
+- Update key results: `qn org okr update-kr <okr-id> --metric="..." --current=X`
+- Link new work to OKRs: Ensure all operational beads have `serves` dependency
+
+**Quarterly:**
+- Create next quarter's OKRs: `qn org okr create "Q2 2026: ..."`
+- Define key results with measurable targets
+- Close completed OKRs: `qn-bd close <okr-id>`
+
+---
+
+### **Example Workflow: OKR → Tasks**
+
+**1. CEO creates OKR:**
+```bash
+qn org okr create "Q1 2026: Build Data Infrastructure" --owner=ceo
+# Returns: quinnai-q1-infra
+qn org okr add-kr quinnai-q1-infra "Data sources operational" --target=100 --unit="sources"
+```
+
+**2. Manager breaks down into tasks:**
+```bash
+qn-bd create "Set up database schema" --type=task --deps "serves:quinnai-q1-infra"
+qn-bd create "Implement ETL pipeline" --type=task --deps "serves:quinnai-q1-infra"
+qn-bd create "Add monitoring" --type=task --deps "serves:quinnai-q1-infra"
+```
+
+**3. Workers execute:**
+```bash
+qn-bd ready                           # Find available work
+qn-bd show quinnai-xyz                # Review task details
+qn-bd update quinnai-xyz --status=in_progress  # Claim it
+# ... do the work ...
+qn-bd close quinnai-xyz               # Complete it
+```
+
+**4. Manager tracks progress:**
+```bash
+qn org okr list --from-db             # Check key result progress
+qn-bd list --label=okr --assignee=ceo # View all OKRs
+```
+
+---
+
 ## Operating Modes
 
 **Autonomous Mode** (default for `qn org start` sessions):
