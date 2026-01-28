@@ -191,7 +191,7 @@ class TestE2EAppLaunch:
 
     @pytest.mark.asyncio
     async def test_displays_four_tabs(self):
-        """Should show Dashboard, OKRs, Team, Messages tabs."""
+        """Should show Dashboard, OKRs, Team, Messages, Logs tabs."""
         app = BoardApp(BoardConfig.default())
         async with app.run_test() as pilot:
             await pilot.pause()
@@ -200,15 +200,15 @@ class TestE2EAppLaunch:
             tabs = app.query_one(TabbedContent)
             assert tabs is not None
 
-            # Should have 4 tabs: Dashboard, OKRs, Team, Messages
+            # Should have 5 tabs: Dashboard, OKRs, Team, Messages, Logs
             # (may also have NoOrg view which is different)
             tab_panes = list(app.query(TabPane))
             tab_ids = [t.id for t in tab_panes if t.id]
 
-            # Dashboard, OKRs, Team, Messages should be present
-            expected_tabs = {"dashboard", "okrs", "team", "messages"}
+            # Dashboard, OKRs, Team, Messages, Logs should be present
+            expected_tabs = {"dashboard", "okrs", "team", "messages", "logs"}
             actual_tabs = {t.replace("-tab", "").replace("-pane", "") for t in tab_ids}
-            assert expected_tabs.issubset(actual_tabs) or len(tab_panes) >= 4
+            assert expected_tabs.issubset(actual_tabs) or len(tab_panes) >= 5
 
     @pytest.mark.asyncio
     async def test_keyboard_navigation(self):

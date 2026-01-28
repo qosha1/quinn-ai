@@ -23,6 +23,7 @@ from .views.dashboard import DashboardView
 from .views.okrs import OKRsView
 from .views.team import TeamView
 from .views.messages import MessagesView
+from .views.logs import LogsView
 from .views.no_org import (
     NoOrgView,
     ConnectToOrg,
@@ -154,6 +155,7 @@ class BoardApp(App):
         Binding("o", "switch_tab('okrs')", "OKRs", show=True),
         Binding("t", "switch_tab('team')", "Team", show=True),
         Binding("m", "switch_tab('messages')", "Messages", show=True),
+        Binding("l", "switch_tab('logs')", "Logs", show=True),
         Binding("q", "quit", "Quit", show=True),
         Binding("r", "refresh", "Refresh", show=True),
     ]
@@ -208,6 +210,9 @@ class BoardApp(App):
 
             with TabPane("Messages", id="messages"):
                 yield MessagesView(id="messages-view")
+
+            with TabPane("Logs", id="logs"):
+                yield LogsView(id="logs-view")
 
         yield Footer()
 
@@ -288,6 +293,10 @@ class BoardApp(App):
             # Update org tab bar
             self._update_org_tab_bar()
 
+            # Set org_path for views that need it
+            logs_view = self.query_one("#logs-view", LogsView)
+            logs_view.set_org_path(org_path)
+
             # Refresh all views with new connection data
             await self._refresh_all_views()
 
@@ -339,6 +348,9 @@ class BoardApp(App):
 
         messages = self.query_one("#messages-view", MessagesView)
         await messages.refresh_messages()
+
+        logs = self.query_one("#logs-view", LogsView)
+        await logs.refresh_logs()
 
     def _update_org_tab_bar(self) -> None:
         """Update the org tab bar with current connections."""
