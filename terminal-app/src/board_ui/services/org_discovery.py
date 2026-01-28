@@ -6,7 +6,6 @@ to the existing CLI. The board is independent of org lifecycle - it can run
 without any org, and starting/stopping orgs is done through the qn CLI.
 """
 
-import logging
 import shutil
 import sqlite3
 import subprocess
@@ -15,7 +14,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from ..logging_config import get_board_logger
+
+logger = get_board_logger(__name__)
 
 # Module-level cache for the qn command
 _qn_command_cache: Optional[list[str]] = None

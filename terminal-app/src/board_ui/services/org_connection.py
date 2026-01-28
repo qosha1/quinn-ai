@@ -9,14 +9,15 @@ board can connect/disconnect at will.
 """
 
 import json
-import logging
 import subprocess
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-logger = logging.getLogger(__name__)
+from ..logging_config import get_board_logger
+
+logger = get_board_logger(__name__)
 
 from ..interfaces.org_connection import (
     OrgConnection,

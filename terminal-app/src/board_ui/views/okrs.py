@@ -8,7 +8,6 @@ Shows:
 - Visual progress indicators
 """
 
-import logging
 from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
@@ -16,10 +15,12 @@ from textual.containers import Container, VerticalScroll
 from textual.widgets import Label, Static, Tree
 from textual.widget import Widget
 
+from ..logging_config import get_board_logger
+
 if TYPE_CHECKING:
     from ..interfaces.org_connection import OKRInfo
 
-logger = logging.getLogger(__name__)
+logger = get_board_logger(__name__)
 
 
 class OKRsView(Widget):

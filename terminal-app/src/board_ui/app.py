@@ -24,6 +24,7 @@ from .views.okrs import OKRsView
 from .views.team import TeamView
 from .views.messages import MessagesView
 from .views.logs import LogsView
+from .logging_config import configure_board_logging
 from .views.no_org import (
     NoOrgView,
     ConnectToOrg,
@@ -292,6 +293,9 @@ class BoardApp(App):
 
             # Update org tab bar
             self._update_org_tab_bar()
+
+            # Configure enhanced logging for this org
+            configure_board_logging(org_path=org_path, verbose=False)
 
             # Set org_path for views that need it
             logs_view = self.query_one("#logs-view", LogsView)

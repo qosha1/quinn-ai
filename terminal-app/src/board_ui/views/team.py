@@ -9,7 +9,6 @@ Shows:
 - Filter by team/status
 """
 
-import logging
 from typing import Optional
 
 from textual.app import ComposeResult
@@ -18,8 +17,9 @@ from textual.widgets import Button, DataTable, Label, Static
 from textual.widget import Widget
 
 from ..interfaces.org_connection import WorkerInfo, SessionState
+from ..logging_config import get_board_logger
 
-logger = logging.getLogger(__name__)
+logger = get_board_logger(__name__)
 
 
 class TeamView(Widget):
