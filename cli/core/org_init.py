@@ -84,23 +84,17 @@ class OrgInitResult:
 
 
 def _get_config_template_path() -> Path:
-    """Get path to config templates using importlib.resources.
+    """Get path to config templates using __file__-based path.
 
-    Falls back to __file__-based path if resources are not available.
-    This supports both development (editable install) and packaged installs.
+    This supports development (editable install) mode.
+    For packaged installs, config files should be included in package_data.
 
     Returns:
         Path to the config templates directory
     """
-    try:
-        # Use importlib.resources for proper package data access
-        # This works in packaged distributions and zip imports
-        with resources.as_file(resources.files("cli.config")) as config_path:
-            return config_path
-    except (TypeError, ModuleNotFoundError, FileNotFoundError):
-        # Fallback for development: use source-relative path
-        # FileNotFoundError: config dir exists but isn't a package (no __init__.py)
-        return Path(__file__).parent.parent / "config"
+    # Use source-relative path - works in development and installed packages
+    config_path = Path(__file__).parent.parent / "config"
+    return config_path
 
 
 def create_folder_structure(org_path: Path) -> None:

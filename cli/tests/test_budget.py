@@ -924,9 +924,10 @@ class TestBudgetEnforcer:
             with BudgetEnforcer(db, developer.id, estimated_cost=10.0):
                 pass  # Don't call record()
 
-            # Should have emitted warning
-            assert len(w) == 1
-            assert "without recording spend" in str(w[0].message)
+            # Should have emitted warning (filter out DeprecationWarnings from db layer)
+            budget_warnings = [warning for warning in w if warning.category != DeprecationWarning]
+            assert len(budget_warnings) == 1
+            assert "without recording spend" in str(budget_warnings[0].message)
 
     def test_enforcer_no_warning_on_exception(
         self, db, allocation_with_balance, developer
@@ -942,7 +943,9 @@ class TestBudgetEnforcer:
                     raise ValueError("Simulated failure")
 
             # Should NOT have emitted warning (exception occurred)
-            assert len(w) == 0
+            # Filter out DeprecationWarnings from db layer
+            budget_warnings = [warning for warning in w if warning.category != DeprecationWarning]
+            assert len(budget_warnings) == 0
 
     def test_enforcer_with_reference(self, db, allocation_with_balance, developer):
         """Should record reference type and ID."""
