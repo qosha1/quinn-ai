@@ -167,3 +167,4 @@ coverage/
 
 # QuinnAI build artifacts
 cli/beads-org/
+cli/bin/bd

@@ -97,9 +97,9 @@ class TestWorkerStates:
 class TestWorkerT1PendingToOnboarding:
     """Test T1: pending → onboarding."""
 
-    def test_t1_transition_to_onboarding(self, worker):
+    def test_t1_transition_to_onboarding(self, db, worker):
         """Worker.start_onboarding() should transition to onboarding."""
-        worker_obj = Worker(worker.db, worker.id)
+        worker_obj = Worker(db, worker.id)
         assert worker_obj.lifecycle_status == "pending"
 
         worker_obj.start_onboarding()
@@ -136,9 +136,9 @@ class TestWorkerT2OnboardingToActive:
         from shared.state_machines import SESSION_ALLOWED_LIFECYCLES
         assert onboarding_worker.lifecycle_status in SESSION_ALLOWED_LIFECYCLES
 
-    def test_t2_validates_transition(self, worker):
+    def test_t2_validates_transition(self, db, worker):
         """T2 should raise if not onboarding."""
-        worker_obj = Worker(worker.db, worker.id)
+        worker_obj = Worker(db, worker.id)
 
         with pytest.raises(InvalidStateTransition):
             worker_obj.complete_onboarding()
@@ -199,9 +199,9 @@ class TestWorkerT4SuspendedToActive:
 class TestWorkerT5AnyToTerminated:
     """Test T5: any → terminated."""
 
-    def test_t5_from_pending(self, worker):
+    def test_t5_from_pending(self, db, worker):
         """Can terminate from pending state."""
-        worker_obj = Worker(worker.db, worker.id)
+        worker_obj = Worker(db, worker.id)
         assert worker_obj.lifecycle_status == "pending"
 
         worker_obj.terminate()
@@ -245,9 +245,9 @@ class TestWorkerT5AnyToTerminated:
 class TestWorkerInvalidTransitions:
     """Test invalid transitions raise errors."""
 
-    def test_pending_to_active_invalid(self, worker):
+    def test_pending_to_active_invalid(self, db, worker):
         """Cannot go from pending directly to active."""
-        worker_obj = Worker(worker.db, worker.id)
+        worker_obj = Worker(db, worker.id)
 
         with pytest.raises(InvalidStateTransition):
             worker_obj._validate_lifecycle_transition("active")
@@ -327,14 +327,14 @@ class TestWorkerExtraTransitions:
 class TestWorkerDependencies:
     """Validate worker lifecycle dependencies."""
 
-    def test_session_spawn_requires_active(self, worker):
+    def test_session_spawn_requires_active(self, db, worker):
         """Sessions can only spawn when worker lifecycle = active.
 
         This is a gate condition from STATEMACHINES.md.
         """
         from shared.state_machines import SESSION_ALLOWED_LIFECYCLES
 
-        worker_obj = Worker(worker.db, worker.id)
+        worker_obj = Worker(db, worker.id)
 
         # Pending worker cannot spawn
         assert worker_obj.lifecycle_status == "pending"
