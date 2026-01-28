@@ -1,11 +1,18 @@
-"""Shared pytest fixtures for wrkr module tests.
+"""Shared pytest fixtures for wrkr module tests and integration tests.
 
-Provides reusable fixtures for testing the worker system without
-any external provider dependencies.
+Provides reusable fixtures for:
+- Unit testing the worker system (MockQueue, MockMemory, etc.)
+- Integration testing QuinnAI CLI via systemeval (temp orgs, qn runner)
 """
 
+import os
+import shutil
+import sqlite3
+import subprocess
+import tempfile
 from datetime import datetime
-from typing import Any
+from pathlib import Path
+from typing import Any, Callable
 
 import pytest
 
@@ -15,6 +22,182 @@ from shared.wrkr.core.task import Task
 from shared.escalation.interface import EscalationResponse, MockEscalation
 from shared.wrkr.memory.interface import MockMemory
 from shared.queue.interface import MockQueue
+
+
+# =============================================================================
+# INTEGRATION TEST FIXTURES (Systemeval)
+# =============================================================================
+
+def cleanup_org_sessions(org_path: Path) -> None:
+    """Kill all tmux sessions associated with an org.
+
+    Args:
+        org_path: Path to org directory
+
+    Returns:
+        None
+    """
+    if not org_path.exists():
+        return
+
+    # Get worker IDs from database
+    db_path = org_path / "live" / "quinn.db"
+    if not db_path.exists():
+        return
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        cursor.execute("SELECT worker_id FROM workers")
+        worker_ids = [row[0] for row in cursor.fetchall()]
+        conn.close()
+    except sqlite3.Error:
+        # Database may not be initialized yet
+        return
+
+    # Kill tmux sessions for each worker
+    for worker_id in worker_ids:
+        session_name = f"quinn-{worker_id}"
+        subprocess.run(
+            ["tmux", "kill-session", "-t", session_name],
+            capture_output=True,
+            check=False
+        )
+
+
+@pytest.fixture
+def temp_org_factory():
+    """Factory for creating isolated temp orgs with automatic cleanup.
+
+    Yields:
+        Callable that creates a new temp org directory
+
+    Usage:
+        def test_something(temp_org_factory):
+            org1 = temp_org_factory("test_org_1")
+            org2 = temp_org_factory("test_org_2")
+            # Both orgs cleaned up automatically
+    """
+    orgs = []
+
+    def _create_org(name: str = "test_org") -> Path:
+        """Create a new temp org directory.
+
+        Args:
+            name: Optional name for the org (used in temp dir name)
+
+        Returns:
+            Path to created org directory
+        """
+        tmpdir = tempfile.mkdtemp(prefix=f"quinn_test_{name}_")
+        org_path = Path(tmpdir)
+        orgs.append(org_path)
+        return org_path
+
+    yield _create_org
+
+    # Cleanup: kill sessions, remove dirs
+    for org_path in orgs:
+        cleanup_org_sessions(org_path)
+        shutil.rmtree(org_path, ignore_errors=True)
+
+
+@pytest.fixture
+def qn_runner(temp_org_factory):
+    """Wrapper for running qn commands via subprocess.
+
+    Returns:
+        Callable that runs qn command and returns CompletedProcess
+
+    Usage:
+        def test_something(qn_runner):
+            result = qn_runner("org", "init", org_path=org)
+            assert result.returncode == 0
+    """
+    def _run(*args: str, org_path: Path = None, env: dict = None, check: bool = True) -> subprocess.CompletedProcess:
+        """Run qn command via subprocess.
+
+        Args:
+            *args: qn command arguments (e.g., "org", "init")
+            org_path: Optional org path (adds --org-path if provided)
+            env: Optional environment variables (merged with os.environ)
+            check: If True, raise AssertionError on non-zero exit code
+
+        Returns:
+            subprocess.CompletedProcess with stdout, stderr, returncode
+
+        Raises:
+            AssertionError: If check=True and command fails
+        """
+        cmd = ["qn"]
+        if org_path:
+            cmd.extend(["--org-path", str(org_path)])
+        cmd.extend(args)
+
+        run_env = os.environ.copy()
+        if env:
+            run_env.update(env)
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=run_env,
+            check=False
+        )
+
+        if check and result.returncode != 0:
+            raise AssertionError(
+                f"Command failed: {' '.join(cmd)}\n"
+                f"Exit code: {result.returncode}\n"
+                f"stdout: {result.stdout}\n"
+                f"stderr: {result.stderr}"
+            )
+
+        return result
+
+    return _run
+
+
+@pytest.fixture(autouse=True, scope="session")
+def verify_no_leaked_sessions():
+    """Ensure no quinn tmux sessions leak across test runs.
+
+    This runs after all tests complete and fails if any quinn-* tmux
+    sessions are still running.
+
+    Raises:
+        AssertionError: If quinn tmux sessions are detected after tests
+    """
+    yield
+
+    result = subprocess.run(
+        ["tmux", "list-sessions"],
+        capture_output=True,
+        text=True,
+        check=False
+    )
+
+    # tmux list-sessions returns non-zero if no sessions exist
+    if result.returncode != 0:
+        return
+
+    quinn_sessions = [
+        line for line in result.stdout.splitlines()
+        if "quinn-" in line
+    ]
+
+    if quinn_sessions:
+        raise AssertionError(
+            f"Leaked tmux sessions detected:\n" +
+            "\n".join(quinn_sessions) +
+            "\n\nTests must clean up all tmux sessions."
+        )
+
+
+# =============================================================================
+# UNIT TEST FIXTURES (Worker Module)
+# =============================================================================
 
 
 @pytest.fixture
