@@ -28,6 +28,36 @@ from shared.queue.interface import MockQueue
 # INTEGRATION TEST FIXTURES (Systemeval)
 # =============================================================================
 
+
+def _find_qn_binary() -> str:
+    """Find the qn binary for integration tests.
+
+    Checks:
+    1. .venv/bin/qn (if running in venv)
+    2. 'qn' command in PATH
+
+    Returns:
+        Path to qn binary
+
+    Raises:
+        FileNotFoundError: If qn binary not found
+    """
+    # Check for venv relative to project root
+    project_root = Path(__file__).parent.parent
+    venv_qn = project_root / ".venv" / "bin" / "qn"
+
+    if venv_qn.exists():
+        return str(venv_qn)
+
+    # Fall back to PATH
+    qn_path = shutil.which("qn")
+    if qn_path:
+        return qn_path
+
+    raise FileNotFoundError(
+        "qn binary not found. Install with: cd cli && pip install -e ."
+    )
+
 def cleanup_org_sessions(org_path: Path) -> None:
     """Kill all tmux sessions associated with an org.
 
@@ -129,7 +159,8 @@ def qn_runner(temp_org_factory):
         Raises:
             AssertionError: If check=True and command fails
         """
-        cmd = ["qn"]
+        qn_binary = _find_qn_binary()
+        cmd = [qn_binary]
         if org_path:
             cmd.extend(["--org-path", str(org_path)])
         cmd.extend(args)

@@ -140,7 +140,14 @@ class HiringScope:
         )
 
     def can_hire_role(self, role: str) -> bool:
-        """Check if this scope allows hiring the given role."""
+        """Check if this scope allows hiring the given role.
+
+        Supports wildcard "*" to allow all roles.
+        """
+        # Wildcard allows all roles
+        if "*" in self.allowed_roles:
+            return True
+        # Otherwise check if specific role is in the allowed set
         return role in self.allowed_roles
 
     def can_afford_cost(self, cost: int) -> bool:

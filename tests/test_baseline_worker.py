@@ -9,10 +9,8 @@ Tests worker lifecycle operations using real qn commands:
 These tests execute actual qn CLI commands via subprocess to validate
 end-to-end worker management workflows.
 
-NOTE: Many hire tests are currently skipped because CEOs created via
-'qn org init' don't have hiring_authority_scope configured by default.
-This is tracked as a known limitation. Tests that can run without
-hiring authority are marked to run.
+NOTE: Tests now pass after CEO hiring authority fix (quinnai-cr2v.1).
+Tests that can run without hiring workers are also included.
 """
 
 import sqlite3
@@ -21,7 +19,6 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.skip(reason="CEO hiring authority not configured by default")
 class TestWorkerHire:
     """Test qn org hire command."""
 
@@ -96,27 +93,20 @@ class TestWorkerHire:
             org_path=org
         )
 
-        # Get Alice's worker ID
+        # Get Alice's and CEO's worker IDs
         db_path = org / "live" / "quinn.db"
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
         cursor.execute("SELECT id FROM workers WHERE name = 'Alice'")
         alice_id = cursor.fetchone()[0]
+        cursor.execute("SELECT id FROM workers WHERE role = 'CEO'")
+        ceo_id = cursor.fetchone()[0]
         conn.close()
 
         # Verify storage exists
-        # Worker storage is hierarchical: storage/workers/ceo/{worker-id}/
-        ceo_storage = org / "storage" / "workers" / "ceo"
-        alice_storage = None
+        # Worker storage is hierarchical: storage/workers/{manager-id}/{worker-id}/
+        alice_storage = org / "storage" / "workers" / ceo_id / alice_id
 
-        # Find Alice's storage under CEO
-        if ceo_storage.exists():
-            for item in ceo_storage.iterdir():
-                if alice_id in item.name:
-                    alice_storage = item
-                    break
-
-        assert alice_storage is not None
         assert alice_storage.exists()
 
     def test_hire_with_cost(self, temp_org_factory, qn_runner):
@@ -209,7 +199,6 @@ class TestWorkerHire:
 class TestWorkerFire:
     """Test qn org fire command."""
 
-    @pytest.mark.skip(reason="Requires hiring to work first")
     def test_fire_terminates_worker(self, temp_org_factory, qn_runner):
         """Should set worker status to terminated."""
         org = temp_org_factory("fire_terminate")
@@ -242,7 +231,6 @@ class TestWorkerFire:
 
         assert status == "terminated"
 
-    @pytest.mark.skip(reason="Requires hiring to work first")
     def test_fire_with_reason(self, temp_org_factory, qn_runner):
         """Should accept termination reason."""
         org = temp_org_factory("fire_reason")
@@ -314,7 +302,6 @@ class TestWorkerFire:
         assert result.returncode != 0
 
 
-@pytest.mark.skip(reason="Requires hiring to work first")
 class TestWorkerOnboarding:
     """Test worker onboarding system."""
 
@@ -376,7 +363,8 @@ class TestWorkerOnboarding:
         cursor.execute("SELECT status FROM workers WHERE name = 'Alice'")
         status = cursor.fetchone()[0]
         conn.close()
-        assert status == "pending"  # Initial status
+        # Workers are activated immediately after hire (onboarding auto-completes)
+        assert status == "active"
 
         # Fire
         result = qn_runner(
@@ -397,7 +385,6 @@ class TestWorkerOnboarding:
         assert status == "terminated"
 
 
-@pytest.mark.skip(reason="Requires hiring to work first")
 class TestMultipleWorkers:
     """Test multiple worker scenarios."""
 
@@ -436,8 +423,14 @@ class TestMultipleWorkers:
 
         assert count == 2
 
+    @pytest.mark.skip(reason="Requires hiring authority delegation - quinnai-cr2v.9")
     def test_hierarchical_hiring(self, temp_org_factory, qn_runner):
-        """Should support hierarchical team structure."""
+        """Should support hierarchical team structure.
+
+        NOTE: This test requires implementing hiring authority delegation.
+        Currently, only the CEO has hiring authority by default.
+        Managers need authority delegated via: qn org delegate-authority
+        """
         org = temp_org_factory("hierarchical")
         qn_runner("org", "init", "--ceo-name", "CEO", org_path=org)
 
@@ -449,6 +442,9 @@ class TestMultipleWorkers:
             "--manager", "CEO",
             org_path=org
         )
+
+        # TODO: Delegate hiring authority to Manager
+        # qn_runner("org", "delegate-authority", "--worker", "Manager", ...)
 
         # Hire developer under manager
         result = qn_runner(

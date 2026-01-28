@@ -145,12 +145,20 @@ class Org:
         Raises:
             InvalidOrgTransition: If org is not uninitialized
         """
+        import json
+
         self._validate_transition(OrgStatus.INITIALIZED.value)
 
         # Create root team (Executive)
         team = create_team(self.db, "Executive")
 
-        # Create CEO worker (no manager, high cost)
+        # Configure CEO hiring authority - can hire anyone
+        hiring_authority_scope = json.dumps({
+            "allowed_roles": ["*"],  # Can hire any role
+            "max_cost": 100,         # Can hire up to max cost level
+        })
+
+        # Create CEO worker (no manager, high cost, full hiring authority)
         ceo_data = create_worker(
             self.db,
             name=ceo_name,
@@ -158,6 +166,8 @@ class Org:
             team_id=team.id,
             cost=DEFAULT_CEO_COST,
             manager_id=None,  # No manager - root of hierarchy
+            hiring_authority_scope=hiring_authority_scope,
+            delegated_budget=int(initial_budget * 1000),  # Convert to credits, ample for hiring
         )
 
         # Add CEO to team_members table (org-chart sync)
