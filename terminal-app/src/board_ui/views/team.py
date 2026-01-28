@@ -25,11 +25,6 @@ logger = logging.getLogger(__name__)
 class TeamView(Widget):
     """Team view with worker list and jump-in buttons."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Track open session windows for cleanup
-        self._open_windows: dict[str, any] = {}  # worker_id -> WindowHandle
-
     DEFAULT_CSS = """
     TeamView {
         layout: vertical;
@@ -58,6 +53,8 @@ class TeamView(Widget):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        # Track open session windows for cleanup
+        self._open_windows: dict[str, any] = {}  # worker_id -> WindowHandle
         self._workers: list[WorkerInfo] = []
         self._current_filter = "all"
 
