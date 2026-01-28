@@ -79,7 +79,7 @@ def promote_cmd(
         if not worker_data:
             raise click.ClickException(f"Worker '{worker}' not found.")
 
-        target = Worker(db, worker_data["id"])
+        target = Worker(db, worker_data.id)
 
         # Find promoter (default to worker's manager)
         if promoter_name:
@@ -88,7 +88,7 @@ def promote_cmd(
                 raise click.ClickException(
                     f"Promoter '{promoter_name}' not found."
                 )
-            promoter = Worker(db, promoter_data["id"])
+            promoter = Worker(db, promoter_data.id)
         else:
             if target.manager_id:
                 promoter = Worker(db, target.manager_id)
@@ -110,7 +110,7 @@ def promote_cmd(
 
         allowed_roles = preset["allowed_roles"]
         max_cost = preset["max_cost"]
-        budget = preset["budget"]
+        budget = preset.get("max_budget", 100)
         max_reports = preset.get("max_reports", 5)
 
         # Check if already has authority at or above this level
@@ -149,15 +149,19 @@ def promote_cmd(
                 click.echo("Promotion cancelled.")
                 return
 
+        # Build hiring scope
+        from cli.core.worker import HiringScope
+        scope = HiringScope(
+            allowed_roles=allowed_roles,
+            max_cost=max_cost,
+        )
+
         # Perform delegation (promotion)
         try:
             promoter.delegate_authority(
-                delegate_id=target.id,
-                allowed_roles=allowed_roles,
-                max_cost=max_cost,
-                delegated_budget=budget,
-                max_reports=max_reports,
-                reason=f"Promoted to {level}: {reason}",
+                report=target,
+                budget=budget,
+                scope=scope,
             )
 
             click.echo("\nPromotion complete.")

@@ -132,7 +132,7 @@ def delegate_authority_cmd(
                 "Use 'qn org status' to see available workers."
             )
 
-        delegate = Worker(db, delegate_data["id"])
+        delegate = Worker(db, delegate_data.id)
 
         # Find delegator (default to CEO if not specified)
         if delegator_name:
@@ -141,7 +141,7 @@ def delegate_authority_cmd(
                 raise click.ClickException(
                     f"Delegator '{delegator_name}' not found."
                 )
-            delegator = Worker(db, delegator_data["id"])
+            delegator = Worker(db, delegator_data.id)
         else:
             # Find CEO
             cursor = db.execute("SELECT id FROM workers WHERE role = 'CEO' LIMIT 1")
@@ -161,7 +161,7 @@ def delegate_authority_cmd(
                 )
             allowed_roles = preset["allowed_roles"]
             final_max_cost = preset["max_cost"]
-            final_budget = preset["budget"]
+            final_budget = preset.get("max_budget", 100)
             final_max_reports = preset.get("max_reports", 5)
 
         elif roles:
@@ -178,7 +178,7 @@ def delegate_authority_cmd(
                 raise click.ClickException(
                     f"Source worker '{copy_from}' not found."
                 )
-            source = Worker(db, source_data["id"])
+            source = Worker(db, source_data.id)
             scope = source.hiring_authority_scope
             if not scope.allowed_roles:
                 raise click.ClickException(
@@ -228,15 +228,19 @@ def delegate_authority_cmd(
                 click.echo("Delegation cancelled.")
                 return
 
+        # Build hiring scope
+        from cli.core.worker import HiringScope
+        scope = HiringScope(
+            allowed_roles=allowed_roles,
+            max_cost=final_max_cost,
+        )
+
         # Perform delegation
         try:
             delegator.delegate_authority(
-                delegate_id=delegate.id,
-                allowed_roles=allowed_roles,
-                max_cost=final_max_cost,
-                delegated_budget=final_budget,
-                max_reports=final_max_reports,
-                reason=f"Delegated via CLI by {delegator.name}",
+                report=delegate,
+                budget=final_budget,
+                scope=scope,
             )
 
             click.echo("\nDelegation complete.")

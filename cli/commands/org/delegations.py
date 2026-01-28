@@ -123,7 +123,7 @@ def delegations_cmd(
             if not worker_data:
                 raise click.ClickException(f"Worker '{worker}' not found.")
 
-            target = Worker(db, worker_data["id"])
+            target = Worker(db, worker_data.id)
 
             if json_output:
                 # JSON output for worker

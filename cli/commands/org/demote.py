@@ -78,7 +78,7 @@ def demote_cmd(
         if not worker_data:
             raise click.ClickException(f"Worker '{worker}' not found.")
 
-        target = Worker(db, worker_data["id"])
+        target = Worker(db, worker_data.id)
 
         # Check if worker has authority
         if not target.hiring_authority_scope.allowed_roles:
@@ -93,7 +93,7 @@ def demote_cmd(
                 raise click.ClickException(
                     f"Demoter '{demoter_name}' not found."
                 )
-            demoter = Worker(db, demoter_data["id"])
+            demoter = Worker(db, demoter_data.id)
         else:
             if target.manager_id:
                 demoter = Worker(db, target.manager_id)

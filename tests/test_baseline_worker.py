@@ -423,14 +423,8 @@ class TestMultipleWorkers:
 
         assert count == 2
 
-    @pytest.mark.skip(reason="Requires hiring authority delegation - quinnai-cr2v.9")
     def test_hierarchical_hiring(self, temp_org_factory, qn_runner):
-        """Should support hierarchical team structure.
-
-        NOTE: This test requires implementing hiring authority delegation.
-        Currently, only the CEO has hiring authority by default.
-        Managers need authority delegated via: qn org delegate-authority
-        """
+        """Should support hierarchical team structure with delegated authority."""
         org = temp_org_factory("hierarchical")
         qn_runner("org", "init", "--ceo-name", "CEO", org_path=org)
 
@@ -443,14 +437,20 @@ class TestMultipleWorkers:
             org_path=org
         )
 
-        # TODO: Delegate hiring authority to Manager
-        # qn_runner("org", "delegate-authority", "--worker", "Manager", ...)
+        # Delegate hiring authority to Manager
+        qn_runner(
+            "org", "delegate-authority",
+            "--to", "Manager",
+            "--level", "team-lead",
+            "--force",
+            org_path=org
+        )
 
-        # Hire developer under manager
+        # Hire engineer under manager (now that Manager has authority)
         result = qn_runner(
             "org", "hire",
-            "--name", "Developer",
-            "--role", "Developer",
+            "--name", "Alice",
+            "--role", "engineer",
             "--manager", "Manager",
             org_path=org
         )
@@ -466,10 +466,10 @@ class TestMultipleWorkers:
         cursor.execute("SELECT id FROM workers WHERE name = 'Manager'")
         manager_id = cursor.fetchone()[0]
 
-        # Verify developer reports to manager
-        cursor.execute("SELECT manager_id FROM workers WHERE name = 'Developer'")
-        dev_manager = cursor.fetchone()[0]
+        # Verify engineer (Alice) reports to manager
+        cursor.execute("SELECT manager_id FROM workers WHERE name = 'Alice'")
+        alice_manager = cursor.fetchone()[0]
 
         conn.close()
 
-        assert dev_manager == manager_id
+        assert alice_manager == manager_id

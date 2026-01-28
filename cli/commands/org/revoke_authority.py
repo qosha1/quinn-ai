@@ -85,7 +85,7 @@ def revoke_authority_cmd(
         if not worker_data:
             raise click.ClickException(f"Worker '{worker}' not found.")
 
-        target = Worker(db, worker_data["id"])
+        target = Worker(db, worker_data.id)
 
         # Check if worker has authority
         if not target.hiring_authority_scope.allowed_roles:
@@ -100,7 +100,7 @@ def revoke_authority_cmd(
                 raise click.ClickException(
                     f"Revoker '{revoker_name}' not found."
                 )
-            revoker = Worker(db, revoker_data["id"])
+            revoker = Worker(db, revoker_data.id)
         else:
             if target.manager_id:
                 revoker = Worker(db, target.manager_id)

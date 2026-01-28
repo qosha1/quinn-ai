@@ -645,7 +645,8 @@ class Worker:
         # Verify delegated scope is subset of own scope
         own_scope = self.hiring_authority_scope
         for role in scope.allowed_roles:
-            if role not in own_scope.allowed_roles:
+            # Use can_hire_role to handle wildcard "*" correctly
+            if not own_scope.can_hire_role(role):
                 raise InsufficientHiringAuthority(
                     f"Cannot delegate role '{role}' - not in own authority"
                 )
