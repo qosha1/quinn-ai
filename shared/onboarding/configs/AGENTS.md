@@ -7,6 +7,40 @@ These are the expectations for workers inside a deployed QuinnAI org.
 2. Read `STORAGE.md` for where durable outputs and shared knowledge belongs.
 3. Review `CLAUDE.md` for architectural constraints and what is off-limits.
 
+## Test-Driven Development Philosophy
+
+⏺ **The Process**
+
+When fixing bugs or building features, always follow this process:
+
+1. **Investigate Why Tests Missed It**
+   - Examine existing tests
+   - Find gaps: what scenarios aren't covered?
+   - Identify missing edge cases, timing issues, or state combinations
+
+2. **Write Test That FAILS**
+   - Create test that reproduces the exact failure scenario
+   - Run it - watch it FAIL
+   - Failure proves bug exists
+
+3. **Fix The Code**
+   - Implement the fixes
+   - Keep it simple
+   - Address root cause, not symptoms
+
+4. **Test Now PASSES**
+   - Same test, no changes
+   - Run it - watch it PASS
+   - Success proves bug is fixed
+
+⏺ **The Philosophy**
+
+**Never fix a bug you can't reproduce in a test.**
+
+If you can't make a test FAIL, you don't understand the bug. If the test doesn't PASS after your fix, you didn't fix it. The test is proof both ways.
+
+That's it. Everything else is noise.
+
 ## OKRs vs Operational Work
 
 QuinnAI tracks two types of work in beads:
