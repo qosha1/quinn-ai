@@ -5,24 +5,33 @@ Provides structured logging for debugging with:
 - Log levels (DEBUG, INFO, WARNING, ERROR)
 - File output to org's logs directory
 - Console output controlled by verbosity
+- Enhanced JSON logging with per-component segregation
 
 Usage:
     from cli.core.logging import get_logger, configure_logging
 
-    # At CLI entry point
+    # Basic logging (legacy)
     configure_logging(org_path, verbose=args.verbose)
-
-    # In modules
     logger = get_logger(__name__)
     logger.info("Session spawned", worker_id=worker.id)
+
+    # Enhanced JSON logging (per-component)
+    from cli.core.logging import configure_enhanced_logging, get_component_logger
+    configure_enhanced_logging(org_path, component="worker", json_format=True)
+    logger = get_component_logger("worker", "lifecycle")
+    logger.info("Worker status changed", extra={
+        "event_type": "status_change",
+        "context": {"worker_id": "wrkr-123", "status": "active"}
+    })
 """
 
 import logging
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from .constants import LIVE_DIR
+from .constants import LIVE_DIR, LOG_RETENTION_DAYS, LOG_DATE_FORMAT
 
 
 # ===================
@@ -325,3 +334,191 @@ def log_org_state_change(
         old_status,
         new_status,
     )
+
+
+# ===================
+# ENHANCED LOGGING (JSON + Per-Component)
+# ===================
+
+_component_loggers: dict[str, logging.Logger] = {}
+_enhanced_configured = False
+
+
+def configure_enhanced_logging(
+    org_path: Path,
+    component: str,
+    subcomponent: Optional[str] = None,
+    json_format: bool = True,
+    legacy_logging: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+) -> None:
+    """Configure enhanced logging with per-component JSON logs.
+
+    Creates daily JSON log files per component with automatic retention cleanup.
+    Optionally maintains legacy plain text quinn.log for backward compatibility.
+
+    Directory structure:
+        org_path/live/logs/
+        ├── quinn.log          # Legacy aggregated plain text (if enabled)
+        ├── cli/               # CLI logs
+        │   └── YYYY-MM-DD.json
+        ├── workers/           # Worker logs
+        │   └── YYYY-MM-DD.json
+        ├── sessions/          # Session logs
+        │   └── YYYY-MM-DD.json
+        ├── board/             # Board UI logs
+        │   └── YYYY-MM-DD.json
+        └── system/            # System logs
+            └── YYYY-MM-DD.json
+
+    Args:
+        org_path: Path to org folder.
+        component: Component name (cli, worker, session, board, system).
+        subcomponent: Optional subcomponent name (e.g., lifecycle, budget).
+        json_format: If True, write JSON logs. If False, use plain text.
+        legacy_logging: If True, also write to aggregated quinn.log.
+        verbose: If True, show INFO level on console.
+        debug: If True, show DEBUG level on console.
+
+    Example:
+        configure_enhanced_logging(
+            org_path=Path("/path/to/org"),
+            component="worker",
+            subcomponent="lifecycle",
+            json_format=True,
+            legacy_logging=True
+        )
+    """
+    global _enhanced_configured
+
+    # Get root logger
+    root_logger = logging.getLogger("quinn")
+    root_logger.setLevel(logging.DEBUG)
+
+    # Clear existing handlers
+    root_logger.handlers.clear()
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stderr)
+    if debug:
+        console_handler.setLevel(logging.DEBUG)
+    elif verbose:
+        console_handler.setLevel(logging.INFO)
+    else:
+        console_handler.setLevel(logging.WARNING)
+
+    console_formatter = logging.Formatter(DEFAULT_LOG_FORMAT, DEFAULT_DATE_FORMAT)
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+
+    # Create logs directory
+    logs_dir = org_path / LIVE_DIR / LOGS_DIR
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # JSON handler for component-specific daily logs
+    if json_format:
+        from .log_formatters import StructuredJSONFormatter
+
+        # Determine component directory name
+        # workers, sessions use plural; cli, board, system use singular
+        if component in ["worker", "session"]:
+            component_dir = logs_dir / f"{component}s"
+        else:
+            component_dir = logs_dir / component
+
+        component_dir.mkdir(parents=True, exist_ok=True)
+
+        # Daily log file (YYYY-MM-DD.json)
+        today = datetime.now().strftime(LOG_DATE_FORMAT)
+        json_log_file = component_dir / f"{today}.json"
+
+        # Use FileHandler (not RotatingFileHandler) - rotation is daily by file name
+        json_handler = logging.FileHandler(json_log_file, mode='a')
+        json_handler.setLevel(logging.DEBUG)
+
+        json_formatter = StructuredJSONFormatter(
+            component=component,
+            subcomponent=subcomponent
+        )
+        json_handler.setFormatter(json_formatter)
+        root_logger.addHandler(json_handler)
+
+        # Cleanup old logs
+        _cleanup_old_logs(component_dir)
+
+    # Legacy plain text handler (aggregated quinn.log)
+    if legacy_logging:
+        from logging.handlers import RotatingFileHandler
+
+        legacy_log_file = logs_dir / LOG_FILE_NAME
+
+        legacy_handler = RotatingFileHandler(
+            legacy_log_file,
+            maxBytes=MAX_LOG_SIZE_BYTES,
+            backupCount=BACKUP_COUNT,
+        )
+        legacy_handler.setLevel(logging.DEBUG)
+
+        legacy_formatter = logging.Formatter(DEFAULT_LOG_FORMAT, DEFAULT_DATE_FORMAT)
+        legacy_handler.setFormatter(legacy_formatter)
+        root_logger.addHandler(legacy_handler)
+
+    _enhanced_configured = True
+
+
+def get_component_logger(
+    component: str,
+    subcomponent: Optional[str] = None,
+) -> logging.Logger:
+    """Get a logger for specific component with JSON formatting.
+
+    Must call configure_enhanced_logging() first.
+
+    Args:
+        component: Component name (cli, worker, session, board, system).
+        subcomponent: Optional subcomponent name.
+
+    Returns:
+        Logger instance configured for component.
+
+    Example:
+        logger = get_component_logger("worker", "lifecycle")
+        logger.info(
+            "Worker status changed",
+            extra={
+                "event_type": "status_change",
+                "context": {"worker_id": "wrkr-123"}
+            }
+        )
+    """
+    key = f"{component}.{subcomponent}" if subcomponent else component
+
+    if key in _component_loggers:
+        return _component_loggers[key]
+
+    logger = logging.getLogger(f"quinn.{key}")
+    _component_loggers[key] = logger
+
+    return logger
+
+
+def _cleanup_old_logs(component_dir: Path) -> None:
+    """Remove log files older than retention period.
+
+    Args:
+        component_dir: Directory containing component logs.
+    """
+    cutoff_date = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
+
+    for log_file in component_dir.glob("*.json"):
+        try:
+            # Parse date from filename (YYYY-MM-DD.json)
+            date_str = log_file.stem  # Remove .json extension
+            file_date = datetime.strptime(date_str, LOG_DATE_FORMAT)
+
+            if file_date < cutoff_date:
+                log_file.unlink()
+        except (ValueError, OSError):
+            # Skip files that don't match expected format or can't be deleted
+            pass

@@ -448,3 +448,17 @@ DEFAULT_HIRING_MAX_COST = 50
 
 DEFAULT_HIRING_MAX_TOTAL_BUDGET = 0
 """Default total hiring budget (none - must be delegated)."""
+
+
+# ===================
+# LOGGING
+# ===================
+
+LOG_RETENTION_DAYS = 30
+"""Number of days to retain component logs."""
+
+LOG_DATE_FORMAT = "%Y-%m-%d"
+"""Date format for daily log files."""
+
+LOG_COMPONENTS = ["cli", "worker", "session", "board", "system"]
+"""Valid log component names."""
