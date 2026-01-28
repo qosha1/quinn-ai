@@ -221,11 +221,11 @@ class TestInvariantI3OneActiveSession:
 
         # Create existing active session record in sessions table
         running_org.db.execute(
-            """INSERT INTO sessions (id, worker_id, provider, state, started_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            ("test-session-123", worker.id, "claude-code", "running", datetime.now())
+            """INSERT INTO sessions (id, worker_id, provider, command, state, started_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("test-session-123", worker.id, "claude-code", "/usr/bin/claude", "running", datetime.now())
         )
-        worker.db.connection.commit()
+        running_org.db.connection.commit()
 
         # Try to spawn another
         mock_session = create_mock_session(worker.id)

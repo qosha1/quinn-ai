@@ -165,9 +165,9 @@ class TestSessionT1NotSpawnedToStarting:
 
         # Create existing active session record in sessions table
         active_worker.db.execute(
-            """INSERT INTO sessions (id, worker_id, provider, state, started_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            ("test-session-123", active_worker.id, "claude-code", "running", datetime.now())
+            """INSERT INTO sessions (id, worker_id, provider, command, state, started_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("test-session-123", active_worker.id, "claude-code", "/usr/bin/claude", "running", datetime.now())
         )
         active_worker.db.connection.commit()
 
