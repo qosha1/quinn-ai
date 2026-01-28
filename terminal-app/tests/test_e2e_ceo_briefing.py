@@ -272,7 +272,8 @@ def get_briefing_messages(org_path: Path) -> list[dict]:
     cursor = conn.execute("""
         SELECT m.id, m.from_worker_id, m.content, m.created_at, m.channel_id
         FROM messages m
-        WHERE m.channel_id = 'ch-board'
+        JOIN channels c ON m.channel_id = c.id
+        WHERE c.name = 'board-channel'
         AND m.content LIKE '%CEO Briefing%'
         ORDER BY m.created_at
     """)
@@ -432,7 +433,7 @@ We are a startup focused on developer tools.
         assert org.ceo_worker_id == "worker-ceo"
         ceo = org.ceo
         assert ceo is not None
-        assert ceo.status == "active"
+        assert ceo.lifecycle_status == "active"
 
         # Verify no briefing message created
         messages = get_briefing_messages(org_path)
@@ -715,7 +716,7 @@ class TestBoardAppBriefingIntegration:
             briefing_markdown = content.to_markdown()
 
             # Manually call what the handler would do
-            result = app._active_org_connection.update_briefing(briefing_markdown)
+            result = app.org_connection.update_briefing(briefing_markdown)
             assert result is True
 
             # Verify file saved
@@ -761,28 +762,42 @@ We are creating tools for distributed teams.
         briefing_file.write_text(briefing_content)
 
         # Initialize org (creates CEO and structure)
-        from cli.core.db import Database
+        from cli.core.db import init_database
         from cli.core.org import Org
 
-        db_path = org_path / "live" / "quinn.db"
-        db = Database(db_path)
+        # Create live directory and initialize database
+        live_dir = org_path / "live"
+        live_dir.mkdir(parents=True, exist_ok=True)
+
+        db_path = live_dir / "quinn.db"
+        db = init_database(db_path)
         org = Org(db)
 
-        # TODO: This will fail until initialize() is updated to create board-channel
-        org.initialize(ceo_name="Alice", ceo_cost=100)
-
-        # Create board-channel manually for now (should be part of initialize)
-        db.execute("INSERT INTO channels VALUES ('ch-board', 'board-channel')")
-        db.execute("""
-            INSERT INTO channel_subscriptions (channel_id, worker_id, subscribed_at)
-            VALUES ('ch-board', ?, ?)
-        """, (org.ceo_worker_id, datetime.now().isoformat()))
+        # Initialize org (creates board-channel automatically)
+        org.init(ceo_name="Alice", ceo_role="CEO")
 
         # Start org (should deliver briefing)
         org.start()
 
+        # Get actual CEO worker ID
+        org.refresh()
+        ceo_id = org.ceo_worker_id
+
         # Verify CEO has notification
-        notifications = get_ceo_notifications(org_path)
+        import sqlite3
+        db_path = org_path / "live" / "quinn.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+
+        cursor = conn.execute("""
+            SELECT nb.id, nb.worker_id, nb.message_id, nb.status, nb.read_at
+            FROM notification_beads nb
+            WHERE nb.worker_id = ?
+            ORDER BY nb.created_at
+        """, (ceo_id,))
+        notifications = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
         assert len(notifications) >= 1, "CEO should have notification for briefing"
 
         # Verify notification links to briefing message
