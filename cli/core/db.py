@@ -21,7 +21,7 @@ from typing import Any, Callable, Generator, Optional
 import weakref
 
 # Current schema version - increment when schema changes
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # Connection configuration
 DEFAULT_BUSY_TIMEOUT_MS = 5000  # 5 seconds
@@ -419,6 +419,10 @@ CREATE TABLE IF NOT EXISTS workers (
     hiring_authority_scope TEXT,
     delegated_budget INTEGER NOT NULL DEFAULT 0,
     max_reports INTEGER NOT NULL DEFAULT 10,
+    -- Delegation tracking fields (v17)
+    delegation_version INTEGER NOT NULL DEFAULT 0,
+    delegated_by TEXT,
+    delegation_expires_at DATETIME,
     -- Offboarding workflow tracking
     offboarding_ask_bead_id TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -429,6 +433,8 @@ CREATE TABLE IF NOT EXISTS workers (
 CREATE INDEX IF NOT EXISTS idx_workers_team ON workers(team_id);
 CREATE INDEX IF NOT EXISTS idx_workers_status ON workers(status);
 CREATE INDEX IF NOT EXISTS idx_workers_manager ON workers(manager_id);
+CREATE INDEX IF NOT EXISTS idx_workers_delegated_by ON workers(delegated_by) WHERE delegated_by IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_workers_delegation_expires ON workers(delegation_expires_at) WHERE delegation_expires_at IS NOT NULL;
 
 -- Worker runtime state (for crash recovery, monitoring)
 CREATE TABLE IF NOT EXISTS worker_state (
@@ -947,6 +953,171 @@ CREATE TABLE IF NOT EXISTS lifecycle_configs (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ===================
+-- DELEGATION TRACKING
+-- ===================
+
+-- Delegation grants (active and revoked delegation relationships)
+-- One row per delegation: delegator -> delegate relationship
+-- revoked_at IS NULL indicates active delegation
+CREATE TABLE IF NOT EXISTS delegation_grants (
+    id TEXT PRIMARY KEY,
+    delegator_id TEXT NOT NULL,           -- Who granted the authority
+    delegate_id TEXT NOT NULL,            -- Who received authority
+    scope TEXT NOT NULL,                  -- HiringScope JSON
+    budget_amount INTEGER NOT NULL,       -- Budget delegated
+    granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME,                  -- Optional time-limited delegation
+    revoked_at DATETIME,                  -- NULL = active, populated = revoked
+    revoked_by TEXT,                      -- Worker ID who revoked
+    revoke_reason TEXT,                   -- Human-readable reason
+    granted_by_cli_user TEXT,             -- Optional CLI user who initiated
+    metadata TEXT,                        -- JSON for extensibility
+    FOREIGN KEY (delegator_id) REFERENCES workers(id) ON DELETE CASCADE,
+    FOREIGN KEY (delegate_id) REFERENCES workers(id) ON DELETE CASCADE,
+    CHECK (delegator_id != delegate_id),
+    CHECK (budget_amount >= 0)
+);
+CREATE INDEX IF NOT EXISTS idx_delegation_grants_delegator ON delegation_grants(delegator_id);
+CREATE INDEX IF NOT EXISTS idx_delegation_grants_delegate ON delegation_grants(delegate_id);
+CREATE INDEX IF NOT EXISTS idx_delegation_grants_active ON delegation_grants(revoked_at) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_delegation_grants_expires ON delegation_grants(expires_at) WHERE expires_at IS NOT NULL AND revoked_at IS NULL;
+
+-- Delegation audit trail (immutable log of all delegation operations)
+-- Append-only: enforced via triggers
+CREATE TABLE IF NOT EXISTS delegation_audit (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL CHECK(event_type IN (
+        'granted', 'revoked', 'expired', 'cascade_revoked',
+        'modified', 'terminated_revoked'
+    )),
+    delegator_id TEXT NOT NULL,
+    delegate_id TEXT NOT NULL,
+    delegation_grant_id TEXT,
+    scope_before TEXT,
+    scope_after TEXT,
+    budget_before INTEGER,
+    budget_after INTEGER,
+    performed_by TEXT NOT NULL,
+    performed_by_cli_user TEXT,
+    reason TEXT,
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (delegator_id) REFERENCES workers(id) ON DELETE RESTRICT,
+    FOREIGN KEY (delegate_id) REFERENCES workers(id) ON DELETE RESTRICT,
+    FOREIGN KEY (delegation_grant_id) REFERENCES delegation_grants(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_delegation_audit_delegate ON delegation_audit(delegate_id);
+CREATE INDEX IF NOT EXISTS idx_delegation_audit_delegator ON delegation_audit(delegator_id);
+CREATE INDEX IF NOT EXISTS idx_delegation_audit_timestamp ON delegation_audit(timestamp);
+CREATE INDEX IF NOT EXISTS idx_delegation_audit_event_type ON delegation_audit(event_type);
+CREATE INDEX IF NOT EXISTS idx_delegation_audit_grant ON delegation_audit(delegation_grant_id);
+
+-- Trigger: Prevent modification of audit records (immutability)
+CREATE TRIGGER IF NOT EXISTS prevent_delegation_audit_modification
+BEFORE UPDATE ON delegation_audit
+BEGIN
+    SELECT RAISE(ABORT, 'Delegation audit records are immutable');
+END;
+
+-- Trigger: Prevent deletion of audit records
+CREATE TRIGGER IF NOT EXISTS prevent_delegation_audit_deletion
+BEFORE DELETE ON delegation_audit
+BEGIN
+    SELECT RAISE(ABORT, 'Delegation audit records cannot be deleted');
+END;
+
+-- Trigger: Auto-revoke delegations when worker is terminated
+CREATE TRIGGER IF NOT EXISTS revoke_delegations_on_termination
+AFTER UPDATE OF status ON workers
+FOR EACH ROW
+WHEN NEW.status = 'terminated' AND OLD.status != 'terminated'
+BEGIN
+    -- Revoke all delegations granted BY this worker
+    UPDATE delegation_grants
+    SET revoked_at = CURRENT_TIMESTAMP,
+        revoked_by = 'system',
+        revoke_reason = 'delegator terminated'
+    WHERE delegator_id = NEW.id AND revoked_at IS NULL;
+
+    -- Revoke delegation granted TO this worker
+    UPDATE delegation_grants
+    SET revoked_at = CURRENT_TIMESTAMP,
+        revoked_by = 'system',
+        revoke_reason = 'delegate terminated'
+    WHERE delegate_id = NEW.id AND revoked_at IS NULL;
+
+    -- Clear worker's delegated authority
+    UPDATE workers
+    SET hiring_authority_scope = NULL,
+        delegated_budget = 0,
+        delegated_by = NULL,
+        delegation_expires_at = NULL,
+        delegation_version = delegation_version + 1,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = NEW.id;
+END;
+
+-- Trigger: Auto-log delegation grants to audit table
+CREATE TRIGGER IF NOT EXISTS log_delegation_grant
+AFTER INSERT ON delegation_grants
+FOR EACH ROW
+BEGIN
+    INSERT INTO delegation_audit (
+        id,
+        event_type,
+        delegator_id,
+        delegate_id,
+        delegation_grant_id,
+        scope_after,
+        budget_after,
+        performed_by,
+        reason,
+        timestamp
+    ) VALUES (
+        'audit-' || hex(randomblob(8)),
+        'granted',
+        NEW.delegator_id,
+        NEW.delegate_id,
+        NEW.id,
+        NEW.scope,
+        NEW.budget_amount,
+        NEW.delegator_id,
+        'delegation granted',
+        NEW.granted_at
+    );
+END;
+
+-- Trigger: Auto-log delegation revocations to audit table
+CREATE TRIGGER IF NOT EXISTS log_delegation_revoke
+AFTER UPDATE OF revoked_at ON delegation_grants
+FOR EACH ROW
+WHEN NEW.revoked_at IS NOT NULL AND OLD.revoked_at IS NULL
+BEGIN
+    INSERT INTO delegation_audit (
+        id,
+        event_type,
+        delegator_id,
+        delegate_id,
+        delegation_grant_id,
+        performed_by,
+        reason,
+        timestamp
+    ) VALUES (
+        'audit-' || hex(randomblob(8)),
+        CASE
+            WHEN NEW.revoke_reason LIKE 'cascade%' THEN 'cascade_revoked'
+            WHEN NEW.revoke_reason LIKE '%terminated%' THEN 'terminated_revoked'
+            ELSE 'revoked'
+        END,
+        NEW.delegator_id,
+        NEW.delegate_id,
+        NEW.id,
+        COALESCE(NEW.revoked_by, 'system'),
+        NEW.revoke_reason,
+        NEW.revoked_at
+    );
+END;
 """
 
 
@@ -1353,6 +1524,172 @@ def migrate_database(db: Database, from_version: int, to_version: int) -> None:
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
             )""",
+        ],
+        # Version 17: Add delegation tracking tables for hiring authority cascade
+        17: [
+            # Add delegation_version column to workers for optimistic locking
+            "ALTER TABLE workers ADD COLUMN delegation_version INTEGER NOT NULL DEFAULT 0",
+            # Add delegated_by column to workers for quick lookup (denormalized)
+            "ALTER TABLE workers ADD COLUMN delegated_by TEXT",
+            # Add delegation_expires_at column for time-limited delegations
+            "ALTER TABLE workers ADD COLUMN delegation_expires_at DATETIME",
+            # Create delegation_grants table for tracking active/revoked delegations
+            """CREATE TABLE IF NOT EXISTS delegation_grants (
+                id TEXT PRIMARY KEY,
+                delegator_id TEXT NOT NULL,
+                delegate_id TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                budget_amount INTEGER NOT NULL,
+                granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME,
+                revoked_at DATETIME,
+                revoked_by TEXT,
+                revoke_reason TEXT,
+                granted_by_cli_user TEXT,
+                metadata TEXT,
+                FOREIGN KEY (delegator_id) REFERENCES workers(id) ON DELETE CASCADE,
+                FOREIGN KEY (delegate_id) REFERENCES workers(id) ON DELETE CASCADE,
+                CHECK (delegator_id != delegate_id),
+                CHECK (budget_amount >= 0)
+            )""",
+            # Indexes for delegation_grants
+            "CREATE INDEX IF NOT EXISTS idx_delegation_grants_delegator ON delegation_grants(delegator_id)",
+            "CREATE INDEX IF NOT EXISTS idx_delegation_grants_delegate ON delegation_grants(delegate_id)",
+            "CREATE INDEX IF NOT EXISTS idx_delegation_grants_active ON delegation_grants(revoked_at) WHERE revoked_at IS NULL",
+            "CREATE INDEX IF NOT EXISTS idx_delegation_grants_expires ON delegation_grants(expires_at) WHERE expires_at IS NOT NULL AND revoked_at IS NULL",
+            # Create delegation_audit table for immutable audit trail
+            """CREATE TABLE IF NOT EXISTS delegation_audit (
+                id TEXT PRIMARY KEY,
+                event_type TEXT NOT NULL CHECK(event_type IN (
+                    'granted', 'revoked', 'expired', 'cascade_revoked',
+                    'modified', 'terminated_revoked'
+                )),
+                delegator_id TEXT NOT NULL,
+                delegate_id TEXT NOT NULL,
+                delegation_grant_id TEXT,
+                scope_before TEXT,
+                scope_after TEXT,
+                budget_before INTEGER,
+                budget_after INTEGER,
+                performed_by TEXT NOT NULL,
+                performed_by_cli_user TEXT,
+                reason TEXT,
+                timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (delegator_id) REFERENCES workers(id) ON DELETE RESTRICT,
+                FOREIGN KEY (delegate_id) REFERENCES workers(id) ON DELETE RESTRICT,
+                FOREIGN KEY (delegation_grant_id) REFERENCES delegation_grants(id) ON DELETE SET NULL
+            )""",
+            # Indexes for delegation_audit
+            "CREATE INDEX IF NOT EXISTS idx_delegation_audit_delegate ON delegation_audit(delegate_id)",
+            "CREATE INDEX IF NOT EXISTS idx_delegation_audit_delegator ON delegation_audit(delegator_id)",
+            "CREATE INDEX IF NOT EXISTS idx_delegation_audit_timestamp ON delegation_audit(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_delegation_audit_event_type ON delegation_audit(event_type)",
+            "CREATE INDEX IF NOT EXISTS idx_delegation_audit_grant ON delegation_audit(delegation_grant_id)",
+            # Index on workers.delegated_by
+            "CREATE INDEX IF NOT EXISTS idx_workers_delegated_by ON workers(delegated_by) WHERE delegated_by IS NOT NULL",
+            # Index on workers.delegation_expires_at
+            "CREATE INDEX IF NOT EXISTS idx_workers_delegation_expires ON workers(delegation_expires_at) WHERE delegation_expires_at IS NOT NULL",
+            # Trigger: Prevent modification of audit records (immutability)
+            """CREATE TRIGGER IF NOT EXISTS prevent_delegation_audit_modification
+            BEFORE UPDATE ON delegation_audit
+            BEGIN
+                SELECT RAISE(ABORT, 'Delegation audit records are immutable');
+            END""",
+            # Trigger: Prevent deletion of audit records
+            """CREATE TRIGGER IF NOT EXISTS prevent_delegation_audit_deletion
+            BEFORE DELETE ON delegation_audit
+            BEGIN
+                SELECT RAISE(ABORT, 'Delegation audit records cannot be deleted');
+            END""",
+            # Trigger: Auto-revoke delegations when worker is terminated
+            """CREATE TRIGGER IF NOT EXISTS revoke_delegations_on_termination
+            AFTER UPDATE OF status ON workers
+            FOR EACH ROW
+            WHEN NEW.status = 'terminated' AND OLD.status != 'terminated'
+            BEGIN
+                -- Revoke all delegations granted BY this worker
+                UPDATE delegation_grants
+                SET revoked_at = CURRENT_TIMESTAMP,
+                    revoked_by = 'system',
+                    revoke_reason = 'delegator terminated'
+                WHERE delegator_id = NEW.id AND revoked_at IS NULL;
+
+                -- Revoke delegation granted TO this worker
+                UPDATE delegation_grants
+                SET revoked_at = CURRENT_TIMESTAMP,
+                    revoked_by = 'system',
+                    revoke_reason = 'delegate terminated'
+                WHERE delegate_id = NEW.id AND revoked_at IS NULL;
+
+                -- Clear worker's delegated authority
+                UPDATE workers
+                SET hiring_authority_scope = NULL,
+                    delegated_budget = 0,
+                    delegated_by = NULL,
+                    delegation_expires_at = NULL,
+                    delegation_version = delegation_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = NEW.id;
+            END""",
+            # Trigger: Auto-log delegation grants to audit table
+            """CREATE TRIGGER IF NOT EXISTS log_delegation_grant
+            AFTER INSERT ON delegation_grants
+            FOR EACH ROW
+            BEGIN
+                INSERT INTO delegation_audit (
+                    id,
+                    event_type,
+                    delegator_id,
+                    delegate_id,
+                    delegation_grant_id,
+                    scope_after,
+                    budget_after,
+                    performed_by,
+                    reason,
+                    timestamp
+                ) VALUES (
+                    'audit-' || hex(randomblob(8)),
+                    'granted',
+                    NEW.delegator_id,
+                    NEW.delegate_id,
+                    NEW.id,
+                    NEW.scope,
+                    NEW.budget_amount,
+                    NEW.delegator_id,
+                    'delegation granted',
+                    NEW.granted_at
+                );
+            END""",
+            # Trigger: Auto-log delegation revocations to audit table
+            """CREATE TRIGGER IF NOT EXISTS log_delegation_revoke
+            AFTER UPDATE OF revoked_at ON delegation_grants
+            FOR EACH ROW
+            WHEN NEW.revoked_at IS NOT NULL AND OLD.revoked_at IS NULL
+            BEGIN
+                INSERT INTO delegation_audit (
+                    id,
+                    event_type,
+                    delegator_id,
+                    delegate_id,
+                    delegation_grant_id,
+                    performed_by,
+                    reason,
+                    timestamp
+                ) VALUES (
+                    'audit-' || hex(randomblob(8)),
+                    CASE
+                        WHEN NEW.revoke_reason LIKE 'cascade%' THEN 'cascade_revoked'
+                        WHEN NEW.revoke_reason LIKE '%terminated%' THEN 'terminated_revoked'
+                        ELSE 'revoked'
+                    END,
+                    NEW.delegator_id,
+                    NEW.delegate_id,
+                    NEW.id,
+                    COALESCE(NEW.revoked_by, 'system'),
+                    NEW.revoke_reason,
+                    NEW.revoked_at
+                );
+            END""",
         ],
     }
 

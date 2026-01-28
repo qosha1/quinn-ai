@@ -124,3 +124,44 @@ class SessionStartTimeout(OrgStartError):
         super().__init__(
             f"Session for {worker_id} did not reach ready state within {timeout} seconds"
         )
+
+
+class ConcurrentModificationError(Exception):
+    """Raised when optimistic locking detects a concurrent update.
+
+    This is used to prevent race conditions in delegation operations
+    where two processes attempt to modify the same delegation state
+    simultaneously.
+    """
+
+    def __init__(self, entity_type: str, entity_id: str, message: str | None = None):
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        if message:
+            full_message = f"Concurrent modification of {entity_type} '{entity_id}': {message}"
+        else:
+            full_message = f"Concurrent modification detected for {entity_type} '{entity_id}'"
+        super().__init__(full_message)
+
+
+class CircularDelegationError(Exception):
+    """Raised when a delegation would create a circular reference.
+
+    Circular delegations would allow a worker to grant authority to someone
+    who could then delegate back to them, creating an infinite loop.
+    """
+
+    def __init__(self, delegator_id: str, delegate_id: str):
+        self.delegator_id = delegator_id
+        self.delegate_id = delegate_id
+        super().__init__(
+            f"Delegation from '{delegator_id}' to '{delegate_id}' would create a cycle"
+        )
+
+
+class DelegationNotFoundError(Exception):
+    """Raised when an expected delegation grant is not found."""
+
+    def __init__(self, delegate_id: str):
+        self.delegate_id = delegate_id
+        super().__init__(f"No active delegation found for worker '{delegate_id}'")

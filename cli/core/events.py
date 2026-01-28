@@ -80,6 +80,15 @@ class EventType(Enum):
     BUDGET_EXHAUSTED = "budget.exhausted"
     BUDGET_DELEGATED = "budget.delegated"
 
+    # Delegation events
+    AUTHORITY_DELEGATED = "delegation.authority_delegated"
+    AUTHORITY_REVOKED = "delegation.authority_revoked"
+    DELEGATION_EXPIRED = "delegation.expired"
+    DELEGATION_CASCADE_REVOKED = "delegation.cascade_revoked"
+
+
+# Entity type for delegation
+ENTITY_TYPE_DELEGATION = "delegation"
 
 # Entity types for type safety
 ENTITY_TYPES = frozenset({
@@ -92,6 +101,7 @@ ENTITY_TYPES = frozenset({
     ENTITY_TYPE_WORK,
     ENTITY_TYPE_OFFBOARDING,
     ENTITY_TYPE_BUDGET,
+    ENTITY_TYPE_DELEGATION,
 })
 
 
@@ -522,6 +532,11 @@ OKR_COMPLETED = EventType.OKR_COMPLETED
 OFFBOARDING_ASK_CREATED = EventType.OFFBOARDING_ASK_CREATED
 OFFBOARDING_ASK_COMPLETED = EventType.OFFBOARDING_ASK_COMPLETED
 OFFBOARDING_CLEANUP_DONE = EventType.OFFBOARDING_CLEANUP_DONE
+
+AUTHORITY_DELEGATED = EventType.AUTHORITY_DELEGATED
+AUTHORITY_REVOKED = EventType.AUTHORITY_REVOKED
+DELEGATION_EXPIRED = EventType.DELEGATION_EXPIRED
+DELEGATION_CASCADE_REVOKED = EventType.DELEGATION_CASCADE_REVOKED
 
 
 # Global event bus instance (set by init_event_bus)

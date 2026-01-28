@@ -66,6 +66,18 @@ from .queries import (
     add_team_member,
     remove_team_member,
     get_worker_team_memberships,
+    # Delegation queries
+    create_delegation_grant,
+    get_delegation_grant,
+    revoke_delegation_grant,
+    get_delegation_chain,
+    check_delegation_cycle,
+    expire_delegations,
+    get_delegations_by_delegator,
+    get_worker_delegation_version,
+    update_worker_delegation,
+    DelegationGrant,
+    RevokeResult,
 )
 from .storage import StorageManager, WorkerStorageNotFound, StorageAlreadyFrozen
 from .notifications import create_notification_bead
@@ -96,6 +108,11 @@ from shared import (
     WorkerNotFound,
     InvalidLifecycleState,
     ActiveSessionExistsError,
+)
+from shared.exceptions import (
+    ConcurrentModificationError,
+    CircularDelegationError,
+    DelegationNotFoundError,
 )
 
 
@@ -412,6 +429,7 @@ class Worker:
         - Cost within max_cost limit
         - Total budget constraints
         - Direct reports count vs max_reports
+        - Delegation expiry status
 
         Args:
             role: Role to hire for
@@ -421,6 +439,12 @@ class Worker:
             Tuple of (can_hire: bool, reason: str).
             If can_hire is False, reason explains why.
         """
+        # Expire any outdated delegations first
+        expire_delegations(self.db)
+
+        # Refresh worker data to get current delegation state
+        self._worker_data = None
+
         scope = self.hiring_authority_scope
 
         # Check if worker has any hiring authority
@@ -566,26 +590,57 @@ class Worker:
         report: "Worker",
         budget: int,
         scope: HiringScope,
-    ) -> None:
+        granted_by_cli_user: Optional[str] = None,
+        expires_at: Optional[datetime] = None,
+    ) -> DelegationGrant:
         """Delegate hiring authority to a direct report.
 
         Grants a subordinate worker the ability to hire within specified constraints.
         The delegated scope must be a subset of this worker's own authority.
 
+        This method implements P0 security fixes:
+        - Self-delegation prevention
+        - Lifecycle validation (terminated workers)
+        - Circular delegation detection
+        - Optimistic locking for concurrent modifications
+
         Args:
             report: Worker to delegate authority to (must be a direct report)
             budget: Budget amount to delegate for hiring
             scope: HiringScope defining allowed roles/costs
+            granted_by_cli_user: Optional CLI user initiating the delegation
+            expires_at: Optional expiration timestamp for time-limited delegations
+
+        Returns:
+            Created DelegationGrant record
 
         Raises:
-            ValueError: If report is not a direct report of this worker
+            ValueError: If report is not a direct report, self-delegation, or terminated
             InsufficientHiringAuthority: If trying to delegate more than own authority
+            CircularDelegationError: If delegation would create a cycle
+            ConcurrentModificationError: If concurrent modification detected
         """
+        # P0: Self-delegation check
+        if report.id == self.id:
+            raise ValueError("Cannot delegate authority to yourself")
+
+        # P0: Lifecycle validation - cannot delegate FROM terminated worker
+        if self.lifecycle_status == "terminated":
+            raise ValueError("Terminated workers cannot delegate authority")
+
+        # P0: Lifecycle validation - cannot delegate TO terminated worker
+        if report.lifecycle_status == "terminated":
+            raise ValueError("Cannot delegate authority to terminated worker")
+
         # Verify report is actually a direct report
         if report.manager_id != self.id:
             raise ValueError(
                 f"Worker {report.id} is not a direct report of {self.id}"
             )
+
+        # P0: Check for circular delegation
+        if check_delegation_cycle(self.db, self.id, report.id):
+            raise CircularDelegationError(self.id, report.id)
 
         # Verify delegated scope is subset of own scope
         own_scope = self.hiring_authority_scope
@@ -606,20 +661,128 @@ class Worker:
                 f"Cannot delegate budget {budget} exceeding own {self.delegated_budget}"
             )
 
-        # Update the report's hiring authority in database
-        now = datetime.now()
-        self.db.execute(
-            """UPDATE workers
-               SET hiring_authority_scope = ?,
-                   delegated_budget = ?,
-                   updated_at = ?
-               WHERE id = ?""",
-            (scope.to_json(), budget, now, report.id)
+        # P0: Get current delegation_version for optimistic locking
+        expected_version = get_worker_delegation_version(self.db, report.id)
+
+        # Create delegation grant record (triggers auto-audit)
+        grant = create_delegation_grant(
+            db=self.db,
+            delegator_id=self.id,
+            delegate_id=report.id,
+            scope=scope.to_json(),
+            budget=budget,
+            granted_by_cli_user=granted_by_cli_user,
+            expires_at=expires_at,
         )
-        self.db.connection.commit()
+
+        # P0: Update worker with optimistic locking
+        success = update_worker_delegation(
+            db=self.db,
+            worker_id=report.id,
+            scope=scope.to_json(),
+            budget=budget,
+            delegated_by=self.id,
+            expires_at=expires_at,
+            expected_version=expected_version,
+        )
+
+        if not success:
+            # Rollback the delegation grant
+            self.db.execute(
+                "DELETE FROM delegation_grants WHERE id = ?",
+                (grant.id,)
+            )
+            self.db.connection.commit()
+            raise ConcurrentModificationError(
+                "worker", report.id,
+                "Another process modified this worker's delegation state"
+            )
 
         # Invalidate report's cache
         report._worker_data = None
+
+        # Publish delegation event if events module is available
+        try:
+            from .events import publish, AUTHORITY_DELEGATED
+            publish(AUTHORITY_DELEGATED, {
+                "delegator_id": self.id,
+                "delegate_id": report.id,
+                "budget": budget,
+                "scope": scope.to_json(),
+            })
+        except ImportError:
+            pass  # Events module not available yet
+
+        return grant
+
+    def revoke_authority(
+        self,
+        delegate: "Worker",
+        cascade: bool = False,
+        reason: Optional[str] = None,
+    ) -> RevokeResult:
+        """Revoke hiring authority from a delegate.
+
+        Removes the hiring authority that was previously delegated to a worker.
+        Optionally cascades to revoke all sub-delegations as well.
+
+        Args:
+            delegate: Worker whose authority to revoke
+            cascade: If True, also revoke all delegations granted by the delegate
+            reason: Optional human-readable reason for revocation
+
+        Returns:
+            RevokeResult with revocation details
+
+        Raises:
+            ValueError: If no active delegation found
+            DelegationNotFoundError: If delegate has no active delegation from this worker
+        """
+        # Verify delegation exists and was granted by this worker
+        grant = get_delegation_grant(self.db, delegate.id)
+        if grant is None:
+            raise DelegationNotFoundError(delegate.id)
+
+        if grant.delegator_id != self.id:
+            raise ValueError(
+                f"Delegation for {delegate.id} was granted by {grant.delegator_id}, "
+                f"not by {self.id}"
+            )
+
+        # Check if cascade is needed but not requested
+        sub_delegations = get_delegations_by_delegator(self.db, delegate.id)
+        if sub_delegations and not cascade:
+            raise ValueError(
+                f"Worker {delegate.id} has {len(sub_delegations)} sub-delegations. "
+                f"Use cascade=True to revoke all, or revoke them individually first."
+            )
+
+        # Perform revocation
+        result = revoke_delegation_grant(
+            db=self.db,
+            delegate_id=delegate.id,
+            revoked_by=self.id,
+            reason=reason,
+            cascade=cascade,
+        )
+
+        # Invalidate delegate's cache
+        delegate._worker_data = None
+
+        # Publish revocation event if events module is available
+        try:
+            from .events import publish, AUTHORITY_REVOKED
+            publish(AUTHORITY_REVOKED, {
+                "delegator_id": self.id,
+                "delegate_id": delegate.id,
+                "cascade": cascade,
+                "cascade_count": result.cascade_count,
+                "reason": reason,
+            })
+        except ImportError:
+            pass  # Events module not available yet
+
+        return result
 
     # ==================
     # RUNTIME PROPERTIES

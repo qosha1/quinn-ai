@@ -451,6 +451,62 @@ DEFAULT_HIRING_MAX_TOTAL_BUDGET = 0
 
 
 # ===================
+# DELEGATION
+# ===================
+
+# Delegation event types (for audit logging)
+EVENT_AUTHORITY_DELEGATED = "authority_delegated"
+"""Event type when hiring authority is delegated to a worker."""
+
+EVENT_AUTHORITY_REVOKED = "authority_revoked"
+"""Event type when hiring authority is revoked from a worker."""
+
+EVENT_DELEGATION_EXPIRED = "delegation_expired"
+"""Event type when a time-limited delegation expires."""
+
+EVENT_DELEGATION_CASCADE_REVOKED = "delegation_cascade_revoked"
+"""Event type when delegation is revoked due to cascade from parent revocation."""
+
+# Delegation preset names
+DELEGATION_PRESET_TEAM_LEAD = "team-lead"
+"""Preset for team lead level delegation (engineers, designers, QA)."""
+
+DELEGATION_PRESET_DIRECTOR = "director"
+"""Preset for director level delegation (includes managers)."""
+
+DELEGATION_PRESET_VP = "vp"
+"""Preset for VP level delegation (all roles)."""
+
+# Delegation preset configurations
+# Format: {preset_name: {"allowed_roles": [...], "max_cost": int, "max_budget": int}}
+DELEGATION_PRESETS = {
+    DELEGATION_PRESET_TEAM_LEAD: {
+        "allowed_roles": ["engineer", "designer", "qa"],
+        "max_cost": 60,
+        "max_budget": 5000,
+    },
+    DELEGATION_PRESET_DIRECTOR: {
+        "allowed_roles": ["engineer", "designer", "qa", "manager", "team-lead"],
+        "max_cost": 80,
+        "max_budget": 20000,
+    },
+    DELEGATION_PRESET_VP: {
+        "allowed_roles": ["*"],  # All roles
+        "max_cost": 90,
+        "max_budget": 100000,
+    },
+}
+
+# Delegation audit event types (must match CHECK constraint in database)
+DELEGATION_AUDIT_EVENT_GRANTED = "granted"
+DELEGATION_AUDIT_EVENT_REVOKED = "revoked"
+DELEGATION_AUDIT_EVENT_EXPIRED = "expired"
+DELEGATION_AUDIT_EVENT_CASCADE_REVOKED = "cascade_revoked"
+DELEGATION_AUDIT_EVENT_MODIFIED = "modified"
+DELEGATION_AUDIT_EVENT_TERMINATED_REVOKED = "terminated_revoked"
+
+
+# ===================
 # LOGGING
 # ===================
 
