@@ -59,6 +59,9 @@ class MockSessionAdapter(SessionInterface):
     def _send_interrupt(self) -> None:
         pass
 
+    def _create_state_monitor(self):
+        return None
+
 
 class AnotherMockAdapter(SessionInterface):
     """Another mock adapter for testing multiple registrations."""
@@ -99,6 +102,9 @@ class AnotherMockAdapter(SessionInterface):
 
     def _send_interrupt(self) -> None:
         pass
+
+    def _create_state_monitor(self):
+        return None
 
 
 class TestSessionRegistry:

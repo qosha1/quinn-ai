@@ -34,14 +34,14 @@ class AgentSessionConfig:
     """Configuration for an agent session."""
 
     worker_id: str
+    provider: str
+    """Parser provider name (required - no default)."""
+
     pyterm_config: PytermConfig
     """Required pyterm configuration - no defaults."""
 
     session_name: str | None = None
     """Session name (auto-generated if not provided)."""
-
-    provider: str = "claude_code"
-    """Parser provider name."""
 
     db_path: Path | None = None
     """SQLite path for persistence."""
@@ -53,7 +53,7 @@ class AgentSessionConfig:
     def create(
         cls,
         worker_id: str,
-        provider: str = "claude_code",
+        provider: str,
         db_path: Path | str | None = None,
         session_name: str | None = None,
         auto_persist: bool = True,
@@ -64,7 +64,7 @@ class AgentSessionConfig:
 
         Args:
             worker_id: Unique identifier for this worker
-            provider: AI provider to use
+            provider: AI provider to use (required - claude_code, generic, etc.)
             db_path: Path to SQLite database
             session_name: Name for tmux session
             auto_persist: Whether to auto-save

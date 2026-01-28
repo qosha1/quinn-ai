@@ -45,7 +45,7 @@ class OutputParser(ABC):
     """
     Abstract base class for provider-specific output parsers.
 
-    Each provider (Claude Code, Codex, etc.) has different output formats.
+    Each provider has different output formats that need parsing.
     Parsers extract structured information from raw terminal output.
     """
 

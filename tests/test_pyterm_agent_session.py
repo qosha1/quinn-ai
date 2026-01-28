@@ -58,6 +58,7 @@ class TestAgentSessionConfig:
         pyterm_config = PytermConfig.standard()
         config = AgentSessionConfig(
             worker_id="test-worker",
+            provider="claude_code",
             pyterm_config=pyterm_config,
         )
         assert config.worker_id == "test-worker"
@@ -68,7 +69,7 @@ class TestAgentSessionConfig:
         assert config.pyterm_config is pyterm_config
 
     def test_config_create_factory(self):
-        config = AgentSessionConfig.create(worker_id="test-worker")
+        config = AgentSessionConfig.create(worker_id="test-worker", provider="claude_code")
         assert config.worker_id == "test-worker"
         assert config.pyterm_config is not None
 
@@ -109,7 +110,7 @@ class TestAgentSessionLifecycle:
 
     def test_start_session(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         agent.start()
@@ -119,7 +120,7 @@ class TestAgentSessionLifecycle:
 
     def test_stop_session(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         agent.start()
@@ -129,7 +130,7 @@ class TestAgentSessionLifecycle:
 
     def test_restart_session(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         agent.start()
@@ -141,7 +142,7 @@ class TestAgentSessionLifecycle:
 
     def test_is_running_property(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         assert not agent.is_running
@@ -150,7 +151,7 @@ class TestAgentSessionLifecycle:
 
     def test_session_state_property(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         assert agent.session_state == SessionState.IDLE
@@ -163,7 +164,7 @@ class TestAgentSessionState:
 
     def test_initial_state(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         assert agent.state == AgentState.IDLE
@@ -172,7 +173,7 @@ class TestAgentSessionState:
 
     def test_state_after_transition(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         # Force state transition
@@ -186,14 +187,14 @@ class TestAgentSessionWorkerState:
 
     def test_initial_worker_state(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         assert agent.worker_state == WorkerState.PENDING
 
     def test_worker_state_after_start(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         agent.start()
@@ -201,7 +202,7 @@ class TestAgentSessionWorkerState:
 
     def test_activate_worker(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         agent.start()
@@ -210,7 +211,7 @@ class TestAgentSessionWorkerState:
 
     def test_worker_state_after_stop(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         agent.start()
@@ -223,7 +224,7 @@ class TestAgentSessionPauseResume:
 
     def test_pause(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         assert agent.pause()
@@ -231,7 +232,7 @@ class TestAgentSessionPauseResume:
 
     def test_resume(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         agent.pause()
@@ -244,7 +245,7 @@ class TestAgentSessionTranscript:
 
     def test_transcript_property(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         assert len(agent.transcript) == 0
@@ -257,7 +258,7 @@ class TestAgentSessionTranscript:
 
     def test_get_messages(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         turn = agent.transcript.new_turn("Hello")
@@ -268,7 +269,7 @@ class TestAgentSessionTranscript:
 
     def test_get_turn(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         turn = agent.transcript.new_turn("Hello")
@@ -277,7 +278,7 @@ class TestAgentSessionTranscript:
 
     def test_current_turn(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         assert agent.current_turn() is None
@@ -291,7 +292,7 @@ class TestAgentSessionToolTracking:
 
     def test_tool_tracker_property(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         tc = ToolCall(id="tc1", name="bash", arguments={"cmd": "ls"})
@@ -301,7 +302,7 @@ class TestAgentSessionToolTracking:
 
     def test_get_tool_calls(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         turn = agent.transcript.new_turn("Do something")
@@ -318,7 +319,7 @@ class TestAgentSessionOutput:
     def test_get_raw_output(self):
         mock_session = MockSession()
         mock_session.set_output("Hello world")
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         assert agent.get_raw_output() == "Hello world"
@@ -326,7 +327,7 @@ class TestAgentSessionOutput:
     def test_get_current_output(self):
         mock_session = MockSession()
         mock_session.set_output("Some output")
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         parsed = agent.get_current_output()
@@ -338,7 +339,7 @@ class TestAgentSessionCallbacks:
 
     def test_on_state_change(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         states = []
@@ -350,7 +351,7 @@ class TestAgentSessionCallbacks:
 
     def test_on_response(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         responses = []
@@ -364,7 +365,7 @@ class TestAgentSessionReset:
 
     def test_reset(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         # Add some state
@@ -379,7 +380,7 @@ class TestAgentSessionReset:
 
     def test_clear_transcript(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         agent.transcript.new_turn("Test")
@@ -394,7 +395,7 @@ class TestAgentSessionSerialization:
 
     def test_worker_id_property(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="my-worker")
+        config = AgentSessionConfig.create(worker_id="my-worker", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         assert agent.worker_id == "my-worker"
@@ -408,7 +409,7 @@ class TestAgentSessionSerialization:
 
     def test_to_dict(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         d = agent.to_dict()
@@ -427,7 +428,7 @@ class TestAgentSessionContextManager:
 
     def test_context_manager(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test")
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         with agent as a:
@@ -441,21 +442,21 @@ class TestAgentSessionPersistence:
 
     def test_save_without_store(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test", db_path=None)
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code", db_path=None)
         agent = AgentSession(config, session=mock_session)
 
         assert agent.save() is False
 
     def test_load_without_store(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test", db_path=None)
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code", db_path=None)
         agent = AgentSession(config, session=mock_session)
 
         assert agent.load() is False
 
     def test_delete_history_without_store(self):
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="test", db_path=None)
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code", db_path=None)
         agent = AgentSession(config, session=mock_session)
 
         assert agent.delete_history() is False
@@ -463,7 +464,7 @@ class TestAgentSessionPersistence:
     def test_save_with_store(self, tmp_path):
         mock_session = MockSession()
         db_path = tmp_path / "test.db"
-        config = AgentSessionConfig.create(worker_id="test", db_path=db_path)
+        config = AgentSessionConfig.create(worker_id="test", provider="claude_code", db_path=db_path)
         agent = AgentSession(config, session=mock_session)
 
         # Add some content
@@ -477,14 +478,14 @@ class TestAgentSessionPersistence:
         db_path = tmp_path / "test.db"
 
         # Create and save
-        config1 = AgentSessionConfig.create(worker_id="test", db_path=db_path)
+        config1 = AgentSessionConfig.create(worker_id="test", provider="claude_code", db_path=db_path)
         agent1 = AgentSession(config1, session=mock_session)
         turn = agent1.transcript.new_turn("Hello")
         turn.complete(Message.assistant("Hi"))
         agent1.save()
 
         # Load in new session
-        config2 = AgentSessionConfig.create(worker_id="test", db_path=db_path)
+        config2 = AgentSessionConfig.create(worker_id="test", provider="claude_code", db_path=db_path)
         agent2 = AgentSession(config2, session=MockSession())
         assert agent2.load() is True
         assert len(agent2.transcript) == 1
@@ -496,7 +497,7 @@ class TestAgentSessionIntegration:
     def test_full_session_flow(self):
         """Test a complete session flow without actual tmux."""
         mock_session = MockSession()
-        config = AgentSessionConfig.create(worker_id="integration-test")
+        config = AgentSessionConfig.create(worker_id="integration-test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
         # Start session
@@ -526,6 +527,7 @@ class TestAgentSessionIntegration:
         mock1 = MockSession()
         config1 = AgentSessionConfig.create(
             worker_id="persist-test",
+            provider="claude_code",
             db_path=db_path,
             auto_persist=False,
         )
@@ -539,6 +541,7 @@ class TestAgentSessionIntegration:
         mock2 = MockSession()
         config2 = AgentSessionConfig.create(
             worker_id="persist-test",
+            provider="claude_code",
             db_path=db_path,
         )
         agent2 = AgentSession(config2, session=mock2)

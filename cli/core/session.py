@@ -11,7 +11,7 @@ Gemini CLI, etc.) through a unified interface.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 from pathlib import Path
 import threading
 import uuid
@@ -21,6 +21,9 @@ from shared.core.state import (
     SessionState,
     SESSION_STATE_TRANSITIONS,
 )
+
+if TYPE_CHECKING:
+    from shared.pyterm.state_monitor import StateMonitor
 
 
 @dataclass(frozen=True)
@@ -213,7 +216,9 @@ class SessionInterface(ABC):
                     CRASHED
 
     Usage:
-        session = ClaudeCodeSession(config, pyterm_config)
+        # Get provider-specific adapter from registry
+        registry = get_default_registry()
+        session = registry.create(provider_name, config, pyterm_config=pyterm_config)
         session.start()
         result = session.send_prompt("Hello")
         session.stop()
@@ -236,6 +241,9 @@ class SessionInterface(ABC):
         # Callbacks
         self._state_callbacks: list[Callable[[SessionState, SessionState], None]] = []
         self._output_callbacks: list[Callable[[SessionOutput], None]] = []
+
+        # State monitor (created during start() via factory method)
+        self._state_monitor: Optional["StateMonitor"] = None
 
     # =========================================================================
     # Properties - Immutable session identity
@@ -403,6 +411,18 @@ class SessionInterface(ABC):
         """Send interrupt signal to CLI (e.g., Ctrl+C)."""
         pass
 
+    @abstractmethod
+    def _create_state_monitor(self) -> Optional["StateMonitor"]:
+        """Factory method for provider-specific state monitor.
+
+        Returns:
+            StateMonitor instance, or None if provider doesn't support monitoring
+
+        Called during start() to create the monitor with appropriate config.
+        Subclasses should construct their provider-specific monitor here.
+        """
+        pass
+
     # =========================================================================
     # State Machine Validation (Thread-Safe)
     # =========================================================================
@@ -445,6 +465,19 @@ class SessionInterface(ABC):
                 # Intentionally swallowed: callback errors must not break state machine.
                 # State transitions are critical; callbacks are observers only.
                 pass
+
+    def _on_monitored_state_change(self, old: SessionState, new: SessionState) -> None:
+        """Callback from state monitor - update our state.
+
+        This bridges the state monitor to the session's state management,
+        ensuring database updates happen when monitor detects changes.
+
+        Args:
+            old: Previous state from monitor
+            new: New state detected by monitor
+        """
+        if new != self._state:
+            self._set_state(new)
 
     def _atomic_transition(
         self,
@@ -524,6 +557,12 @@ class SessionInterface(ABC):
             self._validate_state_transition(SessionState.RUNNING)
             self._set_state(SessionState.RUNNING)
 
+            # Create and start state monitor
+            self._state_monitor = self._create_state_monitor()
+            if self._state_monitor:
+                self._state_monitor.subscribe(self._on_monitored_state_change)
+                self._state_monitor.start_monitoring()
+
             # Wait for ready state
             self._wait_for_ready()
             self._validate_state_transition(SessionState.IDLE)
@@ -555,6 +594,10 @@ class SessionInterface(ABC):
                 pass
 
         try:
+            # Stop state monitoring first
+            if self._state_monitor:
+                self._state_monitor.stop_monitoring()
+
             self._terminate_process(force=force)
         finally:
             self._set_state(SessionState.STOPPED)

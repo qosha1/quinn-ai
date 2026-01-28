@@ -49,9 +49,15 @@ Do NOT mark tasks complete until tests pass.
 - Use specific exception classes (see `shared/exceptions.py`)
 
 ### File Management
+- **DO NOT WRITE MD FILES** - No planning docs, architecture reviews, analysis files, etc.
+  - MD files get stale and wrong quickly
+  - Use beads for task tracking, not markdown files
+  - Use code comments for implementation notes
+  - Only exception: updating existing docs after code is validated and tested
 - Never create task-specific MD files in root (no `ARCHITECTURE_REVIEW.md`, etc.)
 - `docs/*` is for validated, tested documentation only - no planning docs
 - No test output files (logs, snapshots) in root directory
+- Use scratchpad directory for temporary analysis if absolutely necessary
 
 ### Commit Discipline
 - No "Co-Authored-By" lines
