@@ -15,5 +15,29 @@ from .budget import budget_cmd
 from .chart import chart_cmd
 from .hire import hire_cmd
 from .fire import fire_cmd
+from .delegate_authority import delegate_authority_cmd
+from .revoke_authority import revoke_authority_cmd
+from .promote import promote_cmd
+from .demote import demote_cmd
+from .delegations import delegations_cmd
 
-__all__ = ["init_cmd", "start_cmd", "stop_cmd", "restart_cmd", "status_cmd", "cleanup_cmd", "logs_cmd", "observe_cmd", "okr_cmd", "budget_cmd", "chart_cmd", "hire_cmd", "fire_cmd"]
+__all__ = [
+    "init_cmd",
+    "start_cmd",
+    "stop_cmd",
+    "restart_cmd",
+    "status_cmd",
+    "cleanup_cmd",
+    "logs_cmd",
+    "observe_cmd",
+    "okr_cmd",
+    "budget_cmd",
+    "chart_cmd",
+    "hire_cmd",
+    "fire_cmd",
+    "delegate_authority_cmd",
+    "revoke_authority_cmd",
+    "promote_cmd",
+    "demote_cmd",
+    "delegations_cmd",
+]

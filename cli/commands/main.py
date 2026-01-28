@@ -102,7 +102,26 @@ def wrkr(ctx, org_path: Optional[Path], worker_id: Optional[str]):
 
 
 # Import and register subcommands
-from cli.commands.org import init_cmd, start_cmd, stop_cmd, restart_cmd, status_cmd, cleanup_cmd, logs_cmd, observe_cmd, okr_cmd, budget_cmd, chart_cmd, hire_cmd, fire_cmd
+from cli.commands.org import (
+    init_cmd,
+    start_cmd,
+    stop_cmd,
+    restart_cmd,
+    status_cmd,
+    cleanup_cmd,
+    logs_cmd,
+    observe_cmd,
+    okr_cmd,
+    budget_cmd,
+    chart_cmd,
+    hire_cmd,
+    fire_cmd,
+    delegate_authority_cmd,
+    revoke_authority_cmd,
+    promote_cmd,
+    demote_cmd,
+    delegations_cmd,
+)
 
 org.add_command(init_cmd, name="init")
 org.add_command(start_cmd, name="start")
@@ -117,6 +136,11 @@ org.add_command(budget_cmd, name="budget")
 org.add_command(chart_cmd, name="chart")
 org.add_command(hire_cmd, name="hire")
 org.add_command(fire_cmd, name="fire")
+org.add_command(delegate_authority_cmd, name="delegate-authority")
+org.add_command(revoke_authority_cmd, name="revoke-authority")
+org.add_command(promote_cmd, name="promote")
+org.add_command(demote_cmd, name="demote")
+org.add_command(delegations_cmd, name="delegations")
 
 from cli.commands.wrkr import get_work_cmd, inbox_cmd, search_cmd, send_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd
 
