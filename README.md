@@ -202,6 +202,11 @@ qn wrkr <command>    # WORKERS run (from within their sessions)
 | `qn org status` | Org | Show org status | Lifecycle + workers/sessions |
 | `qn org hire` | Worker | Hire worker | Hire == spawn + start + onboard |
 | `qn org fire` | Worker | Terminate worker | Stops session + offboarding |
+| `qn org delegate-authority` | Worker | Grant hiring authority | Low-level delegation command |
+| `qn org revoke-authority` | Worker | Remove hiring authority | Cascade revocation optional |
+| `qn org promote` | Worker | Promote to management | High-level delegation wrapper |
+| `qn org demote` | Worker | Remove management authority | High-level revocation wrapper |
+| `qn org delegations` | Org | View delegation chains | List/tree/JSON views |
 | `qn org observe` | Worker | Attach/stream session | tmux-based |
 | `qn org logs` | Worker | View session scrollback | tmux capture |
 | `qn org cleanup` | Org | Cleanup sessions/notifications | Orphans + stale |
@@ -228,6 +233,61 @@ qn wrkr <command>    # WORKERS run (from within their sessions)
 | `qn wrkr send` | Channel | Send message | requires `--worker-id` or `QUINN_WORKER_ID` |
 | `qn wrkr search` | Messages | Search history | requires `--worker-id` or `QUINN_WORKER_ID` |
 | `qn wrkr delegate` | Worker | Delegate hiring authority | requires `--worker-id` or `QUINN_WORKER_ID` |
+
+### Delegation Authority
+
+Hierarchical organizations need managers who can hire their own teams. Delegation authority enables this:
+
+**Quick Start:**
+```bash
+# Promote Alice to team lead (can hire engineers/designers)
+qn org promote alice --to team-lead
+
+# Alice can now hire within her scope
+qn org hire --name bob --role engineer --manager alice
+
+# Revoke authority when no longer needed
+qn org revoke-authority alice
+```
+
+**Preset Levels:**
+- **team-lead**: Can hire engineers, designers, QA (cost ≤60, budget 5k)
+- **director**: Can hire team-lead + managers (cost ≤80, budget 20k)
+- **vp**: Can hire any role (cost ≤90, budget 100k)
+
+**Custom Delegation:**
+```bash
+# Custom role-based authority
+qn org delegate-authority --to bob --roles "engineer,qa" --max-cost 50 --budget 10000
+
+# Copy authority from another worker
+qn org delegate-authority --to carol --copy-from bob
+
+# View delegation tree
+qn org delegations --tree
+# Output:
+# CEO [all roles, cost 100]
+# └── alice (director) [engineer,qa,designer,manager, cost 80]
+#     └── bob (team-lead) [engineer,qa, cost 50]
+```
+
+**Cascade Revocation:**
+```bash
+# Revoke with cascade (removes authority from downstream too)
+qn org revoke-authority alice --cascade --reason "Team restructure"
+
+# Dry-run to preview impact
+qn org revoke-authority alice --cascade --dry-run
+```
+
+**Key Features:**
+- ✅ **Subset constraints**: Delegated authority must be ≤ delegator's authority
+- ✅ **Audit trail**: All delegations logged immutably
+- ✅ **Security**: Prevents self-delegation, circular delegation, concurrent conflicts
+- ✅ **Auto-revocation**: Authority revoked on worker termination
+- ✅ **Interactive prompts**: Confirms before cascade operations
+
+See `docs/architecture-decisions/ADR-005-delegation-authority.md` for full design.
 
 ### Notes and Clarifications
 
