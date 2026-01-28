@@ -34,11 +34,23 @@ def status_cmd(ctx: Context):
         click.echo(f"Status: {org.status}")
         click.echo("")
 
+        # Count workers with hiring authority
+        cursor = db.execute("""
+            SELECT COUNT(*) FROM workers
+            WHERE lifecycle_status != 'terminated'
+            AND hiring_authority_scope IS NOT NULL
+            AND hiring_authority_scope != '{}'
+            AND hiring_authority_scope != '{"allowed_roles": []}'
+        """)
+        managers_count = cursor.fetchone()[0]
+
         # Worker stats
         click.echo("Workers:")
         click.echo(f"  Total: {org.worker_count}")
         click.echo(f"  Active: {org.active_worker_count}")
         click.echo(f"  Sessions: {org.active_session_count}")
+        if managers_count > 0:
+            click.echo(f"  Managers: {managers_count}")
 
         # CEO info
         if org.ceo:
@@ -49,6 +61,14 @@ def status_cmd(ctx: Context):
             click.echo(f"  Lifecycle: {org.ceo.lifecycle_status}")
             if org.ceo.runtime_status:
                 click.echo(f"  Runtime: {org.ceo.runtime_status}")
+
+            # Show CEO's hiring authority
+            scope = org.ceo.hiring_authority_scope
+            if scope.allowed_roles:
+                if "*" in scope.allowed_roles:
+                    click.echo("  Authority: Full (all roles)")
+                else:
+                    click.echo(f"  Authority: {', '.join(scope.allowed_roles)}")
 
         # Timestamps
         if org.started_at:

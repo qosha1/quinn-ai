@@ -167,6 +167,14 @@ def fire_cmd(
                     f"Cannot reassign to '{reassign_worker.name}' - not in active status."
                 )
 
+        # Check for hiring authority
+        from cli.core.queries import get_delegations_by_delegator
+        has_authority = bool(target_worker.hiring_authority_scope.allowed_roles)
+        downstream_count = 0
+        if has_authority:
+            downstream = get_delegations_by_delegator(db, target_worker.id)
+            downstream_count = len(downstream)
+
         # Show worker info
         click.echo(f"Worker: {target_worker.name} ({target_worker.role})")
         click.echo(f"  ID: {target_worker.id}")
@@ -176,6 +184,11 @@ def fire_cmd(
             click.echo(f"  Session: Active ({target_worker.runtime_status})")
         else:
             click.echo("  Session: Inactive")
+        if has_authority:
+            if downstream_count > 0:
+                click.echo(f"  Authority: Will be revoked (has {downstream_count} downstream delegation(s))")
+            else:
+                click.echo("  Authority: Will be revoked")
         click.echo(f"  Reason: {reason}")
         if reassign_worker:
             click.echo(f"  Reassign work to: {reassign_worker.name}")
@@ -202,6 +215,21 @@ def fire_cmd(
             target_worker.terminate_session(force=True)
             click.echo("  Session stopped.")
 
+        # Revoke hiring authority if present (cascade to downstream delegations)
+        if has_authority:
+            click.echo("  Revoking hiring authority...")
+            try:
+                target_worker.revoke_authority(
+                    cascade=True,
+                    reason=f"Terminated: {reason}",
+                )
+                if downstream_count > 0:
+                    click.echo(f"  Authority revoked from {downstream_count + 1} worker(s) (cascade).")
+                else:
+                    click.echo("  Authority revoked.")
+            except Exception as e:
+                click.echo(f"  Warning: Failed to revoke authority: {e}")
+
         # Lifecycle: active -> offboarding -> terminated
         # Must go through offboarding first (freezes storage, creates review bead)
         if target_worker.lifecycle_status == "active":
@@ -220,6 +248,11 @@ def fire_cmd(
         click.echo(f"Worker '{target_worker.name}' has been terminated.")
         click.echo(f"  Reason: {reason}")
         click.echo(f"  Authorized by: {auth_manager.name}")
+        if has_authority:
+            if downstream_count > 0:
+                click.echo(f"  Hiring authority: Revoked (cascade to {downstream_count} worker(s))")
+            else:
+                click.echo("  Hiring authority: Revoked")
 
         if not keep_storage:
             from cli.core.storage import StorageManager
