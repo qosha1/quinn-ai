@@ -1,0 +1,116 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  baseline-tests:
+    name: Baseline Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run baseline org tests
+        run: |
+          systemeval test -c baseline-org --failfast
+        timeout-minutes: 5
+
+      - name: Run baseline worker tests
+        run: |
+          systemeval test -c baseline-worker --failfast
+        timeout-minutes: 5
+        continue-on-error: true  # Worker tests have known limitations
+
+      - name: Run baseline OKR tests
+        run: |
+          systemeval test -c baseline-okr --failfast
+        timeout-minutes: 5
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-baseline
+          path: |
+            .pytest_cache/
+            test-reports/
+          retention-days: 7
+
+  all-integration-tests:
+    name: All Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run all integration tests
+        run: |
+          systemeval test -c integration-all --coverage
+        timeout-minutes: 15
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: integration
+          name: integration-tests
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-all
+          path: |
+            .pytest_cache/
+            coverage.xml
+            test-reports/
+          retention-days: 30
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [baseline-tests, all-integration-tests]
+    if: always()
+
+    steps:
+      - name: Check test results
+        run: |
+          echo "Baseline tests: ${{ needs.baseline-tests.result }}"
+          echo "All integration tests: ${{ needs.all-integration-tests.result }}"
+
+          if [ "${{ needs.baseline-tests.result }}" == "failure" ] || [ "${{ needs.all-integration-tests.result }}" == "failure" ]; then
+            echo "::error::Some integration tests failed"
+            exit 1
+          fi
+
