@@ -705,9 +705,19 @@ class Worker:
             raise InvalidStateTransition(current, new_status, valid)
 
     def start_onboarding(self) -> None:
-        """Transition from pending to onboarding."""
+        """Transition from pending to onboarding.
+
+        Generates onboarding materials (BRIEFING.md, STORAGE.md, WELCOME.md)
+        in the worker's storage directory.
+        """
         old_status = self.lifecycle_status
         self._validate_lifecycle_transition("onboarding")
+
+        # Generate onboarding files before transitioning state
+        from cli.core.onboarding import prepare_worker_onboarding
+        org_path = self._get_org_path()
+        prepare_worker_onboarding(self.db, self.id, org_path)
+
         update_worker_status(self.db, self.id, "onboarding")
         self._worker_data = None  # Invalidate cache
         log_worker_lifecycle(_logger, self.id, self.name, old_status, "onboarding")

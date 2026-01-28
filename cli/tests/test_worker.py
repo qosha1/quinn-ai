@@ -1943,7 +1943,9 @@ class TestCleanupTerminatedWorker:
         )
 
         # Verify result
-        assert result["files_archived"] == 3
+        # Note: includes 3 manually created files + onboarding files
+        # (BRIEFING.md, STORAGE.md, WELCOME.md, CLAUDE.md, AGENTS.md, .onboarding/initialized)
+        assert result["files_archived"] >= 3  # At least the manually created files
         assert result["archived_to"] is not None
         assert result["storage_deleted"] is True
 
@@ -1951,12 +1953,16 @@ class TestCleanupTerminatedWorker:
         archive_path = storage.get_archive_path(worker.id)
         assert archive_path.exists()
 
-        # Verify files are in archive
+        # Verify manually created files are in archive
         archived_files = list(archive_path.rglob("*"))
         file_names = {f.name for f in archived_files if f.is_file()}
         assert "important.md" in file_names
         assert "notes.txt" in file_names
         assert "data.json" in file_names
+        # Onboarding files should also be archived
+        assert "BRIEFING.md" in file_names
+        assert "STORAGE.md" in file_names
+        assert "WELCOME.md" in file_names
 
     def test_cleanup_archives_specific_files(self, terminated_worker_with_files, org_path):
         """cleanup_terminated_worker() should archive only specified files."""
