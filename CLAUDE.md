@@ -282,6 +282,65 @@ bd close <bead-id> --reason "Description of what was done"
 bd sync
 ```
 
+### OKRs vs Operational Work
+
+QuinnAI distinguishes between strategic objectives and day-to-day work:
+
+**OKRs (Strategic):**
+- Quarterly objectives with measurable key results
+- Type: `epic`, Label: `okr`
+- Created by CEO/managers
+- Example: "Q1 2026: Build Core Data Infrastructure - 60/100 sources operational"
+
+**Operational Work (Daily):**
+- Tasks, bugs, features that advance OKRs
+- Type: `task`, `bug`, `feature`
+- Created by all developers
+- Should link to parent OKR via `serves` dependency
+
+**Query OKRs:**
+```bash
+bd list --label=okr              # List all OKRs
+qn org okr list --from-db        # Show progress/key results
+```
+
+**Query operational work:**
+```bash
+bd list --type=task,bug,feature --status=open
+bd ready                         # Show available work
+```
+
+**Link work to OKRs:**
+```bash
+# When creating work
+bd create "Implement feature X" --type=task --deps "serves:<okr-id>"
+
+# Link existing work
+bd dep add <task-id> <okr-id>   # task serves okr
+```
+
+**Update OKR progress (when code affects key results):**
+```bash
+qn org okr list --from-db                          # Check current progress
+qn org okr update-kr <okr-id> --metric="..." --current=X  # Update metric
+```
+
+**Example workflow:**
+```bash
+# 1. Check what OKR your work serves
+bd show <task-id>  # Look for "serves" dependency
+
+# 2. Do the work and verify key results
+# If KR is "test coverage > 80%", run coverage tool
+# If KR is "performance < 2s", measure performance
+
+# 3. Update OKR progress if metrics changed
+qn org okr update-kr quinnai-q1-infra --metric="sources" --current=65
+
+# 4. Close work only if key results are met
+bd close <task-id> --reason "Implemented feature, coverage now 85%"
+```
+
 ### Org Operations
 
 ```bash
