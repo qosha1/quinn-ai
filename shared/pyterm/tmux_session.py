@@ -5,6 +5,7 @@ Uses subprocess calls to tmux for session management.
 """
 
 import logging
+import shlex
 import subprocess
 import threading
 import time
@@ -184,7 +185,12 @@ class TmuxSession:
         return result.returncode == 0
 
     def start(self, config: SessionConfig | None = None) -> None:
-        """Start the tmux session."""
+        """Start the tmux session.
+
+        Creates a tmux session with bash as the shell, then sends the command
+        (if provided) via send-keys. This ensures commands execute properly
+        rather than being interpreted as the shell itself.
+        """
         if self._state == SessionState.RUNNING:
             raise RuntimeError(f"Session {self._id} already running")
 
@@ -199,6 +205,7 @@ class TmuxSession:
             )
 
         # Build tmux new-session command
+        # ALWAYS use bash as shell - never pass commands as the shell argument
         cmd_args = [
             "new-session",
             "-d",  # detached
@@ -210,23 +217,79 @@ class TmuxSession:
         if self._session_config.cwd:
             cmd_args.extend(["-c", self._session_config.cwd])
 
-        # Set shell command
-        shell_cmd = self._session_config.shell
-        if self._session_config.args:
-            shell_cmd = f"{shell_cmd} {' '.join(self._session_config.args)}"
-        cmd_args.append(shell_cmd)
+        # Always use bash as the shell (tmux interprets last arg as shell)
+        cmd_args.append("/bin/bash")
 
-        # Set environment variables
-        for key, value in self._session_config.env.items():
-            self._run_tmux("set-environment", "-t", self._id, key, value, check=False)
-
+        # Create the tmux session with bash
         self._run_tmux(*cmd_args)
 
-        # Get the shell PID
+        # Set environment variables AFTER session is created
+        for key, value in self._session_config.env.items():
+            self._run_tmux("set-environment", "-t", self._id, key, value)
+
+        # Determine if we need to execute a command
+        # List of known real shells - if shell is not in this list, treat it as a command
+        real_shells = ["/bin/bash", "/bin/zsh", "/bin/sh", "bash", "zsh", "sh"]
+
+        if self._session_config.shell not in real_shells:
+            # Shell field contains a command to execute (like "claude")
+            command = self._session_config.shell
+            if self._session_config.args:
+                # Use shlex.join for proper escaping of arguments
+                command = f"{command} {shlex.join(self._session_config.args)}"
+
+            logger.info(f"Executing command in tmux session {self._id}: {command}")
+
+            # Send command to bash running in tmux
+            self._run_tmux("send-keys", "-t", self._id, command, "Enter")
+
+            # Brief wait for process to start
+            time.sleep(0.5)
+
+        # Get the pane PID
         result = self._run_tmux(
             "display-message", "-t", self._id, "-p", "#{pane_pid}"
         )
-        self._pid = int(result.stdout.strip()) if result.stdout.strip() else None
+        bash_pid = int(result.stdout.strip()) if result.stdout.strip() else None
+
+        # Try to find child process of bash (this is our command)
+        if bash_pid and self._session_config.shell not in real_shells:
+            try:
+                # Use ps to find children of bash_pid
+                # macOS compatible: ps -o pid,ppid then filter
+                ps_result = subprocess.run(
+                    ["ps", "-o", "pid,ppid"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                if ps_result.returncode == 0:
+                    # Parse output to find processes with PPID matching bash_pid
+                    child_pid = None
+                    for line in ps_result.stdout.splitlines()[1:]:  # Skip header
+                        parts = line.strip().split()
+                        if len(parts) >= 2:
+                            pid, ppid = parts[0], parts[1]
+                            if ppid == str(bash_pid):
+                                child_pid = int(pid)
+                                break
+
+                    if child_pid:
+                        self._pid = child_pid
+                        logger.info(f"Found command process PID: {self._pid}")
+                    else:
+                        # No child process yet, command may not have started
+                        logger.info(f"No child process found for bash PID {bash_pid}, using bash PID")
+                        self._pid = bash_pid
+                else:
+                    logger.warning(f"ps command failed, using bash PID {bash_pid}")
+                    self._pid = bash_pid
+            except (subprocess.SubprocessError, ValueError) as e:
+                logger.warning(f"Failed to get child PID: {e}, using bash PID {bash_pid}")
+                self._pid = bash_pid
+        else:
+            # Just running bash, use bash PID
+            self._pid = bash_pid
 
         self._set_state(SessionState.RUNNING)
 

@@ -85,31 +85,42 @@ class OKRsView(Widget):
 
     def refresh_okrs(self) -> None:
         """Refresh OKRs from org connection."""
+        logger.info("refresh_okrs called")
+
         if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+            logger.warning("No org connection - keeping placeholder data")
             return  # Keep placeholder data
 
         try:
             conn = self.app.org_connection
+            logger.info(f"Fetching OKRs from org connection: {conn.org_path}")
             okrs = conn.get_okrs()
+            logger.info(f"Found {len(okrs)} OKRs")
 
             if not okrs:
+                logger.info("No OKRs found - showing empty state")
                 self._show_empty_state()
                 return
 
             # Build hierarchy
             okr_dict = {okr.id: okr for okr in okrs}
             root_okrs = [okr for okr in okrs if okr.parent_id is None]
+            logger.info(f"Found {len(root_okrs)} root OKRs")
 
             # Clear tree and rebuild
             tree = self.query_one(Tree)
+            logger.info("Clearing tree and rebuilding with real OKRs")
             tree.clear()
             tree.root.expand()
 
             for root_okr in root_okrs:
+                logger.info(f"Adding OKR: {root_okr.title}")
                 self._add_okr_to_tree(tree.root, root_okr, okr_dict)
 
+            logger.info("OKR tree rebuilt successfully")
+
         except Exception as e:
-            logger.error(f"Error loading OKRs: {e}")
+            logger.error(f"Error loading OKRs: {e}", exc_info=True)
 
     def _add_okr_to_tree(self, parent_node, okr: "OKRInfo", okr_dict: dict) -> None:
         """Recursively add OKR and its children to tree.
@@ -183,12 +194,13 @@ class OKRsView(Widget):
         Format: "Description [current/target unit]"
 
         Args:
-            kr: Key result dict with description, current, target, unit
+            kr: Key result dict with metric/description, current, target, unit
 
         Returns:
             Formatted key result string
         """
-        description = kr.get("description", "")
+        # Support both 'metric' (database) and 'description' (legacy)
+        description = kr.get("metric", kr.get("description", ""))
         current = kr.get("current", 0)
         target = kr.get("target", 0)
         unit = kr.get("unit", "")

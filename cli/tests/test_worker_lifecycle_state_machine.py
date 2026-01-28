@@ -44,9 +44,9 @@ def worker(db, team):
 
 
 @pytest.fixture
-def onboarding_worker(worker):
+def onboarding_worker(db, worker):
     """Create a worker in onboarding state."""
-    worker_obj = Worker(worker.db, worker.id)
+    worker_obj = Worker(db, worker.id)
     worker_obj.start_onboarding()
     return worker_obj
 

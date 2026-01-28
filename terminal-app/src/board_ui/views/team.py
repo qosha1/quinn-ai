@@ -57,6 +57,7 @@ class TeamView(Widget):
         self._open_windows: dict[str, any] = {}  # worker_id -> WindowHandle
         self._workers: list[WorkerInfo] = []
         self._current_filter = "all"
+        self._refresh_interval_seconds = 2  # Auto-refresh every 2 seconds
 
     def compose(self) -> ComposeResult:
         with Container(id="team-header"):
@@ -73,6 +74,12 @@ class TeamView(Widget):
 
     async def on_mount(self) -> None:
         """Load workers when view mounts."""
+        await self.refresh_workers()
+        # Start auto-refresh timer
+        self.set_interval(self._refresh_interval_seconds, self._auto_refresh)
+
+    async def _auto_refresh(self) -> None:
+        """Auto-refresh callback for timer."""
         await self.refresh_workers()
 
     async def refresh_workers(self) -> None:

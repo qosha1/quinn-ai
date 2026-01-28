@@ -61,13 +61,17 @@ def team(db):
 @pytest.fixture
 def worker_with_budget(db, team):
     """Create a worker with budget allocation."""
+    now = datetime.now()
+    period_end = now + timedelta(days=30)
+
     worker = create_worker(db, "Alice", "Developer", team.id, 50)
 
     pool = create_budget_pool(
         db,
         name="Test Pool",
         total_credits=1000.0,
-        period_end=datetime.now() + timedelta(days=30)
+        period_start=now,
+        period_end=period_end
     )
 
     create_budget_allocation(
@@ -75,6 +79,8 @@ def worker_with_budget(db, team):
         pool_id=pool.id,
         worker_id=worker.id,
         allocated_credits=500.0,
+        period_start=now,
+        period_end=period_end,
         can_delegate=False
     )
 
@@ -97,16 +103,21 @@ class TestInvariantI1OrgGatesWorker:
         worker_data = create_worker(org.db, "Alice", "Dev", team.id, 50)
 
         # Give worker budget
+        now = datetime.now()
+        period_end = now + timedelta(days=30)
         pool = create_budget_pool(
             org.db,
             name="Pool",
             total_credits=1000.0,
-            period_end=datetime.now() + timedelta(days=30)
+            period_start=now,
+            period_end=period_end
         )
         create_budget_allocation(
             org.db,
             pool_id=pool.id,
             worker_id=worker_data.id,
+            period_start=now,
+            period_end=period_end,
             allocated_credits=500.0
         )
 
@@ -136,17 +147,22 @@ class TestInvariantI2WorkerGatesSession:
         worker_data = create_worker(running_org.db, "Alice", "Dev", team.id, 50)
 
         # Give worker budget
+        now = datetime.now()
+        period_end = now + timedelta(days=30)
         pool = create_budget_pool(
             running_org.db,
             name="Pool",
             total_credits=1000.0,
-            period_end=datetime.now() + timedelta(days=30)
+            period_start=now,
+            period_end=period_end
         )
         create_budget_allocation(
             running_org.db,
             pool_id=pool.id,
             worker_id=worker_data.id,
-            allocated_credits=500.0
+            allocated_credits=500.0,
+            period_start=now,
+            period_end=period_end
         )
 
         worker = Worker(running_org.db, worker_data.id)
@@ -173,12 +189,12 @@ class TestInvariantI3OneActiveSession:
         """
         from cli.core.worker import ActiveSessionExistsError
 
-        worker = Worker(worker_with_budget.db, worker_with_budget.id)
+        worker = Worker(running_org.db, worker_with_budget.id)
         worker.start_onboarding()
         worker.complete_onboarding()
 
         # Create existing active session record in sessions table
-        worker.db.execute(
+        running_org.db.execute(
             """INSERT INTO sessions (id, worker_id, provider, state, started_at)
                VALUES (?, ?, ?, ?, ?)""",
             ("test-session-123", worker.id, "claude-code", "running", datetime.now())

@@ -29,6 +29,26 @@ DEFAULT_HEARTBEAT_THRESHOLD = 60
 
 
 # ===================
+# STATE MONITORING
+# ===================
+
+DEFAULT_STATE_POLL_INTERVAL = 1.0
+"""Default polling interval for background state monitoring (seconds)."""
+
+DEFAULT_STATE_IDLE_TIMEOUT = 3.0
+"""Default timeout for considering session idle (seconds)."""
+
+DEFAULT_STATE_ERROR_RETRY = 5.0
+"""Default retry interval after monitoring error (seconds)."""
+
+DEFAULT_STATE_MAX_ERRORS = 10
+"""Maximum consecutive errors before stopping monitor."""
+
+STATE_MONITOR_THREAD_PREFIX = "StateMonitor-"
+"""Prefix for state monitor thread names."""
+
+
+# ===================
 # SKILL THRESHOLDS (0-100)
 # ===================
 

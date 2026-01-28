@@ -3231,8 +3231,8 @@ def _parse_key_results(kr_json: Optional[str]) -> list[KeyResult]:
             KeyResult(
                 metric=kr["metric"],
                 target=kr["target"],
-                current=kr["current"],
-                unit=kr["unit"],
+                current=kr.get("current", 0),
+                unit=kr.get("unit", "count"),
             )
             for kr in data
         ]

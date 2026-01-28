@@ -87,6 +87,7 @@ class DashboardView(Widget):
         self._ceo: Optional[WorkerInfo] = None
         self._org_info: Optional[OrgInfo] = None
         self._budget: Optional[BudgetSummary] = None
+        self._refresh_interval_seconds = 2  # Auto-refresh every 2 seconds
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="top-row"):
@@ -125,6 +126,12 @@ class DashboardView(Widget):
 
     async def on_mount(self) -> None:
         """Load data when view mounts."""
+        await self.refresh_data()
+        # Start auto-refresh timer
+        self.set_interval(self._refresh_interval_seconds, self._auto_refresh)
+
+    async def _auto_refresh(self) -> None:
+        """Auto-refresh callback for timer."""
         await self.refresh_data()
 
     async def refresh_data(self) -> None:
@@ -168,12 +175,27 @@ class DashboardView(Widget):
 
     def _update_ceo_card(self) -> None:
         """Update CEO card display."""
+        from ..interfaces.org_connection import SessionState
+
         ceo_card = self.query_one("#ceo-card", Container)
         ceo_status = self.query_one("#ceo-status", Label)
         chat_btn = self.query_one("#chat-ceo-btn", Button)
 
         if self._ceo:
-            status_text = "Active" if self._ceo.session_state else "Inactive"
+            # Show detailed session state
+            if self._ceo.session_state == SessionState.RUNNING:
+                status_text = "🟢 Working"
+            elif self._ceo.session_state == SessionState.IDLE:
+                status_text = "🟡 Idle"
+            elif self._ceo.session_state == SessionState.STARTING:
+                status_text = "🔵 Starting"
+            elif self._ceo.session_state == SessionState.STOPPED:
+                status_text = "⚫ Stopped"
+            elif self._ceo.session_state == SessionState.CRASHED:
+                status_text = "🔴 Crashed"
+            else:
+                status_text = "⚫ Inactive"
+
             ceo_status.update(f"Status: {status_text}")
             chat_btn.disabled = self._ceo.tmux_session_name is None
             ceo_card.remove_class("ceo-inactive")

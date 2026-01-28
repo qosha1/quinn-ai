@@ -52,11 +52,15 @@ def worker_with_budget(db, team):
     worker = create_worker(db, "Alice", "Developer", team.id, 50)
 
     # Create budget pool and allocation
+    now = datetime.now()
+    period_end = now + timedelta(days=30)
+
     pool = create_budget_pool(
         db,
         name="Test Pool",
         total_credits=1000.0,
-        period_end=datetime.now() + timedelta(days=30)
+        period_start=now,
+        period_end=period_end
     )
 
     create_budget_allocation(
@@ -64,6 +68,8 @@ def worker_with_budget(db, team):
         pool_id=pool.id,
         worker_id=worker.id,
         allocated_credits=500.0,
+        period_start=now,
+        period_end=period_end,
         can_delegate=False
     )
 
@@ -71,9 +77,9 @@ def worker_with_budget(db, team):
 
 
 @pytest.fixture
-def active_worker(worker_with_budget):
+def active_worker(db, worker_with_budget):
     """Create an active worker."""
-    worker = Worker(worker_with_budget.db, worker_with_budget.id)
+    worker = Worker(db, worker_with_budget.id)
     worker.start_onboarding()
     worker.complete_onboarding()
     return worker
@@ -109,7 +115,14 @@ class TestSessionT1NotSpawnedToStarting:
 
         # Mock session
         mock_session = MagicMock()
-        mock_session.config = SessionConfig(provider="claude-code")
+        mock_session.config = SessionConfig(
+            worker_id=active_worker.id,
+            provider="claude-code",
+            command="/usr/bin/claude"
+        )
+        mock_session.provider_name = "claude-code"
+        mock_session.model = "claude-sonnet-4-5"
+        mock_session.id = "test-session-123"
 
         active_worker.spawn_session(mock_session)
 
@@ -134,6 +147,7 @@ class TestSessionT1NotSpawnedToStarting:
     def test_t1_checks_existing_session(self, active_worker):
         """T1 must raise if active session already exists."""
         from cli.core.worker import ActiveSessionExistsError
+        from datetime import datetime
 
         # Create existing active session record in sessions table
         active_worker.db.execute(

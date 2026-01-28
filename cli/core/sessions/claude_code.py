@@ -7,7 +7,7 @@ expected by the Worker class.
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from cli.core.session import (
     SessionInterface,
@@ -26,6 +26,9 @@ from shared.pyterm import (
 )
 from shared.pyterm.agent_state import AgentState
 from shared.pyterm.protocols import SessionState as PytermSessionState
+
+if TYPE_CHECKING:
+    from shared.pyterm.state_monitor import StateMonitor
 
 
 class ClaudeCodeSession(SessionInterface):
@@ -102,6 +105,13 @@ class ClaudeCodeSession(SessionInterface):
 
             # Create and start the agent session
             self._agent_session = AgentSession(agent_config)
+
+            # Register callback to monitor agent state changes and update session state
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"[ClaudeCodeSession] Registering state change callback for worker {self._config.worker_id}")
+            self._agent_session._controller.on_state_change(self._on_agent_state_change)
+            logger.warning(f"[ClaudeCodeSession] Callback registered successfully")
 
             # Build shell command
             shell_cmd = self._config.command
@@ -187,9 +197,68 @@ class ClaudeCodeSession(SessionInterface):
         if self._agent_session:
             self._agent_session.cancel()
 
+    def _create_state_monitor(self) -> Optional["StateMonitor"]:
+        """Create Claude Code-specific state monitor.
+
+        Returns:
+            ClaudeCodeStateMonitor instance if agent session exists, None otherwise
+        """
+        from cli.core.sessions.monitors.claude_code import ClaudeCodeStateMonitor
+        from shared.pyterm.state_monitor import StateMonitorConfig, MonitoringMode
+        from cli.core.constants import (
+            DEFAULT_STATE_POLL_INTERVAL,
+            DEFAULT_STATE_IDLE_TIMEOUT,
+            DEFAULT_STATE_ERROR_RETRY,
+            DEFAULT_STATE_MAX_ERRORS,
+        )
+
+        # Session hasn't been created yet during __init__,
+        # so we need to pass the underlying pyterm session once it exists
+        # This is called from start() after _spawn_process()
+        if not self._agent_session:
+            return None
+
+        config = StateMonitorConfig(
+            mode=MonitoringMode.BACKGROUND,
+            poll_interval=DEFAULT_STATE_POLL_INTERVAL,
+            idle_timeout=DEFAULT_STATE_IDLE_TIMEOUT,
+            error_retry_interval=DEFAULT_STATE_ERROR_RETRY,
+            max_consecutive_errors=DEFAULT_STATE_MAX_ERRORS,
+        )
+
+        return ClaudeCodeStateMonitor(
+            config=config,
+            session=self._agent_session._session,
+        )
+
     # =========================================================================
-    # State mapping
+    # State mapping and monitoring
     # =========================================================================
+
+    def _on_agent_state_change(self, old_state: AgentState, new_state: AgentState) -> None:
+        """Callback for agent state changes - syncs to session state.
+
+        This is called by pyterm's AgentController whenever the agent state changes.
+        It maps agent states to session states and triggers session state transitions.
+
+        Args:
+            old_state: Previous agent state
+            new_state: New agent state
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[ClaudeCodeSession] Agent state changed: {old_state} -> {new_state}")
+
+        # Map new agent state to session state
+        new_session_state = self._map_agent_state_to_session_state(new_state)
+        logger.info(f"[ClaudeCodeSession] Mapped to session state: {new_session_state}, current: {self._state}")
+
+        # Update session state if it differs from current
+        if new_session_state != self._state:
+            logger.info(f"[ClaudeCodeSession] Calling _set_state({new_session_state})")
+            self._set_state(new_session_state)
+        else:
+            logger.info(f"[ClaudeCodeSession] State unchanged, skipping update")
 
     def _map_pyterm_state_to_session_state(self, pyterm_state: PytermSessionState) -> SessionState:
         """Map pyterm session state to our SessionState."""
