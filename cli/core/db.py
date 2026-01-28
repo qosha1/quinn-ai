@@ -12,6 +12,7 @@ Connection Management:
 """
 
 import atexit
+import logging
 import shutil
 import sqlite3
 import threading
@@ -19,6 +20,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Generator, Optional
 import weakref
+
+_logger = logging.getLogger(__name__)
 
 # Current schema version - increment when schema changes
 SCHEMA_VERSION = 17
@@ -84,9 +87,12 @@ class TransactionalFileContext:
         for callback in reversed(self._cleanup_callbacks):
             try:
                 callback()
-            except Exception:
+            except Exception as e:
                 # Intentionally swallowed: cleanup must be best-effort.
                 # A failing callback should not prevent other cleanup from running.
+                # We catch Exception here (not specific types) because cleanup callbacks
+                # can raise any error and we need to ensure all callbacks run.
+                _logger.debug(f"Cleanup callback failed (ignored): {e}")
                 pass
 
         # Delete tracked paths in reverse order (newest first)
@@ -206,8 +212,11 @@ class Database:
         try:
             yield cursor
             self.connection.commit()
-        except Exception:
+        except Exception as e:
+            # Catch all exceptions to ensure rollback happens
+            # This needs to be broad because user code can raise anything
             self.connection.rollback()
+            _logger.error(f"Transaction failed, rolling back: {e}")
             raise
         finally:
             cursor.close()
@@ -242,9 +251,12 @@ class Database:
             yield cursor, file_ctx
             self.connection.commit()
             file_ctx.clear()  # Success - don't track files anymore
-        except Exception:
+        except Exception as e:
+            # Catch all exceptions to ensure rollback happens
+            # This needs to be broad because user code can raise anything
             self.connection.rollback()
             file_ctx.rollback()  # Clean up created files
+            _logger.error(f"Transaction with files failed, rolling back: {e}")
             raise
         finally:
             cursor.close()
@@ -348,7 +360,9 @@ class Database:
             try:
                 cursor = self._local.connection.execute("PRAGMA journal_mode")
                 info["journal_mode"] = cursor.fetchone()[0]
-            except Exception:
+            except sqlite3.Error as e:
+                # Ignore pragma query failures - this is diagnostic info only
+                _logger.debug(f"Failed to query journal_mode: {e}")
                 pass
 
         return info
@@ -362,9 +376,12 @@ def _cleanup_databases() -> None:
     for db in _all_databases:
         try:
             db.close_all()
-        except Exception:
+        except Exception as e:
             # Intentionally swallowed: cleanup at exit must be best-effort.
             # A failing close should not prevent other databases from closing.
+            # We catch Exception here because this runs at process exit and we
+            # cannot predict what errors might occur during shutdown.
+            _logger.debug(f"Database cleanup failed at exit (ignored): {e}")
             pass
 
 

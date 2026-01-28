@@ -8,7 +8,10 @@ AI execution via pyterm's AgentSession. The worker owns its session
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Protocol
+
+_logger = logging.getLogger(__name__)
 
 from shared.wrkr.core.config import WorkerConfig
 from shared.wrkr.core.result import WorkerResult
@@ -119,12 +122,14 @@ class SessionWorker(BaseWorker):
             if hasattr(self._session, "wait_for_idle"):
                 if not self._session.wait_for_idle(timeout=30.0):
                     raise RuntimeError("Session failed to reach idle state")
-        except Exception:
+        except (RuntimeError, OSError, TimeoutError, ValueError) as e:
             # Cleanup partial session on failure
+            _logger.error(f"Session onboarding failed: {e}")
             if self._session is not None:
                 try:
                     self._session.stop(force=True)
-                except Exception:
+                except (RuntimeError, OSError) as stop_error:
+                    _logger.debug(f"Force stop during cleanup failed (ignored): {stop_error}")
                     pass
                 self._session = None
             raise  # Re-raise to fail onboarding
@@ -149,11 +154,13 @@ class SessionWorker(BaseWorker):
         if session is not None:
             try:
                 session.stop()
-            except Exception:
+            except (RuntimeError, OSError) as e:
                 # Force stop on error
+                _logger.warning(f"Session stop failed, forcing: {e}")
                 try:
                     session.stop(force=True)
-                except Exception:
+                except (RuntimeError, OSError) as force_error:
+                    _logger.debug(f"Force stop failed (ignored): {force_error}")
                     pass  # Best effort cleanup
 
     def execute(self, task: Task) -> WorkerResult:
@@ -180,8 +187,10 @@ class SessionWorker(BaseWorker):
         if hasattr(self._memory, "get_context"):
             try:
                 context = self._memory.get_context(task)
-            except Exception:
-                pass  # Context is optional
+            except (KeyError, ValueError, RuntimeError) as e:
+                # Context is optional - continue without it
+                _logger.debug(f"Failed to get task context (ignored): {e}")
+                pass
 
         # Build prompt from task
         prompt = self._prompt_builder.build(task, context)

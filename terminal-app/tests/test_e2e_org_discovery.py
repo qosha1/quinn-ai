@@ -459,7 +459,8 @@ class TestE2EOrgDiscovery:
                 # Restore permissions for cleanup
                 try:
                     os.chmod(restricted_dir, stat.S_IRWXU)
-                except:
+                except OSError:
+                    # Best-effort cleanup - may fail on some systems
                     pass
 
     @pytest.mark.asyncio

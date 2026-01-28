@@ -6,11 +6,15 @@ for enforcing access control on bead and channel operations.
 """
 
 import json
+import logging
+import sqlite3
 from enum import IntEnum
 from functools import wraps
 from typing import Callable, Optional, List
 
 from .db import Database
+
+_logger = logging.getLogger(__name__)
 from .queries import (
     get_worker,
     get_channel,
@@ -743,8 +747,9 @@ def check_worker_named_permission(
         )
         if direct_perm:
             return True
-    except Exception:
+    except sqlite3.Error as e:
         # Table doesn't exist yet - that's OK, skip this check
+        _logger.debug(f"worker_permissions table not accessible: {e}")
         pass
 
     # 3. Check team-based permission grants (if team_permissions table exists)
@@ -758,8 +763,9 @@ def check_worker_named_permission(
             )
             if team_perm:
                 return True
-    except Exception:
+    except sqlite3.Error as e:
         # Table doesn't exist yet - that's OK, skip this check
+        _logger.debug(f"team_permissions table not accessible: {e}")
         pass
 
     return False

@@ -13,6 +13,8 @@ This allows each org to customize their lifecycle states without modifying code.
 """
 
 import json
+import logging
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -20,6 +22,8 @@ from typing import Optional
 from shared.enums import BeadType
 
 from .constants import LIFECYCLE_INITIAL_STATES, LIFECYCLE_STATES
+
+_logger = logging.getLogger(__name__)
 
 
 # Cache for loaded lifecycle config
@@ -59,8 +63,9 @@ def _load_lifecycle_config() -> dict:
         # yaml not available, use hardcoded defaults
         _lifecycle_config_cache = {}
         return _lifecycle_config_cache
-    except Exception:
-        # Config file malformed, use hardcoded defaults
+    except (OSError, ValueError) as e:
+        # Config file malformed or not accessible, use hardcoded defaults
+        _logger.debug(f"Failed to load lifecycle config from file: {e}")
         _lifecycle_config_cache = {}
         return _lifecycle_config_cache
 
@@ -91,8 +96,9 @@ def _load_from_database(bead_type: str) -> Optional[dict]:
                 return json.loads(config_json)
         finally:
             db.close()
-    except Exception:
+    except (sqlite3.Error, json.JSONDecodeError, OSError) as e:
         # Database error, fall through to other sources
+        _logger.debug(f"Failed to load lifecycle config from database: {e}")
         return None
 
     return None

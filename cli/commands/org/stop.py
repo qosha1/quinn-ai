@@ -10,6 +10,8 @@ Implements 6-phase org stop sequence:
 6. Cleanup
 """
 
+import logging
+import sqlite3
 import time
 from pathlib import Path
 from typing import Optional
@@ -25,6 +27,9 @@ from cli.core.sessions import stop_all_sessions, get_active_sessions
 from cli.core.worker import Worker
 from shared import InvalidOrgTransition
 from shared.enums import OrgStatus
+from shared.exceptions import WorkerNotFound
+
+_logger = logging.getLogger(__name__)
 
 
 @click.command()
@@ -214,7 +219,8 @@ def _confirm_stop(db: Database, active_sessions: list) -> None:
             worker = Worker.get(db, session_row["worker_id"])
             runtime_status = worker.runtime_status or "unknown"
             click.echo(f"  - {worker.name} ({worker.role}) - {runtime_status}")
-        except Exception:
+        except (sqlite3.Error, WorkerNotFound) as e:
+            _logger.debug(f"Failed to load worker details: {e}")
             click.echo(f"  - {session_row['worker_id']} (unable to load worker)")
 
     if len(active_sessions) > 10:
@@ -389,7 +395,8 @@ def _verify_all_stopped(db: Database, force: bool) -> None:
             try:
                 worker = Worker.get(db, session_row["worker_id"])
                 worker_names.append(worker.name)
-            except Exception:
+            except (sqlite3.Error, WorkerNotFound) as e:
+                _logger.debug(f"Failed to get worker name: {e}")
                 worker_names.append(session_row["worker_id"])
 
         if not force:

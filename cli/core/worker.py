@@ -113,6 +113,9 @@ from shared.exceptions import (
     ConcurrentModificationError,
     CircularDelegationError,
     DelegationNotFoundError,
+    SessionSpawnError,
+    SessionStartTimeout,
+    ActiveSessionExistsError,
 )
 
 
@@ -968,10 +971,11 @@ class Worker:
             # Result is best-effort - we don't raise on failure
             if not result.success:
                 _logger.debug(f"Offboarding notification failed: {result.error}")
-        except Exception:
+        except (ImportError, sqlite3.Error, ValueError) as e:
             # Intentionally swallowed: notification is best-effort during offboarding.
             # ImportError: messaging module not available
             # sqlite3.Error: database issues, ValueError: invalid data
+            _logger.debug(f"Offboarding notification failed: {e}")
             pass
 
         # Also create an 'ask' bead for tracking the review workflow
@@ -1477,8 +1481,9 @@ class Worker:
         try:
             # Start the session - state callbacks will update our runtime status
             session.start()
-        except Exception:
+        except (SessionSpawnError, SessionStartTimeout, OSError, RuntimeError, TimeoutError) as e:
             # If start fails, detach the session before re-raising
+            _logger.error(f"Session start failed for worker {self.id}: {e}")
             self._session = None
             raise
 
@@ -1561,8 +1566,9 @@ class Worker:
                 session_id=str(session.id),
             )
 
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError, ActiveSessionExistsError) as e:
             # If finalization fails, detach the session
+            _logger.error(f"Session finalization failed for worker {self.id}: {e}")
             self._session = None
             raise
 

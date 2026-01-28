@@ -6,6 +6,7 @@ with database persistence for audit trail and recovery.
 """
 
 import json
+import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -13,6 +14,8 @@ from enum import Enum
 from typing import Any, Callable, Iterator, Optional
 
 from .db import Database
+
+_logger = logging.getLogger(__name__)
 from .constants import (
     ENTITY_TYPE_ORG,
     ENTITY_TYPE_WORKER,
@@ -495,9 +498,10 @@ class EventBus:
         for handler in self._handlers[event.event_type]:
             try:
                 handler(event)
-            except Exception:
+            except (TypeError, ValueError, RuntimeError, OSError) as e:
                 # Intentionally swallowed: ensure all handlers get called even if one fails.
                 # Handler errors should not break the event notification chain.
+                _logger.warning(f"Event handler error (ignored): {e}")
                 pass
 
 

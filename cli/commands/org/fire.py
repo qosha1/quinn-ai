@@ -5,6 +5,8 @@ Terminate a worker from the organization.
 """
 
 from typing import Optional
+import logging
+import sqlite3
 
 import click
 
@@ -14,6 +16,8 @@ from cli.core.worker import Worker
 from cli.core.queries import get_worker_by_name
 from cli.core.org import Org
 from shared.exceptions import WorkerNotFound
+
+_logger = logging.getLogger(__name__)
 
 
 @click.command()
@@ -349,8 +353,9 @@ def _log_termination(db, worker_id: str, reason: str, authorized_by: str) -> Non
             )
         )
         db.connection.commit()
-    except Exception:
+    except sqlite3.Error as e:
         # Events table may not exist or logging failed - non-critical
+        _logger.debug(f"Failed to log fire event (ignored): {e}")
         pass
 
     # Update worker's updated_at timestamp
@@ -360,6 +365,7 @@ def _log_termination(db, worker_id: str, reason: str, authorized_by: str) -> Non
             (datetime.now(), worker_id)
         )
         db.connection.commit()
-    except Exception:
-        # Non-critical
+    except sqlite3.Error as e:
+        # Non-critical - timestamp update is best-effort
+        _logger.debug(f"Failed to update worker timestamp (ignored): {e}")
         pass

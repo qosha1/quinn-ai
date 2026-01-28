@@ -14,6 +14,7 @@ Also handles:
 - Clean unbind on termination
 """
 
+import logging
 import os
 import threading
 from datetime import datetime, timedelta
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from ..db import Database
     from ..session import SessionInterface, SessionState
     from .binding_manager import SessionBindingManager
+
+_logger = logging.getLogger(__name__)
 
 # Default heartbeat threshold in seconds
 DEFAULT_HEARTBEAT_THRESHOLD = 60
@@ -155,10 +158,11 @@ class SessionStateSync:
         for callback in self._on_crash_callbacks:
             try:
                 callback(worker_id, session_id)
-            except Exception:
+            except (TypeError, ValueError, RuntimeError, OSError) as e:
                 # Intentionally swallowed: crash handling must complete even if
                 # a callback fails. Callback errors are less critical than
                 # notifying remaining callbacks about the crash.
+                _logger.warning(f"Crash callback error (ignored): {e}")
                 pass
 
     def on_crash(self, callback: Callable[[str, str], None]) -> None:

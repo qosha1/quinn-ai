@@ -5,6 +5,7 @@ Watch session output for patterns and trigger automatic responses.
 Used for automating prompts like [Y/n], password prompts, etc.
 """
 
+import logging
 import re
 import threading
 import time
@@ -13,6 +14,8 @@ from typing import Callable
 
 from shared.pyterm.protocols import ExtractedOutput, Session
 from shared.pyterm.config import PytermConfig, LoopDetectionConfig
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -194,8 +197,10 @@ class PatternMatcher:
                         # Inject response
                         self._session.inject(rule.response)
 
-                except Exception:
-                    pass  # Session may have stopped
+                except (RuntimeError, OSError, ValueError) as e:
+                    # Session may have stopped - exit gracefully
+                    _logger.debug(f"Pattern watch error (session may be stopped): {e}")
+                    pass
 
                 time.sleep(poll_interval)
 

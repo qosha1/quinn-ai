@@ -6,6 +6,8 @@ OKRs are beads epic issues with the 'okr' label.
 """
 
 import json
+import logging
+import sqlite3
 import click
 from typing import Optional
 
@@ -13,6 +15,8 @@ from cli.commands.context import pass_context, Context
 from cli.core.bd_wrapper import run_bd
 from cli.core.constants import BEAD_TYPE_EPIC
 from cli.core.db import get_org_db_path, open_database
+
+_logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -345,8 +349,9 @@ def _create_okr(
                 okr_id=okr_id,
                 due_date=due_date,
             )
-        except Exception:
+        except sqlite3.Error as e:
             # Database storage is secondary - don't fail if it errors
+            _logger.warning(f"Failed to store OKR in database (ignored): {e}")
             pass
         finally:
             db.close()

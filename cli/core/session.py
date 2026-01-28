@@ -461,9 +461,10 @@ class SessionInterface(ABC):
         for cb in callbacks:
             try:
                 cb(old_state, new_state)
-            except Exception:
+            except (TypeError, ValueError, RuntimeError, OSError) as e:
                 # Intentionally swallowed: callback errors must not break state machine.
                 # State transitions are critical; callbacks are observers only.
+                _logger.warning(f"State callback error (ignored): {e}")
                 pass
 
     def _on_monitored_state_change(self, old: SessionState, new: SessionState) -> None:
@@ -526,8 +527,9 @@ class SessionInterface(ABC):
         for cb in callbacks:
             try:
                 cb(old_state, new_state)
-            except Exception:
+            except (TypeError, ValueError, RuntimeError, OSError) as e:
                 # Intentionally swallowed: callback errors must not break state machine.
+                _logger.warning(f"State callback error (ignored): {e}")
                 pass
 
         return True
@@ -749,8 +751,9 @@ class SessionInterface(ABC):
             for cb in self._output_callbacks:
                 try:
                     cb(output)
-                except Exception:
+                except (TypeError, ValueError, RuntimeError, OSError) as e:
                     # Intentionally swallowed: callback errors must not break output streaming.
+                    _logger.warning(f"Output callback error (ignored): {e}")
                     pass
 
             if self._detect_completion(accumulated):

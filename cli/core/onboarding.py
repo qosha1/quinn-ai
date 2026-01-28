@@ -5,6 +5,8 @@ Creates briefings, documentation, and welcome messages for new workers.
 """
 
 import json
+import logging
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +18,9 @@ from cli.core.db import Database
 from cli.core.worker import Worker
 from cli.core.queries import get_team, get_worker
 from cli.core.storage import StorageManager
+from shared.exceptions import WorkerNotFound
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -127,7 +132,9 @@ def _load_onboarding_context(
             manager = Worker.get(db, worker.manager_id)
             manager_id = manager.id
             manager_name = manager.name
-        except Exception:
+        except (sqlite3.Error, WorkerNotFound) as e:
+            # Manager lookup failed - use defaults
+            _logger.debug(f"Failed to load manager info: {e}")
             pass
 
     # Get team name (default to role if team lookup fails)
@@ -136,7 +143,9 @@ def _load_onboarding_context(
         team = get_team(db, worker.team_id)
         if team and team.name:
             team_name = team.name
-    except Exception:
+    except sqlite3.Error as e:
+        # Team lookup failed - use role as team name
+        _logger.debug(f"Failed to load team info: {e}")
         pass
 
     # Get org mission from config or use default
@@ -154,7 +163,9 @@ def _load_onboarding_context(
         )
         if budget_row:
             budget_allocated = float(budget_row["allocated"])
-    except Exception:
+    except (sqlite3.Error, ValueError) as e:
+        # Budget lookup failed - use default
+        _logger.debug(f"Failed to load budget info: {e}")
         pass
 
     # Determine worker type
@@ -232,7 +243,9 @@ def _load_worker_okrs(db: Database, worker_id: str) -> list[dict]:
             """,
             (worker_id,),
         )
-    except Exception:
+    except sqlite3.Error as e:
+        # OKR query failed - return empty list
+        _logger.debug(f"Failed to load OKRs: {e}")
         return []
 
     okrs: list[dict] = []

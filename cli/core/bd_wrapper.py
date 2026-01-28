@@ -12,12 +12,15 @@ Workers use this via `qn-bd` or programmatically via run_bd().
 """
 
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
+
+_logger = logging.getLogger(__name__)
 
 from .constants import (
     BD_COMMAND_PERMISSIONS,
@@ -464,7 +467,9 @@ def _load_workflow_config(org_path: Path) -> dict:
     try:
         with open(workflow_path) as f:
             return yaml.safe_load(f) or {}
-    except Exception:
+    except (OSError, ValueError) as e:
+        # Failed to load workflow config - return empty dict
+        _logger.debug(f"Failed to load workflow config: {e}")
         return {}
 
 

@@ -16,10 +16,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 import json
+import logging
 import re
+import sqlite3
 
 if TYPE_CHECKING:
     from sqlite3 import Connection
+
+_logger = logging.getLogger(__name__)
 
 
 # Safe pattern for worker IDs - alphanumeric, underscores, hyphens only
@@ -415,7 +419,8 @@ class WorkerBridge:
         try:
             mark_notification_read(self._db, notification_id)
             return True
-        except Exception:
+        except (sqlite3.Error, ValueError) as e:
+            _logger.warning(f"Failed to mark notification as read: {e}")
             return False
 
     def get_pending_count(self) -> int:
