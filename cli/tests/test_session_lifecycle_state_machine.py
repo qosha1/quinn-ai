@@ -85,6 +85,32 @@ def active_worker(db, worker_with_budget):
     return worker
 
 
+def create_mock_session(worker_id: str) -> MagicMock:
+    """Create a properly configured mock session for testing.
+
+    Args:
+        worker_id: ID of the worker this session belongs to
+
+    Returns:
+        MagicMock configured with all required session attributes
+    """
+    from cli.core.session import SessionConfig, SessionState
+
+    mock_session = MagicMock()
+    mock_session.config = SessionConfig(
+        worker_id=worker_id,
+        provider="claude-code",
+        command="/usr/bin/claude"
+    )
+    mock_session.provider_name = "claude-code"
+    mock_session.model = "claude-sonnet-4-5"
+    mock_session.id = "test-session-123"
+    mock_session.platform_session_name = "test-tmux-session"
+    mock_session.state = SessionState.IDLE
+    mock_session.pid = None
+    return mock_session
+
+
 class TestSessionStates:
     """Validate session states match STATEMACHINES.md."""
 
@@ -111,19 +137,7 @@ class TestSessionT1NotSpawnedToStarting:
 
     def test_t1_transitions_to_starting(self, active_worker):
         """Worker.spawn_session() should transition to 'starting'."""
-        from cli.core.session import SessionConfig
-
-        # Mock session
-        mock_session = MagicMock()
-        mock_session.config = SessionConfig(
-            worker_id=active_worker.id,
-            provider="claude-code",
-            command="/usr/bin/claude"
-        )
-        mock_session.provider_name = "claude-code"
-        mock_session.model = "claude-sonnet-4-5"
-        mock_session.id = "test-session-123"
-
+        mock_session = create_mock_session(active_worker.id)
         active_worker.spawn_session(mock_session)
 
         worker_state = get_worker_state(active_worker.db, active_worker.id)
@@ -131,17 +145,17 @@ class TestSessionT1NotSpawnedToStarting:
 
     def test_t1_enforces_budget(self, db, team):
         """T1 must check budget before spawning."""
-        from cli.core.budget import BudgetExhaustedError
+        from cli.core.budget import NoBudgetAllocationError
 
-        # Worker with no budget
+        # Worker with no budget allocation
         worker = create_worker(db, "Broke Worker", "Dev", team.id, 50)
         worker_obj = Worker(db, worker.id)
         worker_obj.start_onboarding()
         worker_obj.complete_onboarding()
 
-        mock_session = MagicMock()
+        mock_session = create_mock_session(worker_obj.id)
 
-        with pytest.raises(BudgetExhaustedError):
+        with pytest.raises(NoBudgetAllocationError):
             worker_obj.spawn_session(mock_session)
 
     def test_t1_checks_existing_session(self, active_worker):
@@ -157,7 +171,7 @@ class TestSessionT1NotSpawnedToStarting:
         )
         active_worker.db.connection.commit()
 
-        mock_session = MagicMock()
+        mock_session = create_mock_session(active_worker.id)
 
         with pytest.raises(ActiveSessionExistsError):
             active_worker.spawn_session(mock_session)
@@ -438,14 +452,14 @@ class TestSessionDependencies:
 
     def test_session_spawn_gates_on_budget(self, db, team):
         """T1 enforces budget check before spawning."""
-        from cli.core.budget import BudgetExhaustedError
+        from cli.core.budget import NoBudgetAllocationError
 
         worker = create_worker(db, "No Budget", "Dev", team.id, 50)
         worker_obj = Worker(db, worker.id)
         worker_obj.start_onboarding()
         worker_obj.complete_onboarding()
 
-        mock_session = MagicMock()
+        mock_session = create_mock_session(worker_obj.id)
 
-        with pytest.raises(BudgetExhaustedError):
+        with pytest.raises(NoBudgetAllocationError):
             worker_obj.spawn_session(mock_session)

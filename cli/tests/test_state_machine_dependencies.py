@@ -87,6 +87,32 @@ def worker_with_budget(db, team):
     return worker
 
 
+def create_mock_session(worker_id: str) -> MagicMock:
+    """Create a properly configured mock session for testing.
+
+    Args:
+        worker_id: ID of the worker this session belongs to
+
+    Returns:
+        MagicMock configured with all required session attributes
+    """
+    from cli.core.session import SessionConfig, SessionState
+
+    mock_session = MagicMock()
+    mock_session.config = SessionConfig(
+        worker_id=worker_id,
+        provider="claude-code",
+        command="/usr/bin/claude"
+    )
+    mock_session.provider_name = "claude-code"
+    mock_session.model = "claude-sonnet-4-5"
+    mock_session.id = "test-session-123"
+    mock_session.platform_session_name = "test-tmux-session"
+    mock_session.state = SessionState.IDLE
+    mock_session.pid = None
+    return mock_session
+
+
 class TestInvariantI1OrgGatesWorker:
     """Test I1: Org gates Worker - worker can only spawn session if org is running."""
 
@@ -126,7 +152,7 @@ class TestInvariantI1OrgGatesWorker:
         worker.complete_onboarding()
 
         # Try to spawn session - should fail because org not running
-        mock_session = MagicMock()
+        mock_session = create_mock_session(worker.id)
 
         # This would ideally raise InvalidOrgStateError
         # Currently may not be checked - implementation gap
@@ -170,7 +196,7 @@ class TestInvariantI2WorkerGatesSession:
         # Worker is pending, not active
         assert worker.lifecycle_status == "pending"
 
-        mock_session = MagicMock()
+        mock_session = create_mock_session(worker.id)
 
         # Should fail - worker not active
         # (Actually may work during onboarding due to SESSION_ALLOWED_LIFECYCLES)
@@ -202,7 +228,7 @@ class TestInvariantI3OneActiveSession:
         worker.db.connection.commit()
 
         # Try to spawn another
-        mock_session = MagicMock()
+        mock_session = create_mock_session(worker.id)
 
         with pytest.raises(ActiveSessionExistsError):
             worker.spawn_session(mock_session)
@@ -223,7 +249,7 @@ class TestInvariantI4BudgetMatchesSession:
         """
         from cli.core.queries import get_budget_allocation
 
-        worker = Worker(worker_with_budget.db, worker_with_budget.id)
+        worker = Worker(running_org.db, worker_with_budget.id)
         worker.start_onboarding()
         worker.complete_onboarding()
 
@@ -231,7 +257,7 @@ class TestInvariantI4BudgetMatchesSession:
         initial_spent = allocation.spent_credits
 
         # Mock spawn to fail
-        mock_session = MagicMock()
+        mock_session = create_mock_session(worker.id)
         mock_session.start = MagicMock(side_effect=Exception("Spawn failed"))
 
         try:
@@ -341,7 +367,7 @@ class TestDependencyD3SessionSpawnRequiresBudget:
         worker.start_onboarding()
         worker.complete_onboarding()
 
-        mock_session = MagicMock()
+        mock_session = create_mock_session(worker.id)
 
         with pytest.raises(NoBudgetAllocationError):
             worker.spawn_session(mock_session)
@@ -461,7 +487,7 @@ class TestStateHierarchy:
         worker.start_onboarding()
         worker.complete_onboarding()
 
-        mock_session = MagicMock()
+        mock_session = create_mock_session(worker.id)
 
         with pytest.raises(BudgetExhaustedError):
             worker.spawn_session(mock_session)
