@@ -262,6 +262,73 @@ qn wrkr <command>    # WORKERS run (from within their sessions)
 
 ---
 
+## Board UI
+
+Terminal dashboard for real-time org oversight.
+
+```bash
+qn-board
+```
+
+### Tabs
+
+**Dashboard** (`D` key)
+- Org status and metrics
+- CEO quick access
+- Worker count breakdown
+- Recent activity
+
+**OKRs** (`O` key)
+- Cascading objectives tree
+- Key results with progress
+- Alignment visualization
+
+**Team** (`T` key)
+- Worker list with status
+- Jump-in buttons for sessions
+- Filter by team/status
+
+**Messages** (`M` key)
+- Channel conversations
+- Direct messages
+- Searchable history
+
+**Logs** (`L` key)
+- System logs from all components
+- Filter by component (CLI, Workers, Sessions, Board, System)
+- Filter by level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- Keyword search
+- Pagination for large files
+- Auto-refresh toggle
+
+### Logs Tab
+
+**File locations**:
+```
+org_path/live/logs/
+├── cli/YYYY-MM-DD.json
+├── workers/YYYY-MM-DD.json
+├── sessions/YYYY-MM-DD.json
+├── board/YYYY-MM-DD.json
+└── system/YYYY-MM-DD.json
+```
+
+**Format**: JSONL (JSON Lines)
+**Rotation**: Daily files, 30-day retention
+**Size**: ~1-5 MB per component per day
+
+**Usage**:
+1. Press `L` to open Logs tab
+2. Select component filter (default: All)
+3. Select level filter (default: All)
+4. Enter search keywords (optional)
+5. Use Next/Prev for pagination
+6. Toggle auto-refresh on/off
+
+Logs are structured JSON with timestamps, levels, components, messages, and context fields. See [docs/user-guide/logs-tab.md](docs/user-guide/logs-tab.md) for details.
+
+---
+
 ## What Needs Building
 
 ### Decided
