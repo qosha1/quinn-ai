@@ -1415,7 +1415,7 @@ class Worker:
     def terminate_session(self, force: bool = False) -> None:
         """Terminate the current session.
 
-        Stops the session, updates database record, and detaches from worker.
+        Stops the session, deletes database record, and detaches from worker.
 
         Args:
             force: If True, force kill without cleanup
@@ -1428,12 +1428,12 @@ class Worker:
         try:
             self._session.stop(force=force)
         finally:
-            # Update session state in database to 'stopped'
-            update_session_state(
+            # Delete session record from database
+            # This allows new sessions to be spawned immediately (e.g., during restart)
+            from .sessions.persistence import delete_session_record
+            delete_session_record(
                 db=self.db,
                 session_id=session_id,
-                state="stopped",
-                stopped_at=datetime.now(),
             )
             # Log session stop
             log_session_stop(_logger, self.id, self.name, force=force)

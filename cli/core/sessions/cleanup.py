@@ -381,13 +381,12 @@ def stop_all_sessions(
                         f"Failed to kill tmux session: {tmux_name}"
                     )
 
-            # Update session state to stopped
+            # Delete session record (allows restart to spawn new sessions)
             if session_id:
-                update_session_state(
+                from .persistence import delete_session_record
+                delete_session_record(
                     db=db,
                     session_id=session_id,
-                    state="stopped",
-                    stopped_at=datetime.now(),
                 )
 
             # Update worker runtime state
