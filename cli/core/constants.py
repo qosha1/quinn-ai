@@ -160,7 +160,7 @@ DEFAULT_BOARD_CHANNEL = "board-channel"
 DEFAULT_DB_NAME = "quinn.db"
 """Default database filename."""
 
-DB_SCHEMA_VERSION = 17
+DB_SCHEMA_VERSION = 18
 """Current database schema version."""
 
 DEFAULT_DB_BUSY_TIMEOUT_MS = 5000

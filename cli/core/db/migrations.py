@@ -523,6 +523,10 @@ def migrate_database(db: "Database", from_version: int, to_version: int) -> None
                 );
             END""",
         ],
+        # Version 18: Add name column to org_state for org branding
+        18: [
+            "ALTER TABLE org_state ADD COLUMN name TEXT NOT NULL DEFAULT 'My Organization'",
+        ],
     }
 
     for version in range(from_version + 1, to_version + 1):
