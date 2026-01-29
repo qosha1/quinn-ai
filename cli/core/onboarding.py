@@ -16,7 +16,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from cli.core.db import Database
 from cli.core.worker import Worker
-from cli.core.queries import get_team, get_worker
+from cli.core.queries import get_team, get_worker, get_worker_allocated_budget, get_okrs_by_owner
 from cli.core.storage import StorageManager
 from shared.exceptions import WorkerNotFound
 
@@ -157,12 +157,7 @@ def _load_onboarding_context(
     # Get budget info
     budget_allocated = 0.0
     try:
-        budget_row = db.fetchone(
-            "SELECT allocated FROM budget_allocations WHERE worker_id = ?",
-            (worker.id,)
-        )
-        if budget_row:
-            budget_allocated = float(budget_row["allocated"])
+        budget_allocated = get_worker_allocated_budget(db, worker.id)
     except (sqlite3.Error, ValueError) as e:
         # Budget lookup failed - use default
         _logger.debug(f"Failed to load budget info: {e}")
@@ -234,40 +229,31 @@ def _load_worker_okrs(db: Database, worker_id: str) -> list[dict]:
         List of OKR dicts with title and key_results
     """
     try:
-        rows = db.fetchall(
-            """
-            SELECT id, title, description, status, key_results
-            FROM okrs
-            WHERE owner_worker_id = ?
-            ORDER BY created_at DESC
-            """,
-            (worker_id,),
-        )
+        okr_objects = get_okrs_by_owner(db, worker_id)
     except sqlite3.Error as e:
         # OKR query failed - return empty list
         _logger.debug(f"Failed to load OKRs: {e}")
         return []
 
+    # Convert OKR dataclasses to dicts for template rendering
     okrs: list[dict] = []
-    for row in rows:
-        kr_json = row["key_results"]
+    for okr in okr_objects:
+        # key_results is already parsed as list[KeyResult] dataclasses
         kr_list = []
-        if kr_json:
-            try:
-                parsed = json.loads(kr_json)
-                if isinstance(parsed, list):
-                    for kr in parsed:
-                        if isinstance(kr, dict):
-                            kr_list.append(kr)
-            except json.JSONDecodeError:
-                pass
+        if okr.key_results:
+            for kr in okr.key_results:
+                kr_list.append({
+                    "description": kr.description,
+                    "target": kr.target_value,
+                    "current": kr.current_value,
+                })
 
         okrs.append(
             {
-                "id": row["id"],
-                "title": row["title"],
-                "description": row["description"] or "",
-                "status": row["status"],
+                "id": okr.id,
+                "title": okr.title,
+                "description": okr.description or "",
+                "status": okr.status,
                 "key_results": kr_list,
             }
         )

@@ -862,6 +862,45 @@ def is_worker_manager(db: Database, worker_id: str) -> bool:
     )
     return row is not None
 
+
+def get_worker_delegation_authority(db: Database, worker_id: str) -> Optional[bool]:
+    """Get whether worker can delegate budget.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID to check
+
+    Returns:
+        True if worker can delegate, False if not, None if no allocation
+    """
+    row = db.fetchone(
+        """SELECT can_delegate FROM budget_allocations
+           WHERE worker_id = ? AND revoked_at IS NULL
+           ORDER BY created_at DESC LIMIT 1""",
+        (worker_id,)
+    )
+    if row:
+        return bool(row["can_delegate"])
+    return None
+
+
+def get_worker_allocated_budget(db: Database, worker_id: str) -> float:
+    """Get total allocated budget for a worker.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+
+    Returns:
+        Allocated budget amount or 0.0 if no allocation
+    """
+    row = db.fetchone(
+        "SELECT allocated FROM budget_allocations WHERE worker_id = ?",
+        (worker_id,)
+    )
+    return float(row["allocated"]) if row else 0.0
+
+
 __all__ = [
     "BudgetAllocation",
     "BudgetBalance",
@@ -886,7 +925,9 @@ __all__ = [
     "get_transactions_by_allocation",
     "get_transactions_by_worker",
     "get_worker_allocations",
+    "get_worker_allocated_budget",
     "get_worker_balance",
+    "get_worker_delegation_authority",
     "is_worker_manager",
     "update_allocation_spend",
     "update_budget_pool",

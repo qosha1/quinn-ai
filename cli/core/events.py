@@ -311,16 +311,9 @@ class EventBus:
         Yields:
             Events in chronological order
         """
-        rows = self._db.fetchall(
-            """
-            SELECT id, event_type, entity_type, entity_id, payload, actor_id,
-                   CAST(created_at AS TEXT) as created_at
-            FROM events
-            WHERE created_at > ?
-            ORDER BY created_at ASC, id ASC
-            """,
-            (since.isoformat(),),
-        )
+        from .queries import get_events_since
+
+        rows = get_events_since(self._db, since.isoformat())
         for row in rows:
             yield Event.from_row(row)
 
@@ -340,17 +333,9 @@ class EventBus:
         Returns:
             List of events in reverse chronological order
         """
-        rows = self._db.fetchall(
-            """
-            SELECT id, event_type, entity_type, entity_id, payload, actor_id,
-                   CAST(created_at AS TEXT) as created_at
-            FROM events
-            WHERE entity_type = ? AND entity_id = ?
-            ORDER BY created_at DESC, id DESC
-            LIMIT ?
-            """,
-            (entity_type, entity_id, limit),
-        )
+        from .queries import get_events_for_entity as query_get_events_for_entity
+
+        rows = query_get_events_for_entity(self._db, entity_type, entity_id, limit)
         return [Event.from_row(row) for row in rows]
 
     def get_events_by_type(
@@ -369,30 +354,10 @@ class EventBus:
         Returns:
             List of events in reverse chronological order
         """
-        if since:
-            rows = self._db.fetchall(
-                """
-                SELECT id, event_type, entity_type, entity_id, payload, actor_id,
-                       CAST(created_at AS TEXT) as created_at
-                FROM events
-                WHERE event_type = ? AND created_at > ?
-                ORDER BY created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (event_type.value, since.isoformat(), limit),
-            )
-        else:
-            rows = self._db.fetchall(
-                """
-                SELECT id, event_type, entity_type, entity_id, payload, actor_id,
-                       CAST(created_at AS TEXT) as created_at
-                FROM events
-                WHERE event_type = ?
-                ORDER BY created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (event_type.value, limit),
-            )
+        from .queries import get_events_by_type as query_get_events_by_type
+
+        since_iso = since.isoformat() if since else None
+        rows = query_get_events_by_type(self._db, event_type.value, since_iso, limit)
         return [Event.from_row(row) for row in rows]
 
     def get_events_by_actor(
@@ -409,17 +374,9 @@ class EventBus:
         Returns:
             List of events in reverse chronological order
         """
-        rows = self._db.fetchall(
-            """
-            SELECT id, event_type, entity_type, entity_id, payload, actor_id,
-                   CAST(created_at AS TEXT) as created_at
-            FROM events
-            WHERE actor_id = ?
-            ORDER BY created_at DESC, id DESC
-            LIMIT ?
-            """,
-            (actor_id, limit),
-        )
+        from .queries import get_events_by_actor as query_get_events_by_actor
+
+        rows = query_get_events_by_actor(self._db, actor_id, limit)
         return [Event.from_row(row) for row in rows]
 
     def count_events(
@@ -436,24 +393,11 @@ class EventBus:
         Returns:
             Number of matching events
         """
-        conditions = []
-        params: list[Any] = []
+        from .queries import count_events as query_count_events
 
-        if event_type:
-            conditions.append("event_type = ?")
-            params.append(event_type.value)
-
-        if since:
-            conditions.append("created_at > ?")
-            params.append(since.isoformat())
-
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-        row = self._db.fetchone(
-            f"SELECT COUNT(*) as count FROM events {where_clause}",
-            tuple(params),
-        )
-        return row["count"] if row else 0
+        event_type_str = event_type.value if event_type else None
+        since_iso = since.isoformat() if since else None
+        return query_count_events(self._db, event_type_str, since_iso)
 
     def clear_handlers(self) -> None:
         """Clear all registered handlers.
@@ -471,22 +415,18 @@ class EventBus:
         Returns:
             Event with id set from database
         """
-        with self._db.transaction() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO events (event_type, entity_type, entity_id, payload, actor_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event.event_type.value,
-                    event.entity_type,
-                    event.entity_id,
-                    json.dumps(event.payload),
-                    event.actor_id,
-                    event.created_at.isoformat(),
-                ),
-            )
-            event.id = cursor.lastrowid
+        from .queries import create_event
+
+        event_id = create_event(
+            self._db,
+            event.event_type.value,
+            event.entity_type,
+            event.entity_id,
+            json.dumps(event.payload),
+            event.actor_id,
+            event.created_at.isoformat(),
+        )
+        event.id = event_id
         return event
 
     def _notify_handlers(self, event: Event) -> None:

@@ -36,6 +36,8 @@ from .queries import (
     get_worker_allocations,
     create_budget_allocation,
     create_budget_balance,
+    get_pool_allocated_total,
+    is_worker_manager,
     BudgetAllocation,
     BudgetBalance,
     BudgetTransaction,
@@ -562,7 +564,7 @@ class BudgetService:
         if not pool:
             raise BudgetAllocationError(f"Budget pool {pool_id} not found")
 
-        allocated_total = self._get_pool_allocated_total(pool_id)
+        allocated_total = get_pool_allocated_total(self.db, pool_id)
         available_in_pool = float(pool.total_credits) - allocated_total
 
         if available_in_pool < amount:
@@ -579,7 +581,7 @@ class BudgetService:
         # all changes are rolled back automatically
         with self.db.transaction():
             # Re-validate pool balance inside transaction to prevent race conditions
-            allocated_total = self._get_pool_allocated_total(pool_id)
+            allocated_total = get_pool_allocated_total(self.db, pool_id)
             available_in_pool = float(pool.total_credits) - allocated_total
 
             if available_in_pool < amount:
@@ -697,7 +699,7 @@ class BudgetService:
             )
 
         # Determine if target can also delegate (managers only)
-        target_can_delegate = self._is_manager(target_worker_id)
+        target_can_delegate = is_worker_manager(self.db, target_worker_id)
 
         # Generate allocation ID before transaction
         allocation_id = _generate_budget_id("alloc")
@@ -873,19 +875,3 @@ class BudgetService:
 
         return current or (allocations[0] if allocations else None)
 
-    def _get_pool_allocated_total(self, pool_id: str) -> float:
-        """Get total credits allocated from a pool."""
-        row = self.db.fetchone(
-            """SELECT COALESCE(SUM(allocated_credits), 0) as total
-               FROM budget_allocations WHERE pool_id = ?""",
-            (pool_id,),
-        )
-        return float(row["total"]) if row else 0.0
-
-    def _is_manager(self, worker_id: str) -> bool:
-        """Check if worker has direct reports."""
-        row = self.db.fetchone(
-            "SELECT 1 FROM workers WHERE manager_id = ? LIMIT 1",
-            (worker_id,),
-        )
-        return row is not None

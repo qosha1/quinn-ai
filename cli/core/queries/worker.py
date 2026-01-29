@@ -457,6 +457,60 @@ def get_workers_by_runtime_status(db: Database, runtime_status: str) -> list[Wor
     ]
 
 
+def get_all_workers_for_topology(db: Database) -> list[dict]:
+    """Get all workers for building org topology.
+
+    Returns minimal worker data needed for topology construction.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        List of dicts with id, name, manager_id, role
+    """
+    rows = db.fetchall("SELECT id, name, manager_id, role FROM workers")
+    return [dict(row) for row in rows]
+
+
+def get_root_worker(db: Database) -> Optional[Worker]:
+    """Get the root worker (CEO) - worker with no manager.
+
+    Args:
+        db: Database instance
+
+    Returns:
+        Worker dataclass or None if not found
+    """
+    # Try active workers first
+    row = db.fetchone(
+        "SELECT * FROM workers WHERE manager_id IS NULL AND status != 'terminated'"
+    )
+
+    # Fallback: check for any root worker including terminated
+    if row is None:
+        row = db.fetchone("SELECT * FROM workers WHERE manager_id IS NULL")
+
+    if row is None:
+        return None
+
+    import json
+    return Worker(
+        id=row["id"],
+        name=row["name"],
+        role=row["role"],
+        team_id=row["team_id"],
+        manager_id=row["manager_id"],
+        status=row["status"],
+        skills=json.loads(row["skills"]) if row["skills"] else {},
+        cost=row["cost"],
+        hiring_authority_scope=row["hiring_authority_scope"],
+        delegated_budget=row["delegated_budget"],
+        max_reports=row["max_reports"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
 __all__ = [
     "Worker",
     "WorkerState",
@@ -467,6 +521,8 @@ __all__ = [
     "get_workers_by_status",
     "get_workers_by_manager",
     "get_team_workers",
+    "get_all_workers_for_topology",
+    "get_root_worker",
     "is_worker_manager",
     "create_worker_state",
     "get_worker_state",

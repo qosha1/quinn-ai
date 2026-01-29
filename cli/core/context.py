@@ -187,20 +187,19 @@ class OrgContext:
         if self._escalation_manager is None:
             from shared.escalation.manager import EscalationManager, EscalationConfig
             from shared.escalation.hierarchical import OrgTopology, WorkerNode
+            from .queries import get_all_workers_for_topology, is_worker_manager
 
             # Build topology from database workers
             topology = OrgTopology()
-            rows = self._db.fetchall("SELECT id, name, manager_id, role FROM workers")
+            rows = get_all_workers_for_topology(self._db)
             for row in rows:
                 # Determine if worker is a manager (has direct reports)
-                has_reports = self._db.fetchone(
-                    "SELECT 1 FROM workers WHERE manager_id = ?", (row["id"],)
-                )
+                has_reports = is_worker_manager(self._db, row["id"])
                 node = WorkerNode(
                     id=row["id"],
                     name=row["name"],
                     boss_id=row["manager_id"],
-                    is_manager=has_reports is not None,
+                    is_manager=has_reports,
                 )
                 topology.add_node(node)
 

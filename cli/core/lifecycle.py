@@ -84,15 +84,12 @@ def _load_from_database(bead_type: str) -> Optional[dict]:
 
     try:
         from .db import open_database
+        from .queries import get_lifecycle_config
 
         db = open_database(_db_path)
         try:
-            row = db.fetchone(
-                "SELECT config FROM lifecycle_configs WHERE bead_type = ?",
-                (bead_type,),
-            )
-            if row:
-                config_json = row["config"]
+            config_json = get_lifecycle_config(db, bead_type)
+            if config_json:
                 return json.loads(config_json)
         finally:
             db.close()
@@ -623,15 +620,13 @@ def get_lifecycle_config_from_db(db_path: Path, bead_type: str) -> Optional[dict
         Configuration dict or None if not found
     """
     from .db import open_database
+    from .queries import get_lifecycle_config
 
     db = open_database(db_path)
     try:
-        row = db.fetchone(
-            "SELECT config FROM lifecycle_configs WHERE bead_type = ?",
-            (bead_type,),
-        )
-        if row:
-            return json.loads(row["config"])
+        config_json = get_lifecycle_config(db, bead_type)
+        if config_json:
+            return json.loads(config_json)
         return None
     finally:
         db.close()
@@ -647,10 +642,11 @@ def list_lifecycle_configs_from_db(db_path: Path) -> dict[str, dict]:
         Dict mapping bead_type to configuration dict
     """
     from .db import open_database
+    from .queries import get_all_lifecycle_configs
 
     db = open_database(db_path)
     try:
-        rows = db.fetchall("SELECT bead_type, config FROM lifecycle_configs")
-        return {row["bead_type"]: json.loads(row["config"]) for row in rows}
+        config_strings = get_all_lifecycle_configs(db)
+        return {bead_type: json.loads(config_json) for bead_type, config_json in config_strings.items()}
     finally:
         db.close()

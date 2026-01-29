@@ -221,17 +221,10 @@ class AuthorizationManager:
     def _can_delegate_budget(self, worker, target_id: Optional[str]) -> AuthorizationResult:
         """Check if worker can delegate budget to another worker."""
         # Check if worker has delegation authority via budget allocation
-        from .queries import get_worker_balance
+        from .queries import get_worker_balance, get_worker_delegation_authority
 
         # Check budget allocation for can_delegate flag
-        row = self._db.fetchone(
-            """SELECT can_delegate FROM budget_allocations
-               WHERE worker_id = ? AND revoked_at IS NULL
-               ORDER BY created_at DESC LIMIT 1""",
-            (worker.id,)
-        )
-
-        can_delegate = bool(row["can_delegate"]) if row else False
+        can_delegate = get_worker_delegation_authority(self._db, worker.id)
 
         if not can_delegate:
             return AuthorizationResult.deny(

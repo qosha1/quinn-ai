@@ -12,7 +12,7 @@ from typing import Optional
 import yaml
 
 from .db import Database
-from .queries import get_worker, get_workers_by_manager
+from .queries import get_worker, get_workers_by_manager, get_root_worker
 
 
 # Org-chart file paths (no magic values in function bodies)
@@ -121,7 +121,7 @@ def update_org_chart(db: Database, org_path: Path) -> Path:
         ValueError: If no root worker (CEO) is found
     """
     # Find the root worker (no manager_id)
-    root_worker = _find_root_worker(db)
+    root_worker = get_root_worker(db)
     if root_worker is None:
         raise ValueError("No root worker (CEO) found in database")
 
@@ -146,46 +146,6 @@ def update_org_chart(db: Database, org_path: Path) -> Path:
         yaml.dump(org_chart, f, default_flow_style=False, sort_keys=False)
 
     return chart_path
-
-
-def _find_root_worker(db: Database):
-    """Find the root worker (CEO) - worker with no manager.
-
-    Args:
-        db: Database instance
-
-    Returns:
-        Worker dataclass or None if not found
-    """
-    row = db.fetchone(
-        "SELECT * FROM workers WHERE manager_id IS NULL AND status != 'terminated'"
-    )
-    if row is None:
-        # Fallback: check for any root worker including terminated
-        row = db.fetchone("SELECT * FROM workers WHERE manager_id IS NULL")
-
-    if row is None:
-        return None
-
-    # Import here to avoid circular imports
-    import json
-    from .queries import Worker as WorkerData
-
-    return WorkerData(
-        id=row["id"],
-        name=row["name"],
-        role=row["role"],
-        team_id=row["team_id"],
-        manager_id=row["manager_id"],
-        status=row["status"],
-        skills=json.loads(row["skills"]) if row["skills"] else {},
-        cost=row["cost"],
-        hiring_authority_scope=row["hiring_authority_scope"],
-        delegated_budget=row["delegated_budget"],
-        max_reports=row["max_reports"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
 
 
 def _build_worker_entry(db: Database, worker, workers_dict: dict) -> None:
