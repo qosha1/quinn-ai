@@ -1,25 +1,20 @@
 """
-Provider registry and selection logic.
+Provider registry package.
 
-DEPRECATED: This module is now a facade for backward compatibility.
-Import from cli.providers.registry instead.
+This package contains the provider selection and registry system,
+refactored from the monolithic provider.py into focused modules:
 
-Manages registered providers and handles worker-to-model selection
-based on cost and skill requirements.
+- base.py: Base classes, exceptions, and helper functions
+- registry.py: ProviderRegistry class for provider management
+- selection.py: Provider and model selection algorithms
+- config.py: Configuration loading from YAML
+- budget.py: Budget enforcement and session creation
 
-Key components:
-- CostTier: Enum mapping cost scores to model quality tiers
-- cost_to_tier(): Maps cost score (0-100) to tier name
-- skills_to_capabilities(): Derives required capabilities from worker skills
-- select_provider_for_worker(): Main selection algorithm
-- ProviderRegistry: Registry for managing providers
+All public APIs are re-exported here for backward compatibility.
 """
 
-# Re-export everything from the refactored registry package
-# This maintains backward compatibility for existing imports
-
-from cli.providers.registry import (
-    # Base
+# Base classes and exceptions
+from cli.providers.registry.base import (
     DEFAULT_THRESHOLDS,
     DEFAULT_CODING_THRESHOLD,
     DEFAULT_REASONING_THRESHOLD,
@@ -29,16 +24,26 @@ from cli.providers.registry import (
     ProviderSelection,
     cost_to_tier,
     skills_to_capabilities,
-    # Registry
-    ProviderRegistry,
-    # Selection
+)
+
+# Registry
+from cli.providers.registry.registry import ProviderRegistry
+
+# Selection functions
+from cli.providers.registry.selection import (
     get_model_for_worker,
     select_provider_for_worker,
-    # Config
+)
+
+# Configuration
+from cli.providers.registry.config import (
     load_providers_from_config,
     create_registry_from_config,
     _expand_env_vars,
-    # Budget
+)
+
+# Budget and session creation
+from cli.providers.registry.budget import (
     create_session_for_worker,
     complete_with_budget,
 )
