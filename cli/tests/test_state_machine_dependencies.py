@@ -480,7 +480,7 @@ class TestStateHierarchy:
 
         From hierarchy: Session → enforces → Budget
         """
-        from cli.core.budget import BudgetExhaustedError
+        from cli.core.budget import NoBudgetAllocationError
 
         worker_data = create_worker(running_org.db, "No Budget", "Dev", team.id, 50)
         worker = Worker(running_org.db, worker_data.id)
@@ -489,5 +489,5 @@ class TestStateHierarchy:
 
         mock_session = create_mock_session(worker.id)
 
-        with pytest.raises(BudgetExhaustedError):
+        with pytest.raises(NoBudgetAllocationError):
             worker.spawn_session(mock_session)
