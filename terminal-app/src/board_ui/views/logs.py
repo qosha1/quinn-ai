@@ -18,6 +18,15 @@ from textual.containers import Container, Horizontal, Vertical, ScrollableContai
 from textual.widgets import Button, Input, Label, Select, Static, Switch
 from textual.widget import Widget
 
+
+class RenderableStatic(Static):
+    """Static widget with .renderable property for test compatibility."""
+
+    @property
+    def renderable(self):
+        """Return the content as renderable for test compatibility."""
+        return self.content
+
 # Import will use from cli.core when running in the board context
 try:
     from cli.core.log_reader import LogReader
@@ -181,6 +190,8 @@ class LogsView(Widget):
     async def refresh_logs(self) -> None:
         """Refresh the log entries."""
         if not self._log_reader:
+            # No log reader - show empty state
+            await self._display_logs([])
             return
 
         # Get logs based on current filters/search
@@ -191,7 +202,14 @@ class LogsView(Widget):
                     component=self._current_component,
                     level=self._current_level,
                 )
+            elif self._current_component is None and self._current_level is None and self._current_page == 1:
+                # No filters/search, first page - use tail for most recent logs
+                logs = self._log_reader.tail_logs(
+                    component=None,
+                    lines=self._page_size,
+                )
             else:
+                # With filters or pagination - use read_logs
                 logs = self._log_reader.read_logs(
                     component=self._current_component,
                     level=self._current_level,
@@ -203,8 +221,8 @@ class LogsView(Widget):
             await self._display_logs(logs)
 
         except Exception:
-            # Silently fail - org might not have logs yet
-            pass
+            # On error, show empty state
+            await self._display_logs([])
 
     async def _display_logs(self, logs: list[dict]) -> None:
         """Display log entries in the UI."""
@@ -216,7 +234,7 @@ class LogsView(Widget):
 
         if not logs:
             # Show empty message
-            await container.mount(Label("No logs available", id="log-empty-message"))
+            await container.mount(RenderableStatic("No logs available", id="log-empty-message"))
             return
 
         # Add log entries
@@ -240,14 +258,35 @@ class LogsView(Widget):
 
     async def _apply_filters(self) -> None:
         """Apply current filters and refresh logs."""
+        # Read from widgets in case they were set directly (e.g., in tests)
+        try:
+            component_filter = self.query_one("#log-component-filter", Select)
+            self._current_component = component_filter.value
+        except Exception:
+            pass
+
+        try:
+            level_filter = self.query_one("#log-level-filter", Select)
+            self._current_level = level_filter.value
+        except Exception:
+            pass
+
         await self.refresh_logs()
 
     async def _perform_search(self) -> None:
         """Perform search with current query."""
+        # Read from widget in case it was set directly (e.g., in tests)
+        try:
+            search_input = self.query_one("#log-search-input", Input)
+            self._current_search = search_input.value if search_input.value else None
+        except Exception:
+            pass
+
         await self.refresh_logs()
 
     async def on_select_changed(self, event: Select.Changed) -> None:
         """Handle filter selection changes."""
+        event.stop()  # Prevent propagation
         if event.select.id == "log-component-filter":
             self._current_component = event.value
             self._current_page = 1  # Reset to first page
@@ -259,6 +298,7 @@ class LogsView(Widget):
 
     async def on_input_changed(self, event: Input.Changed) -> None:
         """Handle search input changes."""
+        event.stop()  # Prevent propagation
         if event.input.id == "log-search-input":
             self._current_search = event.value if event.value else None
             self._current_page = 1  # Reset to first page
@@ -266,6 +306,7 @@ class LogsView(Widget):
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle search input submission."""
+        event.stop()  # Prevent propagation
         if event.input.id == "log-search-input":
             self._current_search = event.value if event.value else None
             self._current_page = 1  # Reset to first page
@@ -273,11 +314,13 @@ class LogsView(Widget):
 
     async def on_switch_changed(self, event: Switch.Changed) -> None:
         """Handle auto-refresh toggle."""
+        event.stop()  # Prevent propagation
         if event.switch.id == "auto-refresh-toggle":
             self._auto_refresh = event.value
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle pagination button presses."""
+        event.stop()  # Prevent propagation
         if event.button.id == "log-prev-page":
             if self._current_page > 1:
                 self._current_page -= 1
