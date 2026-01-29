@@ -12,6 +12,7 @@ import time
 import uuid
 from typing import Callable
 
+from cli.core.constants import TMUX_ATTACH_WAIT
 from shared.pyterm.protocols import (
     ExtractedOutput,
     Session,
@@ -244,7 +245,7 @@ class TmuxSession:
             self._run_tmux("send-keys", "-t", self._id, command, "Enter")
 
             # Brief wait for process to start
-            time.sleep(0.5)
+            time.sleep(TMUX_ATTACH_WAIT)
 
         # Get the pane PID
         result = self._run_tmux(

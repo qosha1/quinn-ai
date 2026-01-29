@@ -29,6 +29,26 @@ DEFAULT_HEARTBEAT_THRESHOLD = 60
 
 
 # ===================
+# POLLING INTERVALS (seconds)
+# ===================
+
+DEFAULT_POLL_INTERVAL = 0.5
+"""Default polling interval for general operations."""
+
+LOG_TAIL_POLL_INTERVAL = 0.5
+"""Polling interval for log tailing operations."""
+
+SESSION_START_POLL_INTERVAL = 1.0
+"""Polling interval when waiting for session startup."""
+
+GRACEFUL_SHUTDOWN_WAIT = 5.0
+"""Wait time after graceful shutdown signal before force termination."""
+
+TMUX_ATTACH_WAIT = 0.5
+"""Wait time after tmux session spawn for attachment."""
+
+
+# ===================
 # STATE MONITORING
 # ===================
 
@@ -140,6 +160,12 @@ DEFAULT_BOARD_CHANNEL = "board-channel"
 DEFAULT_DB_NAME = "quinn.db"
 """Default database filename."""
 
+DB_SCHEMA_VERSION = 17
+"""Current database schema version."""
+
+DEFAULT_DB_BUSY_TIMEOUT_MS = 5000
+"""Default SQLite busy timeout in milliseconds (5 seconds)."""
+
 LIVE_DIR = "live"
 """Runtime state directory name."""
 
@@ -184,6 +210,9 @@ TMUX_SESSION_PREFIX = "qn-"
 
 DEFAULT_BUDGET_PERIOD_DAYS = 30
 """Default budget period in days."""
+
+DEFAULT_DELEGATION_LIMIT_PERCENT = 0.5
+"""Default maximum percentage of budget that can be delegated to a single subordinate (50%)."""
 
 # Cost per 1000 tokens by tier (in dollars)
 COST_PER_1K_TOKENS_BUDGET = {"input": 0.00025, "output": 0.00125}
@@ -518,3 +547,19 @@ LOG_DATE_FORMAT = "%Y-%m-%d"
 
 LOG_COMPONENTS = ["cli", "worker", "session", "board", "system"]
 """Valid log component names."""
+
+
+# ===================
+# UTILITY FUNCTIONS
+# ===================
+
+def ms_to_seconds(ms: int) -> float:
+    """Convert milliseconds to seconds.
+
+    Args:
+        ms: Time in milliseconds
+
+    Returns:
+        Time in seconds as a float
+    """
+    return ms / 1000.0

@@ -21,13 +21,15 @@ from pathlib import Path
 from typing import Any, Callable, Generator, Optional
 import weakref
 
+from .constants import DB_SCHEMA_VERSION, DEFAULT_DB_BUSY_TIMEOUT_MS
+
 _logger = logging.getLogger(__name__)
 
-# Current schema version - increment when schema changes
-SCHEMA_VERSION = 17
+# Legacy aliases for backward compatibility
+SCHEMA_VERSION = DB_SCHEMA_VERSION
+DEFAULT_BUSY_TIMEOUT_MS = DEFAULT_DB_BUSY_TIMEOUT_MS
 
 # Connection configuration
-DEFAULT_BUSY_TIMEOUT_MS = 5000  # 5 seconds
 WAL_MODE_ENABLED = True
 
 # Track all Database instances for cleanup at exit

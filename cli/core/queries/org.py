@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from ..constants import DEFAULT_ORG_ID
 from ..db import Database
 from shared.enums import OrgStatus
 
@@ -30,7 +31,7 @@ def get_org_state(db: Database) -> Optional[OrgState]:
     Returns:
         OrgState or None if not initialized
     """
-    row = db.fetchone("SELECT * FROM org_state WHERE id = 'default'")
+    row = db.fetchone(f"SELECT * FROM org_state WHERE id = '{DEFAULT_ORG_ID}'")
     if not row:
         return None
 
@@ -62,20 +63,20 @@ def update_org_status(
     if status == OrgStatus.RUNNING.value:
         db.execute(
             """UPDATE org_state SET status = ?, ceo_worker_id = ?,
-               started_at = ?, updated_at = ? WHERE id = 'default'""",
-            (status, ceo_worker_id, now, now)
+               started_at = ?, updated_at = ? WHERE id = ?""",
+            (status, ceo_worker_id, now, now, DEFAULT_ORG_ID)
         )
     elif status == OrgStatus.STOPPED.value:
         db.execute(
             """UPDATE org_state SET status = ?, stopped_at = ?,
-               updated_at = ? WHERE id = 'default'""",
-            (status, now, now)
+               updated_at = ? WHERE id = ?""",
+            (status, now, now, DEFAULT_ORG_ID)
         )
     else:
         db.execute(
             """UPDATE org_state SET status = ?, ceo_worker_id = ?,
-               updated_at = ? WHERE id = 'default'""",
-            (status, ceo_worker_id, now)
+               updated_at = ? WHERE id = ?""",
+            (status, ceo_worker_id, now, DEFAULT_ORG_ID)
         )
     db.connection.commit()
 

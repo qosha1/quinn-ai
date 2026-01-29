@@ -22,7 +22,11 @@ from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path, Database
 from cli.core.org import Org
 from cli.core.notifications import run_notification_cleanup
-from cli.core.constants import DEFAULT_NOTIFICATION_RETENTION_DAYS
+from cli.core.constants import (
+    DEFAULT_NOTIFICATION_RETENTION_DAYS,
+    SESSION_START_POLL_INTERVAL,
+    GRACEFUL_SHUTDOWN_WAIT,
+)
 from cli.core.sessions import stop_all_sessions, get_active_sessions
 from cli.core.worker import Worker
 from shared import InvalidOrgTransition
@@ -334,9 +338,9 @@ def _wait_for_wrap_up(timeout: int) -> None:
     for remaining in range(timeout, 0, -5):
         if remaining <= 10:
             click.echo(f"  {remaining} seconds remaining...")
-            time.sleep(1)
+            time.sleep(SESSION_START_POLL_INTERVAL)
         else:
-            time.sleep(5)
+            time.sleep(GRACEFUL_SHUTDOWN_WAIT)
 
     click.echo("Wrap-up time completed.")
 

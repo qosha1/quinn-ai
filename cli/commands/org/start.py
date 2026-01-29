@@ -21,6 +21,7 @@ from cli.core.config import (
     load_org_config,
     validate_and_raise,
 )
+from cli.core.constants import SESSION_START_POLL_INTERVAL
 from cli.core.db import open_database, get_org_db_path, Database
 from cli.core.org import Org
 from cli.core.org_chart import update_org_chart
@@ -491,7 +492,7 @@ def _wait_for_ready(worker: Worker, timeout: int) -> None:
             elapsed = int(time.time() - start_time)
             click.echo(f"✓ {worker.name} session ready (after {elapsed}s)")
             return
-        time.sleep(1)
+        time.sleep(SESSION_START_POLL_INTERVAL)
 
     # Timeout reached
     raise SessionStartTimeout(worker.id, timeout)

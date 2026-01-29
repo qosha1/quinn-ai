@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from cli.core.constants import DEFAULT_ORG_ID
 from ..logging_config import get_board_logger
 
 logger = get_board_logger(__name__)
@@ -297,7 +298,7 @@ class QuinnAIOrgConnection(OrgConnection):
         self._ensure_connected()
 
         # Get org state from database
-        row = self._db.fetchone("SELECT * FROM org_state WHERE id = 'default'")
+        row = self._db.fetchone(f"SELECT * FROM org_state WHERE id = '{DEFAULT_ORG_ID}'")
 
         if not row:
             # Uninitialized org
@@ -485,7 +486,7 @@ class QuinnAIOrgConnection(OrgConnection):
 
         # Get CEO worker ID
         org_row = self._db.fetchone(
-            "SELECT ceo_worker_id FROM org_state WHERE id = 'default'"
+            f"SELECT ceo_worker_id FROM org_state WHERE id = '{DEFAULT_ORG_ID}'"
         )
         ceo_id = org_row["ceo_worker_id"] if org_row else None
 
@@ -549,7 +550,7 @@ class QuinnAIOrgConnection(OrgConnection):
 
         # Check if CEO
         org_row = self._db.fetchone(
-            "SELECT ceo_worker_id FROM org_state WHERE id = 'default'"
+            f"SELECT ceo_worker_id FROM org_state WHERE id = '{DEFAULT_ORG_ID}'"
         )
         ceo_id = org_row["ceo_worker_id"] if org_row else None
         is_ceo = (worker_id == ceo_id)
@@ -583,7 +584,7 @@ class QuinnAIOrgConnection(OrgConnection):
 
         # Get CEO worker ID
         org_row = self._db.fetchone(
-            "SELECT ceo_worker_id FROM org_state WHERE id = 'default'"
+            f"SELECT ceo_worker_id FROM org_state WHERE id = '{DEFAULT_ORG_ID}'"
         )
 
         if not org_row or not org_row["ceo_worker_id"]:

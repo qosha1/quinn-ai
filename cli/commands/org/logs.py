@@ -14,7 +14,7 @@ from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
 from cli.core.queries import get_worker_by_name
-from cli.core.constants import TMUX_SESSION_PREFIX
+from cli.core.constants import TMUX_SESSION_PREFIX, LOG_TAIL_POLL_INTERVAL
 from shared.exceptions import WorkerNotFound
 
 
@@ -177,7 +177,7 @@ def logs_cmd(ctx: Context, worker: str, lines: Optional[int], follow: bool):
                             click.echo(line)
                         last_line_count = current_line_count
 
-                    time.sleep(0.5)
+                    time.sleep(LOG_TAIL_POLL_INTERVAL)
             except KeyboardInterrupt:
                 # Graceful exit on Ctrl+C
                 pass

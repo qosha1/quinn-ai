@@ -10,7 +10,7 @@ from pathlib import Path
 
 from datetime import datetime, timedelta
 
-from .constants import DEFAULT_CEO_COST
+from .constants import DEFAULT_CEO_COST, DEFAULT_DELEGATION_LIMIT_PERCENT
 from .db import Database
 from .logging import get_logger, log_org_state_change
 from .queries import (
@@ -191,7 +191,7 @@ class Org:
             period_end=period_end,
             pool_id=pool.id,
             can_delegate=True,  # CEO can delegate budget to reports
-            delegation_limit=initial_budget * 0.5,  # Max 50% to single subordinate
+            delegation_limit=initial_budget * DEFAULT_DELEGATION_LIMIT_PERCENT,
         )
 
         # Subscribe CEO to their team channel (created automatically by create_team)
