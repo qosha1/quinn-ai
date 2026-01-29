@@ -369,8 +369,8 @@ class TestSessionTransitionTable:
             "idle": ["running", "stopped"],
             "working": ["blocked", "idle", "stopped", "crashed"],
             "blocked": ["working", "stopped", "crashed"],
-            "stopped": [],
-            "crashed": [],
+            "stopped": ["starting"],  # Allow restart - see cli/docs/worker-state-design.md
+            "crashed": ["starting"],  # Allow restart - see cli/docs/worker-state-design.md
         }
 
         assert RUNTIME_TRANSITIONS == expected, \

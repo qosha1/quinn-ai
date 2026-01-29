@@ -48,8 +48,8 @@ RUNTIME_TRANSITIONS: dict[str, list[str]] = {
     "idle": ["running", "stopped"],
     "working": ["blocked", "idle", "stopped", "crashed"],
     "blocked": ["working", "stopped", "crashed"],
-    "stopped": [],  # Terminal state
-    "crashed": [],  # Terminal state
+    "stopped": ["starting"],  # Allow restart from stopped
+    "crashed": ["starting"],  # Allow restart from crashed
 }
 
 # Lifecycle states that allow runtime sessions
