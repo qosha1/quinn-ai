@@ -263,14 +263,16 @@ class TestWorkerTransitionTable:
         Documented transitions per STATEMACHINES.md:
         - pending → [onboarding, terminated]
         - onboarding → [active, terminated]
-        - active → [suspended, terminated]
+        - active → [offboarding, suspended, terminated]
+        - offboarding → [terminated]
         - suspended → [active, terminated]
         - terminated → []
         """
         expected = {
             "pending": ["onboarding", "terminated"],
             "onboarding": ["active", "terminated"],
-            "active": ["suspended", "terminated"],
+            "active": ["offboarding", "suspended", "terminated"],
+            "offboarding": ["terminated"],
             "suspended": ["active", "terminated"],
             "terminated": [],
         }
