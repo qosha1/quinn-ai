@@ -494,10 +494,11 @@ class TestWorkerBridgeMarkNotification:
     @patch('cli.core.notifications.mark_notification_read')
     def test_mark_notification_read_failure(self, mock_mark, mock_worker_class):
         """Test marking notification handles errors."""
+        import sqlite3
         mock_db = Mock()
         mock_worker_class.get.return_value = Mock()
 
-        mock_mark.side_effect = Exception("Database error")
+        mock_mark.side_effect = sqlite3.Error("Database error")
 
         bridge = WorkerBridge(mock_db, "worker-1")
         result = bridge.mark_notification_read("notif-1")
