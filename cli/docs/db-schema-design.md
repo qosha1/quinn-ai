@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS workers (
     role TEXT NOT NULL,
     team_id TEXT NOT NULL,
     manager_id TEXT,
-    status TEXT NOT NULL CHECK(status IN ('pending', 'onboarding', 'active', 'offboarding', 'terminated')),
+    status TEXT NOT NULL CHECK(status IN ('pending', 'onboarding', 'active', 'suspended', 'terminated')),
     skills TEXT NOT NULL DEFAULT '{}',  -- JSON: {"coding": 80, "reasoning": 60}
     cost INTEGER NOT NULL CHECK(cost >= 0 AND cost <= 100),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

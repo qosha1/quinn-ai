@@ -14,15 +14,15 @@ LIFECYCLE_STATES = frozenset([
     "pending",
     "onboarding",
     "active",
-    "offboarding",
+    "suspended",
     "terminated",
 ])
 
 LIFECYCLE_TRANSITIONS: dict[str, list[str]] = {
-    "pending": ["onboarding"],
+    "pending": ["onboarding", "terminated"],
     "onboarding": ["active", "terminated"],
-    "active": ["offboarding"],
-    "offboarding": ["terminated"],
+    "active": ["suspended", "terminated"],
+    "suspended": ["active", "terminated"],
     "terminated": [],
 }
 
@@ -34,20 +34,24 @@ RUNTIME_STATES = frozenset([
     "starting",
     "running",
     "idle",
+    "working",
+    "blocked",
     "stopped",
     "crashed",
 ])
 
 RUNTIME_TRANSITIONS: dict[str, list[str]] = {
     "starting": ["running", "crashed"],
-    "running": ["idle", "stopped", "crashed"],
+    "running": ["idle", "working", "stopped", "crashed"],
     "idle": ["running", "stopped"],
-    "stopped": ["starting"],
-    "crashed": ["starting"],
+    "working": ["blocked", "idle", "stopped", "crashed"],
+    "blocked": ["working", "stopped", "crashed"],
+    "stopped": [],
+    "crashed": [],
 }
 
 # Lifecycle states that allow runtime sessions
-SESSION_ALLOWED_LIFECYCLES = frozenset(["onboarding", "active", "offboarding"])
+SESSION_ALLOWED_LIFECYCLES = frozenset(["onboarding", "active"])
 
 # ===================
 # ORG LIFECYCLE

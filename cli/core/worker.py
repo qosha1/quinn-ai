@@ -821,12 +821,10 @@ class Worker:
     def can_work(self) -> bool:
         """Check if worker can accept work.
 
-        Returns True only if lifecycle is 'active' and runtime is 'running' or 'idle'.
+        Returns True if lifecycle is 'active', regardless of runtime status.
+        This allows workers to accept work assignments even before a session is spawned.
         """
-        return (
-            self.lifecycle_status == "active"
-            and self.runtime_status in ("running", "idle")
-        )
+        return self.lifecycle_status == "active"
 
     @property
     def cost_tier(self) -> str:
@@ -1091,6 +1089,53 @@ class Worker:
         if row and row["offboarding_ask_bead_id"]:
             return row["offboarding_ask_bead_id"]
         return None
+
+    def suspend(self, force: bool = False) -> None:
+        """Suspend worker - temporarily inactive.
+
+        Transitions worker from 'active' to 'suspended'.
+        Stops any active session and prevents new sessions from spawning.
+
+        Args:
+            force: If True, force stop session without graceful shutdown
+
+        Raises:
+            InvalidStateTransition: If not in 'active' state
+        """
+        old_status = self.lifecycle_status
+
+        # Validate transition
+        self._validate_lifecycle_transition("suspended")
+
+        # Stop session if running
+        if self.is_session_active:
+            self.stop_session(force=force)
+
+        # Update lifecycle status
+        update_worker_status(self.db, self.id, "suspended")
+        log_worker_lifecycle(_logger, self.id, self.name, old_status, "suspended")
+
+        self._worker_data = None
+
+    def unsuspend(self) -> None:
+        """Resume suspended worker - return to active state.
+
+        Transitions worker from 'suspended' to 'active'.
+        Worker can then spawn sessions and accept work.
+
+        Raises:
+            InvalidStateTransition: If not in 'suspended' state
+        """
+        old_status = self.lifecycle_status
+
+        # Validate transition
+        self._validate_lifecycle_transition("active")
+
+        # Update lifecycle status
+        update_worker_status(self.db, self.id, "active")
+        log_worker_lifecycle(_logger, self.id, self.name, old_status, "active")
+
+        self._worker_data = None
 
     def terminate(self) -> None:
         """Terminate worker - freeze storage, update org-chart, fire event.

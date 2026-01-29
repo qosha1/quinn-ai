@@ -114,18 +114,11 @@ def create_mock_session(worker_id: str) -> MagicMock:
 class TestSessionStates:
     """Validate session states match STATEMACHINES.md."""
 
-    @pytest.mark.xfail(reason="Missing states: 'working' and 'blocked'")
     def test_states_match_specification(self):
         """States in code must match STATEMACHINES.md.
 
-        EXPECTED TO FAIL: Critical violation from validation report.
-
         Documented: starting, running, idle, working, blocked, stopped, crashed
         (plus implicit not_spawned = NULL)
-
-        Code has: starting, running, idle, stopped, crashed
-
-        MISSING: working, blocked
         """
         expected = {"starting", "running", "idle", "working", "blocked", "stopped", "crashed"}
         assert RUNTIME_STATES == expected, \
@@ -358,27 +351,17 @@ class TestSessionT8AnyToCrashed:
 class TestSessionTransitionTable:
     """Validate transition table matches STATEMACHINES.md."""
 
-    @pytest.mark.xfail(reason="Transition table incomplete - missing working/blocked")
     def test_transition_table_matches_spec(self):
         """RUNTIME_TRANSITIONS must match STATEMACHINES.md.
 
-        EXPECTED TO FAIL: States 'working' and 'blocked' missing.
-
-        Documented:
+        Documented transitions per STATEMACHINES.md:
         - starting → [running, crashed]
-        - running → [idle, working, stopped, crashed]  ← working missing
+        - running → [idle, working, stopped, crashed]
         - idle → [running, stopped]
-        - working → [blocked, idle, stopped, crashed]  ← working/blocked missing
-        - blocked → [working, stopped, crashed]  ← working/blocked missing
+        - working → [blocked, idle, stopped, crashed]
+        - blocked → [working, stopped, crashed]
         - stopped → []
         - crashed → []
-
-        Code has:
-        - starting → [running, crashed]
-        - running → [idle, stopped, crashed]
-        - idle → [running, stopped]
-        - stopped → [starting]
-        - crashed → [starting]
         """
         expected = {
             "starting": ["running", "crashed"],
