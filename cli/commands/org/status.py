@@ -37,7 +37,7 @@ def status_cmd(ctx: Context):
         # Count workers with hiring authority
         cursor = db.execute("""
             SELECT COUNT(*) FROM workers
-            WHERE lifecycle_status != 'terminated'
+            WHERE status != 'terminated'
             AND hiring_authority_scope IS NOT NULL
             AND hiring_authority_scope != '{}'
             AND hiring_authority_scope != '{"allowed_roles": []}'

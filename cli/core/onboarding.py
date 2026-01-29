@@ -243,9 +243,10 @@ def _load_worker_okrs(db: Database, worker_id: str) -> list[dict]:
         if okr.key_results:
             for kr in okr.key_results:
                 kr_list.append({
-                    "description": kr.description,
-                    "target": kr.target_value,
-                    "current": kr.current_value,
+                    "metric": kr.metric,
+                    "target": kr.target,
+                    "current": kr.current,
+                    "unit": kr.unit,
                 })
 
         okrs.append(
