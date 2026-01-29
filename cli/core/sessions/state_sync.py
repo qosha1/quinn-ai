@@ -158,7 +158,7 @@ class SessionStateSync:
         for callback in self._on_crash_callbacks:
             try:
                 callback(worker_id, session_id)
-            except (TypeError, ValueError, RuntimeError, OSError) as e:
+            except Exception as e:
                 # Intentionally swallowed: crash handling must complete even if
                 # a callback fails. Callback errors are less critical than
                 # notifying remaining callbacks about the crash.

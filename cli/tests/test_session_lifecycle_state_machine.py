@@ -176,9 +176,9 @@ class TestSessionT1NotSpawnedToStarting:
         EXPECTED TO FAIL: Documented violation in validation report.
         Budget is deducted before spawn attempt. If spawn fails, budget is lost.
         """
-        from cli.core.queries import get_budget_allocation
+        from cli.core.queries.budget import get_current_allocation
 
-        allocation = get_budget_allocation(active_worker.db, active_worker.id)
+        allocation = get_current_allocation(active_worker.db, active_worker.id)
         initial_spent = allocation.spent_credits
 
         # Mock spawn to fail
@@ -192,7 +192,7 @@ class TestSessionT1NotSpawnedToStarting:
             active_worker.spawn_session(mock_session)
 
         # Budget should be refunded (rollback)
-        allocation = get_budget_allocation(active_worker.db, active_worker.id)
+        allocation = get_current_allocation(active_worker.db, active_worker.id)
         assert allocation.spent_credits == initial_spent, \
             "Budget should be rolled back on spawn failure"
 
@@ -418,11 +418,11 @@ class TestSessionStatusSyncPropagation:
 class TestSessionDependencies:
     """Validate session lifecycle dependencies."""
 
-    def test_session_spawn_requires_worker_active(self, worker_with_budget):
+    def test_session_spawn_requires_worker_active(self, db, worker_with_budget):
         """T1 requires worker lifecycle = 'active'."""
         from shared.state_machines import SESSION_ALLOWED_LIFECYCLES
 
-        worker = Worker(worker_with_budget.db, worker_with_budget.id)
+        worker = Worker(db, worker_with_budget.id)
 
         # Pending worker cannot spawn
         assert worker.lifecycle_status == "pending"

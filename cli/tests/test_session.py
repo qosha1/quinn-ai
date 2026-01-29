@@ -104,6 +104,10 @@ class MockSession(SessionInterface):
     def _send_interrupt(self) -> None:
         pass
 
+    def _create_state_monitor(self) -> Optional["StateMonitor"]:
+        """Mock implementation returns None (no monitoring needed in tests)."""
+        return None
+
 
 # =========================================================================
 # Test Fixtures

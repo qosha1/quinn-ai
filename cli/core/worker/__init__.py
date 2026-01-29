@@ -41,6 +41,9 @@ from ..worker_cleanup import (
 # Re-export BdClient for test compatibility
 from shared.bd.client import BdClient, BdCommandError
 
+# Re-export session-related exceptions
+from shared.exceptions import ActiveSessionExistsError
+
 __all__ = [
     "Worker",
     "HiringScope",
@@ -52,4 +55,5 @@ __all__ = [
     "cleanup_terminated_worker",
     "BdClient",
     "BdCommandError",
+    "ActiveSessionExistsError",
 ]

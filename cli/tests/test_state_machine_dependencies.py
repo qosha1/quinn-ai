@@ -247,13 +247,13 @@ class TestInvariantI4BudgetMatchesSession:
 
         EXPECTED TO FAIL: Budget deducted before spawn, no rollback.
         """
-        from cli.core.queries import get_budget_allocation
+        from cli.core.queries.budget import get_current_allocation
 
         worker = Worker(running_org.db, worker_with_budget.id)
         worker.start_onboarding()
         worker.complete_onboarding()
 
-        allocation = get_budget_allocation(worker.db, worker.id)
+        allocation = get_current_allocation(worker.db, worker.id)
         initial_spent = allocation.spent_credits
 
         # Mock spawn to fail
@@ -266,7 +266,7 @@ class TestInvariantI4BudgetMatchesSession:
             pass
 
         # Check budget
-        allocation = get_budget_allocation(worker.db, worker.id)
+        allocation = get_current_allocation(worker.db, worker.id)
 
         # SHOULD still be initial_spent (rollback)
         # Will FAIL: budget was deducted before spawn

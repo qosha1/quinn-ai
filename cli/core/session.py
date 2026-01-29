@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional, TYPE_CHECKING
 from pathlib import Path
+import logging
 import threading
 import uuid
 
@@ -24,6 +25,9 @@ from shared.core.state import (
 
 if TYPE_CHECKING:
     from shared.pyterm.state_monitor import StateMonitor
+
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

@@ -72,6 +72,8 @@ class TestTmuxSpawnerSpawn:
         """Should spawn tmux session successfully."""
         # Mock has-session (session doesn't exist)
         has_session_result = Mock(returncode=1)
+        # Mock set-environment (for TEST_VAR)
+        set_env_result = Mock(returncode=0)
         # Mock new-session success
         new_session_result = Mock(returncode=0)
         # Mock list-panes for PID
@@ -79,6 +81,7 @@ class TestTmuxSpawnerSpawn:
 
         mock_run.side_effect = [
             has_session_result,
+            set_env_result,
             new_session_result,
             list_panes_result,
         ]
@@ -129,9 +132,11 @@ class TestTmuxSpawnerSpawn:
     def test_spawn_new_session_fails(self, mock_run, tmux_spawner, spawner_config):
         """Should handle new-session failure."""
         has_session_result = Mock(returncode=1)
+        # Mock set-environment (for TEST_VAR)
+        set_env_result = Mock(returncode=0)
         new_session_result = Mock(returncode=1, stderr="tmux error")
 
-        mock_run.side_effect = [has_session_result, new_session_result]
+        mock_run.side_effect = [has_session_result, set_env_result, new_session_result]
 
         result = tmux_spawner.spawn(spawner_config)
 
@@ -193,11 +198,14 @@ class TestTmuxSpawnerSpawn:
     def test_spawn_pid_extraction_failure(self, mock_run, tmux_spawner, spawner_config):
         """Should handle PID extraction failure gracefully."""
         has_session_result = Mock(returncode=1)
+        # Mock set-environment (for TEST_VAR)
+        set_env_result = Mock(returncode=0)
         new_session_result = Mock(returncode=0)
         list_panes_result = Mock(returncode=1, stdout="")  # PID extraction fails
 
         mock_run.side_effect = [
             has_session_result,
+            set_env_result,
             new_session_result,
             list_panes_result,
         ]
@@ -224,7 +232,10 @@ class TestTmuxSpawnerStop:
 
         assert result
         # Should send Ctrl+C first
-        assert mock_run.call_args_list[0][0][0][-2:] == ["send-keys", "-t"]
+        first_call = mock_run.call_args_list[0][0][0]
+        assert "send-keys" in first_call
+        assert "test-session" in first_call
+        assert "C-c" in first_call
         # Then kill
         assert "kill-session" in mock_run.call_args_list[1][0][0]
 

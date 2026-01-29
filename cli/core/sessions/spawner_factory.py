@@ -53,16 +53,16 @@ class SpawnerFactory:
         """
         self._spawners[spawner.name] = spawner
 
-    def register_class(self, name: str, spawner_class: Type[SpawnStrategy], **kwargs) -> None:
+    def register_class(self, strategy_name: str, spawner_class: Type[SpawnStrategy], **kwargs) -> None:
         """Register a spawn strategy by class.
 
         Args:
-            name: Strategy name
+            strategy_name: Strategy name for factory registration
             spawner_class: SpawnStrategy class to instantiate
             **kwargs: Arguments to pass to spawner constructor
         """
         spawner = spawner_class(**kwargs)
-        self._spawners[name] = spawner
+        self._spawners[strategy_name] = spawner
 
     def unregister(self, name: str) -> None:
         """Unregister a spawn strategy.

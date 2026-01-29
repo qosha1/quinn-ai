@@ -371,6 +371,8 @@ def update_worker_runtime_status(
 ) -> None:
     """Update worker runtime status.
 
+    Creates worker_state row if it doesn't exist (upsert).
+
     Args:
         db: Database instance
         worker_id: Worker ID
@@ -378,11 +380,23 @@ def update_worker_runtime_status(
         current_task_id: Optional current task
     """
     now = datetime.now()
-    db.execute(
+
+    # Try to update existing row first
+    result = db.execute(
         """UPDATE worker_state SET runtime_status = ?, current_task_id = ?,
            last_activity = ?, updated_at = ? WHERE worker_id = ?""",
         (runtime_status, current_task_id, now, now, worker_id)
     )
+
+    # If no row was updated, create it
+    if result.rowcount == 0:
+        db.execute(
+            """INSERT INTO worker_state
+               (worker_id, runtime_status, current_task_id, started_at, last_activity, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (worker_id, runtime_status, current_task_id, now, now, now)
+        )
+
     db.connection.commit()
 
 

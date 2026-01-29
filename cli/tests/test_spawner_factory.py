@@ -92,10 +92,11 @@ class TestSpawnerFactory:
         """Should register a spawner by class."""
         factory = SpawnerFactory()
 
-        factory.register_class("test", MockSpawner, name="test")
+        # Pass spawner constructor kwargs separately from registration name
+        factory.register_class("test-spawner", MockSpawner, name="test")
 
-        assert factory.has("test")
-        spawner = factory.get("test")
+        assert factory.has("test-spawner")
+        spawner = factory.get("test-spawner")
         assert isinstance(spawner, MockSpawner)
         assert spawner.name == "test"
 

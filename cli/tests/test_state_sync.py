@@ -147,6 +147,30 @@ class TestSessionStateSyncRegister:
 class TestSessionStateSyncStateChange:
     """Tests for state change handling."""
 
+    def test_state_change_creates_worker_state_if_missing(self, state_sync, db, worker, mock_session):
+        """Should create worker_state row on first state change if it doesn't exist.
+
+        This test reproduces the bug where update_worker_runtime_status() tries to
+        UPDATE a non-existent row, causing get_worker_state() to return None.
+        """
+        from cli.core.queries import get_worker_state
+
+        # Verify no worker_state exists yet
+        assert get_worker_state(db, worker.id) is None
+
+        state_sync.register_session(mock_session, worker.id)
+
+        # Get the callback
+        callback = mock_session.on_state_change.call_args[0][0]
+
+        # Simulate state change - this should CREATE the worker_state row
+        callback(SessionState.STARTING, SessionState.RUNNING)
+
+        # Now worker_state should exist and have the correct status
+        worker_state = get_worker_state(db, worker.id)
+        assert worker_state is not None, "worker_state should be created on first update"
+        assert worker_state.runtime_status == "running"
+
     def test_state_change_updates_worker(self, state_sync, db, worker, mock_session):
         """Should update worker runtime status on state change."""
         from cli.core.queries import get_worker_state

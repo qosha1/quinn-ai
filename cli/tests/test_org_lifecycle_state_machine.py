@@ -94,11 +94,11 @@ class TestOrgT1UnintializedToInitialized:
 
     def test_t1_allocates_budget(self, org):
         """T1 should create budget pool and allocate to CEO."""
-        from cli.core.queries import get_budget_allocation
+        from cli.core.queries.budget import get_current_allocation
 
         ceo = org.init(ceo_name="Test CEO", initial_budget=1000.0)
 
-        allocation = get_budget_allocation(org.db, ceo.id)
+        allocation = get_current_allocation(org.db, ceo.id)
         assert allocation is not None
         assert allocation.allocated_credits == 1000.0
 
@@ -373,8 +373,8 @@ class TestOrgPostconditions:
         assert org.ceo.lifecycle_status == "pending"
 
         # Budget allocated
-        from cli.core.queries import get_budget_allocation
-        allocation = get_budget_allocation(org.db, org.ceo.id)
+        from cli.core.queries.budget import get_current_allocation
+        allocation = get_current_allocation(org.db, org.ceo.id)
         assert allocation is not None
 
         # Channels created
