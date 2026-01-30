@@ -153,6 +153,13 @@ def start_cmd(
             return
 
         # ===================
+        # PHASE 1.5: ORPHANED SESSION CLEANUP
+        # ===================
+        # Clean up any orphaned tmux sessions from previous crashes
+        # This prevents "session already exists" errors when spawning
+        _cleanup_orphaned_sessions(db)
+
+        # ===================
         # PHASE 2: ORG STATE TRANSITION (with rollback)
         # ===================
 
@@ -207,6 +214,41 @@ def start_cmd(
 # ===================
 # PHASE 1: PRE-FLIGHT VALIDATION
 # ===================
+
+def _cleanup_orphaned_sessions(db: Database) -> None:
+    """Clean up orphaned tmux sessions from previous crashes.
+
+    This prevents "session already exists" errors when spawning new sessions.
+    Orphaned sessions occur when:
+    - Worker processes crash unexpectedly
+    - System restarts without proper shutdown
+    - Session termination fails partway through
+
+    Args:
+        db: Database instance
+    """
+    from cli.core.sessions import run_startup_cleanup
+
+    try:
+        result = run_startup_cleanup(db)
+
+        if result.tmux_sessions_killed > 0 or result.db_records_updated > 0:
+            # Only show message if cleanup actually did something
+            click.echo("Cleaned up orphaned sessions from previous run:")
+            if result.tmux_sessions_killed > 0:
+                click.echo(f"  Killed {result.tmux_sessions_killed} orphaned tmux session(s)")
+            if result.db_records_updated > 0:
+                click.echo(f"  Updated {result.db_records_updated} stale DB record(s)")
+
+        if result.errors:
+            # Log errors but don't fail - cleanup is best-effort
+            for error in result.errors:
+                click.echo(f"  Warning: {error}", err=True)
+
+    except Exception as e:
+        # Cleanup failure shouldn't prevent org start
+        click.echo(f"Warning: Session cleanup failed: {e}", err=True)
+
 
 def _validate_preflight(org_path: Path, skip_config_validation: bool) -> Database:
     """Phase 1: Validate everything before making state changes.

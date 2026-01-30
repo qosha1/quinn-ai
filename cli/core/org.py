@@ -280,8 +280,10 @@ class Org:
         Args:
             target_status: Status to rollback to
         """
+        current_status = self.status
         update_org_status(self.db, target_status, self.ceo_worker_id)
-        log_org_state_change(_logger, self.status, target_status, note="Rollback after error")
+        log_org_state_change(_logger, current_status, target_status)
+        _logger.info(f"Rolled back org status after error: {current_status} -> {target_status}")
         self._state_data = None  # Invalidate cache
 
     def _get_briefing_path(self) -> Path:
