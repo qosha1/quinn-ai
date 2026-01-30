@@ -102,6 +102,72 @@ def config():
     pass
 
 
+@config.command("set-provider")
+@click.argument("provider", type=click.Choice(["claude_code", "anthropic", "openai"]))
+@click.option(
+    "--org-path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to org folder",
+)
+def set_provider_cmd(provider: str, org_path: Path):
+    """Set the default AI provider for an organization.
+
+    Changes the default provider in config/providers.yaml.
+    This determines which AI service the org uses for worker sessions.
+
+    \b
+    Examples:
+        qn config set-provider claude_code --org-path ~/orgs/acme
+        qn config set-provider anthropic --org-path ./my-org
+    """
+    import yaml
+
+    config_path = get_org_config_path(org_path)
+    providers_path = config_path / "providers.yaml"
+
+    if not providers_path.exists():
+        click.echo(click.style(
+            f"Error: providers.yaml not found at {providers_path}",
+            fg="red"
+        ))
+        raise SystemExit(1)
+
+    # Read current config
+    try:
+        with open(providers_path) as f:
+            config_data = yaml.safe_load(f)
+    except Exception as e:
+        click.echo(click.style(f"Error reading config: {e}", fg="red"))
+        raise SystemExit(1)
+
+    # Verify provider exists in config
+    if provider not in config_data.get("providers", {}):
+        click.echo(click.style(
+            f"Error: Provider '{provider}' not found in providers.yaml",
+            fg="red"
+        ))
+        click.echo(f"Available providers: {', '.join(config_data.get('providers', {}).keys())}")
+        raise SystemExit(1)
+
+    # Update default
+    old_default = config_data.get("default", "unknown")
+    config_data["default"] = provider
+
+    # Write back
+    try:
+        with open(providers_path, "w") as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+        click.echo(click.style("✓", fg="green") + f" Default provider updated")
+        click.echo(f"  {old_default} → {click.style(provider, fg='green')}")
+        click.echo(f"  Config: {providers_path}")
+
+    except Exception as e:
+        click.echo(click.style(f"Error writing config: {e}", fg="red"))
+        raise SystemExit(1)
+
+
 @config.command("validate")
 @click.option(
     "--test-connection",
