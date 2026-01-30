@@ -16,7 +16,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Button, Label, Static
 from textual.widget import Widget
 
-from ..interfaces.org_connection import OrgInfo, WorkerInfo, BudgetSummary
+from ..interfaces.org_connection import OrgInfo, WorkerInfo, BudgetSummary, OrgStatus
 
 
 class DashboardView(Widget):
@@ -146,6 +146,7 @@ class DashboardView(Widget):
         # Get org info
         self._org_info = conn.get_org_info()
         self._update_org_metrics()
+        self._update_org_action_buttons()
 
         # Get CEO
         self._ceo = conn.get_ceo()
@@ -174,6 +175,38 @@ class DashboardView(Widget):
         # Active sessions
         active_label = self.query_one("#active-count", Label)
         active_label.update(str(self._org_info.active_session_count))
+
+    def _update_org_action_buttons(self) -> None:
+        """Update org action button states based on org status."""
+        if not self._org_info:
+            return
+
+        start_btn = self.query_one("#start-org-btn", Button)
+        stop_btn = self.query_one("#stop-org-btn", Button)
+        restart_btn = self.query_one("#restart-org-btn", Button)
+
+        status = self._org_info.status
+
+        if status == OrgStatus.RUNNING:
+            # Org is running - can stop or restart, but not start
+            start_btn.disabled = True
+            stop_btn.disabled = False
+            restart_btn.disabled = False
+        elif status in (OrgStatus.STOPPED, OrgStatus.INITIALIZED):
+            # Org is stopped or initialized - can start, but not stop or restart
+            start_btn.disabled = False
+            stop_btn.disabled = True
+            restart_btn.disabled = True
+        elif status == OrgStatus.UNINITIALIZED:
+            # Org not initialized - disable all actions
+            start_btn.disabled = True
+            stop_btn.disabled = True
+            restart_btn.disabled = True
+        else:
+            # Unknown state - disable all for safety
+            start_btn.disabled = True
+            stop_btn.disabled = True
+            restart_btn.disabled = True
 
     def _update_ceo_card(self) -> None:
         """Update CEO card display."""
