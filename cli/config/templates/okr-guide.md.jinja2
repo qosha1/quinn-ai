@@ -1,0 +1,105 @@
+# Understanding OKRs in {{ org_name }}
+
+## What are OKRs?
+
+**Objectives and Key Results** are our strategic goals for the quarter.
+
+- **Objective:** What we want to achieve (the goal)
+- **Key Results:** How we measure success (the metrics)
+
+## Current Quarter OKRs
+
+Run this to see all OKRs:
+```bash
+qn-bd list --label=okr
+```
+
+## OKR Structure
+
+```
+Q1 2026: Main Objective
+├── [INITIATIVE] Sub-Objective 1
+│   └── Tasks: Specific tasks that block this objective...
+├── [INITIATIVE] Sub-Objective 2
+│   └── Tasks: Specific tasks that block this objective...
+└── [INITIATIVE] Sub-Objective 3
+    └── Tasks: Specific tasks that block this objective...
+```
+
+## How Tasks Relate to OKRs
+
+When you work on a task, check what it **blocks**:
+
+```bash
+qn-bd show <task-id>
+# Output shows:
+# Blocks (1):
+#   ← <okr-id>: [INITIATIVE] OKR Title
+```
+
+This means:
+- Your task **blocks** the OKR
+- When you complete your task, the OKR gets closer to completion
+- The OKR can't close until all blocking tasks are done
+
+## Measuring Success
+
+Each OKR has **Key Results** - measurable success criteria.
+
+**Example OKR:**
+```
+[ARCH] Architecture & Performance Sprint
+
+Key Results:
+- Database connection pooling implemented ✅
+- API response time < 100ms (p95) 📊
+- Virtualized rendering for 1000+ rows ⏳
+- Real-time updates via SSE ⏳
+```
+
+Before closing your work, verify it contributes to these metrics.
+
+## Querying OKRs
+
+```bash
+# List all OKRs
+qn-bd list --label=okr --status=open
+
+# Show OKR with dependencies
+qn-bd show <okr-id>
+
+# Find work that blocks an OKR
+qn-bd list --status=open | grep "Blocks.*<okr-id>"
+```
+
+## Workflow with OKRs
+
+1. **Pick work**
+   ```bash
+   qn-bd ready  # Shows available tasks
+   ```
+
+2. **Understand impact**
+   ```bash
+   qn-bd show <task-id>  # See which OKR it blocks
+   qn-bd show <okr-id>   # Read key results
+   ```
+
+3. **Do the work**
+   - Keep key results in mind
+   - Measure your progress
+
+4. **Close when done**
+   ```bash
+   qn-bd close <task-id> --reason="Connection pooling implemented, tested, API latency reduced to 80ms"
+   ```
+
+## Why OKRs Matter
+
+OKRs give you:
+- **Context:** Why this work matters
+- **Alignment:** How it fits the bigger picture
+- **Measurement:** Clear success criteria
+- **Priority:** What's most important
+
+Work without OKRs is just activity. Work aligned to OKRs is strategic impact.

@@ -1,0 +1,308 @@
+# Beads Workflow Guide
+
+## What is Beads?
+
+**Beads** is our work tracking system. Think of it as our issue tracker - tasks, bugs, features, and OKRs all live in beads.
+
+## Core Commands
+
+### Finding Work
+
+```bash
+# Show work ready to start (no blockers)
+qn-bd ready
+
+# List all open work
+qn-bd list --status=open
+
+# List by priority
+qn-bd list --status=open --priority=0,1
+
+# List by type
+qn-bd list --type=task,bug
+
+# Filter by team (when implemented)
+qn-bd list --status=open --team=engineering
+```
+
+### Working on Issues
+
+```bash
+# View full details
+qn-bd show <id>
+
+# Claim work (sets you as assignee + in_progress)
+qn-bd update <id> --claim
+
+# Update status manually
+qn-bd update <id> --status=in_progress
+
+# Add notes
+qn-bd update <id> --notes="Working on DB pooling, found bottleneck in connection mgmt"
+
+# Close when done
+qn-bd close <id> --reason="Implemented connection pooling, tests pass, p95 latency now 75ms"
+```
+
+### Creating Work
+
+```bash
+# Create a task
+qn-bd create --title="Fix memory leak in worker process" --type=task --priority=0 --description="Details here"
+
+# Create a bug
+qn-bd create --title="Dashboard crashes on empty data" --type=bug --priority=1
+
+# Create a feature
+qn-bd create --title="Add dark mode toggle" --type=feature --priority=2
+```
+
+### Dependencies
+
+```bash
+# Add dependency (A depends on B = B blocks A)
+qn-bd dep add <blocked-id> <blocker-id>
+
+# Example: Task depends on setup being done
+qn-bd dep add my-task setup-complete
+
+# Remove dependency
+qn-bd dep rm <blocked-id> <blocker-id>
+
+# View blocked issues
+qn-bd blocked
+```
+
+### Syncing
+
+```bash
+# Sync with git remote (run at session end)
+qn-bd sync
+
+# Check sync status
+qn-bd sync --status
+```
+
+## Issue Lifecycle
+
+```
+open → in_progress → closed
+  ↓         ↓
+ (ready)  (working)
+```
+
+**States:**
+- `open` - Not started, available to claim
+- `in_progress` - Someone is actively working on it
+- `closed` - Complete
+
+**Transitions:**
+- `qn-bd update <id> --claim` → Sets in_progress
+- `qn-bd close <id>` → Sets closed
+
+## Issue Types
+
+- **task** - Work to be done (default)
+- **bug** - Something broken that needs fixing
+- **feature** - New functionality to build
+- **epic** - Large initiative containing many tasks (often used for OKRs)
+- **chore** - Maintenance work (dependencies, cleanup)
+
+## Priority Levels
+
+- **P0** (0) - Critical, drop everything
+- **P1** (1) - High priority, next up
+- **P2** (2) - Medium priority
+- **P3** (3) - Low priority
+- **P4** (4) - Backlog
+
+Use `--priority=0` or `--priority=P0` (both work).
+
+## Labels
+
+Labels categorize work:
+
+```bash
+# Add label
+qn-bd update <id> --add-label okr
+
+# Add multiple
+qn-bd update <id> --add-label frontend --add-label ui
+
+# Remove label
+qn-bd update <id> --remove-label wip
+
+# List by label
+qn-bd list --label=okr
+```
+
+**Common labels:**
+- `okr` - Strategic objective
+- `frontend` - UI work
+- `backend` - API/server work
+- `testing` - Test-related
+- `docs` - Documentation
+
+## Best Practices
+
+### 1. Claim Before Starting
+```bash
+# Good
+qn-bd update <id> --claim
+# Work starts...
+
+# Bad
+# Start work without claiming
+```
+
+### 2. Close with Reason
+```bash
+# Good
+qn-bd close <id> --reason="Added pooling with max 20 connections, tested under load, p95 latency 75ms"
+
+# Bad
+qn-bd close <id>  # No context
+```
+
+### 3. Link Dependencies
+```bash
+# If your task depends on another task, link them
+qn-bd dep add my-task dependency-task-id
+
+# This prevents my-task from showing in qn-bd ready until dependency is done
+```
+
+### 4. Use Priorities Correctly
+- **P0:** Production down, security issue, blocking all work
+- **P1:** Important, impacts release timeline
+- **P2:** Should do this iteration
+- **P3:** Nice to have
+- **P4:** Future consideration
+
+### 5. Keep Descriptions Updated
+```bash
+# If you discover something while working, add notes
+qn-bd update <id> --notes="Found that connection leak was caused by unclosed transactions"
+```
+
+### 6. Sync Regularly
+```bash
+# End of day / before stopping
+qn-bd sync
+```
+
+## Common Workflows
+
+### Daily Standup
+```bash
+# What I worked on yesterday
+qn-bd list --status=closed --assignee=me
+
+# What I'm working on today
+qn-bd list --status=in_progress --assignee=me
+
+# Blockers
+qn-bd list --status=open --assignee=me | grep "Depends on"
+```
+
+### Finding Next Work
+```bash
+# 1. Check what's ready (no blockers)
+qn-bd ready
+
+# 2. Pick highest priority
+# (qn-bd ready orders by priority)
+
+# 3. Claim it
+qn-bd update <id> --claim
+
+# 4. Check details
+qn-bd show <id>
+```
+
+### Unblocking Work
+```bash
+# Find what's blocked
+qn-bd blocked
+
+# Complete blocking tasks first
+qn-bd close <blocker-id> --reason="..."
+
+# Blocked work now appears in qn-bd ready
+```
+
+### Sprint Planning
+```bash
+# See all open work
+qn-bd list --status=open --priority=0,1
+
+# Create sprint epic
+qn-bd create --title="Sprint 5: Performance" --type=epic --priority=1
+
+# Link tasks to epic
+qn-bd dep add sprint-epic task-1
+qn-bd dep add sprint-epic task-2
+
+# Track progress
+qn-bd show sprint-epic  # See blocked tasks
+```
+
+## Troubleshooting
+
+**Issue not appearing in `qn-bd ready`?**
+- Check if it's blocked: `qn-bd show <id>` (look for "Depends on")
+- Check status: Should be `open`, not `in_progress` or `closed`
+- Check if already assigned: `qn-bd ready` only shows unassigned work by default
+
+**Can't close an issue?**
+- Verify you're the assignee or have permission
+- Check if issues block this one (can't close if it blocks open work)
+
+**Sync conflicts?**
+- Run `git status` to check for conflicts
+- Resolve conflicts in `.beads/*.jsonl` files
+- Run `qn-bd sync` again
+
+## Integration with QuinnAI
+
+### Worker Commands
+```bash
+# QuinnAI workers use both qn wrkr and qn-bd commands:
+
+qn wrkr get-work            # Gets assigned work from queue
+qn-bd ready                 # Shows available work to claim
+qn-bd show <id>             # View details
+qn-bd update <id> --claim   # Claim work
+qn-bd close <id> --reason="..."  # Complete work
+```
+
+### OKRs
+```bash
+# OKRs are beads with label=okr
+qn-bd list --label=okr
+
+# Tasks block OKRs
+qn-bd show <task-id>  # See "Blocks:" section
+```
+
+## Quick Reference Card
+
+```bash
+# Find work
+qn-bd ready                    # Ready to work (no blockers)
+qn-bd list --status=open       # All open work
+qn-bd blocked                  # All blocked work
+
+# Work on issue
+qn-bd show <id>                # Full details
+qn-bd update <id> --claim      # Claim it
+qn-bd update <id> --notes="x"  # Add notes
+qn-bd close <id> --reason="x"  # Complete
+
+# Dependencies
+qn-bd dep add <A> <B>          # A depends on B (B blocks A)
+qn-bd dep rm <A> <B>           # Remove dependency
+
+# Sync
+qn-bd sync                     # Sync with remote
+```
