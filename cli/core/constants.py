@@ -160,7 +160,7 @@ DEFAULT_BOARD_CHANNEL = "board-channel"
 DEFAULT_DB_NAME = "quinn.db"
 """Default database filename."""
 
-DB_SCHEMA_VERSION = 18
+DB_SCHEMA_VERSION = 19
 """Current database schema version."""
 
 DEFAULT_DB_BUSY_TIMEOUT_MS = 5000
@@ -547,6 +547,36 @@ LOG_DATE_FORMAT = "%Y-%m-%d"
 
 LOG_COMPONENTS = ["cli", "worker", "session", "board", "system"]
 """Valid log component names."""
+
+
+# ===================
+# BOOTSTRAP OKRs
+# ===================
+
+DEFAULT_BOOTSTRAP_OKR_TITLE = "Establish organizational foundation"
+"""Default bootstrap OKR title when no OKRs configured."""
+
+DEFAULT_BOOTSTRAP_OKR_DESCRIPTION = "Set up core processes, hire initial team, and establish workflows to enable productive operations."
+"""Default bootstrap OKR description."""
+
+
+# ===================
+# ESCALATION
+# ===================
+
+# Escalation timeout periods (minutes) - how long before idle worker triggers escalation
+DEFAULT_ESCALATION_TIMEOUT_CEO = 60
+"""CEO idle timeout before escalation (minutes)."""
+
+DEFAULT_ESCALATION_TIMEOUT_MANAGER = 45
+"""Manager idle timeout before escalation (minutes)."""
+
+DEFAULT_ESCALATION_TIMEOUT_WORKER = 30
+"""Worker idle timeout before escalation (minutes)."""
+
+# Escalation monitoring
+DEFAULT_ESCALATION_POLL_INTERVAL = 60.0
+"""Default polling interval for escalation monitor (seconds)."""
 
 
 # ===================

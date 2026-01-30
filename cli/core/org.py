@@ -44,14 +44,23 @@ class Org:
     All state changes are persisted to the database.
     """
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, org_path: Optional[Path] = None):
         """Initialize org wrapper.
 
         Args:
             db: Database instance
+            org_path: Optional org path (derived from db if not provided)
         """
         self.db = db
         self._state_data = None
+        self._escalation_monitor = None
+
+        # Derive org_path from db if not provided
+        if org_path:
+            self._org_path = org_path
+        else:
+            db_path = Path(self.db.db_path)
+            self._org_path = db_path.parent.parent  # live/quinn.db -> org_path
 
     def _load_state(self) -> None:
         """Load org state from database."""
@@ -91,6 +100,11 @@ class Org:
     def is_operational(self) -> bool:
         """Check if org is operational (running)."""
         return self.status == OrgStatus.RUNNING.value
+
+    @property
+    def org_path(self) -> Path:
+        """Get organization path."""
+        return self._org_path
 
     @property
     def started_at(self):
@@ -286,6 +300,93 @@ class Org:
         _logger.info(f"Rolled back org status after error: {current_status} -> {target_status}")
         self._state_data = None  # Invalidate cache
 
+    def start_with_session(
+        self,
+        session_config: Optional["SessionConfig"] = None,
+        spawn_ceo: bool = True,
+    ) -> tuple[str, str]:
+        """Start org with integrated session spawning and escalation monitoring (GAP 2 fix).
+
+        This method atomically:
+        1. Transitions org to RUNNING state
+        2. Spawns CEO session (if requested)
+        3. Starts escalation monitor
+        4. Rolls back on failure
+
+        Args:
+            session_config: Session configuration for CEO (if spawn_ceo=True)
+            spawn_ceo: Whether to spawn CEO session automatically
+
+        Returns:
+            Tuple of (old_status, new_status)
+
+        Raises:
+            InvalidOrgTransition: If org cannot be started
+            SessionSpawnError: If session spawn fails (after rollback)
+        """
+        from core.session import SessionConfig
+        from core.sessions.registry import get_default_registry
+        from core.onboarding import prepare_worker_onboarding, get_worker_env_vars
+        from core.storage import StorageManager
+        from shared import SessionSpawnError
+
+        old_status = self.status
+
+        try:
+            # Step 1: Transition org state
+            old_status, new_status = self.start()
+
+            # Step 2: Spawn CEO session if requested
+            if spawn_ceo and self.ceo:
+                if session_config is None:
+                    # Create default session config
+                    onboarding_ctx = prepare_worker_onboarding(self.db, self.ceo.id, self._org_path)
+                    storage = StorageManager(self._org_path, self.db)
+                    worker_dir = storage.get_worker_path(self.ceo.id)
+                    env_vars = get_worker_env_vars(onboarding_ctx, self._org_path, self.db)
+
+                    session_config = SessionConfig(
+                        worker_id=self.ceo.id,
+                        provider="claude_code",
+                        command="claude",
+                        args=["--dangerously-skip-permissions"],
+                        working_directory=worker_dir,
+                        env_vars=env_vars,
+                    )
+
+                # Set registry and spawn
+                registry = get_default_registry()
+                self.ceo.set_registry(registry)
+
+                try:
+                    self.ceo.spawn(session_config)
+                    _logger.info(f"CEO session spawned (provider: {session_config.provider})")
+                except Exception as e:
+                    # Rollback org state on session spawn failure
+                    _logger.error(f"Failed to spawn CEO session: {e}")
+                    self.rollback_to_status(old_status)
+                    self._stop_escalation_monitor()  # Clean up monitor if it started
+                    raise SessionSpawnError(self.ceo.id, str(e))
+
+            # Step 3: Start escalation monitor
+            self._start_escalation_monitor()
+
+            return (old_status, new_status)
+
+        except InvalidOrgTransition:
+            # Let transition errors propagate as-is
+            raise
+        except SessionSpawnError:
+            # Let session spawn errors propagate as-is (already rolled back)
+            raise
+        except Exception as e:
+            # Rollback on any unexpected error
+            _logger.error(f"Unexpected error during start_with_session: {e}")
+            if self.status != old_status:
+                self.rollback_to_status(old_status)
+            self._stop_escalation_monitor()
+            raise
+
     def _get_briefing_path(self) -> Path:
         """Get path to CEO briefing markdown file."""
         db_path = Path(self.db.db_path)
@@ -386,9 +487,46 @@ class Org:
         """
         old_status = self.status
         self._validate_transition(OrgStatus.STOPPED.value)
+
+        # Stop escalation monitor before stopping org
+        self._stop_escalation_monitor()
+
         update_org_status(self.db, OrgStatus.STOPPED.value, self.ceo_worker_id)
         self._state_data = None  # Invalidate cache
         log_org_state_change(_logger, old_status, OrgStatus.STOPPED.value)
+
+    def _start_escalation_monitor(self) -> None:
+        """Start the escalation monitor for idle worker detection.
+
+        This is called automatically by start_with_session().
+        """
+        if self._escalation_monitor is not None and self._escalation_monitor.is_running():
+            _logger.debug("Escalation monitor already running")
+            return
+
+        from core.escalation_monitor import EscalationMonitor
+        from core.constants import DEFAULT_ESCALATION_POLL_INTERVAL
+
+        self._escalation_monitor = EscalationMonitor(
+            self._org_path,
+            poll_interval=DEFAULT_ESCALATION_POLL_INTERVAL
+        )
+        self._escalation_monitor.start()
+        _logger.info("Escalation monitor started")
+
+    def _stop_escalation_monitor(self) -> None:
+        """Stop the escalation monitor.
+
+        This is called automatically by stop().
+        """
+        if self._escalation_monitor is None:
+            return
+
+        if self._escalation_monitor.is_running():
+            self._escalation_monitor.stop()
+            _logger.info("Escalation monitor stopped")
+
+        self._escalation_monitor = None
 
     # ==================
     # QUERY HELPERS

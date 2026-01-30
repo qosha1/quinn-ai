@@ -40,6 +40,8 @@ class OnboardingContext:
     is_ceo: bool
     is_manager: bool
     timestamp: str
+    first_actions: list[str]  # Actionable first steps for worker
+    escalation_timeout_minutes: int  # How long before idle triggers escalation
 
 
 def prepare_worker_onboarding(
@@ -167,6 +169,19 @@ def _load_onboarding_context(
     is_ceo = worker.role.upper() == "CEO"
     is_manager = worker.manager_id is None and not is_ceo  # Has no manager but isn't CEO
 
+    # Generate context-aware first actions (GAP 3 fix)
+    first_actions = _generate_first_actions(
+        worker_role=worker.role,
+        worker_id=worker.id,
+        is_ceo=is_ceo,
+        is_manager=is_manager,
+        has_okrs=len(okrs) > 0,
+        manager_name=manager_name,
+    )
+
+    # Get escalation timeout based on role (GAP 4 setup)
+    escalation_timeout = _get_escalation_timeout(worker.role, is_ceo, is_manager)
+
     return OnboardingContext(
         worker_id=worker.id,
         worker_name=worker.name,
@@ -181,6 +196,8 @@ def _load_onboarding_context(
         is_ceo=is_ceo,
         is_manager=is_manager,
         timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        first_actions=first_actions,
+        escalation_timeout_minutes=escalation_timeout,
     )
 
 
@@ -261,6 +278,105 @@ def _load_worker_okrs(db: Database, worker_id: str) -> list[dict]:
     return okrs
 
 
+def _generate_first_actions(
+    worker_role: str,
+    worker_id: str,
+    is_ceo: bool,
+    is_manager: bool,
+    has_okrs: bool,
+    manager_name: Optional[str],
+) -> list[str]:
+    """Generate context-aware first actions for worker.
+
+    This fixes GAP 3: Workers need specific, actionable first steps
+    rather than generic instructions.
+
+    Args:
+        worker_role: Worker's role
+        worker_id: Worker ID
+        is_ceo: Whether worker is CEO
+        is_manager: Whether worker is a manager
+        has_okrs: Whether worker has OKRs assigned
+        manager_name: Manager's name if exists
+
+    Returns:
+        List of specific action items to start immediately
+    """
+    actions = []
+
+    if is_ceo:
+        if has_okrs:
+            actions = [
+                "Review your OKRs: run `bd list --type=okr --assignee=me` to see objectives",
+                "Check assigned work: run `bd ready` to see tasks ready for you",
+                "Review team status: run `qn wrkr list` to see current workers",
+                "Start on highest priority OKR: pick key result to advance today",
+                "Document your plan: create bead with `bd create --title='Today's plan: ...' --type=task`",
+            ]
+        else:
+            actions = [
+                "Create your first OKR: run `qn org okr create --title='Your objective' --owner=me`",
+                "Define key results: add metrics with `qn org okr add-kr {okr-id} --metric='...' --target=N`",
+                "Break down into tasks: create beads linked to OKR with `bd create --deps='serves:{okr-id}'`",
+                "Start execution: run `bd ready` and claim first task",
+                "Hire initial team: plan who you need with `qn org hire --help`",
+            ]
+    elif is_manager:
+        if has_okrs:
+            actions = [
+                "Review your OKRs: run `bd list --type=okr --assignee=me`",
+                "Break down OKRs into tasks: create tasks that serve each key result",
+                "Check team capacity: run `qn wrkr list --team={your-team}` to see who's available",
+                f"Sync with manager: message {manager_name} about your plan if needed",
+                "Start on first task: run `bd ready` and begin work",
+            ]
+        else:
+            actions = [
+                f"Get OKRs from {manager_name}: check if objectives have been delegated",
+                "Create team plan: outline what your team needs to deliver",
+                "Document dependencies: note what you're blocked on in beads",
+                "Request delegation: ask manager for hiring authority if you need to grow team",
+            ]
+    else:
+        # Regular worker
+        actions = [
+            "Check assigned work: run `bd ready` to see tasks assigned to you",
+            f"Sync with {manager_name}: introduce yourself and confirm priorities",
+            "Review your OKRs: run `bd list --type=okr --assignee=me` to understand goals",
+            "Read architecture docs: run `cat CLAUDE.md` to understand coding standards",
+            "Start first task: run `bd update {task-id} --status=in_progress` to claim work",
+        ]
+
+    return actions
+
+
+def _get_escalation_timeout(worker_role: str, is_ceo: bool, is_manager: bool) -> int:
+    """Get escalation timeout in minutes based on worker role.
+
+    This supports GAP 4: Escalation monitoring needs role-specific timeouts.
+
+    Args:
+        worker_role: Worker's role
+        is_ceo: Whether worker is CEO
+        is_manager: Whether worker is a manager
+
+    Returns:
+        Timeout in minutes before idle triggers escalation
+    """
+    from core.constants import (
+        DEFAULT_ESCALATION_TIMEOUT_CEO,
+        DEFAULT_ESCALATION_TIMEOUT_MANAGER,
+        DEFAULT_ESCALATION_TIMEOUT_WORKER,
+    )
+
+    if is_ceo:
+        return DEFAULT_ESCALATION_TIMEOUT_CEO
+    elif is_manager:
+        return DEFAULT_ESCALATION_TIMEOUT_MANAGER
+    else:
+        return DEFAULT_ESCALATION_TIMEOUT_WORKER
+
+
 def _create_briefing(worker_dir: Path, ctx: OnboardingContext) -> None:
     """Generate BRIEFING.md from template.
 
@@ -290,6 +406,8 @@ def _create_briefing(worker_dir: Path, ctx: OnboardingContext) -> None:
         is_ceo=ctx.is_ceo,
         is_manager=ctx.is_manager,
         timestamp=ctx.timestamp,
+        first_actions=ctx.first_actions,
+        escalation_timeout_minutes=ctx.escalation_timeout_minutes,
     )
 
     (worker_dir / "BRIEFING.md").write_text(content)

@@ -1,0 +1,56 @@
+# QuinnAI Notification Configuration
+#
+# Controls how the board receives notifications about org events.
+# Multiple channels supported with priority-based routing.
+
+settings:
+  enabled: true
+  
+  # Batch similar notifications within this window (seconds)
+  batch_window_seconds: 60
+  
+  # Quiet hours (suppress non-urgent notifications)
+  quiet_hours:
+    enabled: false
+    start: "22:00"  # 10 PM
+    end: "07:00"    # 7 AM
+  
+  # Rate limiting (prevent notification spam)
+  rate_limit:
+    max_per_hour: 20
+    max_per_minute: 5
+
+# Notification Channels
+# Each channel has independent configuration and priority filtering
+
+channels:
+  # File Queue (always available)
+  # Writes notifications to storage/shared/board/inbox/
+  file_queue:
+    enabled: true
+    retention_days: 7
+
+  # Desktop Notifications (platform-specific)
+  # Uses native OS notification system
+  desktop:
+    enabled: true
+    min_priority: normal  # urgent, high, normal, low, info
+
+  # Slack Webhook (optional)
+  # Requires webhook URL from Slack app
+  slack:
+    enabled: false
+    webhook_url: ""  # https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+    min_priority: high
+
+  # Email (optional)
+  # Requires SMTP server configuration
+  email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    from_address: ""
+    to_address: ""
+    username: ""
+    password: ""
+    min_priority: urgent

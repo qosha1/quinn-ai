@@ -93,11 +93,17 @@ No OKRs assigned yet. Check with your manager or create initial objectives.
 
 ## First Actions
 
+{% if first_actions %}
+{% for action in first_actions %}
+{{ loop.index }}. {{ action }}
+{% endfor %}
+{% else %}
 1. Read this briefing thoroughly
 2. Review your OKRs: `bd list --assignee={{ worker_id }}`
 3. Check for assigned tasks: `bd ready`
 4. Read architecture rules: `cat CLAUDE.md`
 5. Understand storage: `cat STORAGE.md`
+{% endif %}
 
 ## Questions?
 
@@ -106,3 +112,18 @@ No OKRs assigned yet. Check with your manager or create initial objectives.
 {% endif %}
 - Escalate to board: Create message in escalations channel
 - Check docs: `cat CLAUDE.md` or `cat AGENTS.md`
+
+## Escalation Policy
+
+If you're idle (no progress on tasks) for **{{ escalation_timeout_minutes }} minutes**, an escalation will be created automatically to alert your manager{% if manager_name %} ({{ manager_name }}){% endif %}. This helps ensure you're never stuck without help.
+
+**What counts as progress:**
+- Committing code
+- Updating bead status
+- Creating new beads
+- Sending messages
+
+**If you're blocked:**
+- Document the blocker in a bead
+- Message your manager immediately
+- Don't wait for automatic escalation

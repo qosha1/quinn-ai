@@ -72,3 +72,21 @@ ORG_TRANSITIONS: dict[str, list[str]] = {
     "running": ["stopped"],
     "stopped": ["running"],
 }
+
+# ===================
+# ESCALATION STATES
+# ===================
+
+ESCALATION_STATES = frozenset([
+    "normal",
+    "idle_warning",
+    "escalated_pending",
+    "escalated_resolved",
+])
+
+ESCALATION_TRANSITIONS: dict[str, list[str]] = {
+    "normal": ["idle_warning", "escalated_pending"],
+    "idle_warning": ["normal", "escalated_pending"],
+    "escalated_pending": ["escalated_resolved", "normal"],
+    "escalated_resolved": ["normal"],
+}

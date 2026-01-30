@@ -527,6 +527,25 @@ def migrate_database(db: "Database", from_version: int, to_version: int) -> None
         18: [
             "ALTER TABLE org_state ADD COLUMN name TEXT NOT NULL DEFAULT 'My Organization'",
         ],
+        # Version 19: Add worker_escalation_state table for idle worker monitoring
+        19: [
+            """CREATE TABLE IF NOT EXISTS worker_escalation_state (
+                worker_id TEXT PRIMARY KEY,
+                current_state TEXT NOT NULL DEFAULT 'normal'
+                    CHECK(current_state IN ('normal', 'idle_warning', 'escalated_pending', 'escalated_resolved')),
+                last_activity_at DATETIME NOT NULL,
+                idle_since DATETIME,
+                escalation_created_at DATETIME,
+                escalation_id TEXT,
+                escalation_target_id TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
+                FOREIGN KEY (escalation_target_id) REFERENCES workers(id) ON DELETE SET NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_escalation_state_worker ON worker_escalation_state(worker_id)",
+            "CREATE INDEX IF NOT EXISTS idx_escalation_state_status ON worker_escalation_state(current_state)",
+            "CREATE INDEX IF NOT EXISTS idx_escalation_state_idle_since ON worker_escalation_state(idle_since) WHERE idle_since IS NOT NULL",
+        ],
     }
 
     for version in range(from_version + 1, to_version + 1):

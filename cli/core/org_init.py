@@ -8,6 +8,7 @@ used by both the CLI (qn org init) and the Board wizard.
 import os
 import shutil
 import subprocess
+import logging
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -326,6 +327,105 @@ def create_org_documentation(org_path: Path, org_name: str) -> None:
         (org_path / "README.md").write_text(content)
 
 
+def create_initial_okrs(org_path: Path, db, ceo_id: str) -> None:
+    """Create initial OKRs in database from config or bootstrap default.
+
+    This fixes GAP 1: OKRs written to config file but never created in database.
+
+    Reads from config/initial_okrs.json if it exists, otherwise creates a
+    bootstrap OKR to give CEO something to work on immediately.
+
+    Args:
+        org_path: Path to organization directory
+        db: Database instance
+        ceo_id: CEO worker ID (will be the owner of OKRs)
+    """
+    from core.queries.okr import create_okr, KeyResult
+    from core.constants import (
+        DEFAULT_BOOTSTRAP_OKR_TITLE,
+        DEFAULT_BOOTSTRAP_OKR_DESCRIPTION,
+    )
+    import json
+
+    config_file = org_path / "config" / "initial_okrs.json"
+
+    if config_file.exists():
+        # Load OKRs from config file
+        try:
+            okrs_data = json.loads(config_file.read_text())
+
+            for okr_config in okrs_data:
+                # Parse key results
+                key_results = []
+                for kr_data in okr_config.get("key_results", []):
+                    key_results.append(KeyResult(
+                        metric=kr_data["metric"],
+                        target=kr_data["target"],
+                        current=kr_data.get("current", 0.0),
+                        unit=kr_data.get("unit", "count"),
+                    ))
+
+                # Create OKR in database
+                create_okr(
+                    db=db,
+                    title=okr_config["title"],
+                    owner_id=ceo_id,
+                    description=okr_config.get("description"),
+                    status="active",
+                    key_results=key_results if key_results else None,
+                    due_date=None,
+                )
+
+        except (json.JSONDecodeError, KeyError) as e:
+            # If config is malformed, fall through to bootstrap
+            _logger = logging.getLogger(__name__)
+            _logger.warning(f"Failed to parse initial_okrs.json: {e}. Creating bootstrap OKR.")
+            _create_bootstrap_okr(db, ceo_id)
+    else:
+        # No config file, create bootstrap OKR
+        _create_bootstrap_okr(db, ceo_id)
+
+
+def _create_bootstrap_okr(db, ceo_id: str) -> None:
+    """Create a bootstrap OKR when no config exists.
+
+    Args:
+        db: Database instance
+        ceo_id: CEO worker ID
+    """
+    from core.queries.okr import create_okr, KeyResult
+    from core.constants import (
+        DEFAULT_BOOTSTRAP_OKR_TITLE,
+        DEFAULT_BOOTSTRAP_OKR_DESCRIPTION,
+    )
+
+    # Bootstrap OKR with generic key results
+    key_results = [
+        KeyResult(
+            metric="team_size",
+            target=3.0,
+            current=1.0,  # CEO is already hired
+            unit="workers",
+        ),
+        KeyResult(
+            metric="processes_documented",
+            target=3.0,
+            current=0.0,
+            unit="docs",
+        ),
+    ]
+
+    create_okr(
+        db=db,
+        title=DEFAULT_BOOTSTRAP_OKR_TITLE,
+        owner_id=ceo_id,
+        description=DEFAULT_BOOTSTRAP_OKR_DESCRIPTION,
+        status="active",
+        key_results=key_results,
+        due_date=None,
+    )
+
+
 def init_org(config: OrgInitConfig) -> OrgInitResult:
     """Initialize a new organization.
 
@@ -386,6 +486,9 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
             # 8. Create CEO worker
             org = Org(db)
             ceo = org.init(config.ceo_name, config.ceo_role)
+
+            # 8.5. Create initial OKRs in database (GAP 1 fix)
+            create_initial_okrs(org_path, db, ceo.id)
 
             # 9. Create org-chart
             create_org_chart(org_path, ceo)
