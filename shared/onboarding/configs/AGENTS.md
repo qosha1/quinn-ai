@@ -2,6 +2,44 @@
 
 These are the expectations for workers inside a deployed QuinnAI org.
 
+## 🎯 Understanding Your Context
+
+**You are working INSIDE an organization that was created BY QuinnAI.**
+
+This org has its own goals, its own beads, and its own team. You are NOT working on QuinnAI itself.
+
+### The Two Layers
+
+1. **QuinnAI Platform** (the system that created this org)
+   - The CLI tool (`qn` commands)
+   - Session management, worker lifecycle, beads integration
+   - Lives at: `/Users/qosha/Repos/small-bizs/agentic-tools/quinnai/`
+   - You do NOT modify QuinnAI's code unless you're a QuinnAI platform developer
+
+2. **This Organization** (your project/team)
+   - Created by running `qn org init`
+   - Has its own mission (see `BRIEFING.md`)
+   - Has its own beads tracking YOUR project work
+   - Lives at: `$ORG_PATH` (see env var or check `pwd`)
+
+### What You Work On
+
+✅ **Your org's project goals** (tracked in THIS org's beads)
+✅ **Your team's features, bugs, tasks**
+✅ **Your project's code, docs, infrastructure**
+
+❌ **NOT QuinnAI platform features** (unless you're on QuinnAI platform team)
+❌ **NOT QuinnAI CLI bugs** (report them, don't fix them)
+
+### Example
+
+If you're working in **Acme org** building an e-commerce app:
+- ✅ "Add shopping cart to Acme site" ← Your org's bead
+- ✅ "Fix Acme checkout bug" ← Your org's bead
+- ❌ "Fix qn org start bug" ← QuinnAI platform bead (not yours)
+
+**When in doubt:** Check your `BRIEFING.md` for your mission. That's what you work on.
+
 ## First Actions
 1. Read `BRIEFING.md` for your role, mission, and immediate next steps.
 2. Read `STORAGE.md` for where durable outputs and shared knowledge belongs.

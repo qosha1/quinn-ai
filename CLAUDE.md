@@ -4,6 +4,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## 🎯 CRITICAL: Understanding What QuinnAI Is
+
+**QuinnAI is the COMPUTER, not the software that runs on it.**
+
+### The Two Layers
+
+1. **QuinnAI (THIS REPO) = The Platform/Computer**
+   - We are building the system that manages AI organizations
+   - Our beads track work on QuinnAI itself (CLI features, bug fixes, architecture)
+   - Location: `/Users/qosha/Repos/small-bizs/agentic-tools/quinnai/`
+   - Beads: `.beads/` in repo root (QuinnAI development work)
+
+2. **Orgs/Projects (~/orgs/*) = Software/Applications**
+   - Created BY QuinnAI using `qn org init`
+   - Each org is a separate project with its own goals and beads
+   - Example: `~/orgs/acme` is Acme's project, not QuinnAI work
+   - Beads: `.beads/` in each org dir (that org's project work)
+
+### Examples to Clarify
+
+**QuinnAI Beads (this repo):**
+- "Add qn org config set-provider command" ← QuinnAI feature
+- "Fix default providers.yaml template" ← QuinnAI bug
+- "Remove redundant --ceo-role parameter" ← QuinnAI CLI improvement
+
+**Acme Org Beads (~/orgs/acme):**
+- "Implement user authentication for Acme app" ← Acme's project work
+- "Add dark mode to Acme dashboard" ← Acme's feature
+- "Fix bug in Acme checkout flow" ← Acme's bug
+
+### Never Confuse the Layers
+
+❌ **WRONG:** Create QuinnAI platform bugs in an org's beads
+✅ **RIGHT:** QuinnAI platform work goes in QuinnAI's beads
+
+❌ **WRONG:** Track Acme project work in QuinnAI's beads
+✅ **RIGHT:** Acme project work goes in Acme's beads
+
+**When in doubt:** If the issue is about QuinnAI's code (CLI, session management, org init, etc.), it belongs in QuinnAI's beads. If it's about a specific org's project goals, it belongs in that org's beads.
+
+---
+
 ## 🚨 Code Quality Commandments (MANDATORY)
 
 ### Test Before Respond
