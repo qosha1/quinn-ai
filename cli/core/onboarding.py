@@ -527,6 +527,7 @@ def get_worker_env_vars(
         "TEAM_NAME": ctx.team_name,
         "MANAGER_ID": ctx.manager_id or "",
         "ORG_PATH": str(org_path),
+        "QUINN_ORG_PATH": str(org_path),  # For qn-bd command
         "WORKER_STORAGE": str(worker_dir),
         "SHARED_STORAGE": str(org_path / "storage" / "shared"),
         "ORG_DB": str(org_path / "live" / "quinn.db"),
