@@ -558,12 +558,16 @@ class Org:
             return
 
         from core.activity_reporter import ActivityReporter
-        from core.constants import DEFAULT_ACTIVITY_REPORT_INTERVAL
+        from core.constants import (
+            DEFAULT_ACTIVITY_REPORT_INTERVAL,
+            DEFAULT_ACTIVITY_CREATE_BEADS,
+        )
 
         # Create and start activity reporter
         self._activity_reporter = ActivityReporter(
             org_path=self._org_path,
             report_interval=DEFAULT_ACTIVITY_REPORT_INTERVAL,
+            create_beads=DEFAULT_ACTIVITY_CREATE_BEADS,
         )
         self._activity_reporter.start()
         _logger.info("Activity reporter started")
@@ -664,9 +668,15 @@ Start by running: `cat BRIEFING.md`"""
             _logger.info("Waiting for CEO session to become ready...")
             time.sleep(3)  # Give Claude Code time to initialize
 
-            # Send the initial prompt
+            # Check if session exists
+            if ceo.session is None:
+                _logger.warning("CEO has no active session - cannot send initial prompt")
+                _logger.warning("CEO will need manual interaction to start work")
+                return
+
+            # Send the initial prompt via session
             _logger.info("Sending initial prompt to CEO session...")
-            ceo.send_prompt(initial_prompt)
+            ceo.session.send_prompt(initial_prompt)
             _logger.info("Initial prompt sent successfully")
 
         except Exception as e:
