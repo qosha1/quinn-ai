@@ -66,10 +66,11 @@ class TeamView(Widget):
                 yield Button("All", id="filter-all", classes="filter-btn", variant="primary")
                 yield Button("Active", id="filter-active", classes="filter-btn")
                 yield Button("Idle", id="filter-idle", classes="filter-btn")
+                yield Button("+ Hire Worker", id="hire-worker-btn", variant="success", classes="filter-btn")
 
         with Container(id="workers-table"):
             table = DataTable(id="workers-data")
-            table.add_columns("Status", "Name", "Role", "Team", "Current Task", "Actions")
+            table.add_columns("Status", "Name", "Role", "Team", "Manager", "Actions")
             yield table
 
     async def on_mount(self) -> None:
@@ -120,6 +121,9 @@ class TeamView(Widget):
         table.clear()
         self._workers = workers
 
+        # Build manager name lookup
+        manager_names = {w.id: w.name for w in workers}
+
         for worker in self._workers:
             # Apply filter
             if not self._passes_filter(worker):
@@ -134,13 +138,24 @@ class TeamView(Widget):
             # Current task or status with session mode
             task = worker.current_task or self._get_status_text(worker.session_state, worker.session_mode)
 
+            # Manager name
+            manager = manager_names.get(worker.manager_id, "None") if worker.manager_id else "None"
+
+            # Actions - different options based on worker type
+            if worker.is_ceo:
+                actions = "[Chat]"
+            elif worker.manager_id is None:  # Manager (non-CEO)
+                actions = "[Chat] [Fire] [Demote]"
+            else:  # Regular worker
+                actions = "[Chat] [Fire] [Promote]"
+
             table.add_row(
                 status_icon,
                 worker.name,
                 role,
                 worker.team_name,
-                task,
-                "[Chat]",
+                manager,
+                actions,
                 key=worker.id,  # Store worker ID as row key
             )
 
@@ -209,7 +224,7 @@ class TeamView(Widget):
         return True
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle filter button presses."""
+        """Handle button presses."""
         if event.button.id in ("filter-all", "filter-active", "filter-idle"):
             # Update filter
             self._current_filter = event.button.id.replace("filter-", "")
@@ -224,19 +239,34 @@ class TeamView(Widget):
 
             # Refresh table with new filter
             await self.refresh_workers()
+        elif event.button.id == "hire-worker-btn":
+            await self._hire_worker()
 
     async def on_data_table_cell_selected(self, event: DataTable.CellSelected) -> None:
-        """Handle cell selection - check if it's the Chat button."""
+        """Handle cell selection - detect which action was clicked."""
         if event.coordinate.column == 5:  # Actions column
             # Get worker ID from row key - need to access .value attribute
             worker_id = event.cell_key.row_key.value
 
             # Find worker by ID
             worker = next((w for w in self._workers if w.id == worker_id), None)
-            if worker:
-                await self._open_worker_chat(worker)
-            else:
+            if not worker:
                 self.app.notify(f"Worker {worker_id} not found", severity="error")
+                return
+
+            # Get cell value to determine which action
+            cell_value = event.value
+
+            # Parse action from cell text
+            if "[Chat]" in cell_value:
+                # For now, always open chat on click
+                # TODO: Could parse click position to determine exact action
+                await self._open_worker_chat(worker)
+            elif "[Fire]" in cell_value:
+                # Show menu or directly fire (for now, let's show a confirmation)
+                await self._show_worker_actions_menu(worker)
+            elif "[Promote]" in cell_value or "[Demote]" in cell_value:
+                await self._show_worker_actions_menu(worker)
 
     async def _cleanup_stale_session(self, worker: WorkerInfo) -> bool:
         """Auto-cleanup a stale session when validation fails.
@@ -312,3 +342,107 @@ class TeamView(Widget):
             # Other errors (AppleScript, permissions, etc.)
             logger.error(f"Failed to open chat for {worker.name}: {e}")
             self.app.notify(f"Failed to open chat: {e}", severity="error")
+
+    async def _hire_worker(self) -> None:
+        """Hire a new worker.
+
+        Shows input prompts for worker name, role, and manager selection.
+        """
+        from textual.screen import ModalScreen
+        from textual.widgets import Input
+
+        # For now, show a notification that this needs CLI
+        # TODO: Implement proper modal dialog with form
+        self.app.notify(
+            "Worker hiring coming soon. For now, use: qn org hire --name=<name> --role=<role> --manager=<manager>",
+            severity="information",
+            timeout=8
+        )
+
+    async def _show_worker_actions_menu(self, worker: WorkerInfo) -> None:
+        """Show actions menu for a worker.
+
+        Displays Fire/Promote/Demote options based on worker type.
+        """
+        # For now, show a simple notification
+        # TODO: Implement proper menu/dialog
+
+        actions = []
+        if not worker.is_ceo:
+            actions.append("Fire")
+        if worker.manager_id is None and not worker.is_ceo:  # Manager
+            actions.append("Demote")
+        elif worker.manager_id is not None:  # Regular worker
+            actions.append("Promote")
+
+        self.app.notify(
+            f"Worker actions for {worker.name}: {', '.join(actions)}. Use CLI for now: qn org fire {worker.id}",
+            severity="information",
+            timeout=6
+        )
+
+    async def _fire_worker(self, worker: WorkerInfo) -> None:
+        """Fire a worker.
+
+        Shows confirmation dialog and executes qn org fire command.
+        """
+        if worker.is_ceo:
+            self.app.notify("Cannot fire the CEO", severity="error")
+            return
+
+        # TODO: Show confirmation dialog
+        # For now, use subprocess directly
+        import subprocess
+
+        self.app.notify(f"Firing {worker.name}...", severity="information")
+
+        try:
+            result = subprocess.run(
+                ["qn", "org", "fire", worker.id, "--force", "--org-path", str(self.app.org_connection.org_path)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                self.app.notify(f"Fired {worker.name} successfully", severity="success")
+                await self.refresh_workers()
+            else:
+                error = result.stderr or result.stdout or "Unknown error"
+                self.app.notify(f"Failed to fire {worker.name}: {error}", severity="error")
+        except Exception as e:
+            self.app.notify(f"Error firing worker: {e}", severity="error")
+
+    async def _promote_worker(self, worker: WorkerInfo) -> None:
+        """Promote a worker to manager.
+
+        Shows confirmation and executes qn org promote command.
+        """
+        if worker.is_ceo or worker.manager_id is None:
+            self.app.notify("Worker is already a manager or CEO", severity="warning")
+            return
+
+        self.app.notify(
+            f"Worker promotion coming soon. Use: qn org promote {worker.id}",
+            severity="information",
+            timeout=6
+        )
+
+    async def _demote_worker(self, worker: WorkerInfo) -> None:
+        """Demote a manager to regular worker.
+
+        Shows confirmation and executes qn org demote command.
+        """
+        if worker.is_ceo:
+            self.app.notify("Cannot demote the CEO", severity="error")
+            return
+
+        if worker.manager_id is not None:
+            self.app.notify("Worker is not a manager", severity="warning")
+            return
+
+        self.app.notify(
+            f"Worker demotion coming soon. Use: qn org demote {worker.id}",
+            severity="information",
+            timeout=6
+        )
