@@ -534,7 +534,7 @@ Your working directory contains important onboarding materials:
 **CRITICAL INSTRUCTIONS:**
 
 1. Read your BRIEFING.md file first: `cat BRIEFING.md`
-2. Review your assigned OKRs: `bd list --type=okr --assignee=me`
+2. Review your assigned OKRs: `qn org okr list`
 3. Check for ready work: `bd ready`
 4. Start working autonomously on your highest priority OKR
 

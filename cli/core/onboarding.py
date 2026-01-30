@@ -307,9 +307,9 @@ def _generate_first_actions(
     if is_ceo:
         if has_okrs:
             actions = [
-                "Review your OKRs: run `bd list --type=okr --assignee=me` to see objectives",
+                "Review your OKRs: run `qn org okr list` to see objectives and progress",
                 "Check assigned work: run `bd ready` to see tasks ready for you",
-                "Review team status: run `qn wrkr list` to see current workers",
+                "Review team status: check workers with `qn org status`",
                 "Start on highest priority OKR: pick key result to advance today",
                 "Document your plan: create bead with `bd create --title='Today's plan: ...' --type=task`",
             ]
@@ -324,9 +324,9 @@ def _generate_first_actions(
     elif is_manager:
         if has_okrs:
             actions = [
-                "Review your OKRs: run `bd list --type=okr --assignee=me`",
+                "Review your OKRs: run `qn org okr list` to see your objectives",
                 "Break down OKRs into tasks: create tasks that serve each key result",
-                "Check team capacity: run `qn wrkr list --team={your-team}` to see who's available",
+                "Check team capacity: run `qn org status` to see who's available",
                 f"Sync with manager: message {manager_name} about your plan if needed",
                 "Start on first task: run `bd ready` and begin work",
             ]
@@ -342,7 +342,7 @@ def _generate_first_actions(
         actions = [
             "Check assigned work: run `bd ready` to see tasks assigned to you",
             f"Sync with {manager_name}: introduce yourself and confirm priorities",
-            "Review your OKRs: run `bd list --type=okr --assignee=me` to understand goals",
+            "Review your OKRs: run `qn org okr list` to understand your goals",
             "Read architecture docs: run `cat CLAUDE.md` to understand coding standards",
             "Start first task: run `bd update {task-id} --status=in_progress` to claim work",
         ]
