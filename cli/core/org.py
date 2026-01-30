@@ -365,6 +365,10 @@ class Org:
                 try:
                     self.ceo.spawn(session_config)
                     _logger.info(f"CEO session spawned (provider: {session_config.provider})")
+
+                    # Send initial prompt to start autonomous work (GAP 5 fix)
+                    self._send_initial_ceo_prompt(self.ceo, worker_dir)
+
                 except Exception as e:
                     # Rollback org state on session spawn failure
                     _logger.error(f"Failed to spawn CEO session: {e}")
@@ -531,6 +535,65 @@ class Org:
             _logger.info("Escalation monitor stopped")
 
         self._escalation_monitor = None
+
+    def _send_initial_ceo_prompt(self, ceo: "Worker", worker_dir: Path) -> None:
+        """Send initial prompt to CEO to start autonomous work.
+
+        This prompt instructs the CEO to:
+        1. Read onboarding materials (BRIEFING.md, STORAGE.md, WELCOME.md)
+        2. Review OKRs
+        3. Start working autonomously
+
+        Args:
+            ceo: CEO worker instance
+            worker_dir: Path to CEO's worker directory
+        """
+        import time
+
+        initial_prompt = """You are Alice, the CEO of this organization. You've just been onboarded.
+
+Your working directory contains important onboarding materials:
+- BRIEFING.md - Your role, responsibilities, OKRs, and first actions
+- STORAGE.md - Storage architecture and where to save work
+- WELCOME.md - Welcome message and context
+- CLAUDE.md - Development guidelines
+- AGENTS.md - Agent collaboration patterns
+
+**CRITICAL INSTRUCTIONS:**
+
+1. Read your BRIEFING.md file first: `cat BRIEFING.md`
+2. Review your assigned OKRs: `bd list --type=okr --assignee=me`
+3. Check for ready work: `bd ready`
+4. Start working autonomously on your highest priority OKR
+
+**AUTONOMOUS MODE:**
+You were started with `qn org start`, which means you should operate autonomously:
+- Work continuously based on OKRs without waiting for user input
+- Make best-guess decisions aligned with objectives
+- Document decisions in beads for later review
+- Only stop for CRITICAL blockers that prevent ALL progress
+- For non-critical questions: document in beads and proceed with reasonable default
+
+**YOUR FIRST TASK:**
+Read BRIEFING.md now and follow the "First Actions" section. Then begin working on your first OKR.
+
+Start by running: `cat BRIEFING.md`"""
+
+        try:
+            # Wait for session to reach IDLE state (brief pause after spawn)
+            _logger.info("Waiting for CEO session to become ready...")
+            time.sleep(3)  # Give Claude Code time to initialize
+
+            # Send the initial prompt
+            _logger.info("Sending initial prompt to CEO session...")
+            ceo.send_prompt(initial_prompt)
+            _logger.info("Initial prompt sent successfully")
+
+        except Exception as e:
+            # Don't fail the org start if initial prompt fails
+            # CEO can still work, just won't have the automatic kickoff
+            _logger.warning(f"Failed to send initial CEO prompt: {e}")
+            _logger.warning("CEO session spawned but will need manual interaction to start work")
 
     # ==================
     # QUERY HELPERS

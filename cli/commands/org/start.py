@@ -505,8 +505,85 @@ def _spawn_ceo_session_if_needed(
     try:
         ceo.spawn(config)
         click.echo(f"CEO session spawned (provider: {provider})")
+
+        # Send initial prompt to kickstart autonomous work
+        _send_initial_prompt_to_ceo(ceo, worker_dir)
+
     except Exception as e:
         raise SessionSpawnError(ceo.id, str(e))
+
+
+def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
+    """Send initial prompt to CEO to start autonomous work.
+
+    Args:
+        ceo: CEO worker instance
+        worker_dir: Path to CEO's worker directory
+    """
+    import time
+
+    initial_prompt = """You are {ceo_name}, the CEO of this organization. You've just been onboarded.
+
+Your working directory contains important onboarding materials:
+- BRIEFING.md - Your role, responsibilities, OKRs, and first actions
+- STORAGE.md - Storage architecture and where to save work
+- WELCOME.md - Welcome message and context
+- CLAUDE.md - Development guidelines
+- AGENTS.md - Agent collaboration patterns
+
+**CRITICAL INSTRUCTIONS:**
+
+1. Read your BRIEFING.md file first: `cat BRIEFING.md`
+2. Review your assigned OKRs: `bd list --type=okr --assignee=me`
+3. Check for ready work: `bd ready`
+4. Start working autonomously on your highest priority OKR
+
+**AUTONOMOUS MODE:**
+You were started with `qn org start`, which means you should operate autonomously:
+- Work continuously based on OKRs without waiting for user input
+- Make best-guess decisions aligned with objectives
+- Document decisions in beads for later review
+- Only stop for CRITICAL blockers that prevent ALL progress
+- For non-critical questions: document in beads and proceed with reasonable default
+
+**YOUR FIRST TASK:**
+Read BRIEFING.md now and follow the "First Actions" section. Then begin working on your first OKR.
+
+Start by running: `cat BRIEFING.md`"""
+
+    import subprocess
+
+    try:
+        # Write initial prompt to a file in the worker's directory
+        click.echo("Creating initial task instructions...")
+
+        instructions_file = worker_dir / "INITIAL_TASK.md"
+        formatted_prompt = initial_prompt.format(ceo_name=ceo.name)
+        instructions_file.write_text(formatted_prompt)
+
+        # Wait a moment for Claude Code to initialize
+        time.sleep(2)
+
+        # Send command via tmux to read the instructions
+        tmux_session = f"qn-{ceo.id}"
+        command = f"cat INITIAL_TASK.md"
+
+        try:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_session, command, "Enter"],
+                check=True,
+                capture_output=True
+            )
+            click.echo("✓ Initial task instructions delivered to CEO session")
+            click.echo("  CEO should read INITIAL_TASK.md and start working autonomously")
+        except subprocess.CalledProcessError as e:
+            click.echo(f"Warning: Could not send command to tmux: {e}", err=True)
+            click.echo(f"  CEO can manually run: cat INITIAL_TASK.md", err=True)
+
+    except Exception as e:
+        # Don't fail the org start if initial prompt fails
+        click.echo(f"Warning: Failed to deliver initial instructions: {e}", err=True)
+        click.echo(f"CEO session spawned but will need manual input to start work", err=True)
 
 
 # ===================
