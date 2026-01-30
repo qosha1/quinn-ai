@@ -569,13 +569,22 @@ Start by running: `cat BRIEFING.md`"""
         command = f"cat INITIAL_TASK.md"
 
         try:
+            # Send the command
             subprocess.run(
-                ["tmux", "send-keys", "-t", tmux_session, command, "Enter"],
+                ["tmux", "send-keys", "-t", tmux_session, command],
                 check=True,
                 capture_output=True
             )
-            click.echo("✓ Initial task instructions delivered to CEO session")
-            click.echo("  CEO should read INITIAL_TASK.md and start working autonomously")
+            # Wait a moment for it to appear in the buffer
+            time.sleep(0.5)
+            # Send Enter to execute it
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_session, "Enter"],
+                check=True,
+                capture_output=True
+            )
+            click.echo("✓ Initial task instructions sent and executed in CEO session")
+            click.echo("  CEO should now be reading instructions and starting autonomous work")
         except subprocess.CalledProcessError as e:
             click.echo(f"Warning: Could not send command to tmux: {e}", err=True)
             click.echo(f"  CEO can manually run: cat INITIAL_TASK.md", err=True)
