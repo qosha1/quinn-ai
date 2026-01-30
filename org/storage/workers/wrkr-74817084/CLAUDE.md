@@ -1,1 +1,0 @@
-/Users/qosha/Repos/small-bizs/agentic-tools/quinnai/shared/onboarding/configs/CLAUDE.md
