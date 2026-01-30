@@ -3,7 +3,7 @@
 **Role:** CEO
 **Team:** Executive
 **Manager:** Board
-**Started:** 2026-01-29 18:57
+**Started:** 2026-01-29 19:06
 
 ## Mission
 
@@ -48,12 +48,12 @@ No OKRs assigned yet. Check with your manager or create initial objectives.
 
 ## Storage Architecture
 
-**Your workspace:** `/Users/qosha/Repos/small-bizs/agentic-tools/quinnai/org/storage/workers/wrkr-74817084`
+**Your workspace:** `storage/workers/wrkr-74817084`
 - Private to you
 - Deleted if you're fired (after teammate review)
 - Use for: work in progress, notes, drafts
 
-**Shared storage:** `/Users/qosha/Repos/small-bizs/agentic-tools/quinnai/org/storage/shared`
+**Shared storage:** `storage/shared`
 - `shared/topics/{topic}/` - Permanent knowledge by topic
 - `shared/teams/{team}/` - Team-specific shared knowledge
 - Use for: completed work, discoveries, reusable artifacts

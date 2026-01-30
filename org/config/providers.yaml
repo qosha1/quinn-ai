@@ -5,17 +5,25 @@
 # API keys should never be committed - use environment variables.
 
 # Default provider used when no preference specified
-default: anthropic
+default: claude_code
 
 # Authorized providers - which providers the org can use
 authorized_providers:
+  - claude_code
   - anthropic
   - openai
 
 # Available providers
 providers:
-  anthropic:
+  claude_code:
     enabled: true
+    # Uses authenticated Claude Code CLI - API key field required but not used
+    api_key: "not-needed-uses-claude-cli-auth"
+    timeout: 120
+    max_retries: 3
+
+  anthropic:
+    enabled: false
     api_key: ${ANTHROPIC_API_KEY}
     timeout: 60
     max_retries: 3
