@@ -327,7 +327,7 @@ See `docs/architecture-decisions/ADR-005-delegation-authority.md` for full desig
 Terminal dashboard for real-time org oversight.
 
 ```bash
-qn-board
+qn board ui
 ```
 
 ### Tabs

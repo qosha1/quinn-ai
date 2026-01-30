@@ -232,7 +232,7 @@ quinnai/                          # Main project
 │   ├── state_machines.py         # State transition definitions
 │   ├── exceptions.py             # Business logic exceptions
 │   └── enums.py                  # Shared enums
-├── terminal-app/                 # Terminal UI dashboard (qn-board)
+├── terminal-app/                 # Terminal UI dashboard (qn board ui)
 ├── backend/                      # Django API (future)
 ├── app/                          # Dashboard UI (future)
 ├── landing/                      # Marketing site (future)

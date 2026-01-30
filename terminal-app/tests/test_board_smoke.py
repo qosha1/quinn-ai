@@ -1,7 +1,7 @@
 """
 Smoke test for board UI launch.
 
-Verifies that qn-board can launch without crashing and shows proper no-org state.
+Verifies that qn board ui can launch without crashing and shows proper no-org state.
 """
 
 import pytest

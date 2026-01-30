@@ -9,7 +9,7 @@
 
 ### Completed Epic & Tasks (9 closed)
 1. ✅ **quinnai-u3o3** (P0) - SQLite WAL polling for real-time UI updates
-2. ✅ **quinnai-dj2h** (P1) - qn-board UI status update failures
+2. ✅ **quinnai-dj2h** (P1) - qn board ui UI status update failures
 3. ✅ **quinnai-68a1** (P1) - Stub completions - Core CLI
 4. ✅ **quinnai-ytzs** (P1) - Stub completions - Shared modules
 5. ✅ **quinnai-zhvy** (P1) - Stub completions - Terminal app
@@ -54,7 +54,7 @@ class RuntimeStatus(str, Enum):
 
 **Lines Added:** +118 lines
 
-**Impact:** Real-time updates infrastructure in place for qn-board.
+**Impact:** Real-time updates infrastructure in place for qn board ui.
 
 ---
 
@@ -90,7 +90,7 @@ Initial WAL pages: 2
 After INSERT (same conn): 1  ← Changed! ✅
 ```
 
-**Impact:** qn-board UI now detects all database changes, including same-connection writes.
+**Impact:** qn board ui UI now detects all database changes, including same-connection writes.
 
 ---
 
@@ -262,7 +262,7 @@ with self._subscriber_lock:
 ## 📝 Next Recommended Actions
 
 ### Immediate (if needed)
-1. Manual test: Start qn-board, verify UI updates in real-time
+1. Manual test: Start qn board ui, verify UI updates in real-time
 2. Integration test: Full org start/stop cycle
 3. Load test: Multiple workers updating concurrently
 

@@ -109,7 +109,7 @@ It's NOT:
 
 It IS:
 - Python CLI tool (`qn` command)
-- Terminal UI dashboard (`qn-board`)
+- Terminal UI dashboard (`qn board ui`)
 - Multi-worker AI organization orchestration
 - Session provider abstraction (supports claude_code, cursor, aider, etc.)
 - Beads-based work tracking integration

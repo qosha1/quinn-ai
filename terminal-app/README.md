@@ -38,7 +38,7 @@ qn board ui -o ~/my-org
 qn board ui --terminal kitty
 
 # Legacy command (deprecated, will show warning)
-qn-board
+qn board ui
 ```
 
 ## Terminal Support

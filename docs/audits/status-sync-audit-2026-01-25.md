@@ -11,7 +11,7 @@
 Identified the full status tracking pipeline from worker sessions to terminal UI. The system relies on **database polling** with potential race conditions and stale data issues. No real-time update mechanism exists.
 
 ### Root Cause Hypothesis
-**qn-board UI does not properly update worker status because:**
+**qn board ui UI does not properly update worker status because:**
 1. No push-based updates (polling only)
 2. Worker sessions may not call status update functions
 3. Caching in Worker class may serve stale data

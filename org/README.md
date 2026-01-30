@@ -62,7 +62,7 @@ cd /path/to/org && bd list --label=okr
 bd ready
 
 # Watch the board
-qn-board  # (if terminal-app is installed)
+qn board ui  # (if terminal-app is installed)
 ```
 
 ## Current OKRs

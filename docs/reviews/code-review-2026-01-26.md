@@ -12,7 +12,7 @@
 
 ### ✅ Accomplishments
 - Fixed blocking import error preventing 8 test files from running
-- Implemented real-time polling infrastructure for qn-board UI
+- Implemented real-time polling infrastructure for qn board ui UI
 - Added proper RuntimeStatus enum matching state machine
 
 ### ❌ Critical Issues Found
@@ -50,7 +50,7 @@ Changed: True                      ← Works for other connections
 ```
 
 **Impact:**
-- qn-board UI will NOT update when worker processes modify database
+- qn board ui UI will NOT update when worker processes modify database
 - Polling only detects changes from OTHER connections
 - Users see stale data until external process writes
 
@@ -257,7 +257,7 @@ ERROR - create_budget_pool() missing 1 required positional argument: 'period_sta
 ### Testing Plan
 
 **Before merging fixes:**
-1. Manual test: Start qn-board, use CLI to update worker status, verify UI updates
+1. Manual test: Start qn board ui, use CLI to update worker status, verify UI updates
 2. Unit test: Test WAL checkpoint detection with concurrent writes
 3. Integration test: Full org start sequence with wait flag
 4. Load test: 10 concurrent workers updating status rapidly
@@ -287,7 +287,7 @@ The implementation fixed the critical import error and laid the foundation for r
 3. **Thread safety issues** - could cause intermittent failures
 
 **Recommended Action:**
-Implement fixes for P0 and P1 issues before releasing qn-board with real-time updates.
+Implement fixes for P0 and P1 issues before releasing qn board ui with real-time updates.
 
 **Estimated Fix Time:**
 - P0 (WAL checkpoint): 2-3 hours (implementation + testing)

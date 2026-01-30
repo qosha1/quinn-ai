@@ -105,7 +105,7 @@ Need to review each of the 14 flagged files to identify:
 ## Known Issues from Context
 
 ### Status Syncing (High Priority)
-- qn-board terminal app does not properly update worker status in UI
+- qn board ui terminal app does not properly update worker status in UI
 - Likely tracking issue between worker runtime state and UI refresh
 - Affects: terminal-app/src/board_ui/services/org_connection.py, terminal-app/src/board_ui/views/org_tabs.py
 

@@ -3,7 +3,7 @@
 **Status:** Proposed
 **Date:** 2026-01-28
 **Context:** quinnai-f0ye - Design centralized logging system enhancements
-**Related Epic:** quinnai-clck - Add Logs Tab to qn-board UI
+**Related Epic:** quinnai-clck - Add Logs Tab to qn board ui UI
 
 ---
 
@@ -428,7 +428,7 @@ def test_multiple_components_simultaneously():
 ## Related Documents
 
 - **Audit:** `shared/docs/logging-audit.md` - Current state analysis
-- **Epic:** `quinnai-clck` - Add Logs Tab to qn-board UI
+- **Epic:** `quinnai-clck` - Add Logs Tab to qn board ui UI
 - **Next Task:** `quinnai-7ndf` - TDD: Implement centralized logging module
 
 ---

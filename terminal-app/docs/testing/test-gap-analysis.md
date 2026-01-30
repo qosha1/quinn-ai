@@ -1,7 +1,7 @@
 # Test Gap Analysis: Unit Tests Pass, Real App Fails
 
 **Date**: 2026-01-23
-**Incident**: qn-board crashed on startup with DuplicateIds error despite all tests passing
+**Incident**: qn board ui crashed on startup with DuplicateIds error despite all tests passing
 **Root Cause**: Test coverage gap between unit tests and production behavior
 
 ## The Problem
@@ -10,7 +10,7 @@
 
 1. **Developer ran tests**: `make test` → ✓ 1432 CLI tests passed
 2. **Developer assumed safety**: "All tests pass, safe to ship"
-3. **User ran app**: `qn-board` → ✗ Crashed immediately with DuplicateIds error
+3. **User ran app**: `qn board ui` → ✗ Crashed immediately with DuplicateIds error
 4. **Investigation revealed**: terminal-app has 135 tests that were never run
 
 ### Why This Happened
@@ -148,7 +148,7 @@ def temp_org():
 
 Users run:
 ```bash
-qn-board  # Discovers orgs, auto-connects, shows UI
+qn board ui  # Discovers orgs, auto-connects, shows UI
 ```
 
 Tests should exercise the same flow:

@@ -33,9 +33,9 @@ After reviewing the stub audit from 2026-01-25 and re-scanning the current codeb
 ```
 
 **Impact:**
-- Blocks live status updates in qn-board terminal UI
+- Blocks live status updates in qn board ui terminal UI
 - Users must manually refresh to see worker status changes
-- Related to open issue: quinnai-dj2h (Debug qn-board UI status update failures)
+- Related to open issue: quinnai-dj2h (Debug qn board ui UI status update failures)
 
 **Dependencies:**
 - Understanding of SQLite WAL (Write-Ahead Logging) mode
@@ -180,7 +180,7 @@ except SomeError:
 
 ### Phase 1: Critical Path (P0)
 
-**Focus:** Real-time subscriptions (blocking qn-board status updates)
+**Focus:** Real-time subscriptions (blocking qn board ui status updates)
 
 **Tasks:**
 1. Create subtask: `quinnai-<new>: Implement SQLite WAL polling for real-time updates`
