@@ -145,7 +145,6 @@ class ActivityReporter:
 
                 # Create message in board-channel
                 from core.queries import create_message, generate_id
-                from core.notifications import create_notification_bead
 
                 message_content = f"## {worker_name} ({worker_role}) Activity\n\n{summary}"
 
@@ -155,20 +154,13 @@ class ActivityReporter:
                     from_worker_id=worker_id,
                     content=message_content,
                     priority=2,  # Normal priority
-                    time_sensitivity="routine",
+                    time_sensitivity="hours",  # Can be read within hours
                     message_id=generate_id("msg"),
                 )
 
-                # Create notification bead for the board
-                # The board isn't a worker, so we create a notification without worker_id
-                # This will show up in the board UI inbox
-                db.execute(
-                    """INSERT INTO notification_beads
-                       (id, message_id, channel_id, created_at, status)
-                       VALUES (?, ?, ?, ?, 'pending')""",
-                    (generate_id("notif"), message.id, board_channel_id, datetime.now())
-                )
-                db.connection.commit()
+                # Note: We don't create notification_beads for board messages
+                # Board UI queries all messages in board-channel directly
+                # Notification beads are only for worker-to-worker notifications
 
                 _logger.info(f"Sent activity report for {worker_name} to board")
 
