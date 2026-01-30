@@ -82,12 +82,59 @@ class WorkerLifecycleManager:
         log_worker_lifecycle(_logger, self.worker.id, self.worker.name, old_status, "onboarding")
 
     def complete_onboarding(self) -> None:
-        """Transition from onboarding to active."""
+        """Transition from onboarding to active.
+
+        Sends a welcome message to #general channel announcing the new worker.
+        """
         old_status = self.worker.lifecycle_status
         self._validate_lifecycle_transition("active")
         update_worker_status(self.worker.db, self.worker.id, "active")
         self.worker._worker_data = None
         log_worker_lifecycle(_logger, self.worker.id, self.worker.name, old_status, "active")
+
+        # Send welcome message to general channel
+        self._send_welcome_message()
+
+    def _send_welcome_message(self) -> None:
+        """Send welcome message to #general channel.
+
+        Announces new worker and suggests using msgr to communicate.
+        Silently fails if general channel doesn't exist or messaging fails.
+        """
+        try:
+            from ..queries.channel import get_channel_by_name, create_message_with_notifications
+
+            # Find general channel
+            general = get_channel_by_name(self.worker.db, "general")
+            if not general:
+                # No general channel - skip welcome message
+                return
+
+            # Compose welcome message
+            message = (
+                f"Welcome {self.worker.name}! 👋\n\n"
+                f"Role: {self.worker.role}\n"
+                f"Team: {self.worker.team_id or 'Unassigned'}\n\n"
+                f"Get started:\n"
+                f"• Check your inbox: `msgr inbox`\n"
+                f"• View available channels: `msgr channels`\n"
+                f"• Read your briefing: `cat BRIEFING.md`\n\n"
+                f"We're glad to have you on the team!"
+            )
+
+            # Send message to general channel (system message, no notifications)
+            create_message_with_notifications(
+                db=self.worker.db,
+                channel_id=general.id,
+                from_worker_id=self.worker.id,
+                content=message,
+                priority=3,  # Low priority (informational)
+                time_sensitivity="whenever",
+            )
+
+        except Exception:
+            # Silently fail - welcome message is nice-to-have, not critical
+            pass
 
     def fail_onboarding(self) -> None:
         """Transition from onboarding to terminated (failed onboarding).

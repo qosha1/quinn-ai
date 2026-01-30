@@ -58,7 +58,30 @@ def inbox_cmd(ctx: Context, pending_only: bool, show_all: bool, mark_read: bool,
 
     By default, shows only pending (unread) notifications. Use --all to see
     all notifications including read/actioned ones.
+
+    **DEPRECATED**: This command is deprecated. Use 'msgr inbox' instead.
+
+    \b
+    New syntax:
+      msgr inbox              # View pending notifications
+      msgr inbox --unread     # Only unread notifications
+      msgr channels           # List available channels
+
+    See 'msgr --help' for details.
     """
+    # Show deprecation warning
+    click.secho(
+        "⚠️  WARNING: 'qn wrkr inbox' is deprecated. Use 'msgr inbox' instead.",
+        fg="yellow",
+        err=True,
+    )
+    click.secho(
+        "   New syntax: msgr inbox",
+        fg="yellow",
+        err=True,
+    )
+    click.echo("", err=True)
+
     worker_id = ctx.worker_id
     if not worker_id:
         raise click.ClickException(

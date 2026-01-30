@@ -38,7 +38,29 @@ def send_cmd(ctx: Context, to_channel: str, priority: int, message: str):
     """Send a message.
 
     Sends a message to the specified channel.
+
+    **DEPRECATED**: This command is deprecated. Use 'msgr send' instead.
+
+    \b
+    New syntax:
+      msgr send #channel-name 'message'
+      msgr send @worker-id 'message'
+
+    See 'msgr send --help' for details.
     """
+    # Show deprecation warning
+    click.secho(
+        "⚠️  WARNING: 'qn wrkr send' is deprecated. Use 'msgr send' instead.",
+        fg="yellow",
+        err=True,
+    )
+    click.secho(
+        "   New syntax: msgr send #channel-name 'message'",
+        fg="yellow",
+        err=True,
+    )
+    click.echo("", err=True)
+
     worker_id = ctx.worker_id
     if not worker_id:
         raise click.ClickException(

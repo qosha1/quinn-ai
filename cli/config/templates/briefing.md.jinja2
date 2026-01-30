@@ -52,6 +52,51 @@ Complete your assigned tasks to high quality. You have authority to:
 - Propose improvements
 {% endif %}
 
+## Team Communication
+
+QuinnAI uses **msgr** for all team coordination:
+
+### Check your inbox
+```bash
+msgr inbox
+```
+
+Shows unread messages from all channels. Check this regularly to stay coordinated.
+
+### Send messages
+```bash
+# To a channel
+msgr send #general 'Team update here'
+
+# Direct message a worker
+msgr send @{{ manager_id }} 'Quick question'
+
+# With priority (for urgent issues)
+msgr send #board-channel 'Blocker needs attention' --priority=1
+```
+
+### Discover channels
+```bash
+msgr channels
+```
+
+Shows available channels you can join.
+
+### Your channels
+- **#general**: Org-wide announcements
+- **#board-channel**: Escalate blockers here (monitored by board)
+{% if is_ceo %}
+- You can see all channels as CEO
+{% else %}
+- **#{{ team_name }}**: Your team channel
+{% endif %}
+
+### Communication guidelines
+- Use channels for team visibility (others can learn from discussions)
+- Use DMs for 1:1 questions or private matters
+- Check `msgr inbox` at least once per session
+- Mark messages as read with `msgr read <msg-id>` to keep inbox clean
+
 ## Your OKRs
 
 {% if okrs %}
@@ -81,6 +126,12 @@ No OKRs assigned yet. Check with your manager or create initial objectives.
 
 ## Available Tools
 
+- **msgr** - Team messaging (primary communication)
+  - `msgr inbox` - Check notifications
+  - `msgr send #channel 'message'` - Send to channel
+  - `msgr send @worker-id 'message'` - Direct message
+  - `msgr channels` - List available channels
+
 - **bd** - Beads issue tracker (your work queue)
   - `bd ready` - See available tasks
   - `bd create --title="..." --type=task` - Create new task
@@ -108,9 +159,9 @@ No OKRs assigned yet. Check with your manager or create initial objectives.
 ## Questions?
 
 {% if manager_name %}
-- Ask your manager: `qn wrkr message {{ manager_id }} "..."`
+- Ask your manager: `msgr send @{{ manager_id }} "your question"`
 {% endif %}
-- Escalate to board: Create message in escalations channel
+- Escalate to board: `msgr send #board-channel "blocker description" --priority=1`
 - Check docs: `cat CLAUDE.md` or `cat AGENTS.md`
 
 ## Escalation Policy
