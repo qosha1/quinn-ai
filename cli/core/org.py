@@ -286,6 +286,10 @@ class Org:
 
         self._state_data = None  # Invalidate cache
         new_status = self.status
+
+        # Start escalation monitor (GAP 4 fix)
+        self._start_escalation_monitor()
+
         return (old_status, new_status)
 
     def rollback_to_status(self, target_status: str) -> None:

@@ -17,6 +17,14 @@ from .channels import (
 from .dispatcher import NotificationDispatcher
 from .board_notifier import BoardNotifier
 from .config import create_board_notifier, load_notification_config
+from .utils import (
+    run_notification_cleanup,
+    create_notification_bead,
+    get_worker_notifications,
+    get_pending_notifications,
+    count_pending_notifications,
+    mark_notification_read,
+)
 
 __all__ = [
     "BoardNotification",
@@ -31,4 +39,10 @@ __all__ = [
     "BoardNotifier",
     "create_board_notifier",
     "load_notification_config",
+    "run_notification_cleanup",
+    "create_notification_bead",
+    "get_worker_notifications",
+    "get_pending_notifications",
+    "count_pending_notifications",
+    "mark_notification_read",
 ]
