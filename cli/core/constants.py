@@ -578,6 +578,10 @@ DEFAULT_ESCALATION_TIMEOUT_WORKER = 30
 DEFAULT_ESCALATION_POLL_INTERVAL = 60.0
 """Default polling interval for escalation monitor (seconds)."""
 
+# Activity reporting
+DEFAULT_ACTIVITY_REPORT_INTERVAL = 300
+"""Default interval for sending activity reports to board (seconds, 5 minutes)."""
+
 
 # ===================
 # UTILITY FUNCTIONS

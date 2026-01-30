@@ -54,6 +54,7 @@ class Org:
         self.db = db
         self._state_data = None
         self._escalation_monitor = None
+        self._activity_reporter = None
 
         # Derive org_path from db if not provided
         if org_path:
@@ -287,8 +288,9 @@ class Org:
         self._state_data = None  # Invalidate cache
         new_status = self.status
 
-        # Start escalation monitor (GAP 4 fix)
-        self._start_escalation_monitor()
+        # Start monitoring services
+        self._start_escalation_monitor()  # GAP 4 fix
+        self._start_activity_reporter()   # Board activity visibility
 
         return (old_status, new_status)
 
@@ -373,11 +375,13 @@ class Org:
                     # Rollback org state on session spawn failure
                     _logger.error(f"Failed to spawn CEO session: {e}")
                     self.rollback_to_status(old_status)
-                    self._stop_escalation_monitor()  # Clean up monitor if it started
+                    self._stop_escalation_monitor()  # Clean up monitors if they started
+                    self._stop_activity_reporter()
                     raise SessionSpawnError(self.ceo.id, str(e))
 
-            # Step 3: Start escalation monitor
+            # Step 3: Start monitoring services
             self._start_escalation_monitor()
+            self._start_activity_reporter()
 
             return (old_status, new_status)
 
@@ -393,6 +397,7 @@ class Org:
             if self.status != old_status:
                 self.rollback_to_status(old_status)
             self._stop_escalation_monitor()
+            self._stop_activity_reporter()
             raise
 
     def _get_briefing_path(self) -> Path:
@@ -496,8 +501,9 @@ class Org:
         old_status = self.status
         self._validate_transition(OrgStatus.STOPPED.value)
 
-        # Stop escalation monitor before stopping org
+        # Stop monitoring services before stopping org
         self._stop_escalation_monitor()
+        self._stop_activity_reporter()
 
         update_org_status(self.db, OrgStatus.STOPPED.value, self.ceo_worker_id)
         self._state_data = None  # Invalidate cache
@@ -535,6 +541,40 @@ class Org:
             _logger.info("Escalation monitor stopped")
 
         self._escalation_monitor = None
+
+    def _start_activity_reporter(self) -> None:
+        """Start the activity reporter for worker session tracking.
+
+        This is called automatically by start().
+        """
+        if self._activity_reporter is not None and self._activity_reporter.is_running():
+            _logger.debug("Activity reporter already running")
+            return
+
+        from core.activity_reporter import ActivityReporter
+        from core.constants import DEFAULT_ACTIVITY_REPORT_INTERVAL
+
+        # Create and start activity reporter
+        self._activity_reporter = ActivityReporter(
+            org_path=self._org_path,
+            report_interval=DEFAULT_ACTIVITY_REPORT_INTERVAL,
+        )
+        self._activity_reporter.start()
+        _logger.info("Activity reporter started")
+
+    def _stop_activity_reporter(self) -> None:
+        """Stop the activity reporter.
+
+        This is called automatically by stop().
+        """
+        if self._activity_reporter is None:
+            return
+
+        if self._activity_reporter.is_running():
+            self._activity_reporter.stop()
+            _logger.info("Activity reporter stopped")
+
+        self._activity_reporter = None
 
     def _send_initial_ceo_prompt(self, ceo: "Worker", worker_dir: Path) -> None:
         """Send initial prompt to CEO to start autonomous work.
