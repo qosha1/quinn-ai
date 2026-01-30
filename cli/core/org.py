@@ -55,6 +55,7 @@ class Org:
         self._state_data = None
         self._escalation_monitor = None
         self._activity_reporter = None
+        self._session_capture = None
 
         # Derive org_path from db if not provided
         if org_path:
@@ -290,6 +291,7 @@ class Org:
 
         # Start monitoring services
         self._start_escalation_monitor()  # GAP 4 fix
+        self._start_session_capture()     # Capture worker session activity
         self._start_activity_reporter()   # Board activity visibility
 
         return (old_status, new_status)
@@ -376,11 +378,13 @@ class Org:
                     _logger.error(f"Failed to spawn CEO session: {e}")
                     self.rollback_to_status(old_status)
                     self._stop_escalation_monitor()  # Clean up monitors if they started
+                    self._stop_session_capture()
                     self._stop_activity_reporter()
                     raise SessionSpawnError(self.ceo.id, str(e))
 
             # Step 3: Start monitoring services
             self._start_escalation_monitor()
+            self._start_session_capture()
             self._start_activity_reporter()
 
             return (old_status, new_status)
@@ -397,6 +401,7 @@ class Org:
             if self.status != old_status:
                 self.rollback_to_status(old_status)
             self._stop_escalation_monitor()
+            self._stop_session_capture()
             self._stop_activity_reporter()
             raise
 
@@ -503,6 +508,7 @@ class Org:
 
         # Stop monitoring services before stopping org
         self._stop_escalation_monitor()
+        self._stop_session_capture()
         self._stop_activity_reporter()
 
         update_org_status(self.db, OrgStatus.STOPPED.value, self.ceo_worker_id)
@@ -575,6 +581,40 @@ class Org:
             _logger.info("Activity reporter stopped")
 
         self._activity_reporter = None
+
+    def _start_session_capture(self) -> None:
+        """Start the session capture service for worker activity tracking.
+
+        This is called automatically by start().
+        """
+        if self._session_capture is not None and self._session_capture.is_running():
+            _logger.debug("Session capture service already running")
+            return
+
+        from core.session_capture import SessionCaptureService
+        from core.constants import DEFAULT_SESSION_CAPTURE_INTERVAL
+
+        # Create and start session capture
+        self._session_capture = SessionCaptureService(
+            org_path=self._org_path,
+            capture_interval=DEFAULT_SESSION_CAPTURE_INTERVAL,
+        )
+        self._session_capture.start()
+        _logger.info("Session capture service started")
+
+    def _stop_session_capture(self) -> None:
+        """Stop the session capture service.
+
+        This is called automatically by stop().
+        """
+        if self._session_capture is None:
+            return
+
+        if self._session_capture.is_running():
+            self._session_capture.stop()
+            _logger.info("Session capture service stopped")
+
+        self._session_capture = None
 
     def _send_initial_ceo_prompt(self, ceo: "Worker", worker_dir: Path) -> None:
         """Send initial prompt to CEO to start autonomous work.

@@ -582,6 +582,9 @@ DEFAULT_ESCALATION_POLL_INTERVAL = 60.0
 DEFAULT_ACTIVITY_REPORT_INTERVAL = 300
 """Default interval for sending activity reports to board (seconds, 5 minutes)."""
 
+DEFAULT_SESSION_CAPTURE_INTERVAL = 10
+"""Default interval for capturing tmux session output (seconds)."""
+
 
 # ===================
 # UTILITY FUNCTIONS
