@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from cli.core.context import (
+from core.context import (
     OrgContext,
     OrgContextError,
     OrgNotFoundError,
 )
-from cli.core.db import init_database, get_org_db_path
-from cli.core.config import OrgConfig, ProvidersConfig, WorkerTemplatesConfig
+from core.db import init_database, get_org_db_path
+from core.config import OrgConfig, ProvidersConfig, WorkerTemplatesConfig
 
 
 @pytest.fixture
@@ -276,7 +276,7 @@ class TestOrgContextIntegration:
 
     def test_budget_service_works(self, org_with_config):
         """Should be able to use budget service through context."""
-        from cli.core.queries import (
+        from core.queries import (
             create_team,
             create_worker,
             create_budget_pool,
@@ -314,7 +314,7 @@ class TestOrgContextIntegration:
 
     def test_storage_works(self, org_with_config):
         """Should be able to use storage manager through context."""
-        from cli.core.queries import create_team, create_worker
+        from core.queries import create_team, create_worker
 
         with OrgContext.create(org_with_config) as ctx:
             # Set up test data
@@ -343,7 +343,7 @@ class TestOrgContextIntegration:
 
     def test_database_transactions(self, org_with_config):
         """Should support database transactions through context."""
-        from cli.core.queries import create_team, get_team
+        from core.queries import create_team, get_team
 
         with OrgContext.create(org_with_config) as ctx:
             # Use transaction

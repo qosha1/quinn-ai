@@ -5,7 +5,7 @@ Tests for spawn strategies.
 import pytest
 from pathlib import Path
 
-from cli.core.sessions import (
+from core.sessions import (
     SpawnStrategy,
     SpawnerConfig,
     SpawnResult,

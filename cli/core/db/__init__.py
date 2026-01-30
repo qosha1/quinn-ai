@@ -14,7 +14,7 @@ Public API:
     DEFAULT_BUSY_TIMEOUT_MS - Default busy timeout (for backward compatibility)
 """
 
-from cli.core.constants import DB_SCHEMA_VERSION, DEFAULT_DB_BUSY_TIMEOUT_MS
+from core.constants import DB_SCHEMA_VERSION, DEFAULT_DB_BUSY_TIMEOUT_MS
 
 from .connection import Database
 from .context import TransactionalFileContext

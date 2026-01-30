@@ -10,15 +10,15 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
 
-from cli.core.db import init_database
-from cli.core.queries import (
+from core.db import init_database
+from core.queries import (
     create_team,
     create_worker,
     create_budget_pool,
     create_budget_allocation,
     get_worker_state,
 )
-from cli.core.worker import Worker
+from core.worker import Worker
 from shared import InvalidStateTransition, RUNTIME_TRANSITIONS
 from shared.state_machines import RUNTIME_STATES
 
@@ -94,7 +94,7 @@ def create_mock_session(worker_id: str) -> MagicMock:
     Returns:
         MagicMock configured with all required session attributes
     """
-    from cli.core.session import SessionConfig, SessionState
+    from core.session import SessionConfig, SessionState
 
     mock_session = MagicMock()
     mock_session.config = SessionConfig(
@@ -138,7 +138,7 @@ class TestSessionT1NotSpawnedToStarting:
 
     def test_t1_enforces_budget(self, db, team):
         """T1 must check budget before spawning."""
-        from cli.core.budget import NoBudgetAllocationError
+        from core.budget import NoBudgetAllocationError
 
         # Worker with no budget allocation
         worker = create_worker(db, "Broke Worker", "Dev", team.id, 50)
@@ -153,7 +153,7 @@ class TestSessionT1NotSpawnedToStarting:
 
     def test_t1_checks_existing_session(self, active_worker):
         """T1 must raise if active session already exists."""
-        from cli.core.worker import ActiveSessionExistsError
+        from core.worker import ActiveSessionExistsError
         from datetime import datetime
 
         # Create existing active session record in sessions table
@@ -176,7 +176,7 @@ class TestSessionT1NotSpawnedToStarting:
         EXPECTED TO FAIL: Documented violation in validation report.
         Budget is deducted before spawn attempt. If spawn fails, budget is lost.
         """
-        from cli.core.queries.budget import get_current_allocation
+        from core.queries.budget import get_current_allocation
 
         allocation = get_current_allocation(active_worker.db, active_worker.id)
         initial_spent = allocation.spent_credits
@@ -202,7 +202,7 @@ class TestSessionT2StartingToRunning:
 
     def test_t2_transition_to_running(self, active_worker):
         """Worker.session_ready() should transition to 'running'."""
-        from cli.core.queries import update_worker_runtime_status
+        from core.queries import update_worker_runtime_status
 
         # Set up starting state
         update_worker_runtime_status(active_worker.db, active_worker.id, "starting")
@@ -230,7 +230,7 @@ class TestSessionT3RunningIdleTransitions:
 
     def test_t3_running_to_idle(self, active_worker):
         """Worker.finish_work() should transition to 'idle'."""
-        from cli.core.queries import update_worker_runtime_status
+        from core.queries import update_worker_runtime_status
 
         # Set up running state
         update_worker_runtime_status(active_worker.db, active_worker.id, "running")
@@ -242,7 +242,7 @@ class TestSessionT3RunningIdleTransitions:
 
     def test_t3_idle_to_running(self, active_worker):
         """Worker.begin_work() should transition to 'running'."""
-        from cli.core.queries import update_worker_runtime_status
+        from core.queries import update_worker_runtime_status
 
         # Set up idle state
         update_worker_runtime_status(active_worker.db, active_worker.id, "idle")
@@ -272,7 +272,7 @@ class TestSessionT4RunningToWorking:
 
         EXPECTED TO FAIL: State 'working' not in RUNTIME_STATES.
         """
-        from cli.core.queries import update_worker_runtime_status
+        from core.queries import update_worker_runtime_status
 
         update_worker_runtime_status(active_worker.db, active_worker.id, "running")
 
@@ -312,7 +312,7 @@ class TestSessionT7AnyToStopped:
 
     def test_t7_transition_to_stopped(self, active_worker):
         """Worker.stop_session() should transition to 'stopped'."""
-        from cli.core.queries import update_worker_runtime_status
+        from core.queries import update_worker_runtime_status
 
         # Set up running state
         update_worker_runtime_status(active_worker.db, active_worker.id, "running")
@@ -328,7 +328,7 @@ class TestSessionT8AnyToCrashed:
 
     def test_t8_transition_to_crashed(self, active_worker):
         """Worker.mark_crashed() should transition to 'crashed'."""
-        from cli.core.queries import update_worker_runtime_status
+        from core.queries import update_worker_runtime_status
 
         # Set up running state
         update_worker_runtime_status(active_worker.db, active_worker.id, "running")
@@ -435,7 +435,7 @@ class TestSessionDependencies:
 
     def test_session_spawn_gates_on_budget(self, db, team):
         """T1 enforces budget check before spawning."""
-        from cli.core.budget import NoBudgetAllocationError
+        from core.budget import NoBudgetAllocationError
 
         worker = create_worker(db, "No Budget", "Dev", team.id, 50)
         worker_obj = Worker(db, worker.id)

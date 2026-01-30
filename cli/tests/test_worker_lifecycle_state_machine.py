@@ -9,9 +9,9 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from cli.core.db import init_database
-from cli.core.queries import create_team, create_worker
-from cli.core.worker import Worker
+from core.db import init_database
+from core.queries import create_team, create_worker
+from core.worker import Worker
 from shared import InvalidStateTransition, LIFECYCLE_TRANSITIONS
 from shared.state_machines import LIFECYCLE_STATES
 

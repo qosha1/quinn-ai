@@ -7,7 +7,7 @@ All configuration is explicit - no environment variable discovery.
 
 from typing import Optional
 
-from cli.providers.base import (
+from providers.base import (
     Provider,
     ProviderConfig,
     ModelInfo,

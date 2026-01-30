@@ -16,8 +16,8 @@ from typing import Optional
 import click
 import yaml
 
-from cli.commands.context import pass_context, Context
-from cli.core.org_chart import (
+from commands.context import pass_context, Context
+from core.org_chart import (
     ORG_CHART_DIR,
     ORG_CHART_CURRENT,
 )

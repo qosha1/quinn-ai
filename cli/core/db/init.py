@@ -7,7 +7,7 @@ with migration support.
 
 from pathlib import Path
 
-from cli.core.constants import DB_SCHEMA_VERSION
+from core.constants import DB_SCHEMA_VERSION
 
 from .connection import Database
 from .migrations import migrate_database

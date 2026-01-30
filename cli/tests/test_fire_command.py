@@ -16,7 +16,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 from click.testing import CliRunner
 
-from cli.commands.main import qn
+from commands.main import qn
 
 
 @pytest.fixture
@@ -43,8 +43,8 @@ def initialized_org(runner, temp_org):
 
 def get_ceo_worker_id(temp_org: Path) -> str:
     """Get the CEO worker ID from an initialized org."""
-    from cli.core.db import open_database, get_org_db_path
-    from cli.core.org import Org
+    from core.db import open_database, get_org_db_path
+    from core.org import Org
 
     db = open_database(get_org_db_path(temp_org))
     org = Org.load(db)
@@ -59,9 +59,9 @@ def create_worker(temp_org: Path, name: str, manager_id: str) -> str:
     Creates worker directly in database to avoid hiring authority issues.
     Activates the worker so they can be fired (pending workers can't be terminated).
     """
-    from cli.core.db import open_database, get_org_db_path
-    from cli.core.queries import create_worker as db_create_worker, get_worker
-    from cli.core.worker import Worker
+    from core.db import open_database, get_org_db_path
+    from core.queries import create_worker as db_create_worker, get_worker
+    from core.worker import Worker
 
     db = open_database(get_org_db_path(temp_org))
     try:
@@ -223,8 +223,8 @@ class TestFireTermination:
         assert "Budget cuts" in result.output
 
         # Verify worker is actually terminated
-        from cli.core.db import open_database, get_org_db_path
-        from cli.core.worker import Worker
+        from core.db import open_database, get_org_db_path
+        from core.worker import Worker
 
         db = open_database(get_org_db_path(initialized_org))
         try:

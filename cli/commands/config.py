@@ -10,8 +10,8 @@ from typing import Optional
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.config import (
+from commands.context import pass_context, Context
+from core.config import (
     ProvidersConfig,
     ProviderSettings,
     load_providers_config,
@@ -20,7 +20,7 @@ from cli.core.config import (
     mask_secret,
     check_plaintext_api_keys,
 )
-from cli.providers.base import ProviderConfig, AuthenticationError, ProviderConnectionError
+from providers.base import ProviderConfig, AuthenticationError, ProviderConnectionError
 
 
 # Required environment variables for each provider
@@ -60,7 +60,7 @@ def check_provider_connection(provider_name: str, api_key: str) -> tuple[bool, s
         config = ProviderConfig(api_key=api_key, timeout=10)
 
         if provider_name == "anthropic":
-            from cli.providers import get_anthropic_provider
+            from providers import get_anthropic_provider
             provider_class = get_anthropic_provider()
             provider = provider_class(config)
             # Make a minimal API call to test authentication
@@ -72,7 +72,7 @@ def check_provider_connection(provider_name: str, api_key: str) -> tuple[bool, s
             return True, f"Connected successfully (model: {result.model})"
 
         elif provider_name == "openai":
-            from cli.providers import get_openai_provider
+            from providers import get_openai_provider
             provider_class = get_openai_provider()
             provider = provider_class(config)
             from shared.core import Message

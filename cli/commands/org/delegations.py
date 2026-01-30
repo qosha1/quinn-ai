@@ -9,10 +9,10 @@ from typing import Optional, List, Dict, Any
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.db import open_database, get_org_db_path
-from cli.core.worker import Worker
-from cli.core.queries import (
+from commands.context import pass_context, Context
+from core.db import open_database, get_org_db_path
+from core.worker import Worker
+from core.queries import (
     get_worker_by_name,
     get_delegation_audit,
     get_delegation_chain,
@@ -21,7 +21,7 @@ from cli.core.queries import (
 
 def format_delegation_tree(db, root_id: str, prefix: str = "", is_last: bool = True) -> List[str]:
     """Recursively format delegation tree with ASCII art."""
-    from cli.core.queries import get_delegations_by_delegator
+    from core.queries import get_delegations_by_delegator
 
     lines = []
     worker = Worker(db, root_id)
@@ -127,7 +127,7 @@ def delegations_cmd(
 
             if json_output:
                 # JSON output for worker
-                from cli.core.queries import get_delegations_by_delegator, get_delegation_grant
+                from core.queries import get_delegations_by_delegator, get_delegation_grant
 
                 grant = get_delegation_grant(db, target.id)
                 downstream = get_delegations_by_delegator(db, target.id)
@@ -173,7 +173,7 @@ def delegations_cmd(
             click.echo(f"{target.name} ({target.role})")
 
             # Show who delegated to this worker
-            from cli.core.queries import get_delegation_grant
+            from core.queries import get_delegation_grant
             grant = get_delegation_grant(db, target.id)
             if grant:
                 delegator = Worker(db, grant.delegated_by)
@@ -195,7 +195,7 @@ def delegations_cmd(
                 click.echo("  Authority: None")
 
             # Show downstream delegations
-            from cli.core.queries import get_delegations_by_delegator
+            from core.queries import get_delegations_by_delegator
             downstream = get_delegations_by_delegator(db, target.id)
             if downstream:
                 click.echo(f"\n  Delegated to:")
@@ -225,7 +225,7 @@ def delegations_cmd(
 
         else:
             # List all delegations
-            from cli.core.queries import get_delegation_audit
+            from core.queries import get_delegation_audit
 
             audit_records = get_delegation_audit(db)
 
@@ -286,7 +286,7 @@ def delegations_cmd(
 
             else:
                 # Show only active delegations
-                from cli.core.queries import get_delegations_by_delegator
+                from core.queries import get_delegations_by_delegator
 
                 # Get all workers with authority
                 cursor = db.execute("""
@@ -300,7 +300,7 @@ def delegations_cmd(
 
                 all_grants = []
                 for (worker_id,) in workers_with_authority:
-                    from cli.core.queries import get_delegation_grant
+                    from core.queries import get_delegation_grant
                     grant = get_delegation_grant(db, worker_id)
                     if grant:
                         all_grants.append(grant)

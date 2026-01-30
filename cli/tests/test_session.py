@@ -11,7 +11,7 @@ from typing import Optional
 
 import pytest
 
-from cli.core.session import (
+from core.session import (
     SessionState,
     SessionId,
     SessionConfig,

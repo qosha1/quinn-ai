@@ -114,7 +114,7 @@ def create_folder_structure(org_path: Path) -> None:
             │   └── company/
             └── workers/        # Worker lifetime (mirrors org-chart)
     """
-    from cli.core.storage import StorageManager
+    from core.storage import StorageManager
 
     # Config directory
     (org_path / "config").mkdir(parents=True, exist_ok=True)
@@ -264,8 +264,8 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
     Returns:
         OrgInitResult with success status and details
     """
-    from cli.core.db import init_database, get_org_db_path
-    from cli.core.org import Org
+    from core.db import init_database, get_org_db_path
+    from core.org import Org
 
     org_path = config.path
     db_path = get_org_db_path(org_path)

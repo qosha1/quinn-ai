@@ -10,10 +10,10 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-from cli.core.db import init_database
-from cli.core.queries import create_team, create_worker
-from cli.core.session import SessionState
-from cli.core.sessions.binding_manager import (
+from core.db import init_database
+from core.queries import create_team, create_worker
+from core.session import SessionState
+from core.sessions.binding_manager import (
     SessionBindingManager,
     SessionBinding,
     WorkerAlreadyBoundError,
@@ -48,7 +48,7 @@ def team(db):
 @pytest.fixture
 def worker(db, team):
     """Create a test worker with runtime state."""
-    from cli.core.queries import create_worker_state
+    from core.queries import create_worker_state
 
     worker = create_worker(db, "Alice", "Developer", team.id, 50)
     create_worker_state(db, worker.id, pid=None)
@@ -523,7 +523,7 @@ class TestSessionBindingManagerStateCallback:
 
     def test_state_callback_updates_worker_state(self, binding_manager, db, worker, mock_session):
         """Should update worker runtime status on state change."""
-        from cli.core.queries import get_worker_state
+        from core.queries import get_worker_state
 
         binding_manager.bind(
             worker_id=worker.id,
@@ -547,7 +547,7 @@ class TestSessionBindingManagerPersistence:
 
     def test_bind_persists_to_db(self, binding_manager, db, worker):
         """Should persist binding to database."""
-        from cli.core.queries import get_worker_state
+        from core.queries import get_worker_state
 
         binding_manager.bind(
             worker_id=worker.id,
@@ -560,7 +560,7 @@ class TestSessionBindingManagerPersistence:
 
     def test_unbind_clears_db(self, binding_manager, db, worker):
         """Should clear binding from database."""
-        from cli.core.queries import get_worker_state
+        from core.queries import get_worker_state
 
         binding_manager.bind(worker.id, "session-123", pid=12345)
         binding_manager.unbind(worker.id)

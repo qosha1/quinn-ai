@@ -7,9 +7,9 @@ on the wrkr group or QUINN_WORKER_ID envvar).
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.db import open_database, get_org_db_path
-from cli.core.worker import Worker
+from commands.context import pass_context, Context
+from core.db import open_database, get_org_db_path
+from core.worker import Worker
 from shared import WorkerNotFound
 
 

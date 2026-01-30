@@ -7,14 +7,14 @@ and model for a worker based on cost and capability requirements.
 
 from typing import Optional, TYPE_CHECKING
 
-from cli.providers.base import (
+from providers.base import (
     CostTier,
     ModelInfo,
     ModelNotAvailableError,
     Provider,
 )
 
-from cli.providers.registry.base import (
+from providers.registry.base import (
     cost_to_tier,
     skills_to_capabilities,
     ProviderSelection,
@@ -22,7 +22,7 @@ from cli.providers.registry.base import (
 )
 
 if TYPE_CHECKING:
-    from cli.providers.registry.registry import ProviderRegistry
+    from providers.registry.registry import ProviderRegistry
 
 
 def get_model_for_worker(

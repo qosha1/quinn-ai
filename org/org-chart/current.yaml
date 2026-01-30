@@ -1,0 +1,10 @@
+version: '1.0'
+workers:
+  wrkr-74817084:
+    name: Quinn
+    role: CEO
+    lifecycle: pending
+    manager: null
+    reports: []
+hierarchy:
+  root: wrkr-74817084

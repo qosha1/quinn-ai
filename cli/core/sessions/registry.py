@@ -12,7 +12,7 @@ Example:
 
 from typing import Type, Optional
 
-from cli.core.session import SessionInterface, SessionConfig
+from core.session import SessionInterface, SessionConfig
 from shared.pyterm import PytermConfig
 
 
@@ -208,10 +208,10 @@ def create_default_registry() -> SessionRegistry:
 
     This is the explicit way to get a populated registry.
     """
-    from cli.core.sessions.claude_code import ClaudeCodeSession
-    from cli.core.sessions.codex import CodexSession
-    from cli.core.sessions.gemini import GeminiSession
-    from cli.core.sessions.openai import OpenAISession
+    from core.sessions.claude_code import ClaudeCodeSession
+    from core.sessions.codex import CodexSession
+    from core.sessions.gemini import GeminiSession
+    from core.sessions.openai import OpenAISession
 
     registry = SessionRegistry()
 

@@ -11,9 +11,9 @@ from typing import Optional
 
 import click
 
-from cli.commands.context import Context, pass_context
-from cli.core.logging import configure_logging, get_logger
-from cli.core.org_discovery import find_org_root
+from commands.context import Context, pass_context
+from core.logging import configure_logging, get_logger
+from core.org_discovery import find_org_root
 
 
 @click.group()
@@ -67,7 +67,7 @@ def qn(ctx, org_path: Optional[Path], verbose: bool, debug: bool):
             traceback.print_exception(exc_type, exc_value, exc_traceback)
 
         # Show log location if available
-        from cli.core.logging import get_log_file_path
+        from core.logging import get_log_file_path
         log_path = get_log_file_path()
         if log_path:
             click.echo(f"\nFull error logged to: {log_path}", err=True)
@@ -154,7 +154,7 @@ def wrkr(ctx, org_path: Optional[Path], worker_id: Optional[str]):
 
 
 # Import and register subcommands
-from cli.commands.org import (
+from commands.org import (
     init_cmd,
     start_cmd,
     stop_cmd,
@@ -194,7 +194,7 @@ org.add_command(promote_cmd, name="promote")
 org.add_command(demote_cmd, name="demote")
 org.add_command(delegations_cmd, name="delegations")
 
-from cli.commands.wrkr import get_work_cmd, inbox_cmd, search_cmd, send_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd
+from commands.wrkr import get_work_cmd, inbox_cmd, search_cmd, send_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd
 
 wrkr.add_command(get_work_cmd, name="get-work")
 wrkr.add_command(inbox_cmd, name="inbox")
@@ -228,7 +228,7 @@ def board(ctx, org_path: Optional[Path]):
         ctx.obj.org_path = org_path
 
 
-from cli.commands.board import ui_cmd, status_cmd as board_status_cmd, alerts_cmd, pause_cmd, resume_cmd, fire_cmd
+from commands.board import ui_cmd, status_cmd as board_status_cmd, alerts_cmd, pause_cmd, resume_cmd, fire_cmd
 
 board.add_command(ui_cmd, name="ui")
 board.add_command(board_status_cmd, name="status")
@@ -239,7 +239,7 @@ board.add_command(fire_cmd, name="fire")
 
 
 # Config commands - configuration validation
-from cli.commands.config import config as config_group
+from commands.config import config as config_group
 
 qn.add_command(config_group, name="config")
 

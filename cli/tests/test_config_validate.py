@@ -10,8 +10,8 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from cli.commands.main import qn
-from cli.commands.config import check_env_vars, check_provider_connection
+from commands.main import qn
+from commands.config import check_env_vars, check_provider_connection
 
 
 @pytest.fixture

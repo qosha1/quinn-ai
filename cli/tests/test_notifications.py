@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from cli.core.db import init_database, Database
-from cli.core.queries import (
+from core.db import init_database, Database
+from core.queries import (
     # Teams & Workers (for setup)
     create_team,
     create_worker,
@@ -23,7 +23,7 @@ from cli.core.queries import (
     create_message,
     create_message_with_notifications,
 )
-from cli.core.notifications import (
+from core.notifications import (
     NotificationBead,
     create_notification_bead,
     create_notifications_for_message,
@@ -42,7 +42,7 @@ from cli.core.notifications import (
     run_notification_cleanup,
     DEFAULT_RETENTION_DAYS,
 )
-from cli.core.queries import get_message
+from core.queries import get_message
 
 
 @pytest.fixture

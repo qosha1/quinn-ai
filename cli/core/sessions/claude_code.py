@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
-from cli.core.session import (
+from core.session import (
     SessionInterface,
     SessionConfig,
     SessionOutput,
@@ -17,7 +17,7 @@ from cli.core.session import (
     SessionSpawnError,
     SessionTimeoutError,
 )
-from cli.core.constants import TMUX_SESSION_PREFIX
+from core.constants import TMUX_SESSION_PREFIX
 
 from shared.pyterm import (
     AgentSession,
@@ -203,9 +203,9 @@ class ClaudeCodeSession(SessionInterface):
         Returns:
             ClaudeCodeStateMonitor instance if agent session exists, None otherwise
         """
-        from cli.core.sessions.monitors.claude_code import ClaudeCodeStateMonitor
+        from core.sessions.monitors.claude_code import ClaudeCodeStateMonitor
         from shared.pyterm.state_monitor import StateMonitorConfig, MonitoringMode
-        from cli.core.constants import (
+        from core.constants import (
             DEFAULT_STATE_POLL_INTERVAL,
             DEFAULT_STATE_IDLE_TIMEOUT,
             DEFAULT_STATE_ERROR_RETRY,

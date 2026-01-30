@@ -11,13 +11,13 @@ Session = Worker's Brain. One session, one worker. Unbreakable 1:1.
 from datetime import datetime
 from typing import Optional
 
-from cli.core.session import (
+from core.session import (
     SessionInterface,
     SessionConfig,
     SessionOutput,
 )
-from cli.providers.base import ProviderConfig
-from cli.providers.openai import OpenAIProvider, TOKEN_COSTS
+from providers.base import ProviderConfig
+from providers.openai import OpenAIProvider, TOKEN_COSTS
 from shared.core import Message
 
 
@@ -133,7 +133,7 @@ class OpenAISession(SessionInterface):
         rather than spawning a subprocess.
         """
         if not self._api_key:
-            from cli.core.session import SessionSpawnError
+            from core.session import SessionSpawnError
             raise SessionSpawnError(self._id, "OpenAI API key is required")
 
         provider_config = ProviderConfig(

@@ -9,10 +9,10 @@ from typing import Optional
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.db import open_database, get_org_db_path
-from cli.core.worker import Worker, InsufficientHiringAuthority, MaxReportsExceeded
-from cli.core.queries import get_worker_by_name
+from commands.context import pass_context, Context
+from core.db import open_database, get_org_db_path
+from core.worker import Worker, InsufficientHiringAuthority, MaxReportsExceeded
+from core.queries import get_worker_by_name
 
 
 @click.command()
@@ -165,9 +165,9 @@ def hire_cmd(
 
 def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
     """Start a worker session using org provider defaults."""
-    from cli.core.config import get_org_config_path
-    from cli.core.provider import load_providers_from_config
-    from cli.commands.org.session_utils import spawn_worker_session
+    from core.config import get_org_config_path
+    from core.provider import load_providers_from_config
+    from commands.org.session_utils import spawn_worker_session
 
     config_path = get_org_config_path(ctx.org_path) / "providers.yaml"
     registry = load_providers_from_config(config_path)

@@ -2,7 +2,7 @@
 Provider registry and selection logic.
 
 DEPRECATED: This module is now a facade for backward compatibility.
-Import from cli.providers.registry instead.
+Import from providers.registry instead.
 
 Manages registered providers and handles worker-to-model selection
 based on cost and skill requirements.
@@ -18,7 +18,7 @@ Key components:
 # Re-export everything from the refactored registry package
 # This maintains backward compatibility for existing imports
 
-from cli.providers.registry import (
+from providers.registry import (
     # Base
     DEFAULT_THRESHOLDS,
     DEFAULT_CODING_THRESHOLD,

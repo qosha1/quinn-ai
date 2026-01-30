@@ -15,8 +15,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 from click.testing import CliRunner
 
-from cli.commands.main import qn
-from cli.core.constants import TMUX_SESSION_PREFIX
+from commands.main import qn
+from core.constants import TMUX_SESSION_PREFIX
 
 
 @pytest.fixture
@@ -43,8 +43,8 @@ def initialized_org(runner, temp_org):
 
 def get_ceo_worker_id(temp_org: Path) -> str:
     """Get the CEO worker ID from an initialized org."""
-    from cli.core.db import open_database, get_org_db_path
-    from cli.core.org import Org
+    from core.db import open_database, get_org_db_path
+    from core.org import Org
 
     db = open_database(get_org_db_path(temp_org))
     org = Org.load(db)
@@ -55,8 +55,8 @@ def get_ceo_worker_id(temp_org: Path) -> str:
 
 def set_worker_runtime_status(temp_org: Path, worker_id: str, status: str) -> None:
     """Helper to set worker runtime status for tests."""
-    from cli.core.db import open_database, get_org_db_path
-    from cli.core.queries import (
+    from core.db import open_database, get_org_db_path
+    from core.queries import (
         update_worker_runtime_status,
         get_worker_state,
         create_worker_state,
@@ -106,14 +106,14 @@ class TestGetTmuxSessionName:
 
     def test_session_name_format(self):
         """Should format session name with prefix."""
-        from cli.commands.org.logs import get_tmux_session_name
+        from commands.org.logs import get_tmux_session_name
 
         result = get_tmux_session_name("wrkr-abc123")
         assert result == f"{TMUX_SESSION_PREFIX}wrkr-abc123"
 
     def test_session_name_with_different_ids(self):
         """Should work with various worker IDs."""
-        from cli.commands.org.logs import get_tmux_session_name
+        from commands.org.logs import get_tmux_session_name
 
         assert get_tmux_session_name("wrkr-001").startswith(TMUX_SESSION_PREFIX)
         assert get_tmux_session_name("wrkr-test").startswith(TMUX_SESSION_PREFIX)
@@ -125,7 +125,7 @@ class TestSessionExists:
     @patch('cli.commands.org.logs.subprocess.run')
     def test_session_exists_returns_true(self, mock_run):
         """Should return True when tmux session exists."""
-        from cli.commands.org.logs import session_exists
+        from commands.org.logs import session_exists
 
         mock_run.return_value = MagicMock(returncode=0)
 
@@ -141,7 +141,7 @@ class TestSessionExists:
     @patch('cli.commands.org.logs.subprocess.run')
     def test_session_exists_returns_false(self, mock_run):
         """Should return False when tmux session does not exist."""
-        from cli.commands.org.logs import session_exists
+        from commands.org.logs import session_exists
 
         mock_run.return_value = MagicMock(returncode=1)
 
@@ -156,7 +156,7 @@ class TestCaptureTmuxScrollback:
     @patch('cli.commands.org.logs.session_exists')
     def test_raises_when_session_not_found(self, mock_exists):
         """Should raise ClickException when session doesn't exist."""
-        from cli.commands.org.logs import capture_tmux_scrollback
+        from commands.org.logs import capture_tmux_scrollback
         import click
 
         mock_exists.return_value = False
@@ -171,7 +171,7 @@ class TestCaptureTmuxScrollback:
     @patch('cli.commands.org.logs.session_exists')
     def test_captures_all_output(self, mock_exists, mock_run):
         """Should capture all scrollback when lines is None."""
-        from cli.commands.org.logs import capture_tmux_scrollback
+        from commands.org.logs import capture_tmux_scrollback
 
         mock_exists.return_value = True
         mock_run.return_value = MagicMock(
@@ -191,7 +191,7 @@ class TestCaptureTmuxScrollback:
     @patch('cli.commands.org.logs.session_exists')
     def test_limits_to_last_n_lines(self, mock_exists, mock_run):
         """Should limit output to last N lines when specified."""
-        from cli.commands.org.logs import capture_tmux_scrollback
+        from commands.org.logs import capture_tmux_scrollback
 
         mock_exists.return_value = True
         mock_run.return_value = MagicMock(
@@ -208,7 +208,7 @@ class TestCaptureTmuxScrollback:
     @patch('cli.commands.org.logs.session_exists')
     def test_handles_fewer_lines_than_limit(self, mock_exists, mock_run):
         """Should handle when output has fewer lines than limit."""
-        from cli.commands.org.logs import capture_tmux_scrollback
+        from commands.org.logs import capture_tmux_scrollback
 
         mock_exists.return_value = True
         mock_run.return_value = MagicMock(
@@ -225,7 +225,7 @@ class TestCaptureTmuxScrollback:
     @patch('cli.commands.org.logs.session_exists')
     def test_raises_on_capture_failure(self, mock_exists, mock_run):
         """Should raise ClickException when capture fails."""
-        from cli.commands.org.logs import capture_tmux_scrollback
+        from commands.org.logs import capture_tmux_scrollback
         import click
 
         mock_exists.return_value = True

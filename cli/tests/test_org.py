@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from cli.core.db import init_database
-from cli.core.org import Org
+from core.db import init_database
+from core.org import Org
 from shared import (
     InvalidOrgTransition,
     OrgNotInitialized,
@@ -310,7 +310,7 @@ class TestOrgCeoProperty:
     def test_ceo_is_worker_instance(self, org):
         """CEO should be Worker instance."""
         org.init("Alice")
-        from cli.core.worker import Worker
+        from core.worker import Worker
         assert isinstance(org.ceo, Worker)
 
 

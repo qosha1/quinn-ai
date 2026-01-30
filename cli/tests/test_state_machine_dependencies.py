@@ -10,16 +10,16 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from cli.core.db import init_database
-from cli.core.org import Org
-from cli.core.queries import (
+from core.db import init_database
+from core.org import Org
+from core.queries import (
     create_team,
     create_worker,
     create_budget_pool,
     create_budget_allocation,
     get_worker_state,
 )
-from cli.core.worker import Worker
+from core.worker import Worker
 from datetime import datetime, timedelta
 
 
@@ -96,7 +96,7 @@ def create_mock_session(worker_id: str) -> MagicMock:
     Returns:
         MagicMock configured with all required session attributes
     """
-    from cli.core.session import SessionConfig, SessionState
+    from core.session import SessionConfig, SessionState
 
     mock_session = MagicMock()
     mock_session.config = SessionConfig(
@@ -213,7 +213,7 @@ class TestInvariantI3OneActiveSession:
         Enforced at: Database unique constraint + Worker.spawn_session() check
         Violated by: Concurrent spawn attempts
         """
-        from cli.core.worker import ActiveSessionExistsError
+        from core.worker import ActiveSessionExistsError
 
         worker = Worker(running_org.db, worker_with_budget.id)
         worker.start_onboarding()
@@ -247,7 +247,7 @@ class TestInvariantI4BudgetMatchesSession:
 
         EXPECTED TO FAIL: Budget deducted before spawn, no rollback.
         """
-        from cli.core.queries.budget import get_current_allocation
+        from core.queries.budget import get_current_allocation
 
         worker = Worker(running_org.db, worker_with_budget.id)
         worker.start_onboarding()
@@ -311,7 +311,7 @@ class TestDependencyD1OrgStartRequiresCEOActivation:
         def fail_complete(self):
             raise Exception("Activation failed")
 
-        from cli.core import worker
+        from core import worker
         monkeypatch.setattr(worker.Worker, "complete_onboarding", fail_complete)
 
         try:
@@ -359,7 +359,7 @@ class TestDependencyD3SessionSpawnRequiresBudget:
         Violated by: Budget bypass for non-CEO workers
         Enforced at: Worker.spawn_session() budget check
         """
-        from cli.core.budget import NoBudgetAllocationError
+        from core.budget import NoBudgetAllocationError
 
         # Worker with no budget allocation
         worker_data = create_worker(running_org.db, "No Budget", "Dev", team.id, 50)
@@ -480,7 +480,7 @@ class TestStateHierarchy:
 
         From hierarchy: Session → enforces → Budget
         """
-        from cli.core.budget import NoBudgetAllocationError
+        from core.budget import NoBudgetAllocationError
 
         worker_data = create_worker(running_org.db, "No Budget", "Dev", team.id, 50)
         worker = Worker(running_org.db, worker_data.id)

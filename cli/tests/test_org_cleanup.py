@@ -16,8 +16,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 from click.testing import CliRunner
 
-from cli.commands.main import qn
-from cli.core.constants import DEFAULT_NOTIFICATION_RETENTION_DAYS
+from commands.main import qn
+from core.constants import DEFAULT_NOTIFICATION_RETENTION_DAYS
 
 
 @pytest.fixture
@@ -100,7 +100,7 @@ class TestCleanupDryRun:
     @patch('cli.commands.org.cleanup.find_all_orphans')
     def test_dry_run_shows_session_cleanup(self, mock_find_orphans, runner, initialized_org):
         """Dry-run should show session cleanup info."""
-        from cli.core.sessions.cleanup import OrphanedSession
+        from core.sessions.cleanup import OrphanedSession
 
         # Mock orphaned sessions
         mock_find_orphans.return_value = [
@@ -183,7 +183,7 @@ class TestCleanupExecution:
             'total_purged': 0,
         }
 
-        from cli.core.sessions.cleanup import CleanupResult
+        from core.sessions.cleanup import CleanupResult
         mock_session_cleanup.return_value = CleanupResult(
             orphaned_tmux_sessions=[],
             stale_db_records=[],
@@ -233,7 +233,7 @@ class TestCleanupExecution:
         self, mock_notification_cleanup, mock_session_cleanup, runner, initialized_org
     ):
         """--no-notifications should only run session cleanup."""
-        from cli.core.sessions.cleanup import CleanupResult
+        from core.sessions.cleanup import CleanupResult
         mock_session_cleanup.return_value = CleanupResult(
             orphaned_tmux_sessions=["qn-worker-1", "qn-worker-2"],
             stale_db_records=["sess-1"],
@@ -266,7 +266,7 @@ class TestCleanupExecution:
             'total_purged': 0,
         }
 
-        from cli.core.sessions.cleanup import CleanupResult
+        from core.sessions.cleanup import CleanupResult
         mock_session_cleanup.return_value = CleanupResult(
             orphaned_tmux_sessions=[],
             stale_db_records=["sess-1", "sess-2", "sess-3"],
@@ -304,7 +304,7 @@ class TestRetentionPeriod:
             'total_purged': 0,
         }
 
-        from cli.core.sessions.cleanup import CleanupResult
+        from core.sessions.cleanup import CleanupResult
         mock_session_cleanup.return_value = CleanupResult(
             orphaned_tmux_sessions=[],
             stale_db_records=[],
@@ -354,7 +354,7 @@ class TestCleanupErrors:
             'total_purged': 0,
         }
 
-        from cli.core.sessions.cleanup import CleanupResult
+        from core.sessions.cleanup import CleanupResult
         mock_session_cleanup.return_value = CleanupResult(
             orphaned_tmux_sessions=["qn-worker-123"],
             stale_db_records=[],
@@ -380,8 +380,8 @@ class TestCleanupIntegration:
     def test_cleanup_with_old_notifications(self, runner, initialized_org):
         """Should clean up old closed notifications."""
         # Add some old closed notifications to the database
-        from cli.core.db import open_database, get_org_db_path
-        from cli.core.org import Org
+        from core.db import open_database, get_org_db_path
+        from core.org import Org
 
         db = open_database(get_org_db_path(initialized_org))
         org = Org.load(db)
@@ -432,7 +432,7 @@ class TestCleanupIntegration:
         self, mock_cleanup, mock_find_orphans, runner, initialized_org
     ):
         """Should clean up orphaned sessions."""
-        from cli.core.sessions.cleanup import OrphanedSession, CleanupResult
+        from core.sessions.cleanup import OrphanedSession, CleanupResult
 
         # Mock finding orphaned sessions
         mock_find_orphans.return_value = [

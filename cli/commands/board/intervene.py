@@ -11,10 +11,10 @@ Per CLAUDE.md: "Board = Gutterguards. Humans intervene only when org is off-trac
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.db import open_database, get_org_db_path
-from cli.core.worker import Worker
-from cli.core.queries import update_worker_runtime_status
+from commands.context import pass_context, Context
+from core.db import open_database, get_org_db_path
+from core.worker import Worker
+from core.queries import update_worker_runtime_status
 from shared import WorkerNotFound, InvalidStateTransition
 from shared.enums import WorkerLifecycleStatus
 
@@ -211,7 +211,7 @@ def fire_cmd(ctx: Context, worker_id: str, reason: str, force: bool):
             )
 
         # Check if this is the CEO
-        from cli.core.org import Org
+        from core.org import Org
         org = Org.load(db)
         is_ceo = org.ceo_worker_id == worker_id
 

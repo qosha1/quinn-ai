@@ -14,13 +14,13 @@ import pytest
 
 # These imports will FAIL until we implement the module
 try:
-    from cli.core.log_reader import LogReader
+    from core.log_reader import LogReader
 except ImportError:
     # Expected to fail initially - that's the point of TDD
     LogReader = None
 
 
-from cli.core.constants import LIVE_DIR
+from core.constants import LIVE_DIR
 
 
 @pytest.fixture

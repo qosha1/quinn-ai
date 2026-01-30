@@ -14,7 +14,7 @@ All public APIs are re-exported here for backward compatibility.
 """
 
 # Base classes and exceptions
-from cli.providers.registry.base import (
+from providers.registry.base import (
     DEFAULT_THRESHOLDS,
     DEFAULT_CODING_THRESHOLD,
     DEFAULT_REASONING_THRESHOLD,
@@ -27,23 +27,23 @@ from cli.providers.registry.base import (
 )
 
 # Registry
-from cli.providers.registry.registry import ProviderRegistry
+from providers.registry.registry import ProviderRegistry
 
 # Selection functions
-from cli.providers.registry.selection import (
+from providers.registry.selection import (
     get_model_for_worker,
     select_provider_for_worker,
 )
 
 # Configuration
-from cli.providers.registry.config import (
+from providers.registry.config import (
     load_providers_from_config,
     create_registry_from_config,
     _expand_env_vars,
 )
 
 # Budget and session creation
-from cli.providers.registry.budget import (
+from providers.registry.budget import (
     create_session_for_worker,
     complete_with_budget,
 )

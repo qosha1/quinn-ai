@@ -9,17 +9,17 @@ from collections import defaultdict
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.db import open_database, get_org_db_path
-from cli.core.worker import Worker
-from cli.core.queries import get_message, get_channel
-from cli.core.notifications import (
+from commands.context import pass_context, Context
+from core.db import open_database, get_org_db_path
+from core.worker import Worker
+from core.queries import get_message, get_channel
+from core.notifications import (
     get_worker_notifications,
     get_pending_notifications,
     count_pending_notifications,
     mark_notification_read,
 )
-from cli.core.permissions import (
+from core.permissions import (
     PermissionLevel,
     can_worker_access_channel,
 )

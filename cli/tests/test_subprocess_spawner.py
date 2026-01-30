@@ -10,8 +10,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch, PropertyMock
 
-from cli.core.sessions.spawner import SpawnerConfig
-from cli.core.sessions.subprocess_spawner import SubprocessSpawner
+from core.sessions.spawner import SpawnerConfig
+from core.sessions.subprocess_spawner import SubprocessSpawner
 
 
 @pytest.fixture

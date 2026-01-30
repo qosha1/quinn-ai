@@ -7,13 +7,13 @@ from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime
 from pathlib import Path
 
-from cli.core.session import (
+from core.session import (
     SessionConfig,
     SessionState,
     SessionSpawnError,
     SessionOutput,
 )
-from cli.core.sessions.claude_code import ClaudeCodeSession
+from core.sessions.claude_code import ClaudeCodeSession
 from shared.pyterm import PytermConfig
 
 

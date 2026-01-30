@@ -9,11 +9,11 @@ from typing import Optional, List
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.db import open_database, get_org_db_path
-from cli.core.worker import Worker
-from cli.core.bd_wrapper import run_bd
-from cli.core.queries import get_worker
+from commands.context import pass_context, Context
+from core.db import open_database, get_org_db_path
+from core.worker import Worker
+from core.bd_wrapper import run_bd
+from core.queries import get_worker
 from shared import WorkerNotFound
 
 
@@ -107,7 +107,7 @@ def report_cmd(
             recipient_data = get_worker(db, recipient)
             if not recipient_data:
                 # Try by name
-                from cli.core.queries import get_worker_by_name
+                from core.queries import get_worker_by_name
                 recipient_data = get_worker_by_name(db, recipient)
             if not recipient_data:
                 if as_json:

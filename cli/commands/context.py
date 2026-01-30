@@ -11,8 +11,8 @@ from typing import Optional, TYPE_CHECKING
 
 import click
 
-from cli.core.db import open_database, get_org_db_path
-from cli.core.config import (
+from core.db import open_database, get_org_db_path
+from core.config import (
     OrgConfig,
     load_org_config,
     get_org_config_path,
@@ -22,7 +22,7 @@ from cli.core.config import (
 from shared.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
-    from cli.core.context import OrgContext
+    from core.context import OrgContext
 
 
 class Context:
@@ -155,7 +155,7 @@ class Context:
             click.ClickException: If org not initialized
         """
         if self._org_context is None:
-            from cli.core.context import OrgContext, OrgNotFoundError
+            from core.context import OrgContext, OrgNotFoundError
 
             org_path = self._require_org_path()
             try:

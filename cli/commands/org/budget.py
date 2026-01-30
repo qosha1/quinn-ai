@@ -12,10 +12,10 @@ import click
 from datetime import datetime, timedelta
 from typing import Optional
 
-from cli.commands.context import pass_context, Context
-from cli.core.db import open_database, get_org_db_path
-from cli.core.org import Org
-from cli.core.queries import (
+from commands.context import pass_context, Context
+from core.db import open_database, get_org_db_path
+from core.org import Org
+from core.queries import (
     get_all_budget_pools,
     get_worker,
     get_workers_by_manager,
@@ -24,7 +24,7 @@ from cli.core.queries import (
     get_transactions_by_worker,
     BudgetBalance,
 )
-from cli.core.budget import (
+from core.budget import (
     BudgetService,
     BudgetAllocationError,
 )
@@ -189,7 +189,7 @@ def budget_allocate(ctx: Context, worker_name: str, amount: float, from_worker: 
         budget_service = BudgetService(db)
 
         # Find target worker by name
-        from cli.core.queries import get_worker_by_name
+        from core.queries import get_worker_by_name
         target = get_worker_by_name(db, worker_name)
         if not target:
             raise click.ClickException(
@@ -266,7 +266,7 @@ def budget_transactions(ctx: Context, worker_name: Optional[str], txn_type: Opti
 
         # Determine worker
         if worker_name:
-            from cli.core.queries import get_worker_by_name
+            from core.queries import get_worker_by_name
             worker = get_worker_by_name(db, worker_name)
             if not worker:
                 raise click.ClickException(

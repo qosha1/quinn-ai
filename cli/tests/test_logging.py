@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from cli.core.logging import (
+from core.logging import (
     get_logger,
     configure_logging,
     get_log_file_path,
@@ -22,7 +22,7 @@ from cli.core.logging import (
     LOGS_DIR,
     LOG_FILE_NAME,
 )
-from cli.core.constants import LIVE_DIR
+from core.constants import LIVE_DIR
 
 
 @pytest.fixture

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from cli.core.db import init_database
-from cli.core.queries import create_team, create_worker
-from cli.core.storage import (
+from core.db import init_database
+from core.queries import create_team, create_worker
+from core.storage import (
     StorageManager,
     StorageError,
     WorkerStorageNotFound,

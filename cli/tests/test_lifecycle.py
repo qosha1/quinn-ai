@@ -4,7 +4,7 @@ Unit tests for lifecycle state validation.
 
 import pytest
 
-from cli.core.lifecycle import (
+from core.lifecycle import (
     CannotCloseBeadError,
     InvalidStateError,
     InvalidStateTransitionError,

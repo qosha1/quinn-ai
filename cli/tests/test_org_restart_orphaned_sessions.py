@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from cli.core.db import init_database
-from cli.core.org import Org
-from cli.core.sessions.tmux_spawner import TmuxSpawner
+from core.db import init_database
+from core.org import Org
+from core.sessions.tmux_spawner import TmuxSpawner
 from shared.enums import OrgStatus
 
 
@@ -66,8 +66,8 @@ class TestOrgRestartWithOrphanedSessions:
 
             # Now try to start the org - this should fail with current code
             # because it will try to create a session with the same name
-            from cli.core.session import SessionConfig
-            from cli.core.sessions.registry import get_default_registry
+            from core.session import SessionConfig
+            from core.sessions.registry import get_default_registry
 
             registry = get_default_registry()
             adapter = registry.get("claude_code")
@@ -114,7 +114,7 @@ class TestOrgRestartWithOrphanedSessions:
             assert result.returncode == 0
 
             # Run startup cleanup to remove orphaned sessions
-            from cli.core.sessions import run_startup_cleanup
+            from core.sessions import run_startup_cleanup
 
             cleanup_result = run_startup_cleanup(db)
 
@@ -123,8 +123,8 @@ class TestOrgRestartWithOrphanedSessions:
             assert not spawner.is_alive(tmux_session_name), "Orphaned session should be gone"
 
             # Now spawning should succeed
-            from cli.core.session import SessionConfig
-            from cli.core.sessions.registry import get_default_registry
+            from core.session import SessionConfig
+            from core.sessions.registry import get_default_registry
 
             registry = get_default_registry()
             adapter = registry.get("claude_code")
@@ -159,7 +159,7 @@ class TestOrgRestartWithOrphanedSessions:
     def test_startup_cleanup_is_idempotent(self, db, initialized_org_obj):
         """Verify that running cleanup multiple times is safe."""
         try:
-            from cli.core.sessions import run_startup_cleanup
+            from core.sessions import run_startup_cleanup
 
             # Run cleanup when there are no orphans
             result1 = run_startup_cleanup(db)

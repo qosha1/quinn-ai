@@ -6,8 +6,8 @@ from pathlib import Path
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.org_init import OrgInitConfig, init_org
+from commands.context import pass_context, Context
+from core.org_init import OrgInitConfig, init_org
 
 
 @click.command()

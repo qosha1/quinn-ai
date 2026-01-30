@@ -18,17 +18,17 @@ from typing import Optional
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.db import open_database, get_org_db_path, Database
-from cli.core.org import Org
-from cli.core.notifications import run_notification_cleanup
-from cli.core.constants import (
+from commands.context import pass_context, Context
+from core.db import open_database, get_org_db_path, Database
+from core.org import Org
+from core.notifications import run_notification_cleanup
+from core.constants import (
     DEFAULT_NOTIFICATION_RETENTION_DAYS,
     SESSION_START_POLL_INTERVAL,
     GRACEFUL_SHUTDOWN_WAIT,
 )
-from cli.core.sessions import stop_all_sessions, get_active_sessions
-from cli.core.worker import Worker
+from core.sessions import stop_all_sessions, get_active_sessions
+from core.worker import Worker
 from shared import InvalidOrgTransition
 from shared.enums import OrgStatus
 from shared.exceptions import WorkerNotFound
@@ -266,8 +266,8 @@ def _send_wrap_up_notifications(
         active_sessions: List of active session records
         timeout: Graceful timeout in seconds
     """
-    from cli.core.queries import get_channel_by_name, create_default_org_channels, create_message
-    from cli.core.notifications import create_notification_bead
+    from core.queries import get_channel_by_name, create_default_org_channels, create_message
+    from core.notifications import create_notification_bead
 
     # Ensure general channel exists
     general = get_channel_by_name(db, "general")
@@ -489,8 +489,8 @@ def _stop_worker(
                 "Start the org before stopping a worker workday."
             )
 
-        from cli.core.queries import get_worker_by_name, get_channel_by_name, create_default_org_channels, create_message
-        from cli.core.notifications import create_notification_bead
+        from core.queries import get_worker_by_name, get_channel_by_name, create_default_org_channels, create_message
+        from core.notifications import create_notification_bead
 
         # Find worker
         worker_data = get_worker_by_name(db, worker)

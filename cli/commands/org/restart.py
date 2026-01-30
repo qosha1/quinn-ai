@@ -7,9 +7,9 @@ Equivalent to 'qn org stop && qn org start' but atomic.
 
 import click
 
-from cli.commands.context import pass_context, Context
-from cli.core.db import get_org_db_path, open_database
-from cli.core.org import Org
+from commands.context import pass_context, Context
+from core.db import get_org_db_path, open_database
+from core.org import Org
 from shared.enums import OrgStatus
 
 

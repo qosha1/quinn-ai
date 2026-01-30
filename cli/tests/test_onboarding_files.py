@@ -7,11 +7,11 @@ when a worker transitions to the onboarding lifecycle state.
 
 from pathlib import Path
 
-from cli.core.db import open_database, get_org_db_path
-from cli.core.org_init import OrgInitConfig, init_org
-from cli.core.queries import get_worker_by_name
-from cli.core.worker import Worker
-from cli.core.storage import StorageManager
+from core.db import open_database, get_org_db_path
+from core.org_init import OrgInitConfig, init_org
+from core.queries import get_worker_by_name
+from core.worker import Worker
+from core.storage import StorageManager
 
 
 def test_onboarding_creates_all_files(tmp_path: Path) -> None:
@@ -178,7 +178,7 @@ def test_onboarding_idempotent(tmp_path: Path) -> None:
         original_briefing = (worker_dir / "BRIEFING.md").read_text()
 
         # Second call to prepare_worker_onboarding should be idempotent
-        from cli.core.onboarding import prepare_worker_onboarding
+        from core.onboarding import prepare_worker_onboarding
         prepare_worker_onboarding(db, new_worker.id, org_path)
 
         # Files should still exist and content should be similar (may have updated timestamp)

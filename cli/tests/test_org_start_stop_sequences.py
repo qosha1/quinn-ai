@@ -34,16 +34,16 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
-from cli.core.db import init_database, open_database
-from cli.core.org import Org
-from cli.core.worker import Worker
-from cli.core.sessions import (
+from core.db import init_database, open_database
+from core.org import Org
+from core.worker import Worker
+from core.sessions import (
     get_active_sessions,
     stop_all_sessions,
     TmuxSpawner,
     cleanup_orphaned_sessions,
 )
-from cli.core.sessions.persistence import (
+from core.sessions.persistence import (
     create_session_record,
     update_session_state,
 )
@@ -197,7 +197,7 @@ class TestOrgStartRollback:
 
     def test_org_status_can_be_reverted_via_db(self, initialized_org):
         """Org status can be changed directly via database for recovery."""
-        from cli.core.queries import update_org_status
+        from core.queries import update_org_status
 
         initialized_org.start()
         assert initialized_org.status == "running"
@@ -232,7 +232,7 @@ class TestOrgStartValidation:
         """Start should require CEO exists."""
         org = Org.load(db)
         # Manually transition to initialized without CEO
-        from cli.core.queries import update_org_status
+        from core.queries import update_org_status
         update_org_status(db, "initialized", None)
         org.refresh()
 
@@ -578,7 +578,7 @@ class TestOrgStartErrorRecovery:
 
     def test_recovery_via_db_on_ceo_activation_failure(self, db):
         """Should support recovery via DB on CEO activation failure."""
-        from cli.core.queries import update_org_status
+        from core.queries import update_org_status
 
         org = Org.load(db)
         org.init("Alice")

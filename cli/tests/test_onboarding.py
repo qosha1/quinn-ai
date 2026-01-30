@@ -4,14 +4,14 @@ Tests for the worker onboarding helpers.
 
 from pathlib import Path
 
-from cli.core.db import open_database, get_org_db_path
-from cli.core.onboarding import (
+from core.db import open_database, get_org_db_path
+from core.onboarding import (
     _load_worker_okrs,
     get_worker_env_vars,
     load_onboarding_context,
 )
-from cli.core.org_init import OrgInitConfig, init_org
-from cli.core.queries import (
+from core.org_init import OrgInitConfig, init_org
+from core.queries import (
     create_okr,
     get_worker_by_name,
     KeyResult,
