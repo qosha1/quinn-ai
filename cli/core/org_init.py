@@ -327,7 +327,7 @@ def create_org_documentation(org_path: Path, org_name: str) -> None:
         (org_path / "README.md").write_text(content)
 
 
-def create_initial_okrs(org_path: Path, db, ceo_id: str) -> None:
+def create_initial_okrs(org_path: Path, db, ceo_id: str) -> list[str]:
     """Create initial OKRs in database from config or bootstrap default.
 
     This fixes GAP 1: OKRs written to config file but never created in database.
@@ -339,6 +339,9 @@ def create_initial_okrs(org_path: Path, db, ceo_id: str) -> None:
         org_path: Path to organization directory
         db: Database instance
         ceo_id: CEO worker ID (will be the owner of OKRs)
+
+    Returns:
+        List of OKR IDs created
     """
     from core.queries.okr import create_okr, KeyResult
     from core.constants import (
@@ -347,6 +350,7 @@ def create_initial_okrs(org_path: Path, db, ceo_id: str) -> None:
     )
     import json
 
+    okr_ids = []
     config_file = org_path / "config" / "initial_okrs.json"
 
     if config_file.exists():
@@ -366,7 +370,7 @@ def create_initial_okrs(org_path: Path, db, ceo_id: str) -> None:
                     ))
 
                 # Create OKR in database
-                create_okr(
+                okr_id = create_okr(
                     db=db,
                     title=okr_config["title"],
                     owner_id=ceo_id,
@@ -375,23 +379,31 @@ def create_initial_okrs(org_path: Path, db, ceo_id: str) -> None:
                     key_results=key_results if key_results else None,
                     due_date=None,
                 )
+                okr_ids.append(okr_id)
 
         except (json.JSONDecodeError, KeyError) as e:
             # If config is malformed, fall through to bootstrap
             _logger = logging.getLogger(__name__)
             _logger.warning(f"Failed to parse initial_okrs.json: {e}. Creating bootstrap OKR.")
-            _create_bootstrap_okr(db, ceo_id)
+            okr_id = _create_bootstrap_okr(db, ceo_id)
+            okr_ids.append(okr_id)
     else:
         # No config file, create bootstrap OKR
-        _create_bootstrap_okr(db, ceo_id)
+        okr_id = _create_bootstrap_okr(db, ceo_id)
+        okr_ids.append(okr_id)
+
+    return okr_ids
 
 
-def _create_bootstrap_okr(db, ceo_id: str) -> None:
+def _create_bootstrap_okr(db, ceo_id: str) -> str:
     """Create a bootstrap OKR when no config exists.
 
     Args:
         db: Database instance
         ceo_id: CEO worker ID
+
+    Returns:
+        OKR ID of the created bootstrap OKR
     """
     from core.queries.okr import create_okr, KeyResult
     from core.constants import (
@@ -415,7 +427,7 @@ def _create_bootstrap_okr(db, ceo_id: str) -> None:
         ),
     ]
 
-    create_okr(
+    okr_id = create_okr(
         db=db,
         title=DEFAULT_BOOTSTRAP_OKR_TITLE,
         owner_id=ceo_id,
@@ -424,6 +436,70 @@ def _create_bootstrap_okr(db, ceo_id: str) -> None:
         key_results=key_results,
         due_date=None,
     )
+
+    return okr_id
+
+
+def create_initial_tasks(org_path: Path, db, ceo_id: str, okr_ids: list[str]) -> None:
+    """Create initial tasks for CEO that serve the OKRs.
+
+    This fixes GAP 2: CEO has OKRs but no actionable tasks to start working on.
+
+    Args:
+        org_path: Path to organization directory
+        db: Database instance
+        ceo_id: CEO worker ID
+        okr_ids: List of OKR IDs to link tasks to
+    """
+    from core.bd_wrapper import run_bd
+
+    if not okr_ids:
+        return
+
+    # Use the first OKR (bootstrap or first from config)
+    okr_id = okr_ids[0]
+
+    # Create initial tasks that serve the bootstrap OKR
+    initial_tasks = [
+        {
+            "title": "Review org structure and onboarding materials",
+            "description": "Read BRIEFING.md, STORAGE.md, CLAUDE.md to understand org structure and your responsibilities.",
+            "priority": 1,
+        },
+        {
+            "title": "Document initial org processes",
+            "description": "Create documentation for how the org should operate (workflows, communication, decision-making).",
+            "priority": 2,
+        },
+        {
+            "title": "Plan initial team hiring",
+            "description": "Identify which roles are needed first and create hiring plan to reach team_size target.",
+            "priority": 2,
+        },
+    ]
+
+    try:
+        for task in initial_tasks:
+            run_bd(
+                args=[
+                    "create",
+                    task["title"],
+                    "--type=task",
+                    f"--priority={task['priority']}",
+                    f"--description={task['description']}",
+                    f"--assignee={ceo_id}",
+                    f"--deps=serves:{okr_id}",
+                ],
+                org_path=org_path,
+                worker_id="system",  # System creates initial tasks
+                skip_permission_check=True,
+                capture_output=True,
+            )
+    except Exception as e:
+        # Don't fail org init if task creation fails
+        _logger = logging.getLogger(__name__)
+        _logger.warning(f"Failed to create initial tasks: {e}")
+        _logger.warning("CEO will need to create tasks manually from OKRs")
 
 
 def init_org(config: OrgInitConfig) -> OrgInitResult:
@@ -488,7 +564,10 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
             ceo = org.init(config.ceo_name, config.ceo_role)
 
             # 8.5. Create initial OKRs in database (GAP 1 fix)
-            create_initial_okrs(org_path, db, ceo.id)
+            okr_ids = create_initial_okrs(org_path, db, ceo.id)
+
+            # 8.6. Create initial tasks for CEO (GAP 2 fix)
+            create_initial_tasks(org_path, db, ceo.id, okr_ids)
 
             # 9. Create org-chart
             create_org_chart(org_path, ceo)
