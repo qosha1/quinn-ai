@@ -5,7 +5,9 @@ Provides shared functionality for initializing new organizations,
 used by both the CLI (qn org init) and the Board wizard.
 """
 
+import os
 import shutil
+import subprocess
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -252,6 +254,78 @@ def create_org_chart(org_path: Path, ceo) -> None:
         yaml.dump(org_chart, f, default_flow_style=False, sort_keys=False)
 
 
+def init_git_repo(org_path: Path) -> None:
+    """Initialize git repository for org if not exists.
+
+    Args:
+        org_path: Path to organization directory
+    """
+    if (org_path / ".git").exists():
+        return
+
+    subprocess.run(["git", "init"], cwd=org_path, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=org_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial org structure"],
+        cwd=org_path,
+        check=True,
+        capture_output=True,
+    )
+
+
+def init_beads(org_path: Path) -> None:
+    """Initialize beads work tracking system.
+
+    Args:
+        org_path: Path to organization directory
+    """
+    beads_dir = org_path / ".beads"
+    if beads_dir.exists():
+        return
+
+    env = os.environ.copy()
+    env["BEADS_DIR"] = str(beads_dir)
+
+    # Initialize beads database
+    subprocess.run(
+        ["bd", "init"],
+        cwd=org_path,
+        env=env,
+        check=True,
+        capture_output=True,
+    )
+
+
+def create_org_documentation(org_path: Path, org_name: str) -> None:
+    """Create org-level documentation from templates.
+
+    Args:
+        org_path: Path to organization directory
+        org_name: Organization name for template rendering
+    """
+    from jinja2 import Template
+
+    templates_dir = _get_config_template_path() / "templates"
+
+    # Shared company docs
+    company_dir = org_path / "storage" / "shared" / "company"
+
+    for template_name in ["quickstart", "beads-workflow", "okr-guide"]:
+        template_file = templates_dir / f"{template_name}.md.jinja2"
+        if template_file.exists():
+            template = Template(template_file.read_text())
+            content = template.render(org_name=org_name)
+            output_name = template_name.replace("-", "_").upper() + ".md"
+            (company_dir / output_name).write_text(content)
+
+    # Optional org-level README
+    org_readme_template = templates_dir / "org-readme.md.jinja2"
+    if org_readme_template.exists():
+        template = Template(org_readme_template.read_text())
+        content = template.render(org_name=org_name)
+        (org_path / "README.md").write_text(content)
+
+
 def init_org(config: OrgInitConfig) -> OrgInitResult:
     """Initialize a new organization.
 
@@ -284,31 +358,40 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
                       "Run 'qn org status' to view or 'qn org start' to start it.",
             )
 
-        # 1. Create folder structure
+        # 1. Initialize git repository
+        init_git_repo(org_path)
+
+        # 2. Create folder structure
         create_folder_structure(org_path)
 
-        # 2. Write config files
+        # 3. Initialize beads
+        init_beads(org_path)
+
+        # 4. Write config files
         if config.providers:
             write_providers_config(org_path, config.providers)
         else:
             copy_default_configs(org_path)
 
-        # 3. Write initial OKRs if provided
+        # 5. Write initial OKRs if provided
         write_initial_okrs(org_path, config.objectives)
 
-        # 4. Write CEO briefing if provided
+        # 6. Write CEO briefing if provided
         write_ceo_briefing(org_path, config.ceo_briefing)
 
-        # 5. Initialize database
+        # 7. Initialize database
         db = init_database(db_path)
 
         try:
-            # 6. Create CEO worker
+            # 8. Create CEO worker
             org = Org(db)
             ceo = org.init(config.ceo_name, config.ceo_role)
 
-            # 7. Create org-chart
+            # 9. Create org-chart
             create_org_chart(org_path, ceo)
+
+            # 10. Create org documentation from templates
+            create_org_documentation(org_path, config.name)
 
             return OrgInitResult(
                 success=True,
