@@ -122,6 +122,8 @@ class DashboardView(Widget):
         with Container(id="actions-panel", classes="panel"):
             yield Label("Org Actions", classes="panel-title")
             with Horizontal(classes="action-buttons"):
+                yield Button("Start Org", id="start-org-btn", variant="success")
+                yield Button("Stop Org", id="stop-org-btn", variant="error")
                 yield Button("Restart Org", id="restart-org-btn", variant="warning")
 
     async def on_mount(self) -> None:
@@ -241,6 +243,10 @@ class DashboardView(Widget):
         """Handle button presses."""
         if event.button.id == "chat-ceo-btn":
             await self._open_ceo_chat()
+        elif event.button.id == "start-org-btn":
+            await self._start_org()
+        elif event.button.id == "stop-org-btn":
+            await self._stop_org()
         elif event.button.id == "restart-org-btn":
             await self._restart_org()
 
@@ -279,6 +285,46 @@ class DashboardView(Widget):
         except Exception as e:
             # Generic error
             self.app.notify(f"Failed to open chat: {type(e).__name__}: {e}", severity="error")
+
+    async def _start_org(self) -> None:
+        """Start the organization."""
+        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+            self.app.notify("No org connected", severity="error")
+            return
+
+        self.app.notify("Starting organization...", severity="information")
+
+        conn = self.app.org_connection
+        try:
+            worker = self.app.run_worker(conn.start_org, thread=True)
+            success = await worker.wait()
+            if success:
+                self.app.notify("Organization started successfully", severity="success")
+                await self.refresh_data()
+            else:
+                self.app.notify("Failed to start organization", severity="error")
+        except Exception as e:
+            self.app.notify(f"Error starting org: {e}", severity="error")
+
+    async def _stop_org(self) -> None:
+        """Stop the organization."""
+        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+            self.app.notify("No org connected", severity="error")
+            return
+
+        self.app.notify("Stopping organization...", severity="information")
+
+        conn = self.app.org_connection
+        try:
+            worker = self.app.run_worker(conn.stop_org, thread=True)
+            success = await worker.wait()
+            if success:
+                self.app.notify("Organization stopped successfully", severity="success")
+                await self.refresh_data()
+            else:
+                self.app.notify("Failed to stop organization", severity="error")
+        except Exception as e:
+            self.app.notify(f"Error stopping org: {e}", severity="error")
 
     async def _restart_org(self) -> None:
         """Restart the organization."""
