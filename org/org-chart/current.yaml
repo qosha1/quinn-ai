@@ -3,7 +3,7 @@ workers:
   wrkr-74817084:
     name: Quinn
     role: CEO
-    lifecycle: pending
+    lifecycle: active
     manager: null
     reports: []
 hierarchy:

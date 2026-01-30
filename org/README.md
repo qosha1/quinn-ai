@@ -10,16 +10,44 @@ This is a **QuinnAI organization** - an AI-powered organization management syste
 
 ## Quick Start
 
+### Prerequisites
+
+**Set your Anthropic API key:**
+```bash
+export ANTHROPIC_API_KEY='sk-ant-...'
+```
+
+To make it permanent, add to your shell profile:
+```bash
+echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.zshrc  # or ~/.bashrc
+source ~/.zshrc
+```
+
 ### Start the Organization
 
+**Option 1: Use the helper script (recommended)**
+```bash
+./start.sh
+```
+
+**Option 2: Manual start**
 ```bash
 qn --org-path . org start
 ```
 
 This will:
-1. Start the CEO worker session
-2. Activate the organization
-3. Begin work on OKRs
+1. Validate API key is set
+2. Start the CEO worker session
+3. Activate the organization
+4. Begin work on OKRs
+
+### Stop the Organization
+
+```bash
+./stop.sh
+# or manually:
+qn --org-path . org stop
+```
 
 ### Monitor Progress
 
