@@ -18,12 +18,16 @@ qn
 │
 ├── wrkr                    # Worker operations (worker actor)
 │   ├── get-work           # Get next work item (bead)
-│   ├── inbox              # View messages/notifications
-│   ├── send               # Send message to channel/worker
 │   └── status             # Show worker status
 │
 └── bd                      # Beads wrapper (delegated to beads-org)
     └── [all beads commands]
+
+msgr                        # Standalone messaging CLI (worker actor)
+├── inbox                   # View messages/notifications
+├── send                    # Send message to channel/worker
+├── channels                # List available channels
+└── read                    # Mark notifications as read
 ```
 
 ## Actor Model
@@ -55,9 +59,16 @@ cli/
 ├── wrkr/                   # qn wrkr subcommands
 │   ├── __init__.py        # Click group: @click.group()
 │   ├── get_work.py        # qn wrkr get-work
-│   ├── inbox.py           # qn wrkr inbox
-│   ├── send.py            # qn wrkr send
 │   └── status.py          # qn wrkr status
+├── msgr/                   # Standalone messaging CLI
+│   ├── main.py            # Entry point: msgr command
+│   ├── context.py         # MsgrContext and pass_context
+│   ├── utils.py           # Channel resolution helpers
+│   └── commands/          # msgr subcommands
+│       ├── inbox.py       # msgr inbox
+│       ├── send.py        # msgr send
+│       ├── channels.py    # msgr channels
+│       └── read.py        # msgr read
 └── bd_wrapper.py           # qn bd → delegates to beads-org
 ```
 

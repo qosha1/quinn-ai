@@ -74,9 +74,13 @@ qn org status          # Check org state
 
 # Worker operations (workers run these from sessions)
 qn wrkr get-work       # Get assigned work
-qn wrkr inbox          # View messages
-qn wrkr send <to> <msg> # Send message
 qn wrkr status         # Worker state
+
+# Messaging (workers use standalone msgr CLI)
+msgr inbox             # View messages and notifications
+msgr send #channel "message"  # Send to channel
+msgr send @worker "message"   # Send direct message
+msgr channels          # List available channels
 ```
 
 ## Try More Examples

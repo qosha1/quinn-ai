@@ -38,7 +38,7 @@ Every session, you'll have these environment variables:
 qn wrkr get-work
 
 # During work: Check messages
-qn wrkr inbox
+msgr inbox
 
 # Report progress
 qn wrkr report
@@ -76,13 +76,16 @@ All work aligns to **Objectives and Key Results** (OKRs):
 
 ```bash
 # Check inbox
-qn wrkr inbox
+msgr inbox
 
 # Send message to channel
-qn wrkr send engineering "Database pooling complete!"
+msgr send #engineering "Database pooling complete!"
 
 # Send direct message
-qn wrkr send alice "Can you review my PR?"
+msgr send @alice "Can you review my PR?"
+
+# List available channels
+msgr channels
 
 # Search history
 qn wrkr search "database"
@@ -109,5 +112,5 @@ Never close work unless it's truly done and measurable.
 ## Getting Help
 
 - Read: `$SHARED_STORAGE/company/AGENTS.md` - Full instructions
-- Ask: `qn wrkr send ceo "Question about..."` - Message your manager
+- Ask: `msgr send @ceo "Question about..."` - Message your manager
 - Search: `qn wrkr search <keyword>` - Find past discussions

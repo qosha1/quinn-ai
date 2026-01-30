@@ -12,7 +12,7 @@ from typing import Optional
 import click
 
 from commands.context import Context, pass_context
-from core.logging import configure_logging, get_logger
+from core.logging import configure_enhanced_logging, get_logger
 from core.org_discovery import find_org_root
 
 
@@ -85,19 +85,22 @@ def qn(ctx, org_path: Optional[Path], verbose: bool, debug: bool):
     if org_path:
         ctx.obj.org_path = org_path
 
-    # Configure logging - use fallback to ~/.quinn/logs if no org_path
+    # Configure logging - use enhanced JSON logging with per-component segregation
     if ctx.obj.org_path:
-        configure_logging(
+        configure_enhanced_logging(
             org_path=ctx.obj.org_path,
+            component="cli",
+            json_format=True,
+            legacy_logging=True,  # Also write to aggregated quinn.log
             verbose=verbose,
             debug=debug,
         )
     else:
-        # Fallback logging to user home directory
-        fallback_log_dir = Path.home() / ".quinn" / "logs"
-        fallback_log_dir.mkdir(parents=True, exist_ok=True)
+        # Fallback: console-only logging when no org_path
+        # Import the basic configure_logging for console-only mode
+        from core.logging import configure_logging
         configure_logging(
-            org_path=None,  # Will only log to console
+            org_path=None,
             verbose=verbose,
             debug=debug,
             log_to_file=False,
@@ -194,12 +197,10 @@ org.add_command(promote_cmd, name="promote")
 org.add_command(demote_cmd, name="demote")
 org.add_command(delegations_cmd, name="delegations")
 
-from commands.wrkr import get_work_cmd, inbox_cmd, search_cmd, send_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd
+from commands.wrkr import get_work_cmd, search_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd
 
 wrkr.add_command(get_work_cmd, name="get-work")
-wrkr.add_command(inbox_cmd, name="inbox")
 wrkr.add_command(search_cmd, name="search")
-wrkr.add_command(send_cmd, name="send")
 wrkr.add_command(wrkr_status_cmd, name="status")
 wrkr.add_command(delegate_cmd, name="delegate")
 wrkr.add_command(report_cmd, name="report")

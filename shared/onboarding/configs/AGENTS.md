@@ -297,8 +297,11 @@ Worker actions (everyone):
 - `qn wrkr status` – See your lifecycle/runtime state (`--worker-id <id>` or `QUINN_WORKER_ID` required).
 - `qn wrkr get-work` – Pull the next bead; the identity comes from the `QUINN_WORKER_ID` env var (set by onboarding or `qn org start --worker`) or `--worker-id`.
 - `qn wrkr report` – Send progress updates/blockers.
-- `qn wrkr inbox`, `qn wrkr send`, `qn wrkr search` – Read messages, send to channels/workers, and search history (all need identity).
 - `qn wrkr delegate` – Delegate hiring authority if your manager has granted it.
+- `msgr inbox` – View messages and notifications.
+- `msgr send #channel "message"` or `msgr send @worker "message"` – Send messages to channels or direct messages to workers.
+- `msgr channels` – List available channels.
+- `msgr read <notification-id>` – Mark notifications as read.
 - `qn-bd ready`, `qn-bd list`, `qn-bd show`, `qn-bd update`, `qn-bd close` – Discover, claim, and finish beads.
 
 Leadership actions (CEO/managers with authority):

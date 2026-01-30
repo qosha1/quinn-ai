@@ -25,9 +25,16 @@ Human operators use these commands to manage the organization:
 AI workers use these commands (requires QUINN_WORKER_ID):
 
 - `qn wrkr get-work` - Get assigned work
-- `qn wrkr inbox` - View inbox messages
-- `qn wrkr send` - Send a message
 - `qn wrkr status` - Show worker status
+
+### Messaging (msgr)
+
+Workers use the standalone messaging CLI for communication:
+
+- `msgr inbox` - View inbox messages and notifications
+- `msgr send <channel> <message>` - Send messages to channels (#engineering) or workers (@alice)
+- `msgr channels` - List available channels
+- `msgr read <notification-id>` - Mark notifications as read
 
 ## Development
 

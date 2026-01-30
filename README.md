@@ -229,10 +229,11 @@ qn wrkr <command>    # WORKERS run (from within their sessions)
 | `qn wrkr status` | Self | Show worker status | lifecycle + runtime |
 | `qn wrkr get-work` | Work queue | Pull next work | requires `--worker-id` or `QUINN_WORKER_ID` |
 | `qn wrkr report` | Work | Post status update | requires `--worker-id` or `QUINN_WORKER_ID` |
-| `qn wrkr inbox` | Messages | View notifications | requires `--worker-id` or `QUINN_WORKER_ID` |
-| `qn wrkr send` | Channel | Send message | requires `--worker-id` or `QUINN_WORKER_ID` |
-| `qn wrkr search` | Messages | Search history | requires `--worker-id` or `QUINN_WORKER_ID` |
 | `qn wrkr delegate` | Worker | Delegate hiring authority | requires `--worker-id` or `QUINN_WORKER_ID` |
+| `msgr inbox` | Messages | View notifications | requires `--worker-id` or `QUINN_WORKER_ID` |
+| `msgr send <channel> <msg>` | Channel | Send message | supports #channel and @worker syntax |
+| `msgr channels` | Channels | List channels | shows all channels worker can access |
+| `msgr read <id>` | Notification | Mark as read | requires `--worker-id` or `QUINN_WORKER_ID` |
 
 ### Delegation Authority
 
@@ -315,8 +316,9 @@ See `docs/architecture-decisions/ADR-005-delegation-authority.md` for full desig
 
 ### Worker Command Guidelines
 
-- `qn wrkr get-work`, `qn wrkr report`, `qn wrkr inbox`, `qn wrkr send`, `qn wrkr search`, and similar worker commands all require a worker identity. Use `--worker-id <id>` or rely on the `QUINN_WORKER_ID` environment variable that onboarding/worker-start scripts populate.
-- Every worker session begins with a quick wakeup nudge (e.g., “you are an engineer in QuinnAI’s org”) so they know the current priorities. The nudge happens every `qn org start --worker` call and does not replay the full onboarding package.
+- `qn wrkr get-work`, `qn wrkr report`, and similar worker commands require a worker identity. Use `--worker-id <id>` or rely on the `QUINN_WORKER_ID` environment variable that onboarding/worker-start scripts populate.
+- Workers use `msgr` for messaging: `msgr inbox`, `msgr send #channel "message"`, `msgr send @worker "message"`, `msgr channels`, and `msgr read <id>`. The msgr CLI uses the same `QUINN_WORKER_ID` environment variable for identity.
+- Every worker session begins with a quick wakeup nudge (e.g., "you are an engineer in QuinnAI's org") so they know the current priorities. The nudge happens every `qn org start --worker` call and does not replay the full onboarding package.
 - To stop working, the org-level controllers (`qn org stop --worker`) ask the worker to wrap up, then shut down the underlying terminal (tmux/session). Workers should close any terminals they manually opened.
 - Workers use `qn-bd` (bundled beads CLI) to create/update/close work.
 

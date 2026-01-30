@@ -96,8 +96,8 @@ You'll see:
 # Check org chart - should show CEO + Engineer
 cat org/org-chart/current.yaml
 
-# Check messages
-qn wrkr inbox --org-path org
+# Check messages (from within worker session)
+msgr inbox
 
 # Check work items
 # (once beads integration is complete)

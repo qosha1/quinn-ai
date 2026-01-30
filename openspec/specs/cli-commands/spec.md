@@ -104,21 +104,29 @@ The system SHALL allow workers to get work.
 - **AND** no beads are assigned to worker
 - **THEN** empty response SHALL be returned
 
-### Requirement: qn wrkr inbox Command
-The system SHALL allow workers to view messages.
+### Requirement: msgr inbox Command
+The system SHALL allow workers to view messages and notifications.
 
-#### Scenario: qn wrkr inbox
-- **WHEN** `qn wrkr inbox` is invoked
-- **THEN** unread messages SHALL be listed first
+#### Scenario: msgr inbox
+- **WHEN** `msgr inbox` is invoked
+- **THEN** unread notifications SHALL be listed first
 - **AND** messages SHALL include sender and timestamp
+- **AND** worker identity SHALL be obtained from QUINN_WORKER_ID
 
-### Requirement: qn wrkr send Command
+### Requirement: msgr send Command
 The system SHALL allow workers to send messages.
 
-#### Scenario: qn wrkr send
-- **WHEN** `qn wrkr send --to CHANNEL "message"` is invoked
+#### Scenario: msgr send to channel
+- **WHEN** `msgr send #CHANNEL "message"` is invoked
 - **THEN** message SHALL be created in channel
 - **AND** notifications SHALL be sent to subscribers
+- **AND** channel reference SHALL be resolved from name
+
+#### Scenario: msgr send direct message
+- **WHEN** `msgr send @WORKER "message"` is invoked
+- **THEN** DM channel SHALL be created or retrieved
+- **AND** message SHALL be sent to worker
+- **AND** notification SHALL be created for recipient
 
 ### Requirement: qn wrkr status Command
 The system SHALL display worker status.

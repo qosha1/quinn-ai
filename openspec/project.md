@@ -165,12 +165,18 @@ qn org status          # Check org state
 **Worker commands** - workers interact from within their sessions:
 ```bash
 qn wrkr get-work          # Get my assigned beads (uses --worker-id or QUINN_WORKER_ID)
-qn wrkr inbox             # Get my messages
-qn wrkr send              # Send message
 qn wrkr status            # My current state
 ```
 
-Workers use `qn-bd` (bundled beads CLI) for work manipulation. `qn wrkr` handles worker-specific context.
+**Messaging commands** - standalone CLI for worker communication:
+```bash
+msgr inbox                # View messages and notifications
+msgr send #channel "msg"  # Send to channel
+msgr send @worker "msg"   # Send direct message
+msgr channels             # List available channels
+```
+
+Workers use `qn-bd` (bundled beads CLI) for work manipulation. `qn wrkr` handles worker-specific context, `msgr` handles messaging.
 
 ## Installation
 
