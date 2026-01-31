@@ -569,22 +569,24 @@ class QuinnAIOrgConnection(OrgConnection):
             #     ))
             #     workers_with_issues_set.add(worker_id)
 
-        # Calculate overall health score
+        # Calculate overall health score based on severity, not just count
         total_workers = len(workers)
         workers_with_issues = len(workers_with_issues_set)
 
         if total_workers == 0:
             overall_score = "healthy"
         else:
-            issue_ratio = workers_with_issues / total_workers
-            # Count critical issues (crashed sessions)
-            critical_issues = sum(1 for issue in issues if issue.severity == "error")
+            # Count issues by severity
+            critical_count = sum(1 for issue in issues if issue.severity == "critical")
+            warning_count = sum(1 for issue in issues if issue.severity == "warning")
 
-            if critical_issues > 0 or issue_ratio > 0.5:
+            # Score based on severity, not just worker count
+            if critical_count > 0:
                 overall_score = "critical"
-            elif issue_ratio > 0.2:
+            elif warning_count > 0:
                 overall_score = "warning"
             else:
+                # Only info-level issues
                 overall_score = "healthy"
 
         return HealthStatus(
