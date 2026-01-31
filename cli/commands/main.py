@@ -176,6 +176,7 @@ from commands.org import (
     promote_cmd,
     demote_cmd,
     delegations_cmd,
+    provider_cmd,
 )
 
 org.add_command(init_cmd, name="init")
@@ -196,6 +197,7 @@ org.add_command(revoke_authority_cmd, name="revoke-authority")
 org.add_command(promote_cmd, name="promote")
 org.add_command(demote_cmd, name="demote")
 org.add_command(delegations_cmd, name="delegations")
+org.add_command(provider_cmd, name="provider")
 
 from commands.wrkr import get_work_cmd, search_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd
 
@@ -229,10 +231,11 @@ def board(ctx, org_path: Optional[Path]):
         ctx.obj.org_path = org_path
 
 
-from commands.board import ui_cmd, status_cmd as board_status_cmd, alerts_cmd, pause_cmd, resume_cmd, fire_cmd
+from commands.board import ui_cmd, status_cmd as board_status_cmd, health_cmd, alerts_cmd, pause_cmd, resume_cmd, fire_cmd
 
 board.add_command(ui_cmd, name="ui")
 board.add_command(board_status_cmd, name="status")
+board.add_command(health_cmd, name="health")
 board.add_command(alerts_cmd, name="alerts")
 board.add_command(pause_cmd, name="pause")
 board.add_command(resume_cmd, name="resume")

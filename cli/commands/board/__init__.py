@@ -7,6 +7,7 @@ Not required for daily operation."
 Commands:
 - ui: Launch interactive board terminal UI
 - status: Show org status dashboard
+- health: Show detailed health issues (copyable text)
 - alerts: View/dismiss system alerts
 - pause: Pause a worker
 - resume: Resume a paused worker
@@ -15,7 +16,8 @@ Commands:
 
 from .ui import ui_cmd
 from .status import status_cmd
+from .health import health_cmd
 from .alerts import alerts_cmd
 from .intervene import pause_cmd, resume_cmd, fire_cmd
 
-__all__ = ["ui_cmd", "status_cmd", "alerts_cmd", "pause_cmd", "resume_cmd", "fire_cmd"]
+__all__ = ["ui_cmd", "status_cmd", "health_cmd", "alerts_cmd", "pause_cmd", "resume_cmd", "fire_cmd"]
