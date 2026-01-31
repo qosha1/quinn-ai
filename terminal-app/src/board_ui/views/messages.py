@@ -1,8 +1,9 @@
 """
-Messages view - async board inbox.
+Messages view - channel-based messaging interface.
 
 Shows:
-- Messages escalated to board awaiting response
+- All channels with channel selector
+- Messages from selected channel
 - Each message: sender, timestamp, priority, preview
 - Expand to read full message and compose reply
 - Reply is async - worker gets notification when board responds
@@ -16,7 +17,7 @@ import re
 
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, DataTable, Input, Label, Static, TextArea
+from textual.widgets import Button, DataTable, Input, Label, Select, Static, TextArea
 from textual.widget import Widget
 
 from ..interfaces.org_connection import Message
@@ -114,11 +115,18 @@ class MessagesView(Widget):
         super().__init__(**kwargs)
         self._messages: list[Message] = []
         self._selected_message: Optional[Message] = None
+        self._channels: list[dict] = []
+        self._current_channel_id: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         with Container(id="message-list"):
             with Container(id="message-list-header"):
-                yield Label("Board Inbox", classes="panel-title")
+                yield Label("Messages", classes="panel-title")
+                yield Select(
+                    [("Loading channels...", "")],
+                    id="channel-selector",
+                    allow_blank=False,
+                )
                 yield Label("-- messages", id="unread-label", classes="metric-label")
 
             table = DataTable(id="messages-table", cursor_type="row")
@@ -146,18 +154,86 @@ class MessagesView(Widget):
         """Load messages when view mounts."""
         await self.refresh_messages()
 
-    async def refresh_messages(self) -> None:
-        """Refresh messages from org connection."""
+    async def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle channel selector change."""
+        if event.select.id == "channel-selector":
+            new_channel_id = event.value
+            if new_channel_id and new_channel_id != self._current_channel_id:
+                self._current_channel_id = new_channel_id
+                await self._load_channel_messages()
+
+    async def _load_channel_messages(self) -> None:
+        """Load messages for the currently selected channel."""
+        if not self._current_channel_id or not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+            return
+
         table = self.query_one("#messages-table", DataTable)
         table.clear()
 
+        self._messages = self.app.org_connection.get_channel_messages(
+            self._current_channel_id
+        )
+        self._populate_table_from_connection()
+
+        # Update unread count
+        current_channel = next(
+            (c for c in self._channels if c["id"] == self._current_channel_id),
+            None
+        )
+        unread_count = current_channel["unread_count"] if current_channel else 0
+        self._update_unread_label(unread_count)
+
+    async def refresh_messages(self) -> None:
+        """Refresh channels and messages from org connection."""
         if hasattr(self.app, 'org_connection') and self.app.org_connection:
-            self._messages = self.app.org_connection.get_board_messages()
-            unread_count = self.app.org_connection.get_unread_count()
-            self._populate_table_from_connection()
-            self._update_unread_label(unread_count)
+            # Load channels
+            self._channels = self.app.org_connection.get_all_channels()
+            self._update_channel_selector()
+
+            # Load messages from current channel (or first channel if none selected)
+            if not self._current_channel_id and self._channels:
+                self._current_channel_id = self._channels[0]["id"]
+
+            if self._current_channel_id:
+                self._messages = self.app.org_connection.get_channel_messages(
+                    self._current_channel_id
+                )
+                self._populate_table_from_connection()
+
+                # Update unread count for current channel
+                current_channel = next(
+                    (c for c in self._channels if c["id"] == self._current_channel_id),
+                    None
+                )
+                unread_count = current_channel["unread_count"] if current_channel else 0
+                self._update_unread_label(unread_count)
+            else:
+                table = self.query_one("#messages-table", DataTable)
+                table.clear()
+                self._update_unread_label(0)
         else:
             self._populate_placeholder_data()
+
+    def _update_channel_selector(self) -> None:
+        """Update channel selector with available channels."""
+        selector = self.query_one("#channel-selector", Select)
+
+        if not self._channels:
+            selector.set_options([("No channels", "")])
+            return
+
+        # Build options: "#channel-name (unread count)"
+        options = []
+        for channel in self._channels:
+            unread_badge = f" ({channel['unread_count']})" if channel['unread_count'] > 0 else ""
+            label = f"#{channel['name']}{unread_badge}"
+            options.append((label, channel["id"]))
+
+        selector.set_options(options)
+
+        # Select current channel
+        if self._current_channel_id:
+            selector.value = self._current_channel_id
 
     def _populate_table_from_connection(self) -> None:
         """Populate table with real message data."""

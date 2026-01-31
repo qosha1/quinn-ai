@@ -546,6 +546,100 @@ def migrate_database(db: "Database", from_version: int, to_version: int) -> None
             "CREATE INDEX IF NOT EXISTS idx_escalation_state_status ON worker_escalation_state(current_state)",
             "CREATE INDEX IF NOT EXISTS idx_escalation_state_idle_since ON worker_escalation_state(idle_since) WHERE idle_since IS NOT NULL",
         ],
+        # Version 20: Add preferred_provider column to workers for per-worker CLI override
+        20: [
+            "ALTER TABLE workers ADD COLUMN preferred_provider TEXT",
+        ],
+        # Version 21: Add status_changes table for real-time status sync
+        21: [
+            # Status changes table for cursor-based polling
+            """CREATE TABLE IF NOT EXISTS status_changes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL CHECK(entity_type IN ('worker', 'worker_state', 'session')),
+                entity_id TEXT NOT NULL,
+                old_status TEXT NOT NULL,
+                new_status TEXT NOT NULL,
+                changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_status_changes_entity ON status_changes(entity_type, entity_id)",
+            "CREATE INDEX IF NOT EXISTS idx_status_changes_changed_at ON status_changes(changed_at)",
+            "CREATE INDEX IF NOT EXISTS idx_status_changes_id_asc ON status_changes(id ASC)",
+            # Cursor tracking for Board UI clients
+            """CREATE TABLE IF NOT EXISTS status_change_cursors (
+                client_id TEXT PRIMARY KEY,
+                last_change_id INTEGER NOT NULL DEFAULT 0,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""",
+            # Trigger: Log worker lifecycle status changes
+            """CREATE TRIGGER IF NOT EXISTS log_worker_status_change
+            AFTER UPDATE OF status ON workers
+            FOR EACH ROW
+            WHEN OLD.status != NEW.status
+            BEGIN
+                INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+                VALUES ('worker', NEW.id, OLD.status, NEW.status, CURRENT_TIMESTAMP);
+            END""",
+            # Trigger: Log worker runtime status changes
+            """CREATE TRIGGER IF NOT EXISTS log_worker_runtime_status_change
+            AFTER UPDATE OF runtime_status ON worker_state
+            FOR EACH ROW
+            WHEN OLD.runtime_status != NEW.runtime_status
+            BEGIN
+                INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+                VALUES ('worker_state', NEW.worker_id, OLD.runtime_status, NEW.runtime_status, CURRENT_TIMESTAMP);
+            END""",
+            # Trigger: Log session state changes
+            """CREATE TRIGGER IF NOT EXISTS log_session_state_change
+            AFTER UPDATE OF state ON sessions
+            FOR EACH ROW
+            WHEN OLD.state != NEW.state
+            BEGIN
+                INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+                VALUES ('session', NEW.id, OLD.state, NEW.state, CURRENT_TIMESTAMP);
+            END""",
+        ],
+        # Version 22: Add worker_resume_states table for graceful stop/resume
+        22: [
+            """CREATE TABLE IF NOT EXISTS worker_resume_states (
+                id TEXT PRIMARY KEY,
+                worker_id TEXT NOT NULL UNIQUE,
+                current_task_id TEXT,
+                current_task_context TEXT,
+                last_activity_at DATETIME,
+                tasks_completed INTEGER NOT NULL DEFAULT 0,
+                tasks_failed INTEGER NOT NULL DEFAULT 0,
+                session_provider TEXT,
+                session_model TEXT,
+                working_directory TEXT,
+                wrapup_requested_at DATETIME,
+                wrapup_acked_at DATETIME,
+                ack_message TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME NOT NULL,
+                consumed_at DATETIME,
+                FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_worker_resume_worker ON worker_resume_states(worker_id)",
+            "CREATE INDEX IF NOT EXISTS idx_worker_resume_expires ON worker_resume_states(expires_at) WHERE consumed_at IS NULL",
+            "CREATE INDEX IF NOT EXISTS idx_worker_resume_wrapup ON worker_resume_states(wrapup_requested_at) WHERE wrapup_acked_at IS NULL",
+        ],
+        # Version 23: Add activity_signals table for worker activity tracking
+        23: [
+            """CREATE TABLE IF NOT EXISTS activity_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                worker_id TEXT NOT NULL,
+                activity_type TEXT NOT NULL CHECK(activity_type IN (
+                    'bead_update', 'message_sent', 'code_commit',
+                    'file_change', 'session_output', 'heartbeat'
+                )),
+                signal_strength INTEGER NOT NULL CHECK(signal_strength >= 1 AND signal_strength <= 5),
+                metadata TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_activity_signals_worker ON activity_signals(worker_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_activity_signals_recent ON activity_signals(created_at DESC)",
+        ],
     }
 
     for version in range(from_version + 1, to_version + 1):

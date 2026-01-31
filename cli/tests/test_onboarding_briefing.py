@@ -181,7 +181,7 @@ def test_first_actions_are_actionable():
         # Should have action verbs
         has_verb = any(verb in action for verb in [
             "Review", "Check", "Start", "Create", "Document",
-            "Run", "Pick", "Add", "Break", "Sync"
+            "Run", "Pick", "Add", "Break", "Sync", "Introduce", "Post"
         ])
         assert has_verb, f"Action lacks action verb: {action}"
 

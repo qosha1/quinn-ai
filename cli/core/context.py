@@ -182,12 +182,14 @@ class OrgContext:
 
         Builds OrgTopology from workers in the database and initializes
         the EscalationManager with config from escalation.yaml if present.
+        Wires up notification handler to send escalations to board channels.
         """
         self._check_closed()
         if self._escalation_manager is None:
             from shared.escalation.manager import EscalationManager, EscalationConfig
             from shared.escalation.hierarchical import OrgTopology, WorkerNode
             from .queries import get_all_workers_for_topology, is_worker_manager
+            from .notifications import create_board_notifier, EscalationNotificationHandler
 
             # Build topology from database workers
             topology = OrgTopology()
@@ -210,7 +212,15 @@ class OrgContext:
             else:
                 config = EscalationConfig()
 
-            self._escalation_manager = EscalationManager(topology, config)
+            # Create notification handler for escalations
+            board_notifier = create_board_notifier(self._org_path)
+            notification_handler = EscalationNotificationHandler(
+                board_notifier.dispatcher
+            )
+
+            self._escalation_manager = EscalationManager(
+                topology, config, notification_handler
+            )
 
         return self._escalation_manager
 

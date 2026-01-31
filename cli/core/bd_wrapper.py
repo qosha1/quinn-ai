@@ -643,17 +643,64 @@ def run_bd(
     cmd = [str(bd_path), "--sandbox", f"--db={beads_db}"] + args
 
     if capture_output:
-        return subprocess.run(
+        result = subprocess.run(
             cmd,
             env=env,
             capture_output=True,
             text=True,
         )
     else:
-        return subprocess.run(
+        result = subprocess.run(
             cmd,
             env=env,
         )
+
+    # Record activity signal if command succeeded and worker_id provided
+    if result.returncode == 0 and worker_id:
+        _record_bead_activity(args, org_path, worker_id)
+
+    return result
+
+
+def _record_bead_activity(args: list[str], org_path: Path, worker_id: str) -> None:
+    """Record activity signal for successful bead operations.
+
+    Args:
+        args: bd command arguments
+        org_path: Path to org folder
+        worker_id: Worker ID
+    """
+    from .constants import SIGNAL_STRENGTH_BEAD_UPDATE
+    from .db import get_org_db_path, open_database
+    from .queries.activity import record_activity_signal
+
+    # Only record for write operations
+    command = _get_command_from_args(args)
+    if command not in ("create", "update", "close", "dep"):
+        return
+
+    # Get bead ID if available
+    bead_id = _get_bead_id_from_args(args)
+    metadata = {"command": command}
+    if bead_id:
+        metadata["bead_id"] = bead_id
+
+    # Record the signal
+    db_path = get_org_db_path(org_path)
+    if not db_path.exists():
+        return
+
+    db = open_database(db_path)
+    try:
+        record_activity_signal(
+            db=db,
+            worker_id=worker_id,
+            activity_type="bead_update",
+            signal_strength=SIGNAL_STRENGTH_BEAD_UPDATE,
+            metadata=metadata,
+        )
+    finally:
+        db.close()
 
 
 def main():

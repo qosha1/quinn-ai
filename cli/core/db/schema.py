@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS workers (
     delegation_expires_at DATETIME,
     -- Offboarding workflow tracking
     offboarding_ask_bead_id TEXT,
+    -- Provider preference (v20)
+    preferred_provider TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE RESTRICT,
@@ -773,4 +775,131 @@ CREATE TABLE IF NOT EXISTS worker_escalation_state (
 CREATE INDEX IF NOT EXISTS idx_escalation_state_worker ON worker_escalation_state(worker_id);
 CREATE INDEX IF NOT EXISTS idx_escalation_state_status ON worker_escalation_state(current_state);
 CREATE INDEX IF NOT EXISTS idx_escalation_state_idle_since ON worker_escalation_state(idle_since) WHERE idle_since IS NOT NULL;
+
+-- ===================
+-- STATUS CHANGES (v21)
+-- ===================
+
+-- Status changes table for real-time status sync
+-- Auto-populated by triggers on workers, worker_state, and sessions tables
+-- Used by Board UI for cursor-based incremental polling
+CREATE TABLE IF NOT EXISTS status_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK(entity_type IN ('worker', 'worker_state', 'session')),
+    entity_id TEXT NOT NULL,
+    old_status TEXT NOT NULL,
+    new_status TEXT NOT NULL,
+    changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for efficient polling
+CREATE INDEX IF NOT EXISTS idx_status_changes_entity ON status_changes(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_status_changes_changed_at ON status_changes(changed_at);
+CREATE INDEX IF NOT EXISTS idx_status_changes_id_asc ON status_changes(id ASC);
+
+-- Cursor tracking for Board UI clients
+-- Each client maintains its poll position to get incremental updates
+CREATE TABLE IF NOT EXISTS status_change_cursors (
+    client_id TEXT PRIMARY KEY,
+    last_change_id INTEGER NOT NULL DEFAULT 0,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===================
+-- STATUS CHANGE TRIGGERS
+-- ===================
+
+-- Trigger: Log worker lifecycle status changes
+CREATE TRIGGER IF NOT EXISTS log_worker_status_change
+AFTER UPDATE OF status ON workers
+FOR EACH ROW
+WHEN OLD.status != NEW.status
+BEGIN
+    INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+    VALUES ('worker', NEW.id, OLD.status, NEW.status, CURRENT_TIMESTAMP);
+END;
+
+-- Trigger: Log worker runtime status changes
+CREATE TRIGGER IF NOT EXISTS log_worker_runtime_status_change
+AFTER UPDATE OF runtime_status ON worker_state
+FOR EACH ROW
+WHEN OLD.runtime_status != NEW.runtime_status
+BEGIN
+    INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+    VALUES ('worker_state', NEW.worker_id, OLD.runtime_status, NEW.runtime_status, CURRENT_TIMESTAMP);
+END;
+
+-- Trigger: Log session state changes
+CREATE TRIGGER IF NOT EXISTS log_session_state_change
+AFTER UPDATE OF state ON sessions
+FOR EACH ROW
+WHEN OLD.state != NEW.state
+BEGIN
+    INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+    VALUES ('session', NEW.id, OLD.state, NEW.state, CURRENT_TIMESTAMP);
+END;
+
+-- ===================
+-- WORKER RESUME STATE (v22)
+-- ===================
+
+-- Stores worker state for graceful resume after org stop
+-- Created during org stop phase, consumed during org start
+-- Expires after RESUME_STATE_TTL_HOURS if not used
+CREATE TABLE IF NOT EXISTS worker_resume_states (
+    id TEXT PRIMARY KEY,
+    worker_id TEXT NOT NULL UNIQUE,
+
+    -- Current work state snapshot
+    current_task_id TEXT,
+    current_task_context TEXT,  -- JSON: serialized task context
+
+    -- Activity state
+    last_activity_at DATETIME,
+    tasks_completed INTEGER NOT NULL DEFAULT 0,
+    tasks_failed INTEGER NOT NULL DEFAULT 0,
+
+    -- Session state
+    session_provider TEXT,
+    session_model TEXT,
+    working_directory TEXT,
+
+    -- Acknowledgement tracking
+    wrapup_requested_at DATETIME,
+    wrapup_acked_at DATETIME,
+    ack_message TEXT,  -- Optional worker message about state
+
+    -- Lifecycle
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    consumed_at DATETIME,  -- Set when used for resume
+
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_worker_resume_worker ON worker_resume_states(worker_id);
+CREATE INDEX IF NOT EXISTS idx_worker_resume_expires ON worker_resume_states(expires_at) WHERE consumed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_worker_resume_wrapup ON worker_resume_states(wrapup_requested_at) WHERE wrapup_acked_at IS NULL;
+
+-- ===================
+-- ACTIVITY SIGNALS (v23)
+-- ===================
+
+-- Activity signals track multiple types of worker activity beyond database writes
+-- Used for continuation system to detect when workers are actively working
+CREATE TABLE IF NOT EXISTS activity_signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_id TEXT NOT NULL,
+    activity_type TEXT NOT NULL CHECK(activity_type IN (
+        'bead_update', 'message_sent', 'code_commit',
+        'file_change', 'session_output', 'heartbeat'
+    )),
+    signal_strength INTEGER NOT NULL CHECK(signal_strength >= 1 AND signal_strength <= 5),
+    metadata TEXT,  -- JSON
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_signals_worker ON activity_signals(worker_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_signals_recent ON activity_signals(created_at DESC);
 """

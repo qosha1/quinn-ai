@@ -267,7 +267,7 @@ def init_git_repo(org_path: Path) -> None:
     subprocess.run(["git", "init"], cwd=org_path, check=True, capture_output=True)
     subprocess.run(["git", "add", "."], cwd=org_path, check=True, capture_output=True)
     subprocess.run(
-        ["git", "commit", "-m", "Initial org structure"],
+        ["git", "commit", "--allow-empty", "-m", "Initial org structure"],
         cwd=org_path,
         check=True,
         capture_output=True,
@@ -327,18 +327,24 @@ def create_org_documentation(org_path: Path, org_name: str) -> None:
         (org_path / "README.md").write_text(content)
 
 
-def create_initial_okrs(org_path: Path, db, ceo_id: str) -> list[str]:
-    """Create initial OKRs in database from config or bootstrap default.
+def create_initial_okrs(
+    org_path: Path,
+    db,
+    ceo_id: str,
+    objectives: Optional[List[ObjectiveConfig]] = None,
+) -> list[str]:
+    """Create initial OKRs in database from provided objectives, config file, or bootstrap.
 
-    This fixes GAP 1: OKRs written to config file but never created in database.
-
-    Reads from config/initial_okrs.json if it exists, otherwise creates a
-    bootstrap OKR to give CEO something to work on immediately.
+    Priority order:
+    1. Use objectives if provided directly (from CLI prompting or --okrs-file)
+    2. Read from config/initial_okrs.json if it exists
+    3. Create bootstrap OKR as fallback
 
     Args:
         org_path: Path to organization directory
         db: Database instance
         ceo_id: CEO worker ID (will be the owner of OKRs)
+        objectives: Optional list of objectives passed directly from CLI
 
     Returns:
         List of OKR IDs created
@@ -351,6 +357,32 @@ def create_initial_okrs(org_path: Path, db, ceo_id: str) -> list[str]:
     import json
 
     okr_ids = []
+
+    # Priority 1: Use directly provided objectives
+    if objectives:
+        for obj in objectives:
+            key_results = []
+            for kr in obj.key_results:
+                key_results.append(KeyResult(
+                    metric=kr.metric,
+                    target=kr.target,
+                    current=0.0,
+                    unit=kr.unit,
+                ))
+
+            okr_id = create_okr(
+                db=db,
+                title=obj.title,
+                owner_id=ceo_id,
+                description=None,
+                status="active",
+                key_results=key_results if key_results else None,
+                due_date=None,
+            )
+            okr_ids.append(okr_id)
+        return okr_ids
+
+    # Priority 2: Check config file
     config_file = org_path / "config" / "initial_okrs.json"
 
     if config_file.exists():
@@ -381,16 +413,16 @@ def create_initial_okrs(org_path: Path, db, ceo_id: str) -> list[str]:
                 )
                 okr_ids.append(okr_id)
 
+            return okr_ids
+
         except (json.JSONDecodeError, KeyError) as e:
             # If config is malformed, fall through to bootstrap
             _logger = logging.getLogger(__name__)
             _logger.warning(f"Failed to parse initial_okrs.json: {e}. Creating bootstrap OKR.")
-            okr_id = _create_bootstrap_okr(db, ceo_id)
-            okr_ids.append(okr_id)
-    else:
-        # No config file, create bootstrap OKR
-        okr_id = _create_bootstrap_okr(db, ceo_id)
-        okr_ids.append(okr_id)
+
+    # Priority 3: Create bootstrap OKR
+    okr_id = _create_bootstrap_okr(db, ceo_id)
+    okr_ids.append(okr_id)
 
     return okr_ids
 
@@ -564,7 +596,8 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
             ceo = org.init(config.ceo_name, config.ceo_role)
 
             # 8.5. Create initial OKRs in database (GAP 1 fix)
-            okr_ids = create_initial_okrs(org_path, db, ceo.id)
+            # Pass objectives from config if provided (from CLI or wizard)
+            okr_ids = create_initial_okrs(org_path, db, ceo.id, config.objectives)
 
             # 8.6. Create initial tasks for CEO (GAP 2 fix)
             create_initial_tasks(org_path, db, ceo.id, okr_ids)

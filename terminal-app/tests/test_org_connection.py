@@ -393,3 +393,322 @@ class TestOrgConnection:
         assert worker is None
 
         conn.close()
+
+
+@pytest.fixture
+def temp_org_with_status_changes():
+    """Create a temporary org directory with status_changes table."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        org_path = Path(tmpdir) / "test-org"
+        org_path.mkdir()
+        live_path = org_path / "live"
+        live_path.mkdir()
+
+        db_path = live_path / "quinn.db"
+        conn = sqlite3.connect(str(db_path))
+
+        # Create all required tables including status_changes
+        conn.executescript("""
+            CREATE TABLE org_state (
+                id TEXT PRIMARY KEY,
+                status TEXT,
+                ceo_worker_id TEXT,
+                started_at TEXT,
+                stopped_at TEXT
+            );
+
+            CREATE TABLE teams (
+                id TEXT PRIMARY KEY,
+                name TEXT
+            );
+
+            CREATE TABLE workers (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                role TEXT,
+                team_id TEXT,
+                manager_id TEXT,
+                status TEXT,
+                created_at TEXT,
+                FOREIGN KEY (team_id) REFERENCES teams(id)
+            );
+
+            CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                worker_id TEXT,
+                state TEXT,
+                tmux_session_name TEXT,
+                FOREIGN KEY (worker_id) REFERENCES workers(id)
+            );
+
+            CREATE TABLE worker_state (
+                id INTEGER PRIMARY KEY,
+                worker_id TEXT,
+                runtime_status TEXT,
+                current_task_id TEXT,
+                FOREIGN KEY (worker_id) REFERENCES workers(id)
+            );
+
+            CREATE TABLE channels (
+                id TEXT PRIMARY KEY,
+                name TEXT
+            );
+
+            CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                channel_id TEXT,
+                thread_id TEXT,
+                parent_id TEXT,
+                from_worker_id TEXT,
+                content TEXT,
+                priority INTEGER,
+                time_sensitivity TEXT,
+                created_at TEXT,
+                FOREIGN KEY (channel_id) REFERENCES channels(id)
+            );
+
+            CREATE TABLE notification_beads (
+                id TEXT PRIMARY KEY,
+                message_id TEXT,
+                status TEXT,
+                read_at TEXT,
+                FOREIGN KEY (message_id) REFERENCES messages(id)
+            );
+
+            CREATE TABLE okrs (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                description TEXT,
+                owner_worker_id TEXT,
+                status TEXT,
+                parent_okr_id TEXT,
+                key_results TEXT,
+                due_date TEXT,
+                created_at TEXT,
+                FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
+            );
+
+            CREATE TABLE budget_pools (
+                id TEXT PRIMARY KEY,
+                period_start TEXT,
+                period_end TEXT,
+                created_at TEXT
+            );
+
+            CREATE TABLE budget_allocations (
+                id TEXT PRIMARY KEY,
+                pool_id TEXT,
+                worker_id TEXT,
+                FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
+            );
+
+            CREATE TABLE budget_balances (
+                id TEXT PRIMARY KEY,
+                allocation_id TEXT,
+                allocated REAL,
+                spent REAL,
+                available REAL,
+                FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
+            );
+
+            CREATE TABLE budget_transactions (
+                id TEXT PRIMARY KEY,
+                type TEXT,
+                amount REAL,
+                created_at TEXT
+            );
+
+            -- Status changes table for cursor-based polling
+            CREATE TABLE status_changes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                old_status TEXT NOT NULL,
+                new_status TEXT NOT NULL,
+                changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Cursor tracking for Board UI clients
+            CREATE TABLE status_change_cursors (
+                client_id TEXT PRIMARY KEY,
+                last_change_id INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # Insert test data
+        now = datetime.now()
+        conn.execute("""
+            INSERT INTO org_state (id, status, ceo_worker_id, started_at)
+            VALUES ('default', 'running', 'worker-ceo', ?)
+        """, (now.isoformat(),))
+
+        conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
+        conn.execute("""
+            INSERT INTO workers VALUES
+            ('worker-ceo', 'Alice', 'CEO', 'team-exec', NULL, 'active', ?)
+        """, (now.isoformat(),))
+
+        conn.execute("""
+            INSERT INTO sessions VALUES
+            ('session-ceo', 'worker-ceo', 'running', 'org-test-org-ceo')
+        """)
+
+        conn.commit()
+        conn.close()
+
+        yield org_path, db_path
+
+
+class TestCursorBasedPolling:
+    """Tests for cursor-based status change polling."""
+
+    def test_get_status_changes_since_cursor(self, temp_org_with_status_changes):
+        """Should get status changes since a given cursor position."""
+        org_path, db_path = temp_org_with_status_changes
+
+        # Insert some status changes directly
+        db_conn = sqlite3.connect(str(db_path))
+        db_conn.execute("""
+            INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+            VALUES ('worker', 'worker-ceo', 'pending', 'active', datetime('now'))
+        """)
+        db_conn.execute("""
+            INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+            VALUES ('session', 'session-ceo', 'starting', 'running', datetime('now'))
+        """)
+        db_conn.commit()
+        db_conn.close()
+
+        org_conn = QuinnAIOrgConnection(org_path, database_factory=MockDatabase)
+
+        # Get all changes since cursor 0
+        changes = org_conn.get_status_changes_since_cursor(0)
+
+        assert len(changes) == 2
+        assert changes[0]["entity_type"] == "worker"
+        assert changes[0]["new_status"] == "active"
+        assert changes[1]["entity_type"] == "session"
+        assert changes[1]["new_status"] == "running"
+
+        org_conn.close()
+
+    def test_get_status_changes_incremental(self, temp_org_with_status_changes):
+        """Should only return new changes after cursor update."""
+        org_path, db_path = temp_org_with_status_changes
+
+        # Insert initial status change
+        db_conn = sqlite3.connect(str(db_path))
+        db_conn.execute("""
+            INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+            VALUES ('worker', 'worker-ceo', 'pending', 'active', datetime('now'))
+        """)
+        db_conn.commit()
+
+        org_conn = QuinnAIOrgConnection(org_path, database_factory=MockDatabase)
+
+        # Get first batch
+        changes1 = org_conn.get_status_changes_since_cursor(0)
+        assert len(changes1) == 1
+        last_id = changes1[-1]["id"]
+
+        # Insert another change
+        db_conn.execute("""
+            INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
+            VALUES ('session', 'session-ceo', 'running', 'idle', datetime('now'))
+        """)
+        db_conn.commit()
+        db_conn.close()
+
+        # Get only new changes
+        changes2 = org_conn.get_status_changes_since_cursor(last_id)
+        assert len(changes2) == 1
+        assert changes2[0]["entity_type"] == "session"
+        assert changes2[0]["new_status"] == "idle"
+
+        org_conn.close()
+
+    def test_update_poll_cursor(self, temp_org_with_status_changes):
+        """Should update cursor position for a client."""
+        org_path, db_path = temp_org_with_status_changes
+
+        org_conn = QuinnAIOrgConnection(org_path, database_factory=MockDatabase)
+
+        # Update cursor
+        org_conn.update_poll_cursor("board-ui-123", 42)
+
+        # Verify in database
+        db_conn = sqlite3.connect(str(db_path))
+        row = db_conn.execute(
+            "SELECT last_change_id FROM status_change_cursors WHERE client_id = ?",
+            ("board-ui-123",)
+        ).fetchone()
+        db_conn.close()
+
+        assert row is not None
+        assert row[0] == 42
+
+        org_conn.close()
+
+    def test_get_last_status_change_id(self, temp_org_with_status_changes):
+        """Should get the latest status change ID for stale detection."""
+        org_path, db_path = temp_org_with_status_changes
+
+        # Insert status changes
+        db_conn = sqlite3.connect(str(db_path))
+        db_conn.execute("""
+            INSERT INTO status_changes (entity_type, entity_id, old_status, new_status)
+            VALUES ('worker', 'worker-ceo', 'pending', 'active')
+        """)
+        db_conn.execute("""
+            INSERT INTO status_changes (entity_type, entity_id, old_status, new_status)
+            VALUES ('session', 'session-ceo', 'starting', 'running')
+        """)
+        db_conn.commit()
+        db_conn.close()
+
+        org_conn = QuinnAIOrgConnection(org_path, database_factory=MockDatabase)
+
+        last_id = org_conn.get_last_status_change_id()
+
+        assert last_id == 2  # Second insert
+
+        org_conn.close()
+
+    def test_status_changes_empty_on_fresh_db(self, temp_org_with_status_changes):
+        """Should return empty list when no status changes exist."""
+        org_path, db_path = temp_org_with_status_changes
+
+        org_conn = QuinnAIOrgConnection(org_path, database_factory=MockDatabase)
+
+        changes = org_conn.get_status_changes_since_cursor(0)
+
+        assert len(changes) == 0
+        assert org_conn.get_last_status_change_id() == 0
+
+        org_conn.close()
+
+    def test_has_pending_changes(self, temp_org_with_status_changes):
+        """Should detect if there are changes since cursor."""
+        org_path, db_path = temp_org_with_status_changes
+
+        org_conn = QuinnAIOrgConnection(org_path, database_factory=MockDatabase)
+
+        # No changes initially
+        assert org_conn.has_pending_changes(0) is False
+
+        # Insert a change
+        db_conn = sqlite3.connect(str(db_path))
+        db_conn.execute("""
+            INSERT INTO status_changes (entity_type, entity_id, old_status, new_status)
+            VALUES ('worker', 'worker-ceo', 'pending', 'active')
+        """)
+        db_conn.commit()
+        db_conn.close()
+
+        # Now has pending changes
+        assert org_conn.has_pending_changes(0) is True
+        # But not if cursor is at latest
+        assert org_conn.has_pending_changes(1) is False
+
+        org_conn.close()

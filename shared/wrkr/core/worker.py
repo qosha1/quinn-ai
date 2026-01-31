@@ -140,6 +140,10 @@ class BaseWorker(ABC):
         self._state = WorkerState.PENDING
         self._should_stop = False
 
+        # Track when worker first became idle (no work available)
+        self._no_work_since: float | None = None
+        self._no_work_escalated = False
+
     @property
     def config(self) -> WorkerConfig:
         """Worker configuration."""
@@ -241,6 +245,10 @@ class BaseWorker(ABC):
         Args:
             task: The task to execute.
         """
+        # Reset no-work tracking (we have work now!)
+        self._no_work_since = None
+        self._no_work_escalated = False
+
         # Transition to working state
         self.transition_to(WorkerState.WORKING)
 
@@ -306,7 +314,25 @@ class BaseWorker(ABC):
             - "wait": Block indefinitely (sleep with poll interval)
             - "poll": Sleep for poll_interval then check again
             - "exit": Signal shutdown
+
+        Additionally tracks how long worker has been without work and
+        escalates to manager if threshold is exceeded.
         """
+        # Track when we first became idle (no work)
+        if self._no_work_since is None:
+            self._no_work_since = time.monotonic()
+
+        # Check if we should escalate due to no work
+        if not self._no_work_escalated:
+            idle_duration = time.monotonic() - self._no_work_since
+            threshold_seconds = self._config.no_work_escalation_threshold_minutes * 60
+
+            if idle_duration >= threshold_seconds:
+                idle_minutes = int(idle_duration / 60)
+                issue = f"No work available for {idle_minutes} minutes"
+                self._escalation.report(issue)
+                self._no_work_escalated = True
+
         behavior = self._config.idle_behavior
 
         if behavior == "exit":

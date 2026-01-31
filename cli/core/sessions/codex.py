@@ -53,6 +53,17 @@ class CodexSession(SessionInterface):
         session.stop()
     """
 
+    # Provider capabilities - used by registry and CLI commands
+    CAPABILITIES = [
+        "shell",
+        "file_edit",
+        "file_read",
+        "function_calling",
+        "multi_turn",
+        "streaming",
+        "git",
+    ]
+
     def __init__(self, config: SessionConfig, pyterm_config: Optional[PytermConfig] = None):
         """Initialize Codex session.
 

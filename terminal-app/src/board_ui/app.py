@@ -24,6 +24,7 @@ from .views.okrs import OKRsView
 from .views.team import TeamView
 from .views.messages import MessagesView
 from .views.logs import LogsView
+from .views.settings import SettingsView
 from .logging_config import configure_board_logging
 from .views.no_org import (
     NoOrgView,
@@ -157,6 +158,7 @@ class BoardApp(App):
         Binding("t", "switch_tab('team')", "Team", show=True),
         Binding("m", "switch_tab('messages')", "Messages", show=True),
         Binding("l", "switch_tab('logs')", "Logs", show=True),
+        Binding("s", "switch_tab('settings')", "Settings", show=True),
         Binding("q", "quit", "Quit", show=True),
         Binding("r", "refresh", "Refresh", show=True),
     ]
@@ -214,6 +216,9 @@ class BoardApp(App):
 
             with TabPane("Logs", id="logs"):
                 yield LogsView(id="logs-view")
+
+            with TabPane("Settings", id="settings"):
+                yield SettingsView(id="settings-view")
 
         yield Footer()
 
@@ -355,6 +360,9 @@ class BoardApp(App):
 
         logs = self.query_one("#logs-view", LogsView)
         await logs.refresh_logs()
+
+        settings = self.query_one("#settings-view", SettingsView)
+        await settings.refresh_settings()
 
     def _update_org_tab_bar(self) -> None:
         """Update the org tab bar with current connections."""

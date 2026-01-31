@@ -228,13 +228,28 @@ class DesktopNotificationChannel(NotificationChannel):
         return "desktop"
 
     def _send_macos(self, notification: BoardNotification) -> NotificationResult:
-        """Send notification via macOS notification center."""
+        """Send notification via macOS notification center with enhanced features."""
         # Escape quotes in strings
         title = notification.title.replace('"', '\\"')
-        message = notification.message.replace('"', '\\"')
 
-        script = f'display notification "{message}" with title "{title}"'
-        
+        # Truncate message for notification (keep full message in metadata)
+        message = notification.message[:200]  # macOS notification limit
+        message = message.replace('"', '\\"').replace('\n', ' ')
+
+        # Build AppleScript with sound and subtitle
+        script_parts = [f'display notification "{message}" with title "{title}"']
+
+        # Add subtitle for worker context
+        if notification.worker_id:
+            subtitle = f"Worker: {notification.worker_id}"
+            script_parts[0] = script_parts[0].replace('"', f'" subtitle "{subtitle}" with title "', 1)
+
+        # Add sound for urgent/high priority
+        if notification.priority in (NotificationPriority.URGENT, NotificationPriority.HIGH):
+            script_parts[0] += ' sound name "Submarine"'  # Built-in macOS sound
+
+        script = script_parts[0]
+
         result = subprocess.run(
             ["osascript", "-e", script],
             capture_output=True,
@@ -242,7 +257,7 @@ class DesktopNotificationChannel(NotificationChannel):
         )
 
         if result.returncode == 0:
-            _logger.debug("Sent macOS notification")
+            _logger.debug(f"Sent macOS notification (priority: {notification.priority.name})")
             return NotificationResult.SUCCESS
         else:
             _logger.warning(f"macOS notification failed: {result.stderr}")

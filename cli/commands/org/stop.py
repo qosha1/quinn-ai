@@ -1,13 +1,14 @@
 """
 qn org stop command.
 
-Implements 6-phase org stop sequence:
-1. Pre-stop validation
-2. Worker wrap-up (graceful shutdown)
-3. Session termination
-4. State persistence
-5. Org state transition
-6. Cleanup
+Implements 7-phase org stop sequence via OrgStopController:
+1. Validation and preparation
+2. Send wrap-up requests to all workers
+3. Wait for acknowledgements (with per-role timeouts)
+4. Stop sessions (graceful then force)
+5. Update worker states
+6. Persist state and cleanup
+7. Transition org to STOPPED
 """
 
 import logging
@@ -21,13 +22,8 @@ import click
 from commands.context import pass_context, Context
 from core.db import open_database, get_org_db_path, Database
 from core.org import Org
-from core.notifications import run_notification_cleanup
-from core.constants import (
-    DEFAULT_NOTIFICATION_RETENTION_DAYS,
-    SESSION_START_POLL_INTERVAL,
-    GRACEFUL_SHUTDOWN_WAIT,
-)
-from core.sessions import stop_all_sessions, get_active_sessions
+from core.stop_controller import OrgStopController, OrgStopResult
+from core.sessions import get_active_sessions, stop_all_sessions
 from core.worker import Worker
 from shared import InvalidOrgTransition
 from shared.enums import OrgStatus
@@ -55,8 +51,8 @@ _logger = logging.getLogger(__name__)
 @click.option(
     "--graceful-timeout",
     type=int,
-    default=30,
-    help="Seconds to wait for worker wrap-up before force termination (default: 30).",
+    default=None,
+    help="Override per-role timeout for worker wrap-up (uses role-based defaults if not set).",
 )
 @click.option(
     "--yes", "-y",
@@ -69,34 +65,44 @@ _logger = logging.getLogger(__name__)
     default=True,
     help="Save worker state for resume (default: True).",
 )
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    default=False,
+    help="Show detailed phase-by-phase progress.",
+)
 @pass_context
 def stop_cmd(
     ctx: Context,
     cleanup: bool,
     worker: Optional[str],
     force: bool,
-    graceful_timeout: int,
+    graceful_timeout: Optional[int],
     yes: bool,
     save_state: bool,
+    verbose: bool,
 ):
     """Stop the organization.
 
     Gracefully stops all worker sessions and transitions the organization
-    to stopped state. Workers are given time to wrap up their work.
+    to stopped state. Workers are given role-based time to wrap up:
+    - CEO: 120 seconds
+    - Managers/Directors: 90 seconds
+    - Workers: 60 seconds
 
     Use --force to skip graceful shutdown and kill sessions immediately.
     Use --yes to skip confirmation prompts.
-    Use --graceful-timeout to customize wrap-up wait time.
+    Use --graceful-timeout to override the per-role default timeouts.
     """
     org_path = ctx.org_path
 
     # Handle worker-specific stop (independent path)
     if worker:
-        _stop_worker(org_path, worker, force, graceful_timeout)
+        _stop_worker(org_path, worker, force, graceful_timeout or 60)
         return
 
     # ===================
-    # PHASE 1: PRE-STOP VALIDATION
+    # PRE-VALIDATION
     # ===================
 
     db = _validate_org_stoppable(org_path, force)
@@ -111,7 +117,7 @@ def stop_cmd(
                 _cleanup_zombie_sessions(db)
             return
 
-        # Get active sessions
+        # Get active sessions for confirmation
         active_sessions = get_active_sessions(db)
         if not active_sessions:
             click.echo("No active sessions to stop.")
@@ -122,62 +128,33 @@ def stop_cmd(
             _confirm_stop(db, active_sessions)
 
         # ===================
-        # PHASE 2: WORKER WRAP-UP (graceful shutdown)
+        # EXECUTE STOP SEQUENCE
         # ===================
 
-        if not force and active_sessions:
-            _send_wrap_up_notifications(db, org_path, active_sessions, graceful_timeout)
-            _wait_for_wrap_up(graceful_timeout)
+        controller = OrgStopController(db, org_path, org)
+        result = controller.execute(
+            force=force,
+            save_state=save_state,
+            cleanup=cleanup,
+            graceful_timeout=graceful_timeout,
+        )
 
-        # ===================
-        # PHASE 3: SESSION TERMINATION
-        # ===================
+        # Report results
+        _report_result(result, org_path, verbose)
 
-        terminated_count = _terminate_all_sessions(db, active_sessions, force)
-        _verify_all_stopped(db, force)
-
-        # ===================
-        # PHASE 4: STATE PERSISTENCE
-        # ===================
-
-        if save_state and active_sessions:
-            _save_worker_states(db, active_sessions)
-
-        # ===================
-        # PHASE 5: ORG STATE TRANSITION
-        # ===================
-
-        try:
-            org.stop()
-        except InvalidOrgTransition as e:
+        # Handle failure
+        if not result.success:
             raise click.ClickException(
-                f"Cannot stop organization: {e}\n"
-                "Check current status with 'qn org status'."
+                "Organization stop failed. See errors above.\n"
+                "Use --force to force stop."
             )
-
-        # ===================
-        # PHASE 6: CLEANUP
-        # ===================
-
-        if cleanup:
-            _run_cleanup(db)
-
-        # Report success
-        click.echo(f"\nOrganization stopped at {org_path}")
-        click.echo(f"  Status: {org.status}")
-        if terminated_count > 0:
-            click.echo(f"  Sessions stopped: {terminated_count}")
 
     finally:
         db.close()
 
 
-# ===================
-# PHASE 1: PRE-STOP VALIDATION
-# ===================
-
 def _validate_org_stoppable(org_path: Path, force: bool) -> Database:
-    """Phase 1: Validate org can be stopped.
+    """Validate org can be stopped.
 
     Returns:
         Database instance
@@ -248,207 +225,48 @@ def _cleanup_zombie_sessions(db: Database) -> None:
         click.echo(f"  Cleaned up {result.sessions_stopped} session(s)")
 
 
-# ===================
-# PHASE 2: WORKER WRAP-UP
-# ===================
-
-def _send_wrap_up_notifications(
-    db: Database,
-    org_path: Path,
-    active_sessions: list,
-    timeout: int,
-) -> None:
-    """Send wrap-up notifications to all active workers.
+def _report_result(result: OrgStopResult, org_path: Path, verbose: bool) -> None:
+    """Report stop sequence results to user.
 
     Args:
-        db: Database instance
-        org_path: Org directory path
-        active_sessions: List of active session records
-        timeout: Graceful timeout in seconds
+        result: OrgStopResult from controller
+        org_path: Org path for display
+        verbose: Show phase details
     """
-    from core.queries import get_channel_by_name, create_default_org_channels, create_message
-    from core.notifications import create_notification_bead
+    if verbose:
+        click.echo("\n--- Stop Sequence Phases ---")
+        for phase in result.phases:
+            status = "OK" if phase.success else "FAILED"
+            click.echo(f"  Phase {phase.phase}: {phase.name} [{status}]")
+            click.echo(f"    {phase.message}")
+            click.echo(f"    Duration: {phase.duration_seconds:.2f}s")
+            if phase.details and verbose:
+                for key, value in phase.details.items():
+                    if key != "errors":
+                        click.echo(f"    {key}: {value}")
+        click.echo("")
 
-    # Ensure general channel exists
-    general = get_channel_by_name(db, "general")
-    if general is None:
-        create_default_org_channels(db)
-        general = get_channel_by_name(db, "general")
+    # Summary
+    if result.success:
+        click.echo(f"\nOrganization stopped at {org_path}")
+        click.echo(f"  Workers stopped: {result.workers_stopped}")
+        if result.workers_acked > 0:
+            click.echo(f"  Workers acknowledged: {result.workers_acked}")
+        if result.sessions_terminated > 0:
+            click.echo(f"  Sessions terminated: {result.sessions_terminated}")
+        if result.states_saved > 0:
+            click.echo(f"  States saved for resume: {result.states_saved}")
+        click.echo(f"  Total duration: {result.total_duration_seconds:.2f}s")
+    else:
+        click.echo("\nOrganization stop FAILED", err=True)
 
-    if not general:
-        click.echo("Warning: Cannot send wrap-up notifications (no general channel)")
-        return
-
-    # Get org for CEO/sender info
-    org = Org.load(db)
-    sender_id = org.ceo.id if org.ceo else None
-    if not sender_id:
-        click.echo("Warning: Cannot send wrap-up notifications (no CEO)")
-        return
-
-    click.echo(f"Sending wrap-up notifications to {len(active_sessions)} worker(s)...")
-
-    for session_row in active_sessions:
-        try:
-            worker = Worker.get(db, session_row["worker_id"])
-
-            message = create_message(
-                db,
-                channel_id=general.id,
-                from_worker_id=sender_id,
-                content=(
-                    f"Workday ending for {worker.name} ({worker.role}).\n\n"
-                    "Please wrap up your current work:\n"
-                    "1. Save any work in progress to shared/\n"
-                    "2. Document incomplete work in beads\n"
-                    "3. Commit any changes\n\n"
-                    f"Timeout: {timeout} seconds\n"
-                    "After timeout, your session will be terminated."
-                ),
-                priority=1,  # High priority
-                time_sensitivity="immediate",
-            )
-
-            create_notification_bead(
-                db,
-                worker_id=worker.id,
-                message_id=message.id,
-                channel_id=general.id,
-                priority=1,
-            )
-
-            click.echo(f"  ✓ Notified {worker.name}")
-
-        except Exception as e:
-            click.echo(f"  Warning: Failed to notify {session_row['worker_id']}: {e}")
-
-
-def _wait_for_wrap_up(timeout: int) -> None:
-    """Wait for workers to wrap up (simple timeout-based wait).
-
-    Args:
-        timeout: Seconds to wait
-    """
-    if timeout <= 0:
-        return
-
-    click.echo(f"\nWaiting {timeout} seconds for workers to wrap up...")
-
-    # Simple countdown display
-    for remaining in range(timeout, 0, -5):
-        if remaining <= 10:
-            click.echo(f"  {remaining} seconds remaining...")
-            time.sleep(SESSION_START_POLL_INTERVAL)
-        else:
-            time.sleep(GRACEFUL_SHUTDOWN_WAIT)
-
-    click.echo("Wrap-up time completed.")
-
-
-# ===================
-# PHASE 3: SESSION TERMINATION
-# ===================
-
-def _terminate_all_sessions(
-    db: Database,
-    active_sessions: list,
-    force: bool,
-) -> int:
-    """Terminate all active sessions.
-
-    Args:
-        db: Database instance
-        active_sessions: List of active session records
-        force: Force kill without graceful shutdown
-
-    Returns:
-        Number of sessions terminated
-    """
-    if not active_sessions:
-        return 0
-
-    click.echo(f"\nTerminating {len(active_sessions)} session(s)...")
-
-    result = stop_all_sessions(db, force=force)
-
-    click.echo(f"  Stopped: {result.sessions_stopped}/{result.sessions_found}")
-    if result.tmux_sessions_killed > 0:
-        click.echo(f"  Tmux sessions killed: {result.tmux_sessions_killed}")
-
+    # Errors
     if result.errors:
-        for error in result.errors:
-            click.echo(f"  Warning: {error}", err=True)
-
-    return result.sessions_stopped
-
-
-def _verify_all_stopped(db: Database, force: bool) -> None:
-    """Verify all sessions are actually stopped.
-
-    Args:
-        db: Database instance
-        force: Whether force mode is enabled
-
-    Raises:
-        click.ClickException: If sessions still active and not force mode
-    """
-    still_active = get_active_sessions(db)
-    if still_active:
-        worker_names = []
-        for session_row in still_active:
-            try:
-                worker = Worker.get(db, session_row["worker_id"])
-                worker_names.append(worker.name)
-            except (sqlite3.Error, WorkerNotFound) as e:
-                _logger.debug(f"Failed to get worker name: {e}")
-                worker_names.append(session_row["worker_id"])
-
-        if not force:
-            raise click.ClickException(
-                f"{len(still_active)} session(s) still active: {', '.join(worker_names)}\n"
-                "Use --force to kill zombie sessions."
-            )
-        else:
-            click.echo(f"Warning: {len(still_active)} zombie session(s) remain: {', '.join(worker_names)}")
-
-
-# ===================
-# PHASE 4: STATE PERSISTENCE
-# ===================
-
-def _save_worker_states(db: Database, active_sessions: list) -> None:
-    """Save worker runtime state for resume.
-
-    Args:
-        db: Database instance
-        active_sessions: List of session records that were active
-    """
-    # For now, this is a placeholder since we don't have worker_resume_states table
-    # In a full implementation, this would save worker state to DB
-    # For P0, we just log that we would save state
-    if active_sessions:
-        click.echo(f"  State saved for {len(active_sessions)} worker(s)")
-
-
-# ===================
-# PHASE 5: ORG STATE TRANSITION
-# ===================
-# (handled in main stop_cmd function)
-
-
-# ===================
-# PHASE 6: CLEANUP
-# ===================
-
-def _run_cleanup(db: Database) -> None:
-    """Run cleanup tasks.
-
-    Args:
-        db: Database instance
-    """
-    result = run_notification_cleanup(db, DEFAULT_NOTIFICATION_RETENTION_DAYS)
-    if result["total_purged"] > 0:
-        click.echo(f"  Cleanup: purged {result['total_purged']} old notifications")
+        click.echo("\nErrors:", err=True)
+        for error in result.errors[:10]:  # Limit to 10
+            click.echo(f"  - {error}", err=True)
+        if len(result.errors) > 10:
+            click.echo(f"  ... and {len(result.errors) - 10} more errors", err=True)
 
 
 # ===================

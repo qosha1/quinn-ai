@@ -53,6 +53,18 @@ class GeminiSession(SessionInterface):
         session.stop()
     """
 
+    # Provider capabilities - used by registry and CLI commands
+    CAPABILITIES = [
+        "file_read",
+        "web_search",
+        "web_browse",
+        "vision",
+        "function_calling",
+        "multi_turn",
+        "streaming",
+        "large_context",
+    ]
+
     def __init__(self, config: SessionConfig, pyterm_config: Optional[PytermConfig] = None):
         """Initialize Gemini session.
 

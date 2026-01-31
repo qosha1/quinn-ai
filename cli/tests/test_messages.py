@@ -167,11 +167,12 @@ class TestDefaultOrgChannels:
     """Test default org-wide channel creation."""
 
     def test_create_default_channels(self, db):
-        """Should create general and escalations channels."""
+        """Should create general, escalations, and activity-feed channels."""
         channels = create_default_org_channels(db)
         names = {c.name for c in channels}
         assert "general" in names
         assert "escalations" in names
+        assert "activity-feed" in names
 
     def test_default_channels_are_topic_type(self, db):
         """Default channels should be topic type."""
@@ -189,8 +190,8 @@ class TestDefaultOrgChannels:
         """Creating default channels twice should not duplicate."""
         channels1 = create_default_org_channels(db)
         channels2 = create_default_org_channels(db)
-        # First call creates 2, second call creates 0 (already exist)
-        assert len(channels1) == 2
+        # First call creates 3 (general, escalations, activity-feed), second call creates 0 (already exist)
+        assert len(channels1) == 3
         assert len(channels2) == 0
 
 

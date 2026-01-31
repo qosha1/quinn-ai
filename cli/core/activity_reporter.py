@@ -1,7 +1,7 @@
 """Activity reporting service.
 
-Periodically sends worker activity summaries to the board-channel
-so the board can see what workers are doing.
+Periodically sends worker activity summaries to the activity-feed channel
+so the board can monitor what workers are doing.
 
 Optionally creates beads for activity summaries to provide queryable history.
 """
@@ -103,7 +103,7 @@ class ActivityReporter:
         _logger.debug("Activity reporter loop exited")
 
     def _send_activity_reports(self) -> None:
-        """Send activity summaries for all active workers to board-channel."""
+        """Send activity summaries for all active workers to activity-feed channel."""
         db_path = get_org_db_path(self.org_path)
         if not db_path.exists():
             return
@@ -120,15 +120,16 @@ class ActivityReporter:
             if not rows:
                 return
 
-            # Get board-channel
-            channel_row = db.fetchone(
-                "SELECT id FROM channels WHERE name = 'board-channel'"
-            )
-            if not channel_row:
-                _logger.warning("No board-channel found, skipping activity reports")
-                return
+            # Get or create activity-feed channel
+            from core.constants import DEFAULT_ACTIVITY_FEED_CHANNEL
+            from core.queries.channel import get_channel_by_name, create_channel
 
-            board_channel_id = channel_row["id"]
+            channel = get_channel_by_name(db, DEFAULT_ACTIVITY_FEED_CHANNEL)
+            if not channel:
+                _logger.info(f"Creating {DEFAULT_ACTIVITY_FEED_CHANNEL} channel")
+                channel = create_channel(db, DEFAULT_ACTIVITY_FEED_CHANNEL, "topic")
+
+            activity_feed_channel_id = channel.id
 
             # Send report for each worker with activity
             for worker_row in rows:
@@ -156,7 +157,7 @@ class ActivityReporter:
 
                 message = create_message(
                     db=db,
-                    channel_id=board_channel_id,
+                    channel_id=activity_feed_channel_id,
                     from_worker_id=worker_id,
                     content=message_content,
                     priority=2,  # Normal priority
@@ -164,11 +165,11 @@ class ActivityReporter:
                     message_id=generate_id("msg"),
                 )
 
-                # Note: We don't create notification_beads for board messages
-                # Board UI queries all messages in board-channel directly
-                # Notification beads are only for worker-to-worker notifications
+                # Note: We don't create notification_beads for activity reports
+                # Activity feed is for monitoring only, not actionable notifications
+                # Notification beads are only created for escalations and direct messages
 
-                _logger.info(f"Sent activity report for {worker_name} to board")
+                _logger.info(f"Sent activity report for {worker_name} to activity feed")
 
                 # Optionally create a bead for queryable activity history
                 if self.create_beads:

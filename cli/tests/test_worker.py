@@ -311,29 +311,69 @@ class TestSessionActive:
 
     def test_starting_is_active(self, worker):
         """Starting session is active."""
+        from core.sessions.persistence import create_session_record
         worker.start_onboarding()
         worker.start_session()
+        # Create session record to match the state
+        create_session_record(
+            worker.db,
+            "test-session-1",
+            worker.id,
+            "test_provider",
+            "test",
+            state="starting"
+        )
         assert worker.is_session_active
 
     def test_running_is_active(self, worker):
         """Running session is active."""
+        from core.sessions.persistence import create_session_record
         worker.start_onboarding()
         worker.start_session()
+        # Create session record before transitioning
+        create_session_record(
+            worker.db,
+            "test-session-2",
+            worker.id,
+            "test_provider",
+            "test",
+            state="starting"
+        )
         worker.session_ready()
         assert worker.is_session_active
 
     def test_idle_is_active(self, worker):
         """Idle session is active."""
+        from core.sessions.persistence import create_session_record
         worker.start_onboarding()
         worker.start_session()
+        # Create session record before transitioning
+        create_session_record(
+            worker.db,
+            "test-session-3",
+            worker.id,
+            "test_provider",
+            "test",
+            state="starting"
+        )
         worker.session_ready()
         worker.finish_work()
         assert worker.is_session_active
 
     def test_stopped_is_inactive(self, worker):
         """Stopped session is inactive."""
+        from core.sessions.persistence import create_session_record
         worker.start_onboarding()
         worker.start_session()
+        # Create session record before transitioning
+        create_session_record(
+            worker.db,
+            "test-session-4",
+            worker.id,
+            "test_provider",
+            "test",
+            state="starting"
+        )
         worker.session_ready()
         worker.stop_session()
         assert not worker.is_session_active

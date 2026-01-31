@@ -177,6 +177,8 @@ def _load_onboarding_context(
         is_manager=is_manager,
         has_okrs=len(okrs) > 0,
         manager_name=manager_name,
+        manager_id=manager_id,
+        team_name=team_name,
     )
 
     # Get escalation timeout based on role (GAP 4 setup)
@@ -285,6 +287,8 @@ def _generate_first_actions(
     is_manager: bool,
     has_okrs: bool,
     manager_name: Optional[str],
+    manager_id: Optional[str] = None,
+    team_name: str = "team",
 ) -> list[str]:
     """Generate context-aware first actions for worker.
 
@@ -298,6 +302,8 @@ def _generate_first_actions(
         is_manager: Whether worker is a manager
         has_okrs: Whether worker has OKRs assigned
         manager_name: Manager's name if exists
+        manager_id: Manager's ID if exists
+        team_name: Team name for channel references
 
     Returns:
         List of specific action items to start immediately
@@ -307,31 +313,38 @@ def _generate_first_actions(
     if is_ceo:
         if has_okrs:
             actions = [
+                "Introduce yourself to team: run `msgr send #general \"Hi! I'm the CEO, starting work on our OKRs now.\"`",
                 "Review your OKRs: run `qn org okr list` to see objectives and progress",
                 "Check assigned work: run `bd ready` to see tasks ready for you",
                 "Review team status: check workers with `qn org status`",
                 "Start on highest priority OKR: pick key result to advance today",
                 "Document your plan: create bead with `bd create --title='Today's plan: ...' --type=task`",
+                "Post regular updates: use `msgr send #general \"Progress update: ...\"` every 30-60 minutes",
             ]
         else:
             actions = [
+                "Introduce yourself to team: run `msgr send #general \"Hi! I'm the CEO, starting work on setting up our org.\"`",
                 "Create your first OKR: run `qn org okr create --title='Your objective' --owner=me`",
                 "Define key results: add metrics with `qn org okr add-kr {okr-id} --metric='...' --target=N`",
                 "Break down into tasks: create beads linked to OKR with `bd create --deps='serves:{okr-id}'`",
                 "Start execution: run `bd ready` and claim first task",
                 "Hire initial team: plan who you need with `qn org hire --help`",
+                "Post regular updates: use `msgr send #general \"Progress update: ...\"` every 30-60 minutes",
             ]
     elif is_manager:
         if has_okrs:
             actions = [
+                f"Introduce yourself: run `msgr send #{team_name} \"Hi team! I'm your manager, ready to support our goals.\"`",
                 "Review your OKRs: run `qn org okr list` to see your objectives",
                 "Break down OKRs into tasks: create tasks that serve each key result",
                 "Check team capacity: run `qn org status` to see who's available",
-                f"Sync with manager: message {manager_name} about your plan if needed",
+                f"Sync with manager: message {manager_name} about your plan with `msgr send @{manager_id}` if needed" if manager_id else f"Sync with {manager_name} if needed",
                 "Start on first task: run `bd ready` and begin work",
+                f"Post progress updates: use `msgr send #{team_name} \"Update: ...\"` every 30-60 minutes",
             ]
         else:
             actions = [
+                f"Check in with manager: run `msgr send @{manager_id} \"Ready to work, awaiting OKRs\"`" if manager_id else f"Check in with {manager_name}",
                 f"Get OKRs from {manager_name}: check if objectives have been delegated",
                 "Create team plan: outline what your team needs to deliver",
                 "Document dependencies: note what you're blocked on in beads",
@@ -340,11 +353,13 @@ def _generate_first_actions(
     else:
         # Regular worker
         actions = [
+            f"Introduce yourself: run `msgr send @{manager_id} \"Hi {manager_name}, I'm ready to work. What should I prioritize?\"`" if manager_id and manager_name else f"Introduce yourself to {manager_name}",
             "Check assigned work: run `bd ready` to see tasks assigned to you",
-            f"Sync with {manager_name}: introduce yourself and confirm priorities",
             "Review your OKRs: run `qn org okr list` to understand your goals",
             "Read architecture docs: run `cat CLAUDE.md` to understand coding standards",
             "Start first task: run `bd update {task-id} --status=in_progress` to claim work",
+            f"Post when starting work: run `msgr send #{team_name} \"Starting: [task title]\"`",
+            f"Post status updates: use `msgr send #{team_name} \"Update: ...\"` as you progress",
         ]
 
     return actions

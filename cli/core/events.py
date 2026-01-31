@@ -43,6 +43,8 @@ class EventType(Enum):
     WORKER_PROMOTED = "worker.promoted"
     WORKER_STARTED = "worker.started"
     WORKER_STOPPED = "worker.stopped"
+    WORKER_STATUS_CHANGED = "worker.status_changed"
+    WORKER_RUNTIME_STATUS_CHANGED = "worker.runtime_status_changed"
 
     # Session events
     SESSION_STARTED = "session.started"
@@ -455,6 +457,8 @@ WORKER_FIRED = EventType.WORKER_FIRED
 WORKER_PROMOTED = EventType.WORKER_PROMOTED
 WORKER_STARTED = EventType.WORKER_STARTED
 WORKER_STOPPED = EventType.WORKER_STOPPED
+WORKER_STATUS_CHANGED = EventType.WORKER_STATUS_CHANGED
+WORKER_RUNTIME_STATUS_CHANGED = EventType.WORKER_RUNTIME_STATUS_CHANGED
 
 TEAM_CREATED = EventType.TEAM_CREATED
 TEAM_DELETED = EventType.TEAM_DELETED

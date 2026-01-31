@@ -8,6 +8,7 @@ from .dashboard import DashboardView
 from .okrs import OKRsView
 from .team import TeamView
 from .messages import MessagesView
+from .settings import SettingsView
 from .no_org import NoOrgView, ConnectToOrg, StartOrg, ShowNewOrgWizard, RefreshOrgList
 from .org_wizard import OrgInitWizard, OrgConfig
 from .org_tabs import OrgTabBar
@@ -17,6 +18,7 @@ __all__ = [
     "OKRsView",
     "TeamView",
     "MessagesView",
+    "SettingsView",
     "NoOrgView",
     "ConnectToOrg",
     "StartOrg",

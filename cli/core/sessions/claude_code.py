@@ -52,6 +52,26 @@ class ClaudeCodeSession(SessionInterface):
         session.stop()
     """
 
+    # Provider capabilities - used by registry and CLI commands
+    CAPABILITIES = [
+        "shell",
+        "file_edit",
+        "file_read",
+        "web_search",
+        "web_browse",
+        "vision",
+        "extended_thinking",
+        "function_calling",
+        "mcp",
+        "multi_turn",
+        "streaming",
+        "code_interpreter",
+        "git",
+        "testing",
+        "large_context",
+        "context_caching",
+    ]
+
     def __init__(self, config: SessionConfig, pyterm_config: Optional[PytermConfig] = None):
         """Initialize Claude Code session.
 

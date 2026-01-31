@@ -292,6 +292,19 @@ class DashboardView(Widget):
             self.app.notify("CEO has no active session", severity="warning")
             return
 
+        # Detect if running in browser context (via ttyd)
+        import os
+        is_browser_context = os.environ.get('TERM_PROGRAM') == 'ttyd' or 'ttyd' in os.environ.get('TERM', '')
+
+        if is_browser_context:
+            # Running in browser - show URL to open
+            self.app.notify(
+                "💬 Open CEO Chat in new tab: http://localhost:7683 (or port 7683 on this server)",
+                severity="information",
+                timeout=10
+            )
+            return
+
         try:
             from ..terminals import get_terminal_provider
 

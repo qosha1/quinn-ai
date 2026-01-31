@@ -1,11 +1,42 @@
 """
 qn org start command.
 
-Implements 4-phase org start sequence:
-1. Pre-flight validation
-2. Org state transition (with rollback)
-3. CEO session spawning
-4. Readiness verification
+Implements 6-phase org start sequence (quinnai-3gqq):
+
+Phase 0 (Preflight): Validation before any state changes
+    - Verify org exists (database, directory structure)
+    - Validate provider configuration
+    - Determine start mode (FIRST_START, RESUME, ALREADY_RUNNING)
+
+Phase 1 (Cleanup): Orphaned session reconciliation
+    - Kill orphaned tmux sessions from previous crashes
+    - Update stale DB records
+    - Best-effort (failure doesn't block startup)
+
+Phase 2 (Transition): Atomic org + CEO state changes
+    - Transition org INITIALIZED->RUNNING or STOPPED->RUNNING
+    - Activate CEO worker (complete onboarding)
+    - Update org-chart
+    - Supports rollback on failure
+
+Phase 3 (Onboarding): File system preparation
+    - Create worker directory structure
+    - Generate BRIEFING.md, STORAGE.md, WELCOME.md
+    - Prepare environment variables
+
+Phase 4 (Session Spawn): CEO session via registry
+    - Create SessionConfig with working directory and env vars
+    - Spawn session through provider adapter
+    - Session spawn failure does NOT rollback org state
+
+Phase 5 (Kickstart): Initial prompt delivery
+    - Write INITIAL_TASK.md to worker directory
+    - Send command to tmux session
+    - Best-effort (failure doesn't fail start)
+
+Phase 6 (Readiness): Optional wait for session ready
+    - Poll session state until RUNNING or IDLE
+    - Timeout if not ready within specified period
 """
 
 import time
@@ -136,10 +167,10 @@ def start_cmd(
         )
         return
 
-    # ===================
-    # PHASE 1: PRE-FLIGHT VALIDATION
-    # ===================
-
+    # =========================================================================
+    # PHASE 0: PREFLIGHT - Validation before any state changes
+    # =========================================================================
+    click.echo("Phase 0: Validating organization...")
     db = _validate_preflight(org_path, skip_config_validation)
 
     try:
@@ -152,23 +183,25 @@ def start_cmd(
             _handle_already_running(org, spawn_ceo, force, provider, session_command, session_args, wait, wait_timeout)
             return
 
-        # ===================
-        # PHASE 1.5: ORPHANED SESSION CLEANUP
-        # ===================
-        # Clean up any orphaned tmux sessions from previous crashes
-        # This prevents "session already exists" errors when spawning
+        # =========================================================================
+        # PHASE 1: CLEANUP - Orphaned session reconciliation (best-effort)
+        # =========================================================================
+        click.echo("Phase 1: Cleaning up orphaned sessions...")
         _cleanup_orphaned_sessions(db)
 
-        # ===================
-        # PHASE 2: ORG STATE TRANSITION (with rollback)
-        # ===================
-
+        # =========================================================================
+        # PHASE 2: TRANSITION - Atomic org + CEO state changes (with rollback)
+        # =========================================================================
+        click.echo("Phase 2: Transitioning org state...")
         old_status, new_status = _transition_org_state(org, start_mode, org_path, db)
 
-        # ===================
-        # PHASE 3: CEO SESSION SPAWNING
-        # ===================
-
+        # =========================================================================
+        # PHASE 3-5: ONBOARDING + SESSION SPAWN + KICKSTART
+        # =========================================================================
+        # These phases are combined in _spawn_ceo_session_if_needed():
+        # - Phase 3 (Onboarding): prepare_worker_onboarding() creates directory structure
+        # - Phase 4 (Session Spawn): ceo.spawn() creates tmux session
+        # - Phase 5 (Kickstart): _send_initial_prompt_to_ceo() sends initial task
         if spawn_ceo:
             try:
                 _spawn_ceo_session_if_needed(
@@ -192,11 +225,11 @@ def start_cmd(
                 click.echo("  qn wrkr logs ceo", err=True)
                 raise click.ClickException(f"Session spawn failed: {e}")
 
-        # ===================
-        # PHASE 4: READINESS VERIFICATION
-        # ===================
-
+        # =========================================================================
+        # PHASE 6: READINESS - Optional wait for session ready state
+        # =========================================================================
         if wait and spawn_ceo:
+            click.echo("Phase 6: Waiting for session readiness...")
             _wait_for_ready(org.ceo, wait_timeout)
 
         # Report success
@@ -211,9 +244,9 @@ def start_cmd(
         db.close()
 
 
-# ===================
-# PHASE 1: PRE-FLIGHT VALIDATION
-# ===================
+# =============================================================================
+# PHASE 0: PREFLIGHT VALIDATION
+# =============================================================================
 
 def _cleanup_orphaned_sessions(db: Database) -> None:
     """Clean up orphaned tmux sessions from previous crashes.
@@ -251,7 +284,7 @@ def _cleanup_orphaned_sessions(db: Database) -> None:
 
 
 def _validate_preflight(org_path: Path, skip_config_validation: bool) -> Database:
-    """Phase 1: Validate everything before making state changes.
+    """Phase 0 (Preflight): Validate everything before making state changes.
 
     Returns:
         Database instance
@@ -374,9 +407,9 @@ def _handle_already_running(
     click.echo(f"CEO session spawned (provider: {provider})")
 
 
-# ===================
+# =============================================================================
 # PHASE 2: ORG STATE TRANSITION
-# ===================
+# =============================================================================
 
 def _transition_org_state(
     org: Org,
@@ -384,7 +417,7 @@ def _transition_org_state(
     org_path: Path,
     db: Database,
 ) -> tuple[str, str]:
-    """Phase 2: Transition org state with rollback support.
+    """Phase 2 (Transition): Transition org state with rollback support.
 
     Args:
         org: Org instance
@@ -431,9 +464,9 @@ def _transition_org_state(
         raise click.ClickException(f"Org start failed: {e}")
 
 
-# ===================
-# PHASE 3: CEO SESSION SPAWNING
-# ===================
+# =============================================================================
+# PHASES 3-5: ONBOARDING + SESSION SPAWN + KICKSTART
+# =============================================================================
 
 def _spawn_ceo_session_if_needed(
     ceo: Worker,
@@ -444,7 +477,14 @@ def _spawn_ceo_session_if_needed(
     args_str: str,
     force: bool = False,
 ) -> None:
-    """Spawn CEO session if not already active.
+    """Phases 3-5: Onboarding, Session Spawn, and Kickstart.
+
+    Phase 3 (Onboarding): Prepares worker directory and generates docs
+    Phase 4 (Session Spawn): Creates tmux session via provider adapter
+    Phase 5 (Kickstart): Sends initial prompt to start autonomous work
+
+    Note: Session spawn failure does NOT rollback org state. The org remains
+    RUNNING and can be recovered with `qn org start --spawn-ceo`.
 
     Args:
         ceo: CEO Worker instance
@@ -470,7 +510,8 @@ def _spawn_ceo_session_if_needed(
     # Parse args
     args = args_str.split() if args_str else []
 
-    # Prepare onboarding (creates worker directory, briefing, docs)
+    # Phase 3: Onboarding - prepare worker directory and docs
+    click.echo("Phase 3: Preparing onboarding materials...")
     onboarding_ctx = prepare_worker_onboarding(db, ceo.id, org_path)
 
     # Get hierarchical worker directory from StorageManager
@@ -480,7 +521,8 @@ def _spawn_ceo_session_if_needed(
     # Get environment variables
     env_vars = get_worker_env_vars(onboarding_ctx, org_path, db)
 
-    # Create session config
+    # Phase 4: Session Spawn - create session config and spawn
+    click.echo("Phase 4: Spawning CEO session...")
     config = SessionConfig(
         worker_id=ceo.id,
         provider=provider,
@@ -504,9 +546,10 @@ def _spawn_ceo_session_if_needed(
     ceo.set_registry(registry)
     try:
         ceo.spawn(config)
-        click.echo(f"CEO session spawned (provider: {provider})")
+        click.echo(f"  CEO session spawned (provider: {provider})")
 
-        # Send initial prompt to kickstart autonomous work
+        # Phase 5: Kickstart - send initial prompt
+        click.echo("Phase 5: Sending initial prompt to CEO...")
         _send_initial_prompt_to_ceo(ceo, worker_dir)
 
     except Exception as e:
@@ -514,7 +557,10 @@ def _spawn_ceo_session_if_needed(
 
 
 def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
-    """Send initial prompt to CEO to start autonomous work.
+    """Phase 5 (Kickstart): Send initial prompt to CEO to start autonomous work.
+
+    This is best-effort - failure doesn't fail the org start. The CEO session
+    is spawned and can receive manual input if kickstart fails.
 
     Args:
         ceo: CEO worker instance
@@ -533,10 +579,22 @@ Your working directory contains important onboarding materials:
 
 **CRITICAL INSTRUCTIONS:**
 
-1. Read your BRIEFING.md file first: `cat BRIEFING.md`
-2. Review your assigned OKRs: `qn org okr list`
-3. Check for ready work: `bd ready`
-4. Start working autonomously on your highest priority OKR
+1. **FIRST: Introduce yourself to the team**
+   ```bash
+   # Check available channels
+   msgr channels
+
+   # Send your first message (required)
+   msgr send #general "Hi team! I'm {ceo_name}, CEO. Starting work now. Reading briefing and reviewing OKRs."
+
+   # Confirm message sent
+   msgr inbox
+   ```
+
+2. Read your BRIEFING.md file: `cat BRIEFING.md`
+3. Review your assigned OKRs: `qn org okr list`
+4. Check for ready work: `bd ready`
+5. Start working autonomously on your highest priority OKR
 
 **AUTONOMOUS MODE:**
 You were started with `qn org start`, which means you should operate autonomously:
@@ -546,10 +604,17 @@ You were started with `qn org start`, which means you should operate autonomousl
 - Only stop for CRITICAL blockers that prevent ALL progress
 - For non-critical questions: document in beads and proceed with reasonable default
 
-**YOUR FIRST TASK:**
-Read BRIEFING.md now and follow the "First Actions" section. Then begin working on your first OKR.
+**COMMUNICATION REQUIREMENT:**
+Post status updates to #general as you work:
+- When starting a task
+- When completing a task
+- Every 30-60 minutes with progress updates
+- When blocked on anything
 
-Start by running: `cat BRIEFING.md`"""
+**YOUR FIRST TASK:**
+Send your introduction message above, then read BRIEFING.md and follow the "First Actions" section.
+
+Start by running: `msgr send #general "Hi team! I'm {ceo_name}, CEO. Starting work now. Reading briefing and reviewing OKRs."`"""
 
     import subprocess
 
@@ -595,12 +660,12 @@ Start by running: `cat BRIEFING.md`"""
         click.echo(f"CEO session spawned but will need manual input to start work", err=True)
 
 
-# ===================
-# PHASE 4: READINESS VERIFICATION
-# ===================
+# =============================================================================
+# PHASE 6: READINESS VERIFICATION
+# =============================================================================
 
 def _wait_for_ready(worker: Worker, timeout: int) -> None:
-    """Wait for worker session to reach READY state.
+    """Phase 6 (Readiness): Wait for worker session to reach READY state.
 
     Args:
         worker: Worker instance
@@ -626,9 +691,9 @@ def _wait_for_ready(worker: Worker, timeout: int) -> None:
     raise SessionStartTimeout(worker.id, timeout)
 
 
-# ===================
-# WORKER-SPECIFIC START
-# ===================
+# =============================================================================
+# WORKER-SPECIFIC START (Independent path, not part of org start sequence)
+# =============================================================================
 
 def _start_worker(
     org_path: Path,
@@ -642,7 +707,7 @@ def _start_worker(
     Args:
         org_path: Org directory path
         worker: Worker name or ID
-        provider: Session provider
+        provider: Session provider (from CLI, may be overridden by worker preference)
         session_command: Session command
         session_args: Session args
 
@@ -683,6 +748,18 @@ def _start_worker(
 
         click.echo(f"Starting workday for {worker_obj.name}...")
 
+        # Use worker's preferred_provider if set and CLI didn't override with non-default
+        effective_provider = provider
+        if worker_obj.preferred_provider:
+            # Worker has a preference - use it unless CLI explicitly specified something else
+            # Default CLI provider is 'claude_code', so only override if worker prefers different
+            effective_provider = worker_obj.preferred_provider
+            if provider != "claude_code":
+                # CLI explicitly specified a different provider - respect it
+                effective_provider = provider
+            else:
+                click.echo(f"  Using worker's preferred provider: {effective_provider}")
+
         # Get hierarchical worker directory from StorageManager
         storage = StorageManager(org_path, db)
         worker_dir = storage.ensure_worker_storage(worker_obj.id)
@@ -692,7 +769,7 @@ def _start_worker(
 
         spawn_worker_session(
             worker=worker_obj,
-            provider=provider,
+            provider=effective_provider,
             command=session_command,
             args_str=session_args,
             working_directory=worker_dir,

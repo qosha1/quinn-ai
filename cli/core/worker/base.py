@@ -195,6 +195,17 @@ class Worker:
             self._load_worker()
         return self._worker_data.manager_id
 
+    @property
+    def preferred_provider(self) -> Optional[str]:
+        """Get worker's preferred CLI provider.
+
+        Returns the worker's preferred provider name (e.g., 'claude_code', 'cursor'),
+        or None if no preference is set (uses org default).
+        """
+        if self._worker_data is None:
+            self._load_worker()
+        return self._worker_data.preferred_provider
+
     # ==================
     # HIRING AUTHORITY PROPERTIES (delegate to hiring manager)
     # ==================

@@ -164,14 +164,28 @@ def hire_cmd(
 
 
 def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
-    """Start a worker session using org provider defaults."""
+    """Start a worker session using worker's preferred provider or org defaults."""
     from core.config import get_org_config_path
     from core.provider import load_providers_from_config
     from commands.org.session_utils import spawn_worker_session
 
     config_path = get_org_config_path(ctx.org_path) / "providers.yaml"
     registry = load_providers_from_config(config_path)
-    provider = registry.select_for_worker(worker.cost, worker.skills)[0]
+
+    # Use worker's preferred_provider if set, otherwise select based on cost/skills
+    if worker.preferred_provider:
+        # Worker has explicit preference - use it
+        provider_name = worker.preferred_provider
+        cli_command = "claude"  # Default command - will be overridden by adapter
+        # Try to get provider info if it exists in the registry
+        if registry.has(provider_name):
+            provider = registry.get(provider_name)
+            cli_command = provider.cli_command
+    else:
+        # No preference - select based on cost and skills
+        provider = registry.select_for_worker(worker.cost, worker.skills)[0]
+        provider_name = provider.name
+        cli_command = provider.cli_command
 
     # Transition lifecycle for onboarding on first hire
     if worker.lifecycle_status == "pending":
@@ -180,7 +194,7 @@ def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
 
     spawn_worker_session(
         worker=worker,
-        provider=provider.name,
-        command=provider.cli_command,
+        provider=provider_name,
+        command=cli_command,
         args_str="--dangerously-skip-permissions",
     )

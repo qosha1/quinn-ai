@@ -289,10 +289,10 @@ class Org:
         self._state_data = None  # Invalidate cache
         new_status = self.status
 
-        # Start monitoring services
-        self._start_escalation_monitor()  # GAP 4 fix
-        self._start_session_capture()     # Capture worker session activity
-        self._start_activity_reporter()   # Board activity visibility
+        # NOTE: Monitoring services (escalation_monitor, session_capture, activity_reporter)
+        # are NOT started here. These services die when the CLI process exits, making them
+        # ineffective when started from `qn org start`. Only Board UI should manage monitors
+        # since it has persistent process lifecycle. See quinnai-3gqq for design rationale.
 
         return (old_status, new_status)
 
@@ -307,103 +307,6 @@ class Org:
         log_org_state_change(_logger, current_status, target_status)
         _logger.info(f"Rolled back org status after error: {current_status} -> {target_status}")
         self._state_data = None  # Invalidate cache
-
-    def start_with_session(
-        self,
-        session_config: Optional["SessionConfig"] = None,
-        spawn_ceo: bool = True,
-    ) -> tuple[str, str]:
-        """Start org with integrated session spawning and escalation monitoring (GAP 2 fix).
-
-        This method atomically:
-        1. Transitions org to RUNNING state
-        2. Spawns CEO session (if requested)
-        3. Starts escalation monitor
-        4. Rolls back on failure
-
-        Args:
-            session_config: Session configuration for CEO (if spawn_ceo=True)
-            spawn_ceo: Whether to spawn CEO session automatically
-
-        Returns:
-            Tuple of (old_status, new_status)
-
-        Raises:
-            InvalidOrgTransition: If org cannot be started
-            SessionSpawnError: If session spawn fails (after rollback)
-        """
-        from core.session import SessionConfig
-        from core.sessions.registry import get_default_registry
-        from core.onboarding import prepare_worker_onboarding, get_worker_env_vars
-        from core.storage import StorageManager
-        from shared import SessionSpawnError
-
-        old_status = self.status
-
-        try:
-            # Step 1: Transition org state
-            old_status, new_status = self.start()
-
-            # Step 2: Spawn CEO session if requested
-            if spawn_ceo and self.ceo:
-                if session_config is None:
-                    # Create default session config
-                    onboarding_ctx = prepare_worker_onboarding(self.db, self.ceo.id, self._org_path)
-                    storage = StorageManager(self._org_path, self.db)
-                    worker_dir = storage.get_worker_path(self.ceo.id)
-                    env_vars = get_worker_env_vars(onboarding_ctx, self._org_path, self.db)
-
-                    session_config = SessionConfig(
-                        worker_id=self.ceo.id,
-                        provider="claude_code",
-                        command="claude",
-                        args=["--dangerously-skip-permissions"],
-                        working_directory=worker_dir,
-                        env_vars=env_vars,
-                    )
-
-                # Set registry and spawn
-                registry = get_default_registry()
-                self.ceo.set_registry(registry)
-
-                try:
-                    self.ceo.spawn(session_config)
-                    _logger.info(f"CEO session spawned (provider: {session_config.provider})")
-
-                    # Send initial prompt to start autonomous work (GAP 5 fix)
-                    self._send_initial_ceo_prompt(self.ceo, worker_dir)
-
-                except Exception as e:
-                    # Rollback org state on session spawn failure
-                    _logger.error(f"Failed to spawn CEO session: {e}")
-                    self.rollback_to_status(old_status)
-                    self._stop_escalation_monitor()  # Clean up monitors if they started
-                    self._stop_session_capture()
-                    self._stop_activity_reporter()
-                    raise SessionSpawnError(self.ceo.id, str(e))
-
-            # Step 3: Start monitoring services
-            self._start_escalation_monitor()
-            self._start_session_capture()
-            self._start_activity_reporter()
-
-            return (old_status, new_status)
-
-        except InvalidOrgTransition:
-            # Let transition errors propagate as-is
-            raise
-        except SessionSpawnError:
-            # Let session spawn errors propagate as-is (already rolled back)
-            raise
-        except Exception as e:
-            # Rollback on any unexpected error
-            _logger.error(f"Unexpected error during start_with_session: {e}")
-            if self.status != old_status:
-                self.rollback_to_status(old_status)
-            self._stop_escalation_monitor()
-            self._stop_session_capture()
-            self._stop_activity_reporter()
-            raise
 
     def _get_briefing_path(self) -> Path:
         """Get path to CEO briefing markdown file."""
@@ -619,71 +522,6 @@ class Org:
             _logger.info("Session capture service stopped")
 
         self._session_capture = None
-
-    def _send_initial_ceo_prompt(self, ceo: "Worker", worker_dir: Path) -> None:
-        """Send initial prompt to CEO to start autonomous work.
-
-        This prompt instructs the CEO to:
-        1. Read onboarding materials (BRIEFING.md, STORAGE.md, WELCOME.md)
-        2. Review OKRs
-        3. Start working autonomously
-
-        Args:
-            ceo: CEO worker instance
-            worker_dir: Path to CEO's worker directory
-        """
-        import time
-
-        initial_prompt = """You are Alice, the CEO of this organization. You've just been onboarded.
-
-Your working directory contains important onboarding materials:
-- BRIEFING.md - Your role, responsibilities, OKRs, and first actions
-- STORAGE.md - Storage architecture and where to save work
-- WELCOME.md - Welcome message and context
-- CLAUDE.md - Development guidelines
-- AGENTS.md - Agent collaboration patterns
-
-**CRITICAL INSTRUCTIONS:**
-
-1. Read your BRIEFING.md file first: `cat BRIEFING.md`
-2. Review your assigned OKRs: `bd list --type=okr --assignee=me`
-3. Check for ready work: `bd ready`
-4. Start working autonomously on your highest priority OKR
-
-**AUTONOMOUS MODE:**
-You were started with `qn org start`, which means you should operate autonomously:
-- Work continuously based on OKRs without waiting for user input
-- Make best-guess decisions aligned with objectives
-- Document decisions in beads for later review
-- Only stop for CRITICAL blockers that prevent ALL progress
-- For non-critical questions: document in beads and proceed with reasonable default
-
-**YOUR FIRST TASK:**
-Read BRIEFING.md now and follow the "First Actions" section. Then begin working on your first OKR.
-
-Start by running: `cat BRIEFING.md`"""
-
-        try:
-            # Wait for session to reach IDLE state (brief pause after spawn)
-            _logger.info("Waiting for CEO session to become ready...")
-            time.sleep(3)  # Give Claude Code time to initialize
-
-            # Check if session exists
-            if ceo.session is None:
-                _logger.warning("CEO has no active session - cannot send initial prompt")
-                _logger.warning("CEO will need manual interaction to start work")
-                return
-
-            # Send the initial prompt via session
-            _logger.info("Sending initial prompt to CEO session...")
-            ceo.session.send_prompt(initial_prompt)
-            _logger.info("Initial prompt sent successfully")
-
-        except Exception as e:
-            # Don't fail the org start if initial prompt fails
-            # CEO can still work, just won't have the automatic kickoff
-            _logger.warning(f"Failed to send initial CEO prompt: {e}")
-            _logger.warning("CEO session spawned but will need manual interaction to start work")
 
     # ==================
     # QUERY HELPERS

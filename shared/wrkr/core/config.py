@@ -51,6 +51,8 @@ class WorkerConfig:
             - "poll": Periodically check for work
             - "exit": Shut down when idle
         poll_interval: Seconds between polls when idle_behavior is "poll".
+        no_work_escalation_threshold_minutes: Minutes without work before escalating
+            to manager. Default 60 minutes (1 hour).
     """
 
     id: str
@@ -62,6 +64,7 @@ class WorkerConfig:
     is_manager: bool = False
     idle_behavior: Literal["wait", "poll", "exit"] = "poll"
     poll_interval: float = 5.0
+    no_work_escalation_threshold_minutes: int = 60
 
     @property
     def reports_to_human(self) -> bool:

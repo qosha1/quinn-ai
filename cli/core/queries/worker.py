@@ -3,10 +3,42 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from ..db import Database
 from .common import generate_id
+
+
+def _row_to_worker(row: Any) -> "Worker":
+    """Convert a database row to a Worker instance.
+
+    Handles optional fields like preferred_provider that may not exist in older DBs.
+
+    Args:
+        row: sqlite3.Row or dict-like object
+
+    Returns:
+        Worker instance
+    """
+    # Convert to dict for optional field access
+    row_dict = dict(row)
+
+    return Worker(
+        id=row_dict["id"],
+        name=row_dict["name"],
+        role=row_dict["role"],
+        team_id=row_dict["team_id"],
+        manager_id=row_dict["manager_id"],
+        status=row_dict["status"],
+        skills=json.loads(row_dict["skills"]) if row_dict["skills"] else {},
+        cost=row_dict["cost"],
+        hiring_authority_scope=row_dict.get("hiring_authority_scope"),
+        delegated_budget=row_dict.get("delegated_budget", 0),
+        max_reports=row_dict.get("max_reports", 10),
+        preferred_provider=row_dict.get("preferred_provider"),
+        created_at=row_dict["created_at"],
+        updated_at=row_dict["updated_at"],
+    )
 
 
 @dataclass
@@ -23,6 +55,7 @@ class Worker:
     hiring_authority_scope: Optional[str]
     delegated_budget: int
     max_reports: int
+    preferred_provider: Optional[str]
     created_at: datetime
     updated_at: datetime
 
@@ -53,6 +86,7 @@ def create_worker(
     hiring_authority_scope: Optional[str] = None,
     delegated_budget: int = 0,
     max_reports: int = 10,
+    preferred_provider: Optional[str] = None,
 ) -> Worker:
     """Create a new worker.
 
@@ -68,6 +102,7 @@ def create_worker(
         hiring_authority_scope: Optional JSON serialized HiringScope
         delegated_budget: Budget worker can delegate for hiring
         max_reports: Maximum direct reports allowed
+        preferred_provider: Optional preferred CLI provider (e.g., claude_code, cursor)
 
     Returns:
         Created Worker
@@ -84,10 +119,11 @@ def create_worker(
     db.execute(
         """INSERT INTO workers
            (id, name, role, team_id, manager_id, status, skills, cost,
-            hiring_authority_scope, delegated_budget, max_reports, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)""",
+            hiring_authority_scope, delegated_budget, max_reports, preferred_provider,
+            created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)""",
         (worker_id, name, role, team_id, manager_id, skills_json, cost,
-         hiring_authority_scope, delegated_budget, max_reports, now, now)
+         hiring_authority_scope, delegated_budget, max_reports, preferred_provider, now, now)
     )
     db.connection.commit()
 
@@ -103,6 +139,7 @@ def create_worker(
         hiring_authority_scope=hiring_authority_scope,
         delegated_budget=delegated_budget,
         max_reports=max_reports,
+        preferred_provider=preferred_provider,
         created_at=now,
         updated_at=now,
     )
@@ -122,21 +159,7 @@ def get_worker(db: Database, worker_id: str) -> Optional[Worker]:
     if not row:
         return None
 
-    return Worker(
-        id=row["id"],
-        name=row["name"],
-        role=row["role"],
-        team_id=row["team_id"],
-        manager_id=row["manager_id"],
-        status=row["status"],
-        skills=json.loads(row["skills"]),
-        cost=row["cost"],
-        hiring_authority_scope=row["hiring_authority_scope"],
-        delegated_budget=row["delegated_budget"],
-        max_reports=row["max_reports"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
+    return _row_to_worker(row)
 
 
 def get_worker_by_name(db: Database, name: str) -> Optional[Worker]:
@@ -156,37 +179,46 @@ def get_worker_by_name(db: Database, name: str) -> Optional[Worker]:
     if not row:
         return None
 
-    return Worker(
-        id=row["id"],
-        name=row["name"],
-        role=row["role"],
-        team_id=row["team_id"],
-        manager_id=row["manager_id"],
-        status=row["status"],
-        skills=json.loads(row["skills"]),
-        cost=row["cost"],
-        hiring_authority_scope=row["hiring_authority_scope"],
-        delegated_budget=row["delegated_budget"],
-        max_reports=row["max_reports"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
+    return _row_to_worker(row)
 
 
 def update_worker_status(db: Database, worker_id: str, status: str) -> None:
     """Update worker lifecycle status.
+
+    Publishes WORKER_STATUS_CHANGED event if event bus is available.
 
     Args:
         db: Database instance
         worker_id: Worker ID
         status: New status
     """
+    # Get old status for event publishing
+    old_row = db.fetchone("SELECT status FROM workers WHERE id = ?", (worker_id,))
+    old_status = old_row["status"] if old_row else None
+
     now = datetime.now()
     db.execute(
         "UPDATE workers SET status = ?, updated_at = ? WHERE id = ?",
         (status, now, worker_id)
     )
     db.connection.commit()
+
+    # Publish event if status actually changed
+    if old_status and old_status != status:
+        from ..events import EventType, get_event_bus, ENTITY_TYPE_WORKER
+        bus = get_event_bus()
+        if bus:
+            bus.publish(
+                event_type=EventType.WORKER_STATUS_CHANGED,
+                entity_type=ENTITY_TYPE_WORKER,
+                entity_id=worker_id,
+                payload={
+                    "old_status": old_status,
+                    "new_status": status,
+                    "worker_id": worker_id,
+                    "changed_at": now.isoformat(),
+                },
+            )
 
 
 def get_workers_by_status(db: Database, status: str) -> list[Worker]:
@@ -200,24 +232,7 @@ def get_workers_by_status(db: Database, status: str) -> list[Worker]:
         List of matching workers
     """
     rows = db.fetchall("SELECT * FROM workers WHERE status = ?", (status,))
-    return [
-        Worker(
-            id=row["id"],
-            name=row["name"],
-            role=row["role"],
-            team_id=row["team_id"],
-            manager_id=row["manager_id"],
-            status=row["status"],
-            skills=json.loads(row["skills"]),
-            cost=row["cost"],
-            hiring_authority_scope=row["hiring_authority_scope"],
-            delegated_budget=row["delegated_budget"],
-            max_reports=row["max_reports"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
-        for row in rows
-    ]
+    return [_row_to_worker(row) for row in rows]
 
 
 def get_workers_by_manager(db: Database, manager_id: str) -> list[Worker]:
@@ -231,24 +246,7 @@ def get_workers_by_manager(db: Database, manager_id: str) -> list[Worker]:
         List of direct reports
     """
     rows = db.fetchall("SELECT * FROM workers WHERE manager_id = ?", (manager_id,))
-    return [
-        Worker(
-            id=row["id"],
-            name=row["name"],
-            role=row["role"],
-            team_id=row["team_id"],
-            manager_id=row["manager_id"],
-            status=row["status"],
-            skills=json.loads(row["skills"]),
-            cost=row["cost"],
-            hiring_authority_scope=row["hiring_authority_scope"],
-            delegated_budget=row["delegated_budget"],
-            max_reports=row["max_reports"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
-        for row in rows
-    ]
+    return [_row_to_worker(row) for row in rows]
 
 
 def get_team_workers(db: Database, team_id: str) -> list[Worker]:
@@ -262,24 +260,7 @@ def get_team_workers(db: Database, team_id: str) -> list[Worker]:
         List of workers in team
     """
     rows = db.fetchall("SELECT * FROM workers WHERE team_id = ?", (team_id,))
-    return [
-        Worker(
-            id=row["id"],
-            name=row["name"],
-            role=row["role"],
-            team_id=row["team_id"],
-            manager_id=row["manager_id"],
-            status=row["status"],
-            skills=json.loads(row["skills"]),
-            cost=row["cost"],
-            hiring_authority_scope=row["hiring_authority_scope"],
-            delegated_budget=row["delegated_budget"],
-            max_reports=row["max_reports"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
-        for row in rows
-    ]
+    return [_row_to_worker(row) for row in rows]
 
 
 def is_worker_manager(db: Database, worker_id: str) -> bool:
@@ -372,6 +353,7 @@ def update_worker_runtime_status(
     """Update worker runtime status.
 
     Creates worker_state row if it doesn't exist (upsert).
+    Publishes WORKER_RUNTIME_STATUS_CHANGED event if event bus is available.
 
     Args:
         db: Database instance
@@ -379,6 +361,13 @@ def update_worker_runtime_status(
         runtime_status: New runtime status
         current_task_id: Optional current task
     """
+    # Get old status for event publishing
+    old_row = db.fetchone(
+        "SELECT runtime_status FROM worker_state WHERE worker_id = ?",
+        (worker_id,)
+    )
+    old_status = old_row["runtime_status"] if old_row else None
+
     now = datetime.now()
 
     # Try to update existing row first
@@ -396,8 +385,26 @@ def update_worker_runtime_status(
                VALUES (?, ?, ?, ?, ?, ?)""",
             (worker_id, runtime_status, current_task_id, now, now, now)
         )
+        old_status = None  # New row, no old status
 
     db.connection.commit()
+
+    # Publish event if status actually changed
+    if old_status is None or old_status != runtime_status:
+        from ..events import EventType, get_event_bus, ENTITY_TYPE_WORKER
+        bus = get_event_bus()
+        if bus:
+            bus.publish(
+                event_type=EventType.WORKER_RUNTIME_STATUS_CHANGED,
+                entity_type=ENTITY_TYPE_WORKER,
+                entity_id=worker_id,
+                payload={
+                    "old_status": old_status or "none",
+                    "new_status": runtime_status,
+                    "worker_id": worker_id,
+                    "changed_at": now.isoformat(),
+                },
+            )
 
 
 def record_worker_heartbeat(db: Database, worker_id: str) -> None:
@@ -507,22 +514,46 @@ def get_root_worker(db: Database) -> Optional[Worker]:
     if row is None:
         return None
 
-    import json
-    return Worker(
-        id=row["id"],
-        name=row["name"],
-        role=row["role"],
-        team_id=row["team_id"],
-        manager_id=row["manager_id"],
-        status=row["status"],
-        skills=json.loads(row["skills"]) if row["skills"] else {},
-        cost=row["cost"],
-        hiring_authority_scope=row["hiring_authority_scope"],
-        delegated_budget=row["delegated_budget"],
-        max_reports=row["max_reports"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
+    return _row_to_worker(row)
+
+
+def update_worker_preferred_provider(
+    db: Database,
+    worker_id: str,
+    preferred_provider: Optional[str],
+) -> None:
+    """Update worker's preferred provider.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+        preferred_provider: Provider name or None to clear
+    """
+    now = datetime.now()
+    db.execute(
+        "UPDATE workers SET preferred_provider = ?, updated_at = ? WHERE id = ?",
+        (preferred_provider, now, worker_id)
     )
+    db.connection.commit()
+
+
+def get_worker_preferred_provider(db: Database, worker_id: str) -> Optional[str]:
+    """Get worker's preferred provider.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+
+    Returns:
+        Provider name or None
+    """
+    row = db.fetchone(
+        "SELECT preferred_provider FROM workers WHERE id = ?",
+        (worker_id,)
+    )
+    if not row:
+        return None
+    return row["preferred_provider"]
 
 
 __all__ = [
@@ -544,4 +575,6 @@ __all__ = [
     "record_worker_heartbeat",
     "increment_worker_task_count",
     "get_workers_by_runtime_status",
+    "update_worker_preferred_provider",
+    "get_worker_preferred_provider",
 ]

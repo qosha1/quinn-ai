@@ -6,6 +6,15 @@ from .claude_code import ClaudeCodeSession
 from .codex import CodexSession
 from .gemini import GeminiSession
 from .openai import OpenAISession
+from .capabilities import (
+    ProviderCapability,
+    PROVIDER_CAPABILITIES,
+    get_provider_capabilities,
+    has_capability,
+    find_providers_with_capability,
+    find_providers_with_all_capabilities,
+    find_providers_with_any_capabilities,
+)
 from .registry import (
     SessionRegistry,
     AdapterNotFoundError,
@@ -86,6 +95,14 @@ __all__ = [
     "CodexSession",
     "GeminiSession",
     "OpenAISession",
+    # Capabilities
+    "ProviderCapability",
+    "PROVIDER_CAPABILITIES",
+    "get_provider_capabilities",
+    "has_capability",
+    "find_providers_with_capability",
+    "find_providers_with_all_capabilities",
+    "find_providers_with_any_capabilities",
     # Registry
     "SessionRegistry",
     "AdapterNotFoundError",

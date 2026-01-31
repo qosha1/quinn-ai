@@ -97,6 +97,34 @@ Shows available channels you can join.
 - Check `msgr inbox` at least once per session
 - Mark messages as read with `msgr read <msg-id>` to keep inbox clean
 
+### When to Post Status Updates
+
+**Post to your team channel when you:**
+- **Start a task**: `msgr send #{{ team_name }} "Starting: [task title]"`
+- **Complete a task**: `msgr send #{{ team_name }} "Completed: [task title]"`
+- **Get blocked**: `msgr send #{{ team_name }} "Blocked on: [blocker]" --priority=1`
+- **Every 30-60 minutes**: Quick status even if nothing changed: "Still working on X, ETA Y"
+
+**Example workflow:**
+```bash
+# Claim a task
+bd update task-123 --status=in_progress
+
+# Announce it
+msgr send #{{ team_name }} "Claimed task-123: Implement feature X"
+
+# Work on it...
+
+# Post status
+msgr send #{{ team_name }} "Progress: 50% done with feature X, testing next"
+
+# Complete it
+bd close task-123
+msgr send #{{ team_name }} "Completed task-123! Tests passing."
+```
+
+**Why this matters:** Team visibility is critical. Your teammates need to know you're active and what you're working on. Silent work creates coordination problems.
+
 ## Your OKRs
 
 {% if okrs %}

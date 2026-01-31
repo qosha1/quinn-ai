@@ -1,4 +1,14 @@
-"""Tests for integrated org start with session spawning (GAP 2 fix)."""
+"""Tests for org start sequence.
+
+After architecture changes (quinnai-3gqq), org.start() is now a pure state transition.
+Session spawning is handled separately by CLI commands. Monitor services are managed
+by Board UI only (they die when CLI exits anyway).
+
+This file tests:
+1. Core org.start() state transitions
+2. Org path derivation
+3. State persistence
+"""
 
 import tempfile
 from pathlib import Path
@@ -9,7 +19,7 @@ import pytest
 from core.org import Org
 from core.db import init_database
 from core.session import SessionConfig
-from shared import SessionSpawnError, InvalidOrgTransition
+from shared import InvalidOrgTransition
 from shared.enums import OrgStatus
 
 
@@ -43,179 +53,174 @@ def initialized_org(test_db, temp_org_dir):
     return org
 
 
-def test_start_with_session_without_spawning(initialized_org):
-    """Test start_with_session with spawn_ceo=False."""
-    # Start without spawning CEO session
-    old_status, new_status = initialized_org.start_with_session(spawn_ceo=False)
-    
-    assert old_status == OrgStatus.INITIALIZED.value
-    assert new_status == OrgStatus.RUNNING.value
-    assert initialized_org.status == OrgStatus.RUNNING.value
+class TestOrgStartStateTransition:
+    """Test that org.start() performs correct state transition."""
+
+    def test_start_transitions_from_initialized_to_running(self, initialized_org):
+        """Start from initialized should transition to running."""
+        old_status, new_status = initialized_org.start()
+
+        assert old_status == OrgStatus.INITIALIZED.value
+        assert new_status == OrgStatus.RUNNING.value
+        assert initialized_org.status == OrgStatus.RUNNING.value
+
+    def test_start_activates_ceo_worker(self, initialized_org):
+        """Start should activate CEO worker (complete onboarding)."""
+        # Before start, CEO is pending
+        assert initialized_org.ceo.lifecycle_status == "pending"
+
+        initialized_org.start()
+
+        # After start, CEO is active
+        assert initialized_org.ceo.lifecycle_status == "active"
+
+    def test_start_from_stopped_resumes(self, initialized_org):
+        """Start from stopped should resume to running."""
+        # First start
+        initialized_org.start()
+        assert initialized_org.status == OrgStatus.RUNNING.value
+
+        # Stop
+        initialized_org.stop()
+        assert initialized_org.status == OrgStatus.STOPPED.value
+
+        # Resume
+        old_status, new_status = initialized_org.start()
+        assert old_status == OrgStatus.STOPPED.value
+        assert new_status == OrgStatus.RUNNING.value
+
+    def test_start_when_running_raises_error(self, initialized_org):
+        """Start when already running should raise error."""
+        initialized_org.start()
+
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            initialized_org.start()
+
+        assert exc_info.value.current == "running"
+        assert exc_info.value.attempted == "running"
+
+    def test_start_from_uninitialized_raises_error(self, test_db, temp_org_dir):
+        """Start from uninitialized should raise error."""
+        org = Org(test_db, temp_org_dir)
+        # Don't init, so it's uninitialized
+
+        with pytest.raises(InvalidOrgTransition) as exc_info:
+            org.start()
+
+        assert exc_info.value.current == "uninitialized"
 
 
-@patch('core.sessions.registry.get_default_registry')
-@patch('core.onboarding.prepare_worker_onboarding')
-@patch('core.onboarding.get_worker_env_vars')
-def test_start_with_session_spawns_ceo(
-    mock_env_vars,
-    mock_prep_onboarding,
-    mock_registry,
-    initialized_org,
-    temp_org_dir
-):
-    """Test that start_with_session spawns CEO by default."""
-    # Setup mocks
-    mock_env_vars.return_value = {}
-    mock_prep_onboarding.return_value = Mock()
-    mock_reg_instance = MagicMock()
-    mock_registry.return_value = mock_reg_instance
+class TestOrgStartDoesNotStartMonitors:
+    """Verify that org.start() does NOT start monitoring services.
 
-    # Mock CEO spawn method
-    initialized_org.ceo.spawn = Mock()
-    initialized_org.ceo.set_registry = Mock()
+    Per quinnai-3gqq: Monitors die when CLI exits, so they're ineffective.
+    Only Board UI should manage monitors since it has persistent lifecycle.
+    """
 
-    # Start with session spawning
-    old_status, new_status = initialized_org.start_with_session(spawn_ceo=True)
+    @patch('core.escalation_monitor.EscalationMonitor')
+    def test_start_does_not_create_escalation_monitor(self, mock_monitor_class, initialized_org):
+        """org.start() should NOT create escalation monitor."""
+        initialized_org.start()
 
-    # Verify org transitioned
-    assert old_status == OrgStatus.INITIALIZED.value
-    assert new_status == OrgStatus.RUNNING.value
+        # Monitor class should NOT be instantiated
+        mock_monitor_class.assert_not_called()
 
-    # Verify CEO session was spawned
-    initialized_org.ceo.set_registry.assert_called_once()
-    initialized_org.ceo.spawn.assert_called_once()
+    @patch('core.session_capture.SessionCaptureService')
+    def test_start_does_not_create_session_capture(self, mock_capture_class, initialized_org):
+        """org.start() should NOT create session capture service."""
+        initialized_org.start()
 
+        # Capture service should NOT be instantiated
+        mock_capture_class.assert_not_called()
 
-@patch('core.sessions.registry.get_default_registry')
-@patch('core.onboarding.prepare_worker_onboarding')
-@patch('core.onboarding.get_worker_env_vars')
-def test_start_with_session_rollback_on_spawn_failure(
-    mock_env_vars,
-    mock_prep_onboarding,
-    mock_registry,
-    initialized_org
-):
-    """Test rollback when session spawn fails."""
-    # Setup mocks
-    mock_env_vars.return_value = {}
-    mock_prep_onboarding.return_value = Mock()
-    mock_reg_instance = MagicMock()
-    mock_registry.return_value = mock_reg_instance
-    
-    # Mock CEO spawn to fail
-    initialized_org.ceo.spawn = Mock(side_effect=Exception("Spawn failed"))
-    initialized_org.ceo.set_registry = Mock()
-    
-    # Verify initial status
-    assert initialized_org.status == OrgStatus.INITIALIZED.value
-    
-    # Attempt to start with session spawning
-    with pytest.raises(SessionSpawnError):
-        initialized_org.start_with_session(spawn_ceo=True)
-    
-    # Verify rollback occurred
-    assert initialized_org.status == OrgStatus.INITIALIZED.value
+    @patch('core.activity_reporter.ActivityReporter')
+    def test_start_does_not_create_activity_reporter(self, mock_reporter_class, initialized_org):
+        """org.start() should NOT create activity reporter."""
+        initialized_org.start()
+
+        # Activity reporter should NOT be instantiated
+        mock_reporter_class.assert_not_called()
 
 
-@patch('core.escalation_monitor.EscalationMonitor')
-def test_start_with_session_starts_escalation_monitor(mock_monitor_class, initialized_org):
-    """Test that escalation monitor is started."""
-    mock_monitor_instance = Mock()
-    mock_monitor_instance.is_running.return_value = False
-    mock_monitor_class.return_value = mock_monitor_instance
-    
-    # Start org without spawning CEO (simpler test)
-    initialized_org.start_with_session(spawn_ceo=False)
-    
-    # Verify escalation monitor was created and started
-    mock_monitor_class.assert_called_once()
-    mock_monitor_instance.start.assert_called_once()
+class TestOrgRollback:
+    """Test org rollback functionality."""
+
+    def test_rollback_to_status_changes_state(self, initialized_org):
+        """rollback_to_status should change org state."""
+        initialized_org.start()
+        assert initialized_org.status == OrgStatus.RUNNING.value
+
+        initialized_org.rollback_to_status(OrgStatus.INITIALIZED.value)
+        assert initialized_org.status == OrgStatus.INITIALIZED.value
+
+    def test_rollback_from_running_to_stopped(self, initialized_org):
+        """Should be able to rollback from running to stopped."""
+        initialized_org.start()
+        initialized_org.stop()
+        initialized_org.start()
+        assert initialized_org.status == OrgStatus.RUNNING.value
+
+        initialized_org.rollback_to_status(OrgStatus.STOPPED.value)
+        assert initialized_org.status == OrgStatus.STOPPED.value
 
 
-@patch('core.escalation_monitor.EscalationMonitor')
-def test_stop_stops_escalation_monitor(mock_monitor_class, initialized_org):
-    """Test that stopping org stops escalation monitor."""
-    mock_monitor_instance = Mock()
-    mock_monitor_instance.is_running.return_value = True
-    mock_monitor_class.return_value = mock_monitor_instance
-    
-    # Start org (which starts monitor)
-    initialized_org.start_with_session(spawn_ceo=False)
-    
-    # Stop org
-    initialized_org.stop()
-    
-    # Verify monitor was stopped
-    mock_monitor_instance.stop.assert_called_once()
-    assert initialized_org.status == OrgStatus.STOPPED.value
+class TestOrgPathDerivation:
+    """Test org_path property derivation."""
+
+    def test_org_path_property(self, initialized_org, temp_org_dir):
+        """org_path property should return correct path."""
+        assert initialized_org.org_path == temp_org_dir
+
+    def test_org_derives_path_from_db(self, test_db, temp_org_dir):
+        """Org should derive path from database when not explicitly provided."""
+        org = Org(test_db)  # No org_path provided
+
+        # Should derive from db_path (live/quinn.db -> parent.parent)
+        assert org.org_path == temp_org_dir
 
 
-def test_start_with_session_with_custom_config(initialized_org):
-    """Test start_with_session with custom SessionConfig."""
-    # Create custom session config
-    custom_config = SessionConfig(
-        worker_id=initialized_org.ceo.id,
-        provider="test_provider",
-        command="test_command",
-        args=["--test"],
-        working_directory=Path("/tmp"),
-        env_vars={"TEST": "value"},
-    )
-    
-    # Mock spawn to avoid actual session creation
-    initialized_org.ceo.spawn = Mock()
-    initialized_org.ceo.set_registry = Mock()
-    
-    # Mock registry
-    with patch('core.sessions.registry.get_default_registry') as mock_registry:
-        mock_reg = MagicMock()
-        mock_registry.return_value = mock_reg
-        
-        # Start with custom config
-        old_status, new_status = initialized_org.start_with_session(
-            session_config=custom_config,
-            spawn_ceo=True
-        )
-        
-        # Verify spawn was called with custom config
-        initialized_org.ceo.spawn.assert_called_once_with(custom_config)
+class TestOrgStopWithMonitors:
+    """Test that org.stop() cleans up any active monitors."""
+
+    @patch('core.escalation_monitor.EscalationMonitor')
+    def test_stop_handles_monitor_cleanup_gracefully(self, mock_monitor_class, initialized_org):
+        """stop() should attempt to clean up monitors even if not started by CLI."""
+        initialized_org.start()
+
+        # Stop should complete without error even with no monitors running
+        initialized_org.stop()
+        assert initialized_org.status == OrgStatus.STOPPED.value
+
+    def test_stop_preserves_ceo_lifecycle_status(self, initialized_org):
+        """stop() should preserve CEO lifecycle status."""
+        initialized_org.start()
+        assert initialized_org.ceo.lifecycle_status == "active"
+
+        initialized_org.stop()
+
+        # CEO remains active (only runtime changes, not lifecycle)
+        assert initialized_org.ceo.lifecycle_status == "active"
 
 
-def test_org_path_property(initialized_org, temp_org_dir):
-    """Test that org_path property works correctly."""
-    assert initialized_org.org_path == temp_org_dir
+class TestOrgStartReturnsStatusPair:
+    """Test that start() returns old/new status for rollback support."""
 
+    def test_start_returns_old_and_new_status(self, initialized_org):
+        """start() should return (old_status, new_status) tuple."""
+        result = initialized_org.start()
 
-def test_org_derives_path_from_db(test_db, temp_org_dir):
-    """Test that org can derive path from database."""
-    org = Org(test_db)  # No org_path provided
-    
-    # Should derive from db_path
-    assert org.org_path == temp_org_dir
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        old_status, new_status = result
+        assert old_status == OrgStatus.INITIALIZED.value
+        assert new_status == OrgStatus.RUNNING.value
 
+    def test_resume_returns_old_and_new_status(self, initialized_org):
+        """Resume should also return status tuple."""
+        initialized_org.start()
+        initialized_org.stop()
 
-@patch('core.sessions.registry.get_default_registry')
-@patch('core.onboarding.prepare_worker_onboarding')
-@patch('core.onboarding.get_worker_env_vars')
-def test_multiple_start_calls_idempotent(
-    mock_env_vars,
-    mock_prep_onboarding,
-    mock_registry,
-    initialized_org
-):
-    """Test that calling start_with_session when already running is handled."""
-    # Setup mocks
-    mock_env_vars.return_value = {}
-    mock_prep_onboarding.return_value = Mock()
-    mock_reg_instance = MagicMock()
-    mock_registry.return_value = mock_reg_instance
-    initialized_org.ceo.spawn = Mock()
-    initialized_org.ceo.set_registry = Mock()
-    
-    # First start
-    initialized_org.start_with_session(spawn_ceo=True)
-    assert initialized_org.status == OrgStatus.RUNNING.value
-    
-    # Second start should raise (org already running)
-    with pytest.raises(InvalidOrgTransition):
-        initialized_org.start_with_session(spawn_ceo=True)
+        old_status, new_status = initialized_org.start()
+
+        assert old_status == OrgStatus.STOPPED.value
+        assert new_status == OrgStatus.RUNNING.value

@@ -292,11 +292,26 @@ class TeamView(Widget):
 
     async def _open_worker_chat(self, worker: WorkerInfo) -> None:
         """Open a chat window with a worker."""
-        from ..terminals import get_terminal_provider
-
         if not worker.tmux_session_name:
             self.app.notify(f"{worker.name} has no active session", severity="warning")
             return
+
+        # Detect if running in browser context (via ttyd)
+        import os
+        is_browser_context = os.environ.get('TERM_PROGRAM') == 'ttyd' or 'ttyd' in os.environ.get('TERM', '')
+
+        if is_browser_context:
+            # Running in browser - show notification with instructions
+            # For now, CEO is on port 7683, other workers would need their own ports
+            port = 7683 if "ceo" in worker.role.lower() else "????"
+            self.app.notify(
+                f"💬 Open {worker.name} chat in new tab: http://localhost:{port}",
+                severity="information",
+                timeout=10
+            )
+            return
+
+        from ..terminals import get_terminal_provider
 
         terminal = get_terminal_provider()
         if terminal is None:

@@ -78,9 +78,47 @@ class WorkerSessionManager:
     def is_session_active(self) -> bool:
         """Check if worker session is active.
 
-        Returns True if runtime is 'starting', 'running', or 'idle'.
+        Verifies both worker_state.runtime_status AND that a session record exists
+        in the sessions table (or is attached in memory). If state says 'running'
+        but no session exists anywhere, auto-repairs by resetting state to 'stopped'.
+
+        Returns True if:
+        1. runtime_status is 'starting', 'running', or 'idle', AND
+        2. EITHER a session is attached in memory OR a session record exists in DB
+
+        Returns False otherwise (including auto-repair cases).
+
+        The in-memory check (_session) handles the brief window during spawn_session()
+        where the session is attached and started but not yet persisted to DB.
         """
-        return self.runtime_status in ("starting", "running", "idle")
+        runtime = self.runtime_status
+
+        # If worker_state shows no active session, return False
+        if runtime not in ("starting", "running", "idle"):
+            return False
+
+        # Check if session is attached in memory (handles spawn-in-progress case)
+        if self._session is not None:
+            return True
+
+        # Verify session actually exists in DB
+        session_record = get_session_for_worker(self.worker.db, self.worker.id)
+
+        if session_record is None:
+            # Inconsistent state: worker_state says 'running' but no session anywhere
+            # This can happen when session spawn fails after state callback but before
+            # create_session_record(). Auto-repair by resetting to 'stopped'.
+            _logger.warning(
+                f"Inconsistent state detected for worker {self.worker.id}: "
+                f"runtime_status={runtime} but no session in memory or DB. "
+                "Auto-repairing by resetting to 'stopped'."
+            )
+            update_worker_runtime_status(self.worker.db, self.worker.id, "stopped")
+            self.worker._state_data = None  # Invalidate cache
+            return False
+
+        # Session exists in DB - session is active
+        return True
 
     def set_registry(self, registry: "SessionRegistry") -> None:
         """Set the session registry for this worker.

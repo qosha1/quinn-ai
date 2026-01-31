@@ -17,6 +17,7 @@ from .channels import (
 from .dispatcher import NotificationDispatcher
 from .board_notifier import BoardNotifier
 from .config import create_board_notifier, load_notification_config
+from .escalation_handler import EscalationNotificationHandler
 from .utils import (
     run_notification_cleanup,
     create_notification_bead,
@@ -39,6 +40,7 @@ __all__ = [
     "BoardNotifier",
     "create_board_notifier",
     "load_notification_config",
+    "EscalationNotificationHandler",
     "run_notification_cleanup",
     "create_notification_bead",
     "get_worker_notifications",

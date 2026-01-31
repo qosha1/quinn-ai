@@ -20,6 +20,7 @@ from .revoke_authority import revoke_authority_cmd
 from .promote import promote_cmd
 from .demote import demote_cmd
 from .delegations import delegations_cmd
+from .provider import provider_cmd
 
 __all__ = [
     "init_cmd",
@@ -40,4 +41,5 @@ __all__ = [
     "promote_cmd",
     "demote_cmd",
     "delegations_cmd",
+    "provider_cmd",
 ]

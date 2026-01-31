@@ -214,8 +214,12 @@ def get_channel_by_name(db: Database, name: str) -> Optional[Channel]:
 def create_default_org_channels(db: Database) -> list[Channel]:
     """Create default org-wide channels.
 
-    Creates 'general' for org-wide announcements and 'escalations'
-    for escalation messages. Skips channels that already exist.
+    Creates:
+    - 'general' for org-wide announcements
+    - 'escalations' for escalation messages (legacy)
+    - 'activity-feed' for worker activity reports
+
+    Skips channels that already exist.
 
     Args:
         db: Database instance
@@ -224,8 +228,9 @@ def create_default_org_channels(db: Database) -> list[Channel]:
         List of created channels
     """
     default_channels = [
-        ("general", "topic"),      # org-wide announcements
-        ("escalations", "topic"),  # for escalation messages
+        ("general", "topic"),         # org-wide announcements
+        ("escalations", "topic"),     # for escalation messages (legacy)
+        ("activity-feed", "topic"),   # for worker activity reports
     ]
 
     created = []
@@ -476,6 +481,9 @@ def create_message(
     Returns:
         Created Message
     """
+    from ..constants import SIGNAL_STRENGTH_MESSAGE_SENT
+    from .activity import record_activity_signal
+
     if message_id is None:
         message_id = generate_id("msg")
 
@@ -489,6 +497,15 @@ def create_message(
          content, priority, time_sensitivity, now)
     )
     db.connection.commit()
+
+    # Record activity signal for message sent
+    record_activity_signal(
+        db=db,
+        worker_id=from_worker_id,
+        activity_type="message_sent",
+        signal_strength=SIGNAL_STRENGTH_MESSAGE_SENT,
+        metadata={"channel_id": channel_id, "message_id": message_id},
+    )
 
     return Message(
         id=message_id,

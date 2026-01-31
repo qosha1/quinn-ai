@@ -47,6 +47,17 @@ class OpenAISession(SessionInterface):
         session.stop()
     """
 
+    # Provider capabilities - used by registry and CLI commands
+    CAPABILITIES = [
+        "file_read",
+        "web_search",
+        "vision",
+        "function_calling",
+        "multi_turn",
+        "streaming",
+        "code_interpreter",
+    ]
+
     def __init__(
         self,
         config: SessionConfig,

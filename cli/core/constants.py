@@ -152,6 +152,9 @@ DEFAULT_CEO_ROLE = "ceo"
 DEFAULT_BOARD_CHANNEL = "board-channel"
 """Default channel for board communications."""
 
+DEFAULT_ACTIVITY_FEED_CHANNEL = "activity-feed"
+"""Default channel for worker activity reports."""
+
 
 # ===================
 # DATABASE
@@ -160,7 +163,7 @@ DEFAULT_BOARD_CHANNEL = "board-channel"
 DEFAULT_DB_NAME = "quinn.db"
 """Default database filename."""
 
-DB_SCHEMA_VERSION = 19
+DB_SCHEMA_VERSION = 23
 """Current database schema version."""
 
 DEFAULT_DB_BUSY_TIMEOUT_MS = 5000
@@ -582,11 +585,98 @@ DEFAULT_ESCALATION_POLL_INTERVAL = 60.0
 DEFAULT_ACTIVITY_REPORT_INTERVAL = 300
 """Default interval for sending activity reports to board (seconds, 5 minutes)."""
 
+# No-work escalation
+NO_WORK_ESCALATION_THRESHOLD_MINUTES = 60
+"""Minutes without work before worker escalates to manager (default 1 hour)."""
+
+NO_WORK_ESCALATION_CHECK_INTERVAL = 300.0
+"""Seconds between checks for no-work escalation (default 5 minutes)."""
+
 DEFAULT_ACTIVITY_CREATE_BEADS = True
 """Whether to create beads for activity summaries (queryable history)."""
 
 DEFAULT_SESSION_CAPTURE_INTERVAL = 10
 """Default interval for capturing tmux session output (seconds)."""
+
+
+# ===================
+# STOP SEQUENCE (ORG STOP)
+# ===================
+
+# Role-based graceful shutdown timeouts (seconds)
+# Higher roles get more time to wrap up complex work
+STOP_TIMEOUT_CEO = 120
+"""CEO graceful shutdown timeout (2 minutes)."""
+
+STOP_TIMEOUT_MANAGER = 90
+"""Manager graceful shutdown timeout (90 seconds)."""
+
+STOP_TIMEOUT_WORKER = 60
+"""Worker graceful shutdown timeout (1 minute)."""
+
+# Timeout mapping by role pattern
+STOP_TIMEOUT_BY_ROLE = {
+    "ceo": STOP_TIMEOUT_CEO,
+    "director": STOP_TIMEOUT_MANAGER,
+    "manager": STOP_TIMEOUT_MANAGER,
+    "team-lead": STOP_TIMEOUT_MANAGER,
+    # All other roles get worker timeout
+}
+
+DEFAULT_STOP_TIMEOUT = STOP_TIMEOUT_WORKER
+"""Default timeout for roles not in STOP_TIMEOUT_BY_ROLE."""
+
+# Acknowledgement polling
+STOP_ACK_POLL_INTERVAL = 2.0
+"""Seconds between acknowledgement polls."""
+
+STOP_ACK_TIMEOUT_RATIO = 0.8
+"""Ratio of role timeout to use as ack deadline (80%)."""
+
+# Session termination
+STOP_SESSION_GRACE_PERIOD = 5.0
+"""Seconds to wait after graceful stop before force kill."""
+
+STOP_SESSION_FORCE_TIMEOUT = 10.0
+"""Maximum seconds to wait for force kill."""
+
+# Wrap-up message types
+WRAPUP_MESSAGE_TYPE = "wrapup_request"
+"""Message type for wrap-up notifications."""
+
+WRAPUP_ACK_MESSAGE_TYPE = "wrapup_ack"
+"""Message type for wrap-up acknowledgements."""
+
+# State persistence
+RESUME_STATE_TTL_HOURS = 24
+"""Hours to retain resume state before expiry."""
+
+
+# ===================
+# ACTIVITY SIGNALS
+# ===================
+
+# Signal strength values (1-5, higher = stronger indicator of work)
+SIGNAL_STRENGTH_HEARTBEAT = 1
+"""Heartbeat signal strength (weakest - just keeping alive)."""
+
+SIGNAL_STRENGTH_SESSION_OUTPUT = 2
+"""Session output signal strength (low - could be idle output)."""
+
+SIGNAL_STRENGTH_FILE_CHANGE = 3
+"""File change signal strength (moderate - editing files)."""
+
+SIGNAL_STRENGTH_MESSAGE_SENT = 4
+"""Message sent signal strength (strong - communicating)."""
+
+SIGNAL_STRENGTH_BEAD_UPDATE = 5
+"""Bead update signal strength (strongest - completing work)."""
+
+SIGNAL_STRENGTH_CODE_COMMIT = 5
+"""Code commit signal strength (strongest - delivering work)."""
+
+ACTIVITY_SIGNAL_RETENTION_HOURS = 24
+"""Hours to retain activity signals before cleanup."""
 
 
 # ===================
