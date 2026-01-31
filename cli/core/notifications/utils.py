@@ -243,3 +243,48 @@ def mark_notification_read(db, notification_id: str) -> bool:
     except Exception as e:
         _logger.warning(f"Failed to mark notification read: {e}")
         return False
+
+
+def create_notifications_for_message(
+    db,
+    message_id: str,
+    channel_id: str,
+    from_worker_id: str,
+    priority: int = 2,
+) -> List[Optional[str]]:
+    """Create notification beads for all channel subscribers except the sender.
+
+    This is the main entry point for the notification flow. When a message
+    is sent to a channel, call this function to notify all subscribers.
+
+    Args:
+        db: Database instance
+        message_id: The message that was sent
+        channel_id: The channel the message was sent to
+        from_worker_id: The sender (will not receive notification)
+        priority: Priority for the notifications
+
+    Returns:
+        List of created notification bead IDs
+    """
+    from core.queries.channel import get_channel_subscribers
+
+    subscribers = get_channel_subscribers(db, channel_id)
+    notifications = []
+
+    for worker_id in subscribers:
+        # Don't notify the sender
+        if worker_id == from_worker_id:
+            continue
+
+        try:
+            notif = create_notification_bead(
+                db, worker_id, message_id, channel_id, priority
+            )
+            if notif:
+                notifications.append(notif)
+        except Exception as e:
+            # Ignore errors creating individual notifications
+            _logger.warning(f"Failed to create notification for {worker_id}: {e}")
+
+    return notifications

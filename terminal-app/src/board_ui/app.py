@@ -13,6 +13,8 @@ Key UX principles:
 
 from pathlib import Path
 from typing import Optional
+import subprocess
+from datetime import datetime
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -159,6 +161,7 @@ class BoardApp(App):
         Binding("m", "switch_tab('messages')", "Messages", show=True),
         Binding("l", "switch_tab('logs')", "Logs", show=True),
         Binding("s", "switch_tab('settings')", "Settings", show=True),
+        Binding("c", "copy_current_view", "Copy", show=True),
         Binding("q", "quit", "Quit", show=True),
         Binding("r", "refresh", "Refresh", show=True),
     ]
@@ -640,3 +643,116 @@ class BoardApp(App):
                            severity="information")
         except Exception as e:
             self.notify(f"Failed to save briefing: {e}", severity="error")
+
+    def action_copy_current_view(self) -> None:
+        """Copy current view content to clipboard or export to file."""
+        if not self._is_connected:
+            self.notify("No org connected - nothing to copy", severity="warning")
+            return
+
+        # Get active tab
+        tabs = self.query_one("#org-tabs", TabbedContent)
+        active_tab_id = tabs.active
+
+        # Get the view widget for the active tab
+        view = None
+        try:
+            if active_tab_id == "dashboard":
+                view = self.query_one("#dashboard-view", DashboardView)
+            elif active_tab_id == "okrs":
+                view = self.query_one("#okrs-view", OKRsView)
+            elif active_tab_id == "team":
+                view = self.query_one("#team-view", TeamView)
+            elif active_tab_id == "messages":
+                view = self.query_one("#messages-view", MessagesView)
+            elif active_tab_id == "logs":
+                view = self.query_one("#logs-view", LogsView)
+            elif active_tab_id == "settings":
+                view = self.query_one("#settings-view", SettingsView)
+        except Exception as e:
+            self.notify(f"Failed to get view: {e}", severity="error")
+            return
+
+        if not view:
+            self.notify("No active view to copy", severity="warning")
+            return
+
+        # Check if view has export_as_text method
+        if not hasattr(view, "export_as_text"):
+            self.notify(f"Copy not yet supported for {active_tab_id} view", severity="warning")
+            return
+
+        # Get content as text
+        try:
+            content = view.export_as_text()
+        except Exception as e:
+            self.notify(f"Failed to export view content: {e}", severity="error")
+            return
+
+        if not content:
+            self.notify("View has no content to copy", severity="warning")
+            return
+
+        # Try clipboard first, fallback to file
+        if self._copy_to_clipboard(content):
+            self.notify(f"Copied {len(content)} chars to clipboard", severity="information")
+        else:
+            filepath = self._write_to_scratchpad(content, active_tab_id)
+            self.notify(f"Saved to {filepath.name}", severity="information")
+
+    def _copy_to_clipboard(self, text: str) -> bool:
+        """Copy text to system clipboard.
+
+        Returns:
+            True if copy succeeded, False otherwise
+        """
+        try:
+            # Try macOS pbcopy
+            subprocess.run(
+                ["pbcopy"],
+                input=text.encode("utf-8"),
+                check=True,
+                capture_output=True,
+                timeout=2,
+            )
+            return True
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            # Try Linux xclip
+            try:
+                subprocess.run(
+                    ["xclip", "-selection", "clipboard"],
+                    input=text.encode("utf-8"),
+                    check=True,
+                    timeout=2,
+                )
+                return True
+            except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                # Clipboard not available
+                return False
+
+    def _write_to_scratchpad(self, content: str, view_name: str) -> Path:
+        """Write content to scratchpad file.
+
+        Args:
+            content: Text content to write
+            view_name: Name of the view (used in filename)
+
+        Returns:
+            Path to the created file
+        """
+        # Use org-specific export directory if available
+        if self._active_org_path:
+            export_dir = self._active_org_path / "exports"
+            export_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            # Fallback to temp directory
+            import tempfile
+            export_dir = Path(tempfile.gettempdir()) / "quinnai_exports"
+            export_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"board_{view_name}_{timestamp}.txt"
+        filepath = export_dir / filename
+
+        filepath.write_text(content, encoding="utf-8")
+        return filepath

@@ -332,3 +332,44 @@ class SettingsView(Widget):
 
         except Exception as e:
             self.notify(f"Error changing provider: {e}", severity="error")
+
+    def export_as_text(self) -> str:
+        """Export settings view content as plain text.
+
+        Returns:
+            Formatted text representation of settings
+        """
+        lines = []
+        lines.append("=" * 60)
+        lines.append("QUINNAI BOARD - SETTINGS")
+        lines.append("=" * 60)
+        lines.append("")
+
+        # Default provider
+        lines.append("Default Provider:")
+        lines.append(f"  {self._current_default or '(not set)'}")
+        lines.append("")
+
+        # Available providers
+        if not self._providers:
+            lines.append("No providers configured")
+        else:
+            lines.append(f"Available Providers ({len(self._providers)}):")
+            lines.append("")
+
+            for name, info in sorted(self._providers.items()):
+                lines.append(f"  {name}:")
+                lines.append(f"    Status: {'Enabled' if info['enabled'] else 'Disabled'}")
+
+                if info.get("aliases"):
+                    aliases_str = ", ".join(info["aliases"])
+                    lines.append(f"    Aliases: {aliases_str}")
+
+                if info.get("capabilities"):
+                    caps_str = ", ".join(info["capabilities"])
+                    lines.append(f"    Capabilities: {caps_str}")
+
+                lines.append("")
+
+        lines.append("=" * 60)
+        return "\n".join(lines)

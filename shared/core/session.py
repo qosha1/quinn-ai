@@ -119,6 +119,10 @@ class SessionConfig:
     transcript_db_path: Optional[Path] = None
     """Path to transcript database."""
 
+    # Onboarding
+    welcome_message: Optional[str] = None
+    """Optional welcome message for worker onboarding."""
+
     # Legacy compatibility fields (for pyterm)
     shell: str = "/bin/bash"
     """Shell to use (legacy, prefer command)."""

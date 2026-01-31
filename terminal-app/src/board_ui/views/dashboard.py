@@ -402,3 +402,71 @@ class DashboardView(Widget):
                 self.app.notify(f"Failed to restart: {message}", severity="error")
         except Exception as e:
             self.app.notify(f"Error restarting org: {e}", severity="error")
+
+    def export_as_text(self) -> str:
+        """Export dashboard content as plain text.
+
+        Returns:
+            Formatted text representation of dashboard
+        """
+        lines = []
+        lines.append("=" * 60)
+        lines.append("QUINNAI BOARD - DASHBOARD")
+        lines.append("=" * 60)
+        lines.append("")
+
+        # Org info
+        if self._org_info:
+            lines.append(f"Organization: {self._org_info.name}")
+            lines.append(f"Status: {self._org_info.status.value}")
+            lines.append(f"Workers: {self._org_info.worker_count}")
+            lines.append(f"Active Sessions: {self._org_info.active_session_count}")
+            lines.append("")
+
+        # CEO info
+        if self._ceo:
+            lines.append("CEO:")
+            lines.append(f"  Name: {self._ceo.name}")
+            lines.append(f"  Role: {self._ceo.role}")
+            if self._ceo.session_state:
+                lines.append(f"  Session State: {self._ceo.session_state.value}")
+            if self._ceo.tmux_session_name:
+                lines.append(f"  Tmux Session: {self._ceo.tmux_session_name}")
+            lines.append("")
+
+        # Budget metrics
+        if self._budget:
+            lines.append("Budget:")
+            lines.append(f"  Spend Today: ${self._budget.spend_today:.2f}")
+            lines.append(f"  Spend This Week: ${self._budget.spend_this_week:.2f}")
+            lines.append(f"  Total Spent: ${self._budget.total_spent:.2f}")
+            lines.append(f"  Total Available: ${self._budget.total_available:.2f}")
+            lines.append("")
+
+        # Health status (if available)
+        if hasattr(self.app, 'org_connection') and self.app.org_connection:
+            try:
+                health = self.app.org_connection.get_health_status()
+                lines.append("Health Status:")
+                lines.append(f"  Overall Score: {health.overall_score}/100")
+                lines.append(f"  Total Workers: {health.total_workers}")
+                lines.append(f"  Workers With Issues: {health.workers_with_issues}")
+                lines.append("")
+
+                if health.issues:
+                    lines.append("Issues:")
+                    for issue in health.issues:
+                        lines.append(f"  - [{issue.severity.upper()}] {issue.worker_name}: {issue.description}")
+                    lines.append("")
+
+                if health.metrics:
+                    lines.append("Metrics:")
+                    for metric in health.metrics:
+                        lines.append(f"  - {metric.name}: {metric.value} {metric.unit}")
+                    lines.append("")
+            except Exception:
+                # Health status not available
+                pass
+
+        lines.append("=" * 60)
+        return "\n".join(lines)

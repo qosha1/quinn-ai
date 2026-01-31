@@ -341,3 +341,74 @@ class LogsView(Widget):
         self._org_path = org_path
         if LogReader:
             self._log_reader = LogReader(org_path)
+
+    def export_as_text(self) -> str:
+        """Export logs view content as plain text.
+
+        Returns:
+            Formatted text representation of logs
+        """
+        lines = []
+        lines.append("=" * 80)
+        lines.append("QUINNAI BOARD - LOGS")
+        lines.append("=" * 80)
+        lines.append("")
+
+        # Filter info
+        lines.append("Filters:")
+        lines.append(f"  Component: {self._current_component or 'All'}")
+        lines.append(f"  Level: {self._current_level or 'All'}")
+        if self._current_search:
+            lines.append(f"  Search: {self._current_search}")
+        lines.append(f"  Page: {self._current_page}")
+        lines.append("")
+
+        # Get current logs displayed
+        if not self._log_reader:
+            lines.append("No logs available (not connected to org)")
+        else:
+            try:
+                # Get logs based on current filters/search
+                if self._current_search:
+                    logs = self._log_reader.search_logs(
+                        query=self._current_search,
+                        component=self._current_component,
+                        level=self._current_level,
+                    )
+                elif self._current_component is None and self._current_level is None and self._current_page == 1:
+                    logs = self._log_reader.tail_logs(
+                        component=None,
+                        lines=self._page_size,
+                    )
+                else:
+                    logs = self._log_reader.read_logs(
+                        component=self._current_component,
+                        level=self._current_level,
+                        limit=self._page_size,
+                        offset=(self._current_page - 1) * self._page_size,
+                    )
+
+                if not logs:
+                    lines.append("No logs match the current filters")
+                else:
+                    lines.append(f"Log Entries ({len(logs)} entries):")
+                    lines.append("")
+
+                    for log in logs:
+                        timestamp = log.get("timestamp", "")
+                        if timestamp:
+                            timestamp = timestamp.replace("Z", "").split(".")[0]
+
+                        level = log.get("level", "INFO")
+                        component = log.get("component", "")
+                        message = log.get("message", "")
+
+                        log_line = f"{timestamp} [{level:8s}] {component:12s}: {message}"
+                        lines.append(log_line)
+
+            except Exception as e:
+                lines.append(f"Error reading logs: {e}")
+
+        lines.append("")
+        lines.append("=" * 80)
+        return "\n".join(lines)

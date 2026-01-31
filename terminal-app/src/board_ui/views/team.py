@@ -461,3 +461,69 @@ class TeamView(Widget):
             severity="information",
             timeout=6
         )
+
+    def export_as_text(self) -> str:
+        """Export team view content as plain text.
+
+        Returns:
+            Formatted text representation of team
+        """
+        lines = []
+        lines.append("=" * 80)
+        lines.append("QUINNAI BOARD - TEAM")
+        lines.append("=" * 80)
+        lines.append("")
+
+        # Filter info
+        lines.append(f"Filter: {self._current_filter.capitalize()}")
+        lines.append("")
+
+        # Workers
+        if not self._workers:
+            lines.append("No workers in org")
+        else:
+            # Apply filter to get displayed workers
+            displayed_workers = [w for w in self._workers if self._passes_filter(w)]
+
+            if not displayed_workers:
+                lines.append(f"No workers match '{self._current_filter}' filter")
+            else:
+                lines.append(f"Workers ({len(displayed_workers)} displayed, {len(self._workers)} total):")
+                lines.append("")
+
+                # Build manager name lookup
+                manager_names = {w.id: w.name for w in self._workers}
+
+                for worker in displayed_workers:
+                    lines.append("-" * 80)
+                    lines.append(f"Name: {worker.name}")
+                    lines.append(f"ID: {worker.id}")
+                    role_prefix = "★ " if worker.is_ceo else ""
+                    lines.append(f"Role: {role_prefix}{worker.role}")
+                    lines.append(f"Team: {worker.team_name}")
+
+                    # Manager
+                    manager = manager_names.get(worker.manager_id, "None") if worker.manager_id else "None"
+                    lines.append(f"Manager: {manager}")
+
+                    # Session state
+                    status_text = self._get_status_text(worker.session_state, worker.session_mode)
+                    lines.append(f"Status: {status_text}")
+
+                    if worker.session_state:
+                        lines.append(f"Session State: {worker.session_state.value}")
+
+                    if worker.session_mode:
+                        lines.append(f"Session Mode: {worker.session_mode}")
+
+                    if worker.tmux_session_name:
+                        lines.append(f"Tmux Session: {worker.tmux_session_name}")
+
+                    # Current task
+                    if worker.current_task:
+                        lines.append(f"Current Task: {worker.current_task}")
+
+                    lines.append("")
+
+        lines.append("=" * 80)
+        return "\n".join(lines)

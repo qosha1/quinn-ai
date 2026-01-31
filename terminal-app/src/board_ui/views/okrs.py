@@ -240,3 +240,89 @@ class OKRsView(Widget):
         tree.clear()
         tree.root.expand()
         tree.root.add_leaf("No OKRs found. Create OKRs to track organizational objectives.")
+
+    def export_as_text(self) -> str:
+        """Export OKRs view content as plain text.
+
+        Returns:
+            Formatted text representation of OKRs
+        """
+        lines = []
+        lines.append("=" * 80)
+        lines.append("QUINNAI BOARD - OBJECTIVES & KEY RESULTS")
+        lines.append("=" * 80)
+        lines.append("")
+
+        if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+            lines.append("No org connected")
+            lines.append("=" * 80)
+            return "\n".join(lines)
+
+        try:
+            conn = self.app.org_connection
+            okrs = conn.get_okrs()
+
+            if not okrs:
+                lines.append("No OKRs found. Create OKRs to track organizational objectives.")
+            else:
+                # Build hierarchy
+                okr_dict = {okr.id: okr for okr in okrs}
+                root_okrs = [okr for okr in okrs if okr.parent_id is None]
+
+                lines.append(f"Total OKRs: {len(okrs)}")
+                lines.append("")
+
+                # Export each root OKR and its children
+                for root_okr in root_okrs:
+                    self._export_okr(lines, root_okr, okr_dict, indent=0)
+
+        except Exception as e:
+            lines.append(f"Error loading OKRs: {e}")
+
+        lines.append("")
+        lines.append("=" * 80)
+        return "\n".join(lines)
+
+    def _export_okr(self, lines: list[str], okr: "OKRInfo", okr_dict: dict, indent: int = 0) -> None:
+        """Recursively export OKR and its children to text.
+
+        Args:
+            lines: List of text lines to append to
+            okr: OKR to export
+            okr_dict: Dictionary of all OKRs by ID
+            indent: Current indentation level
+        """
+        prefix = "  " * indent
+
+        # Calculate progress
+        completed, total = self._calculate_progress(okr)
+
+        # Add OKR header
+        lines.append(f"{prefix}[OKR] {okr.title}")
+        lines.append(f"{prefix}      Owner: {okr.owner_name}")
+        if total > 0:
+            progress_pct = (completed / total * 100) if total > 0 else 0
+            lines.append(f"{prefix}      Progress: {completed}/{total} KRs ({progress_pct:.0f}%)")
+
+        # Add key results
+        if okr.key_results:
+            for kr in okr.key_results:
+                description = kr.get("metric", kr.get("description", ""))
+                current = kr.get("current", 0)
+                target = kr.get("target", 0)
+                unit = kr.get("unit", "")
+
+                kr_progress = f"{current}/{target}"
+                if unit:
+                    kr_progress += f" {unit}"
+
+                status = "✓" if current >= target else "○"
+                lines.append(f"{prefix}      {status} {description} [{kr_progress}]")
+
+        # Add children OKRs
+        for child_okr in okr_dict.values():
+            if child_okr.parent_id == okr.id:
+                lines.append("")
+                self._export_okr(lines, child_okr, okr_dict, indent + 1)
+
+        lines.append("")

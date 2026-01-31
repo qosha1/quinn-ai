@@ -556,6 +556,51 @@ def get_worker_preferred_provider(db: Database, worker_id: str) -> Optional[str]
     return row["preferred_provider"]
 
 
+def get_worker_continuation_context(db: Database, worker_id: str) -> dict:
+    """Get context data for continuation prompts.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+
+    Returns:
+        Dict with keys:
+        - worker_id: Worker ID
+        - worker_name: Worker name
+        - manager_id: Manager worker ID (or "ceo" if no manager)
+        - team_channel: Team channel name (or "general" if no team)
+        - current_task_id: Current task ID (or "your-task" if none)
+    """
+    row = db.fetchone(
+        """SELECT w.id, w.name, w.manager_id,
+                  ws.current_task_id,
+                  t.name as team_name
+           FROM workers w
+           LEFT JOIN worker_state ws ON w.id = ws.worker_id
+           LEFT JOIN teams t ON w.team_id = t.id
+           WHERE w.id = ?""",
+        (worker_id,)
+    )
+
+    if not row:
+        # Fallback context if worker not found
+        return {
+            "worker_id": worker_id,
+            "worker_name": "Worker",
+            "manager_id": "ceo",
+            "team_channel": "general",
+            "current_task_id": "your-task",
+        }
+
+    return {
+        "worker_id": worker_id,
+        "worker_name": row["name"],
+        "manager_id": row["manager_id"] or "ceo",
+        "team_channel": row["team_name"] or "general",
+        "current_task_id": row["current_task_id"] or "your-task",
+    }
+
+
 __all__ = [
     "Worker",
     "WorkerState",
@@ -577,4 +622,5 @@ __all__ = [
     "get_workers_by_runtime_status",
     "update_worker_preferred_provider",
     "get_worker_preferred_provider",
+    "get_worker_continuation_context",
 ]

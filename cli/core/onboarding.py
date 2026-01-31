@@ -569,7 +569,7 @@ def generate_welcome_message(ctx: OnboardingContext, worker_dir: Path) -> str:
         autoescape=select_autoescape()
     )
 
-    template = env.get_template("welcome.txt.jinja2")
+    template = env.get_template("welcome.md.jinja2")
 
     # Shorten worker storage path for display
     worker_storage_short = f"~/orgs/.../workers/{ctx.worker_id}"

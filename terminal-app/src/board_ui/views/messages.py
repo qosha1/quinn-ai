@@ -421,3 +421,45 @@ class MessagesView(Widget):
             await self.refresh_messages()
         else:
             self.app.notify("Not connected to org", severity="error")
+
+    def export_as_text(self) -> str:
+        """Export messages view content as plain text.
+
+        Returns:
+            Formatted text representation of messages
+        """
+        lines = []
+        lines.append("=" * 60)
+        lines.append("QUINNAI BOARD - MESSAGES")
+        lines.append("=" * 60)
+        lines.append("")
+
+        # Current channel info
+        current_channel = next(
+            (c for c in self._channels if c["id"] == self._current_channel_id),
+            None
+        )
+        if current_channel:
+            lines.append(f"Channel: #{current_channel['name']}")
+            lines.append(f"Unread Messages: {current_channel['unread_count']}")
+            lines.append("")
+
+        # Messages
+        if not self._messages:
+            lines.append("No messages in this channel")
+        else:
+            lines.append(f"Messages ({len(self._messages)} total):")
+            lines.append("")
+
+            for msg in self._messages:
+                lines.append("-" * 60)
+                lines.append(f"From: {msg.from_worker_name}")
+                lines.append(f"Time: {msg.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+                priority_label = "High" if msg.priority >= 4 else "Medium" if msg.priority >= 3 else "Low"
+                lines.append(f"Priority: {priority_label}")
+                lines.append("")
+                lines.append(msg.content)
+                lines.append("")
+
+        lines.append("=" * 60)
+        return "\n".join(lines)

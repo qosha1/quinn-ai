@@ -27,6 +27,7 @@ dev = [
 
 [project.scripts]
 qn = "cli.commands.main:qn"
+msgr = "cli.msgr.main:msgr"
 
 [tool.hatch.build.targets.wheel]
 packages = ["cli", "shared"]

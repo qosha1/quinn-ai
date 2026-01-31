@@ -419,26 +419,29 @@ class Org:
         log_org_state_change(_logger, old_status, OrgStatus.STOPPED.value)
 
     def _start_escalation_monitor(self) -> None:
-        """Start the escalation monitor for idle worker detection.
+        """Start the continuation engine for graduated worker nudging.
+
+        Replaces the old EscalationMonitor with the new ContinuationEngine
+        that uses ActivitySensor and SessionPrompter for graduated prompts.
 
         This is called automatically by start_with_session().
         """
         if self._escalation_monitor is not None and self._escalation_monitor.is_running():
-            _logger.debug("Escalation monitor already running")
+            _logger.debug("Continuation engine already running")
             return
 
-        from core.escalation_monitor import EscalationMonitor
-        from core.constants import DEFAULT_ESCALATION_POLL_INTERVAL
+        from core.continuation_engine import ContinuationEngine
+        from core.constants import CONTINUATION_ENGINE_POLL_INTERVAL
 
-        self._escalation_monitor = EscalationMonitor(
+        self._escalation_monitor = ContinuationEngine(
             self._org_path,
-            poll_interval=DEFAULT_ESCALATION_POLL_INTERVAL
+            poll_interval=CONTINUATION_ENGINE_POLL_INTERVAL
         )
         self._escalation_monitor.start()
-        _logger.info("Escalation monitor started")
+        _logger.info("Continuation engine started")
 
     def _stop_escalation_monitor(self) -> None:
-        """Stop the escalation monitor.
+        """Stop the continuation engine.
 
         This is called automatically by stop().
         """
@@ -447,7 +450,7 @@ class Org:
 
         if self._escalation_monitor.is_running():
             self._escalation_monitor.stop()
-            _logger.info("Escalation monitor stopped")
+            _logger.info("Continuation engine stopped")
 
         self._escalation_monitor = None
 

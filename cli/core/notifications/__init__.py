@@ -21,6 +21,7 @@ from .escalation_handler import EscalationNotificationHandler
 from .utils import (
     run_notification_cleanup,
     create_notification_bead,
+    create_notifications_for_message,
     get_worker_notifications,
     get_pending_notifications,
     count_pending_notifications,
@@ -43,6 +44,7 @@ __all__ = [
     "EscalationNotificationHandler",
     "run_notification_cleanup",
     "create_notification_bead",
+    "create_notifications_for_message",
     "get_worker_notifications",
     "get_pending_notifications",
     "count_pending_notifications",

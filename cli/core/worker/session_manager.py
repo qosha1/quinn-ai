@@ -78,47 +78,37 @@ class WorkerSessionManager:
     def is_session_active(self) -> bool:
         """Check if worker session is active.
 
-        Verifies both worker_state.runtime_status AND that a session record exists
-        in the sessions table (or is attached in memory). If state says 'running'
-        but no session exists anywhere, auto-repairs by resetting state to 'stopped'.
-
         Returns True if:
-        1. runtime_status is 'starting', 'running', or 'idle', AND
-        2. EITHER a session is attached in memory OR a session record exists in DB
+        1. Session is attached in memory (spawn in progress), OR
+        2. Session record exists in database (persisted session)
 
-        Returns False otherwise (including auto-repair cases).
-
-        The in-memory check (_session) handles the brief window during spawn_session()
-        where the session is attached and started but not yet persisted to DB.
+        Auto-repairs inconsistent state where worker_state says 'running'
+        but no session exists.
         """
-        runtime = self.runtime_status
-
-        # If worker_state shows no active session, return False
-        if runtime not in ("starting", "running", "idle"):
-            return False
-
-        # Check if session is attached in memory (handles spawn-in-progress case)
+        # Check in-memory session (handles spawn-in-progress case)
         if self._session is not None:
             return True
 
-        # Verify session actually exists in DB
+        # Check database for persisted session
         session_record = get_session_for_worker(self.worker.db, self.worker.id)
+        if session_record is not None:
+            # Verify session is in an active state
+            active_states = ("starting", "running", "idle")
+            if session_record.get("state") in active_states:
+                return True
 
-        if session_record is None:
-            # Inconsistent state: worker_state says 'running' but no session anywhere
-            # This can happen when session spawn fails after state callback but before
-            # create_session_record(). Auto-repair by resetting to 'stopped'.
+        # No session found - check if worker state thinks it's running
+        runtime = self.runtime_status
+        if runtime in ("starting", "running", "idle"):
+            # Inconsistent state - auto-repair
             _logger.warning(
-                f"Inconsistent state detected for worker {self.worker.id}: "
-                f"runtime_status={runtime} but no session in memory or DB. "
+                f"Worker {self.worker.id} state shows '{runtime}' but no session exists. "
                 "Auto-repairing by resetting to 'stopped'."
             )
             update_worker_runtime_status(self.worker.db, self.worker.id, "stopped")
             self.worker._state_data = None  # Invalidate cache
-            return False
 
-        # Session exists in DB - session is active
-        return True
+        return False
 
     def set_registry(self, registry: "SessionRegistry") -> None:
         """Set the session registry for this worker.
@@ -235,6 +225,18 @@ class WorkerSessionManager:
         """
         self._validate_runtime_transition("stopped")
         update_worker_runtime_status(self.worker.db, self.worker.id, "stopped")
+
+        # Also update session record if it exists
+        session_record = get_session_for_worker(self.worker.db, self.worker.id)
+        if session_record:
+            from datetime import datetime
+            update_session_state(
+                self.worker.db,
+                session_record["id"],
+                "stopped",
+                stopped_at=datetime.now()
+            )
+
         self.worker._state_data = None
 
     def mark_crashed(self) -> None:
@@ -242,6 +244,18 @@ class WorkerSessionManager:
         # Can crash from any running state
         if self.runtime_status in ("starting", "running", "idle"):
             update_worker_runtime_status(self.worker.db, self.worker.id, "crashed")
+
+            # Also update session record if it exists
+            session_record = get_session_for_worker(self.worker.db, self.worker.id)
+            if session_record:
+                from datetime import datetime
+                update_session_state(
+                    self.worker.db,
+                    session_record["id"],
+                    "crashed",
+                    stopped_at=datetime.now()
+                )
+
             self.worker._state_data = None
 
     def heartbeat(self) -> None:
