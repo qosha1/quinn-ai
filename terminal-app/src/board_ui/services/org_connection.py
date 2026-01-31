@@ -493,7 +493,7 @@ class QuinnAIOrgConnection(OrgConnection):
             # Check 1: Worker has no OKRs
             okr_count = self._db.fetchone(
                 """SELECT COUNT(*) as count FROM okrs
-                   WHERE owner_id = ? AND status = 'active'""",
+                   WHERE owner_worker_id = ? AND status = 'active'""",
                 (worker_id,)
             )["count"]
 
@@ -552,22 +552,22 @@ class QuinnAIOrgConnection(OrgConnection):
                 ))
                 workers_with_issues_set.add(worker_id)
 
-            # Check 4: No recent activity (no activity in last 30 minutes)
-            thirty_mins_ago = datetime.now() - timedelta(minutes=30)
-            activity = self._db.fetchone(
-                """SELECT COUNT(*) as count FROM worker_activity
-                   WHERE worker_id = ? AND timestamp >= ?""",
-                (worker_id, thirty_mins_ago)
-            )
-            if activity and activity["count"] == 0:
-                issues.append(HealthIssue(
-                    worker_id=worker_id,
-                    worker_name=worker_name,
-                    issue_type="no_activity",
-                    severity="warning",
-                    message=f"{worker_name} has no activity in last 30 minutes"
-                ))
-                workers_with_issues_set.add(worker_id)
+            # Check 4: No recent activity (disabled - worker_activity table not yet implemented)
+            # thirty_mins_ago = datetime.now() - timedelta(minutes=30)
+            # activity = self._db.fetchone(
+            #     """SELECT COUNT(*) as count FROM worker_activity
+            #        WHERE worker_id = ? AND timestamp >= ?""",
+            #     (worker_id, thirty_mins_ago)
+            # )
+            # if activity and activity["count"] == 0:
+            #     issues.append(HealthIssue(
+            #         worker_id=worker_id,
+            #         worker_name=worker_name,
+            #         issue_type="no_activity",
+            #         severity="warning",
+            #         message=f"{worker_name} has no activity in last 30 minutes"
+            #     ))
+            #     workers_with_issues_set.add(worker_id)
 
         # Calculate overall health score
         total_workers = len(workers)
@@ -859,6 +859,111 @@ class QuinnAIOrgConnection(OrgConnection):
             (self.ESCALATIONS_CHANNEL,),
         )
         return channel["id"] if channel else None
+
+    def get_all_channels(self) -> list[dict[str, Any]]:
+        """Get all channels in the org.
+
+        Returns:
+            List of channel dicts with id, name, type, and unread_count
+        """
+        self._ensure_connected()
+
+        rows = self._db.fetchall(
+            """SELECT c.id, c.name, c.type, c.team_id
+               FROM channels c
+               ORDER BY c.name"""
+        )
+
+        channels = []
+        for row in rows:
+            channel_id = row["id"]
+            # Get unread count for this channel
+            unread_row = self._db.fetchone(
+                """SELECT COUNT(DISTINCT m.id) as count
+                   FROM messages m
+                   JOIN notification_beads nb ON nb.message_id = m.id
+                   WHERE m.channel_id = ? AND nb.status = 'pending'""",
+                (channel_id,),
+            )
+            unread_count = unread_row["count"] if unread_row else 0
+
+            channels.append({
+                "id": channel_id,
+                "name": row["name"],
+                "type": row["type"],
+                "team_id": row["team_id"],
+                "unread_count": unread_count,
+            })
+
+        return channels
+
+    def get_channel_messages(
+        self,
+        channel_id: str,
+        unread_only: bool = False,
+        limit: int = 100,
+    ) -> list[Message]:
+        """Get messages from a specific channel.
+
+        Args:
+            channel_id: Channel ID to get messages from
+            unread_only: If True, only return unread messages
+            limit: Maximum number of messages to return
+
+        Returns:
+            List of messages sorted by priority then recency
+        """
+        self._ensure_connected()
+
+        # Build query for messages
+        if unread_only:
+            rows = self._db.fetchall(
+                """SELECT DISTINCT m.*,
+                          COALESCE(w.name, m.from_worker_id) as from_worker_name,
+                          c.name as channel_name
+                   FROM messages m
+                   LEFT JOIN workers w ON m.from_worker_id = w.id
+                   JOIN channels c ON m.channel_id = c.id
+                   JOIN notification_beads nb ON nb.message_id = m.id
+                   WHERE m.channel_id = ? AND nb.status = 'pending'
+                   ORDER BY m.priority DESC, m.created_at DESC
+                   LIMIT ?""",
+                (channel_id, limit),
+            )
+        else:
+            rows = self._db.fetchall(
+                """SELECT m.*,
+                          COALESCE(w.name, m.from_worker_id) as from_worker_name,
+                          c.name as channel_name
+                   FROM messages m
+                   LEFT JOIN workers w ON m.from_worker_id = w.id
+                   JOIN channels c ON m.channel_id = c.id
+                   WHERE m.channel_id = ?
+                   ORDER BY m.priority DESC, m.created_at DESC
+                   LIMIT ?""",
+                (channel_id, limit),
+            )
+
+        messages = []
+        for row in rows:
+            # Check if message has been read (no pending notification beads)
+            is_read = self._is_message_read(row["id"])
+
+            messages.append(
+                Message(
+                    id=row["id"],
+                    from_worker_id=row["from_worker_id"],
+                    from_worker_name=row["from_worker_name"],
+                    channel_name=row["channel_name"],
+                    content=row["content"],
+                    priority=row["priority"],
+                    created_at=self._parse_datetime(row["created_at"]) or datetime.now(),
+                    is_read=is_read,
+                    requires_response=row["priority"] >= 3,  # High priority
+                )
+            )
+
+        return messages
 
     def get_board_messages(self, unread_only: bool = False) -> list[Message]:
         """Get messages escalated to the board.
@@ -1630,6 +1735,119 @@ class QuinnAIOrgConnection(OrgConnection):
             return 0
 
     # ==================
+    # CURSOR-BASED STATUS POLLING
+    # ==================
+
+    def get_status_changes_since_cursor(self, cursor_id: int) -> list[dict]:
+        """Get status changes since a given cursor position.
+
+        Uses the status_changes table which is auto-populated by triggers
+        on workers, worker_state, and sessions tables.
+
+        Args:
+            cursor_id: Last seen status change ID (0 for all changes)
+
+        Returns:
+            List of status change dicts with id, entity_type, entity_id,
+            old_status, new_status, changed_at
+        """
+        self._ensure_connected()
+
+        try:
+            rows = self._db.fetchall(
+                """SELECT id, entity_type, entity_id, old_status, new_status, changed_at
+                   FROM status_changes
+                   WHERE id > ?
+                   ORDER BY id ASC""",
+                (cursor_id,)
+            )
+
+            return [
+                {
+                    "id": row["id"],
+                    "entity_type": row["entity_type"],
+                    "entity_id": row["entity_id"],
+                    "old_status": row["old_status"],
+                    "new_status": row["new_status"],
+                    "changed_at": row["changed_at"],
+                }
+                for row in rows
+            ]
+        except Exception as e:
+            # Table might not exist in older orgs
+            logger.debug(f"Error fetching status changes: {e}")
+            return []
+
+    def update_poll_cursor(self, client_id: str, last_change_id: int) -> None:
+        """Update the poll cursor position for a client.
+
+        Upserts the cursor position in status_change_cursors table.
+
+        Args:
+            client_id: Unique identifier for the polling client
+            last_change_id: Last processed status change ID
+        """
+        self._ensure_connected()
+
+        try:
+            self._db.execute(
+                """INSERT INTO status_change_cursors (client_id, last_change_id, updated_at)
+                   VALUES (?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(client_id) DO UPDATE SET
+                       last_change_id = excluded.last_change_id,
+                       updated_at = excluded.updated_at""",
+                (client_id, last_change_id)
+            )
+            self._db.connection.commit()
+        except Exception as e:
+            logger.debug(f"Error updating poll cursor: {e}")
+
+    def get_last_status_change_id(self) -> int:
+        """Get the latest status change ID.
+
+        Useful for detecting stale data and initializing cursors.
+
+        Returns:
+            Latest status change ID, or 0 if no changes exist
+        """
+        self._ensure_connected()
+
+        try:
+            row = self._db.fetchone(
+                "SELECT MAX(id) as max_id FROM status_changes"
+            )
+            if row and row["max_id"] is not None:
+                return int(row["max_id"])
+            return 0
+        except Exception as e:
+            logger.debug(f"Error fetching last status change ID: {e}")
+            return 0
+
+    def has_pending_changes(self, cursor_id: int) -> bool:
+        """Check if there are pending status changes since cursor.
+
+        More efficient than fetching all changes when you just need
+        to know if a refresh is needed.
+
+        Args:
+            cursor_id: Last seen status change ID
+
+        Returns:
+            True if there are changes since cursor_id
+        """
+        self._ensure_connected()
+
+        try:
+            row = self._db.fetchone(
+                "SELECT 1 FROM status_changes WHERE id > ? LIMIT 1",
+                (cursor_id,)
+            )
+            return row is not None
+        except Exception as e:
+            logger.debug(f"Error checking for pending changes: {e}")
+            return False
+
+    # ==================
     # HELPER METHODS
     # ==================
 
@@ -1789,6 +2007,135 @@ class QuinnAIOrgConnection(OrgConnection):
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
+
+    # ==================
+    # PROVIDER CONFIGURATION
+    # ==================
+
+    def get_provider_config(self) -> dict:
+        """Get provider configuration for the org.
+
+        Returns:
+            Dict with 'default' provider and 'providers' list
+        """
+        self._ensure_connected()
+
+        try:
+            import yaml
+
+            config_path = self._org_path / "config" / "providers.yaml"
+            if not config_path.exists():
+                return {"default": "claude_code", "providers": {}}
+
+            with open(config_path) as f:
+                config = yaml.safe_load(f) or {}
+
+            default_provider = config.get("default", "claude_code")
+
+            # Get available providers from registry
+            result = subprocess.run(
+                ["qn", "--org-path", str(self._org_path), "org", "provider", "list"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            providers = {}
+            if result.returncode == 0:
+                providers = self._parse_provider_list(result.stdout)
+
+            return {
+                "default": default_provider,
+                "providers": providers,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get provider config: {e}")
+            return {"default": "claude_code", "providers": {}}
+
+    def _parse_provider_list(self, output: str) -> dict[str, dict]:
+        """Parse output from 'qn org provider list' command."""
+        providers = {}
+        current_provider = None
+
+        for line in output.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("Available") or line.startswith("Total"):
+                continue
+
+            if line and not line.startswith(" "):
+                current_provider = line
+                providers[current_provider] = {
+                    "enabled": True,
+                    "capabilities": [],
+                    "aliases": [],
+                }
+            elif current_provider and line.startswith(" "):
+                if "Aliases:" in line:
+                    aliases_str = line.split("Aliases:", 1)[1].strip()
+                    providers[current_provider]["aliases"] = [
+                        a.strip() for a in aliases_str.split(",")
+                    ]
+                elif "Capabilities:" in line:
+                    caps_str = line.split("Capabilities:", 1)[1].strip()
+                    providers[current_provider]["capabilities"] = [
+                        c.strip() for c in caps_str.split(",")
+                    ]
+
+        return providers
+
+    def set_default_provider(self, provider_name: str) -> tuple[bool, str]:
+        """Set the default provider for the org.
+
+        Args:
+            provider_name: Provider name to set as default
+
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        self._ensure_connected()
+
+        try:
+            result = subprocess.run(
+                ["qn", "--org-path", str(self._org_path), "org", "provider", "default", provider_name],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if result.returncode == 0:
+                return True, f"Default provider set to {provider_name}"
+            else:
+                error_msg = result.stderr.strip() or result.stdout.strip()
+                return False, error_msg or f"Failed to set provider"
+
+        except Exception as e:
+            return False, f"Error setting provider: {e}"
+
+    def validate_provider_config(self) -> tuple[bool, list[str]]:
+        """Validate provider configuration.
+
+        Returns:
+            Tuple of (valid: bool, errors: list[str])
+        """
+        self._ensure_connected()
+
+        try:
+            result = subprocess.run(
+                ["qn", "--org-path", str(self._org_path), "org", "provider", "validate"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if result.returncode == 0:
+                return True, []
+            else:
+                errors = result.stderr.strip().split("\n") if result.stderr else []
+                return False, errors
+
+        except Exception as e:
+            return False, [f"Error validating providers: {e}"]
 
     # ==================
     # CONTEXT MANAGER
