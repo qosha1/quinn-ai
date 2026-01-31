@@ -115,6 +115,26 @@ class OKRInfo:
     children_count: int = 0
 
 
+@dataclass
+class HealthIssue:
+    """A health issue detected in the org."""
+    worker_id: str
+    worker_name: str
+    issue_type: str  # "no_okrs", "no_tasks", "no_activity", "crashed_session"
+    severity: str  # "info", "warning", "error"
+    message: str
+
+
+@dataclass
+class HealthStatus:
+    """Organization health status."""
+    overall_score: str  # "healthy", "warning", "critical"
+    issues: list[HealthIssue] = field(default_factory=list)
+    workers_with_issues: int = 0
+    total_workers: int = 0
+    last_checked: Optional[datetime] = None
+
+
 class OrgConnection(ABC):
     """Abstract interface for connecting to organizations.
 
@@ -160,6 +180,21 @@ class OrgConnection(ABC):
         """
         ...
 
+    @abstractmethod
+    def get_health_status(self) -> HealthStatus:
+        """Get organization health status.
+
+        Checks for common issues:
+        - Workers without OKRs
+        - Workers without assigned tasks
+        - Workers with no recent activity
+        - Crashed sessions
+
+        Returns:
+            HealthStatus with overall score and list of issues
+        """
+        ...
+
     # ==================
     # WORKERS
     # ==================
@@ -191,6 +226,25 @@ class OrgConnection(ABC):
 
         Returns:
             WorkerInfo for CEO or None if org not initialized
+        """
+        ...
+
+    @abstractmethod
+    def get_recent_activity(
+        self,
+        minutes: int = 30,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Get recent activity from all workers.
+
+        Reads activity logs from live/logs/activity/*.jsonl files.
+
+        Args:
+            minutes: How far back to look (in minutes)
+            limit: Maximum number of activity entries to return
+
+        Returns:
+            List of activity dictionaries sorted by timestamp (most recent first)
         """
         ...
 

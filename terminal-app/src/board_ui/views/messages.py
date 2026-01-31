@@ -121,7 +121,7 @@ class MessagesView(Widget):
                 yield Label("Board Inbox", classes="panel-title")
                 yield Label("-- messages", id="unread-label", classes="metric-label")
 
-            table = DataTable(id="messages-table")
+            table = DataTable(id="messages-table", cursor_type="row")
             table.add_columns("Pri", "From", "Preview", "Time")
             yield table
 

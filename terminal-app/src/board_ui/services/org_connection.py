@@ -461,6 +461,140 @@ class QuinnAIOrgConnection(OrgConnection):
             spend_this_week=spend_this_week,
         )
 
+    def get_health_status(self):
+        """Get organization health status.
+
+        Checks for common issues:
+        - Workers without OKRs
+        - Workers without assigned tasks
+        - Workers with no recent activity
+        - Crashed sessions
+
+        Returns:
+            HealthStatus with overall score and list of issues
+        """
+        from ..interfaces.org_connection import HealthStatus, HealthIssue
+
+        self._ensure_connected()
+
+        issues = []
+        workers_with_issues_set = set()
+
+        # Get all active workers
+        workers = self._db.fetchall(
+            """SELECT id, name, status FROM workers
+               WHERE status = 'active'"""
+        )
+
+        for worker in workers:
+            worker_id = worker["id"]
+            worker_name = worker["name"]
+
+            # Check 1: Worker has no OKRs
+            okr_count = self._db.fetchone(
+                """SELECT COUNT(*) as count FROM okrs
+                   WHERE owner_id = ? AND status = 'active'""",
+                (worker_id,)
+            )["count"]
+
+            if okr_count == 0:
+                issues.append(HealthIssue(
+                    worker_id=worker_id,
+                    worker_name=worker_name,
+                    issue_type="no_okrs",
+                    severity="warning",
+                    message=f"{worker_name} has no active OKRs assigned"
+                ))
+                workers_with_issues_set.add(worker_id)
+
+            # Check 2: Worker has no assigned tasks (using beads)
+            # This requires running bd command which might be slow, so we'll check if worker
+            # has any open/in_progress beads via bd CLI
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["bd", "list", "--assignee", worker_id, "--status=open,in_progress", "--json"],
+                    cwd=self._org_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                if result.returncode == 0:
+                    import json as json_lib
+                    beads = json_lib.loads(result.stdout)
+                    if len(beads) == 0:
+                        issues.append(HealthIssue(
+                            worker_id=worker_id,
+                            worker_name=worker_name,
+                            issue_type="no_tasks",
+                            severity="info",
+                            message=f"{worker_name} has no open tasks assigned"
+                        ))
+                        workers_with_issues_set.add(worker_id)
+            except (subprocess.TimeoutExpired, Exception):
+                # Skip task check if bd command fails/timeouts
+                pass
+
+            # Check 3: Worker has crashed session
+            session = self._db.fetchone(
+                """SELECT state FROM sessions
+                   WHERE worker_id = ? AND state != 'stopped'
+                   ORDER BY created_at DESC LIMIT 1""",
+                (worker_id,)
+            )
+            if session and session["state"] == "crashed":
+                issues.append(HealthIssue(
+                    worker_id=worker_id,
+                    worker_name=worker_name,
+                    issue_type="crashed_session",
+                    severity="error",
+                    message=f"{worker_name} has a crashed session"
+                ))
+                workers_with_issues_set.add(worker_id)
+
+            # Check 4: No recent activity (no activity in last 30 minutes)
+            thirty_mins_ago = datetime.now() - timedelta(minutes=30)
+            activity = self._db.fetchone(
+                """SELECT COUNT(*) as count FROM worker_activity
+                   WHERE worker_id = ? AND timestamp >= ?""",
+                (worker_id, thirty_mins_ago)
+            )
+            if activity and activity["count"] == 0:
+                issues.append(HealthIssue(
+                    worker_id=worker_id,
+                    worker_name=worker_name,
+                    issue_type="no_activity",
+                    severity="warning",
+                    message=f"{worker_name} has no activity in last 30 minutes"
+                ))
+                workers_with_issues_set.add(worker_id)
+
+        # Calculate overall health score
+        total_workers = len(workers)
+        workers_with_issues = len(workers_with_issues_set)
+
+        if total_workers == 0:
+            overall_score = "healthy"
+        else:
+            issue_ratio = workers_with_issues / total_workers
+            # Count critical issues (crashed sessions)
+            critical_issues = sum(1 for issue in issues if issue.severity == "error")
+
+            if critical_issues > 0 or issue_ratio > 0.5:
+                overall_score = "critical"
+            elif issue_ratio > 0.2:
+                overall_score = "warning"
+            else:
+                overall_score = "healthy"
+
+        return HealthStatus(
+            overall_score=overall_score,
+            issues=issues,
+            workers_with_issues=workers_with_issues,
+            total_workers=total_workers,
+            last_checked=datetime.now()
+        )
+
     # ==================
     # WORKERS
     # ==================
@@ -591,6 +725,51 @@ class QuinnAIOrgConnection(OrgConnection):
             return None
 
         return self.get_worker(org_row["ceo_worker_id"])
+
+    def get_recent_activity(
+        self,
+        minutes: int = 30,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Get recent activity from all workers.
+
+        Reads activity logs from live/logs/activity/*.jsonl files.
+
+        Args:
+            minutes: How far back to look (in minutes)
+            limit: Maximum number of activity entries to return
+
+        Returns:
+            List of activity dictionaries sorted by timestamp (most recent first)
+        """
+        self._ensure_connected()
+
+        activity_dir = self._org_path / "live" / "logs" / "activity"
+        if not activity_dir.exists():
+            return []
+
+        cutoff = datetime.now() - timedelta(minutes=minutes)
+        all_activities = []
+
+        # Read all activity JSONL files
+        for activity_file in activity_dir.glob("*.jsonl"):
+            try:
+                with open(activity_file, "r") as f:
+                    for line in f:
+                        try:
+                            activity = json.loads(line)
+                            activity_time = datetime.fromisoformat(activity["timestamp"])
+                            if activity_time >= cutoff:
+                                all_activities.append(activity)
+                        except (json.JSONDecodeError, KeyError, ValueError):
+                            continue
+            except Exception as e:
+                logger.warning(f"Failed to read activity file {activity_file}: {e}")
+                continue
+
+        # Sort by timestamp (most recent first) and limit
+        all_activities.sort(key=lambda x: x["timestamp"], reverse=True)
+        return all_activities[:limit]
 
     def _get_worker_session_states(self) -> dict[str, dict]:
         """Get session states for all workers.

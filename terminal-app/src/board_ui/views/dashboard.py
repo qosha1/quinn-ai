@@ -17,6 +17,8 @@ from textual.widgets import Button, Label, Static
 from textual.widget import Widget
 
 from ..interfaces.org_connection import OrgInfo, WorkerInfo, BudgetSummary, OrgStatus
+from ..widgets.recent_activity import RecentActivityWidget
+from ..widgets.health_status import HealthStatusWidget
 
 
 class DashboardView(Widget):
@@ -67,10 +69,9 @@ class DashboardView(Widget):
         color: $text-muted;
     }
 
-    #activity-panel {
+    #activity-widget {
         height: 1fr;
-        border: solid $secondary;
-        padding: 1;
+        margin-bottom: 1;
     }
 
     #chat-ceo-btn {
@@ -115,9 +116,15 @@ class DashboardView(Widget):
                 yield Label("--", id="active-count", classes="metric-value status-running")
                 yield Label("active sessions", classes="metric-label")
 
-        with Container(id="activity-panel", classes="panel"):
-            yield Label("Recent Activity", classes="panel-title")
-            yield Static("Connect to an org to see activity", id="activity-content")
+        # Health status widget
+        yield HealthStatusWidget(id="health-widget")
+
+        # Recent activity widget (auto-refreshes every 30s)
+        yield RecentActivityWidget(
+            org_connection=None,  # Will be set in on_mount
+            limit=20,
+            id="activity-widget"
+        )
 
         with Container(id="actions-panel", classes="panel"):
             yield Label("Org Actions", classes="panel-title")
@@ -128,6 +135,12 @@ class DashboardView(Widget):
 
     async def on_mount(self) -> None:
         """Load data when view mounts."""
+        # Set org_connection on activity widget if available
+        if hasattr(self.app, 'org_connection') and self.app.org_connection:
+            activity_widget = self.query_one("#activity-widget", RecentActivityWidget)
+            activity_widget.org_connection = self.app.org_connection
+            activity_widget.refresh_activities()
+
         await self.refresh_data()
         # Start auto-refresh timer
         self.set_interval(self._refresh_interval_seconds, self._auto_refresh)
@@ -160,8 +173,9 @@ class DashboardView(Widget):
         unread = conn.get_unread_count()
         self._update_unread_count(unread)
 
-        # Update activity
-        self._update_activity()
+        # Get health status
+        health = conn.get_health_status()
+        self._update_health_status(health)
 
     def _update_org_metrics(self) -> None:
         """Update org metrics display."""
@@ -252,25 +266,14 @@ class DashboardView(Widget):
         unread_label = self.query_one("#unread-count", Label)
         unread_label.update(str(count))
 
-    def _update_activity(self) -> None:
-        """Update recent activity display."""
-        activity = self.query_one("#activity-content", Static)
+    def _update_health_status(self, health) -> None:
+        """Update health status widget.
 
-        if not self._org_info:
-            activity.update("Connect to an org to see activity")
-            return
-
-        # Build activity summary
-        lines = []
-        if self._org_info.started_at:
-            lines.append(f"Org started: {self._org_info.started_at.strftime('%Y-%m-%d %H:%M')}")
-        lines.append(f"Workers: {self._org_info.worker_count}")
-        lines.append(f"Active sessions: {self._org_info.active_session_count}")
-
-        if self._budget and self._budget.total_spent > 0:
-            lines.append(f"Budget used: ${self._budget.total_spent:.2f} / ${self._budget.total_allocated:.2f}")
-
-        activity.update("\n".join(lines))
+        Args:
+            health: HealthStatus from org connection
+        """
+        health_widget = self.query_one("#health-widget", HealthStatusWidget)
+        health_widget.update_health(health)
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""

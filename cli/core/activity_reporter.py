@@ -2,6 +2,8 @@
 
 Periodically sends worker activity summaries to the board-channel
 so the board can see what workers are doing.
+
+Optionally creates beads for activity summaries to provide queryable history.
 """
 
 import logging
@@ -13,6 +15,7 @@ from typing import Optional
 
 from core.db import Database, open_database, get_org_db_path
 from core.activity_tracker import ActivityTracker
+from core.bd_wrapper import run_bd
 
 _logger = logging.getLogger(__name__)
 
@@ -24,15 +27,18 @@ class ActivityReporter:
         self,
         org_path: Path,
         report_interval: int = 300,  # 5 minutes
+        create_beads: bool = True,  # Create activity summary beads
     ):
         """Initialize activity reporter.
 
         Args:
             org_path: Path to organization directory
             report_interval: How often to send reports (seconds)
+            create_beads: Whether to create beads for activity summaries
         """
         self.org_path = org_path
         self.report_interval = report_interval
+        self.create_beads = create_beads
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -164,5 +170,57 @@ class ActivityReporter:
 
                 _logger.info(f"Sent activity report for {worker_name} to board")
 
+                # Optionally create a bead for queryable activity history
+                if self.create_beads:
+                    self._create_activity_bead(
+                        worker_id=worker_id,
+                        worker_name=worker_name,
+                        summary=summary,
+                        activity_count=len(recent_activity),
+                    )
+
         finally:
             db.close()
+
+    def _create_activity_bead(
+        self,
+        worker_id: str,
+        worker_name: str,
+        summary: str,
+        activity_count: int,
+    ) -> None:
+        """Create a bead for activity summary.
+
+        Args:
+            worker_id: Worker ID
+            worker_name: Worker name
+            summary: Activity summary markdown
+            activity_count: Number of activity entries
+        """
+        try:
+            now = datetime.now()
+            timestamp = now.strftime("%Y-%m-%d %H:%M")
+
+            # Create bead with activity summary
+            args = [
+                "create",
+                f"Activity: {worker_name} ({activity_count} actions)",
+                "--type=event",
+                f"--meta=worker_id={worker_id}",
+                f"--meta=timestamp={now.isoformat()}",
+                f"--meta=activity_count={activity_count}",
+                f"--desc={summary}",
+            ]
+
+            run_bd(
+                args=args,
+                org_path=self.org_path,
+                worker_id="system",  # System-level bead creation
+                skip_permission_check=True,  # System can always create beads
+                capture_output=True,
+            )
+
+            _logger.debug(f"Created activity bead for {worker_name}")
+
+        except Exception as e:
+            _logger.warning(f"Failed to create activity bead for {worker_name}: {e}")
