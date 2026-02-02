@@ -70,7 +70,14 @@ def create_org_db(
 
         CREATE TABLE teams (
             id TEXT PRIMARY KEY,
-            name TEXT
+            name TEXT NOT NULL,
+            parent_team_id TEXT,
+            lead_id TEXT,
+            channel_id TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (parent_team_id) REFERENCES teams(id) ON DELETE SET NULL,
+            FOREIGN KEY (lead_id) REFERENCES workers(id) ON DELETE SET NULL,
+            FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE SET NULL
         );
 
         CREATE TABLE workers (
@@ -110,7 +117,11 @@ def create_org_db(
 
         CREATE TABLE channels (
             id TEXT PRIMARY KEY,
-            name TEXT
+            name TEXT NOT NULL,
+            type TEXT NOT NULL CHECK(type IN ('team', 'topic', 'direct')),
+            team_id TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
         );
 
         CREATE TABLE channel_subscriptions (
@@ -207,7 +218,7 @@ def create_org_db(
 
     # Create executive team and CEO if requested
     if include_ceo:
-        conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
+        conn.execute("INSERT INTO teams (id, name) VALUES ('team-exec', 'Executive')")
         conn.execute("""
             INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at)
             VALUES ('worker-ceo', 'TestCEO', 'CEO', 'team-exec', NULL, 'pending', 100, ?)
@@ -216,13 +227,13 @@ def create_org_db(
         # CEO session (optional, based on status)
         if status == "running":
             conn.execute("""
-                INSERT INTO sessions VALUES
-                ('session-ceo', 'worker-ceo', 'idle', 'qn-worker-ceo')
+                INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state)
+                VALUES ('session-ceo', 'worker-ceo', 'claude_code', 'claude-code', 'qn-worker-ceo', 'idle')
             """)
 
     # Create board-channel if requested
     if include_board_channel:
-        conn.execute("INSERT INTO channels VALUES ('ch-board', 'board-channel')")
+        conn.execute("INSERT INTO channels (id, name, type) VALUES ('ch-board', 'board-channel', 'topic')")
 
         # Subscribe CEO to board-channel
         if include_ceo:
