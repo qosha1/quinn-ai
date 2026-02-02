@@ -20,6 +20,7 @@ from textual.widgets import Tree
 from board_ui.app import BoardApp
 from board_ui.config import BoardConfig
 from board_ui.views.okrs import OKRsView
+from tests.conftest import create_test_org_db
 
 
 def create_org_db_with_okrs(org_path: Path, okr_setup: str = "hierarchy") -> Path:
@@ -32,149 +33,35 @@ def create_org_db_with_okrs(org_path: Path, okr_setup: str = "hierarchy") -> Pat
     Returns:
         Path to created database
     """
-    live_path = org_path / "live"
-    live_path.mkdir(parents=True, exist_ok=True)
+    # Create database with production schema
+    db_path = create_test_org_db(
+        org_path,
+        org_name="test-org",
+        status="running",
+        include_ceo=True,
+        ceo_name="Alice CEO",
+        include_board_channel=False,
+    )
 
-    db_path = live_path / "quinn.db"
+    # Add additional test data
     conn = sqlite3.connect(str(db_path))
-
-    # Create schema
-    conn.executescript("""
-        CREATE TABLE org_state (
-            id TEXT PRIMARY KEY,
-            status TEXT,
-            ceo_worker_id TEXT,
-            started_at TEXT,
-            stopped_at TEXT
-        );
-
-        CREATE TABLE teams (
-            id TEXT PRIMARY KEY,
-            name TEXT
-        );
-
-        CREATE TABLE workers (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            role TEXT,
-            team_id TEXT,
-            manager_id TEXT,
-            status TEXT,
-            created_at TEXT,
-            FOREIGN KEY (team_id) REFERENCES teams(id)
-        );
-
-        CREATE TABLE sessions (
-            id TEXT PRIMARY KEY,
-            worker_id TEXT,
-            state TEXT,
-            tmux_session_name TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE worker_state (
-            id INTEGER PRIMARY KEY,
-            worker_id TEXT,
-            runtime_status TEXT,
-            current_task_id TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE channels (
-            id TEXT PRIMARY KEY,
-            name TEXT
-        );
-
-        CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            channel_id TEXT,
-            thread_id TEXT,
-            parent_id TEXT,
-            from_worker_id TEXT,
-            content TEXT,
-            priority INTEGER,
-            time_sensitivity TEXT,
-            created_at TEXT,
-            FOREIGN KEY (channel_id) REFERENCES channels(id)
-        );
-
-        CREATE TABLE notification_beads (
-            id TEXT PRIMARY KEY,
-            message_id TEXT,
-            status TEXT,
-            read_at TEXT,
-            FOREIGN KEY (message_id) REFERENCES messages(id)
-        );
-
-        CREATE TABLE okrs (
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            description TEXT,
-            owner_worker_id TEXT,
-            status TEXT,
-            parent_okr_id TEXT,
-            key_results TEXT,
-            due_date TEXT,
-            created_at TEXT,
-            FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE budget_pools (
-            id TEXT PRIMARY KEY,
-            period_start TEXT,
-            period_end TEXT,
-            created_at TEXT
-        );
-
-        CREATE TABLE budget_allocations (
-            id TEXT PRIMARY KEY,
-            pool_id TEXT,
-            worker_id TEXT,
-            FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
-        );
-
-        CREATE TABLE budget_balances (
-            id TEXT PRIMARY KEY,
-            allocation_id TEXT,
-            allocated REAL,
-            spent REAL,
-            available REAL,
-            FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
-        );
-
-        CREATE TABLE budget_transactions (
-            id TEXT PRIMARY KEY,
-            type TEXT,
-            amount REAL,
-            created_at TEXT
-        );
-    """)
-
     now = datetime.now().isoformat()
 
-    # Insert base data
+    # Add Engineering team
+    conn.execute("INSERT INTO teams (id, name) VALUES ('team-eng', 'Engineering')")
+
+    # Add board member and director (CEO already created by shared utility)
     conn.execute(
-        "INSERT INTO org_state (id, status, ceo_worker_id, started_at) VALUES (?, ?, ?, ?)",
-        ("default", "running", "worker-ceo", now),
+        "INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("worker-board", "Board Member", "Board", "team-exec", None, "active", 100, now),
+    )
+    conn.execute(
+        "INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("worker-director", "Bob Director", "Director", "team-eng", "worker-ceo", "active", 75, now),
     )
 
-    conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
-    conn.execute("INSERT INTO teams VALUES ('team-eng', 'Engineering')")
-
-    conn.execute(
-        "INSERT INTO workers VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("worker-board", "Board Member", "Board", "team-exec", None, "active", now),
-    )
-    conn.execute(
-        "INSERT INTO workers VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("worker-ceo", "Alice CEO", "CEO", "team-exec", None, "active", now),
-    )
-    conn.execute(
-        "INSERT INTO workers VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("worker-director", "Bob Director", "Director", "team-eng", "worker-ceo", "active", now),
-    )
-
-    conn.execute("INSERT INTO channels VALUES ('ch-esc', 'escalations')")
+    # Add escalations channel
+    conn.execute("INSERT INTO channels (id, name, type) VALUES ('ch-esc', 'escalations', 'topic')")
 
     # Insert OKRs based on scenario
     if okr_setup == "hierarchy":
@@ -194,14 +81,15 @@ def create_okr_hierarchy(conn, now: str):
     """Create Board -> CEO -> Director OKR hierarchy."""
     # Board level OKR (no parent)
     conn.execute(
-        """INSERT INTO okrs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO okrs (id, title, description, owner_worker_id, parent_okr_id, status, key_results, due_date, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             "okr-board-1",
             "Ship v1.0 product",
             "Launch first version to market",
             "worker-board",
+            None,  # No parent (parent_okr_id comes before status)
             "active",
-            None,  # No parent
             json.dumps([
                 {"description": "Complete MVP features", "current": 8, "target": 10, "unit": "features"},
                 {"description": "Pass security audit", "current": 1, "target": 1, "unit": "audit"},
@@ -209,44 +97,49 @@ def create_okr_hierarchy(conn, now: str):
             ]),
             "2026-03-31",
             now,
+            now,  # updated_at
         ),
     )
 
     # CEO level OKR (parent: board)
     conn.execute(
-        """INSERT INTO okrs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO okrs (id, title, description, owner_worker_id, parent_okr_id, status, key_results, due_date, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             "okr-ceo-1",
             "Deliver MVP by Q1",
             "Complete core product features",
             "worker-ceo",
-            "active",
             "okr-board-1",  # Parent: Board OKR
+            "active",
             json.dumps([
                 {"description": "Core API complete", "current": 10, "target": 10, "unit": "endpoints"},
                 {"description": "Frontend functional", "current": 7, "target": 10, "unit": "pages"},
             ]),
             "2026-02-28",
             now,
+            now,  # updated_at
         ),
     )
 
     # Director level OKR (parent: CEO)
     conn.execute(
-        """INSERT INTO okrs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO okrs (id, title, description, owner_worker_id, parent_okr_id, status, key_results, due_date, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             "okr-director-1",
             "Technical delivery complete",
             "All engineering milestones met",
             "worker-director",
-            "active",
             "okr-ceo-1",  # Parent: CEO OKR
+            "active",
             json.dumps([
                 {"description": "API tests passing", "current": 80, "target": 100, "unit": "%"},
                 {"description": "Performance benchmarks met", "current": 2, "target": 3, "unit": "benchmarks"},
             ]),
             "2026-02-15",
             now,
+            now,  # updated_at
         ),
     )
 
@@ -254,14 +147,15 @@ def create_okr_hierarchy(conn, now: str):
 def create_okr_with_krs(conn, now: str):
     """Create OKR with 3 key results (2 complete)."""
     conn.execute(
-        """INSERT INTO okrs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO okrs (id, title, description, owner_worker_id, parent_okr_id, status, key_results, due_date, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             "okr-test-1",
             "Test OKR with Key Results",
             "Testing key result display",
             "worker-ceo",
-            "active",
             None,
+            "active",
             json.dumps([
                 {"description": "First KR complete", "current": 100, "target": 100, "unit": "%"},
                 {"description": "Second KR complete", "current": 50, "target": 50, "unit": "items"},
@@ -269,6 +163,7 @@ def create_okr_with_krs(conn, now: str):
             ]),
             "2026-02-28",
             now,
+            now,  # updated_at
         ),
     )
 
@@ -277,33 +172,37 @@ def create_orphaned_okrs(conn, now: str):
     """Create OKR with invalid parent and valid OKR."""
     # Valid OKR
     conn.execute(
-        """INSERT INTO okrs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO okrs (id, title, description, owner_worker_id, parent_okr_id, status, key_results, due_date, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             "okr-valid",
             "Valid OKR",
             "This has no parent",
             "worker-ceo",
-            "active",
             None,
+            "active",
             json.dumps([{"description": "Test", "current": 1, "target": 1, "unit": "item"}]),
             "2026-02-28",
             now,
+            now,  # updated_at
         ),
     )
 
     # Orphaned OKR (parent doesn't exist)
     conn.execute(
-        """INSERT INTO okrs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO okrs (id, title, description, owner_worker_id, parent_okr_id, status, key_results, due_date, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             "okr-orphaned",
             "Orphaned OKR",
             "This has invalid parent",
             "worker-director",
-            "active",
             "okr-nonexistent",  # Parent doesn't exist
+            "active",
             json.dumps([{"description": "Orphan KR", "current": 0, "target": 1, "unit": "item"}]),
             "2026-02-28",
             now,
+            now,  # updated_at
         ),
     )
 
