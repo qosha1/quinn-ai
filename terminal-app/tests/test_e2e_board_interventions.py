@@ -28,6 +28,7 @@ from board_ui.interfaces.org_connection import (
     SessionState,
     OrgStatus,
 )
+from tests.conftest import create_test_org_db
 
 
 # ======================
@@ -40,158 +41,58 @@ def test_org_with_workers(tmp_path):
     """Create a test org with multiple workers in various states."""
     org_path = tmp_path / "test-org"
     org_path.mkdir()
-    live_path = org_path / "live"
-    live_path.mkdir()
 
-    db_path = live_path / "quinn.db"
+    # Create complete org database with production schema
+    db_path = create_test_org_db(
+        org_path,
+        org_name="test-org",
+        status="running",
+        include_ceo=True,
+        ceo_name="Alice CEO",
+        include_board_channel=True,
+    )
+
+    # Add additional test data for intervention tests
     conn = sqlite3.connect(str(db_path))
-
-    # Create all required tables
-    conn.executescript("""
-        CREATE TABLE org_state (
-            id TEXT PRIMARY KEY,
-            status TEXT,
-            ceo_worker_id TEXT,
-            started_at TEXT,
-            stopped_at TEXT
-        );
-
-        CREATE TABLE teams (
-            id TEXT PRIMARY KEY,
-            name TEXT
-        );
-
-        CREATE TABLE workers (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            role TEXT,
-            team_id TEXT,
-            manager_id TEXT,
-            status TEXT,
-            created_at TEXT,
-            FOREIGN KEY (team_id) REFERENCES teams(id)
-        );
-
-        CREATE TABLE sessions (
-            id TEXT PRIMARY KEY,
-            worker_id TEXT,
-            state TEXT,
-            tmux_session_name TEXT,
-            pid INTEGER,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE worker_state (
-            id INTEGER PRIMARY KEY,
-            worker_id TEXT,
-            runtime_status TEXT,
-            current_task_id TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE channels (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            type TEXT
-        );
-
-        CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            channel_id TEXT,
-            thread_id TEXT,
-            parent_id TEXT,
-            from_worker_id TEXT,
-            content TEXT,
-            priority INTEGER,
-            time_sensitivity TEXT,
-            created_at TEXT,
-            FOREIGN KEY (channel_id) REFERENCES channels(id)
-        );
-
-        CREATE TABLE notification_beads (
-            id TEXT PRIMARY KEY,
-            worker_id TEXT,
-            message_id TEXT,
-            channel_id TEXT,
-            status TEXT,
-            priority INTEGER,
-            created_at TEXT,
-            read_at TEXT,
-            expires_at TEXT,
-            FOREIGN KEY (message_id) REFERENCES messages(id)
-        );
-
-        CREATE TABLE channel_subscriptions (
-            id TEXT PRIMARY KEY,
-            channel_id TEXT,
-            worker_id TEXT,
-            FOREIGN KEY (channel_id) REFERENCES channels(id),
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-    """)
-
-    # Insert test data
     now = datetime.now().isoformat()
 
-    conn.execute("""
-        INSERT INTO org_state (id, status, ceo_worker_id, started_at)
-        VALUES ('default', 'running', 'worker-ceo', ?)
-    """, (now,))
+    # Add Engineering team
+    conn.execute("INSERT INTO teams (id, name) VALUES ('team-eng', 'Engineering')")
 
-    conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
-    conn.execute("INSERT INTO teams VALUES ('team-eng', 'Engineering')")
-
-    # CEO worker
-    conn.execute("""
-        INSERT INTO workers VALUES
-        ('worker-ceo', 'Alice CEO', 'CEO', 'team-exec', NULL, 'active', ?)
-    """, (now,))
-
+    # Add additional test workers (CEO already created by shared utility)
     # Active worker to test pausing
     conn.execute("""
-        INSERT INTO workers VALUES
-        ('worker-dev1', 'Bob Developer', 'Developer', 'team-eng', 'worker-ceo', 'active', ?)
+        INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at)
+        VALUES ('worker-dev1', 'Bob Developer', 'Developer', 'team-eng', 'worker-ceo', 'active', 50, ?)
     """, (now,))
 
     # Paused worker to test resuming
     conn.execute("""
-        INSERT INTO workers VALUES
-        ('worker-dev2', 'Carol Engineer', 'Engineer', 'team-eng', 'worker-ceo', 'active', ?)
+        INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at)
+        VALUES ('worker-dev2', 'Carol Engineer', 'Engineer', 'team-eng', 'worker-ceo', 'active', 50, ?)
     """, (now,))
 
     # Worker to fire
     conn.execute("""
-        INSERT INTO workers VALUES
-        ('worker-dev3', 'Dave Tester', 'QA Engineer', 'team-eng', 'worker-ceo', 'active', ?)
+        INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at)
+        VALUES ('worker-dev3', 'Dave Tester', 'QA Engineer', 'team-eng', 'worker-ceo', 'active', 50, ?)
     """, (now,))
 
-    # Create sessions
+    # Create additional sessions (CEO session already created by shared utility)
     conn.execute("""
-        INSERT INTO sessions VALUES
-        ('session-ceo', 'worker-ceo', 'running', 'org-test-org-ceo', 12345)
-    """)
+        INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state, pid, created_at)
+        VALUES ('session-dev1', 'worker-dev1', 'claude_code', 'claude-code', 'org-test-org-dev1', 'running', 12346, ?)
+    """, (now,))
     conn.execute("""
-        INSERT INTO sessions VALUES
-        ('session-dev1', 'worker-dev1', 'running', 'org-test-org-dev1', 12346)
-    """)
+        INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state, pid, created_at)
+        VALUES ('session-dev2', 'worker-dev2', 'claude_code', 'claude-code', 'org-test-org-dev2', 'stopped', 12347, ?)
+    """, (now,))
     conn.execute("""
-        INSERT INTO sessions VALUES
-        ('session-dev2', 'worker-dev2', 'stopped', 'org-test-org-dev2', 12347)
-    """)
-    conn.execute("""
-        INSERT INTO sessions VALUES
-        ('session-dev3', 'worker-dev3', 'running', 'org-test-org-dev3', 12348)
-    """)
+        INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state, pid, created_at)
+        VALUES ('session-dev3', 'worker-dev3', 'claude_code', 'claude-code', 'org-test-org-dev3', 'running', 12348, ?)
+    """, (now,))
 
-    # Create board-channel (the special channel for board escalations)
-    conn.execute("""
-        INSERT INTO channels VALUES ('ch-board', 'board-channel', 'board')
-    """)
-
-    # Subscribe CEO to board channel (board messages notify CEO)
-    conn.execute("""
-        INSERT INTO channel_subscriptions VALUES ('sub-1', 'ch-board', 'worker-ceo')
-    """)
+    # board-channel and CEO subscription already created by shared utility
 
     conn.commit()
     conn.close()
@@ -209,15 +110,15 @@ def test_org_with_escalation(test_org_with_workers):
 
     # Create escalation message in board-channel
     conn.execute("""
-        INSERT INTO messages VALUES
-        ('msg-esc-1', 'ch-board', NULL, NULL, 'worker-dev1',
-         'ESCALATION: Need guidance on API design decision', 3, 'normal', ?)
+        INSERT INTO messages (id, channel_id, thread_id, parent_id, from_worker_id, content, priority, time_sensitivity, created_at)
+        VALUES ('msg-esc-1', 'ch-board', NULL, NULL, 'worker-dev1',
+         'ESCALATION: Need guidance on API design decision', 3, 'hours', ?)
     """, (now,))
 
     # Create notification bead for CEO
     conn.execute("""
-        INSERT INTO notification_beads VALUES
-        ('nb-esc-1', 'worker-ceo', 'msg-esc-1', 'ch-board', 'pending', 3, ?, NULL, NULL)
+        INSERT INTO notification_beads (id, worker_id, message_id, channel_id, status, priority, created_at, read_at, expires_at)
+        VALUES ('nb-esc-1', 'worker-ceo', 'msg-esc-1', 'ch-board', 'pending', 3, ?, NULL, NULL)
     """, (now,))
 
     conn.commit()

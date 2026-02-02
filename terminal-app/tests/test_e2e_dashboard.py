@@ -15,6 +15,7 @@ from textual.widgets import Label
 from board_ui.app import BoardApp
 from board_ui.config import BoardConfig
 from board_ui.views.dashboard import DashboardView
+from tests.conftest import create_test_org_db
 
 
 def get_label_text(label: Label) -> str:
