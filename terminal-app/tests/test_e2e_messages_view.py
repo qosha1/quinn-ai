@@ -113,10 +113,22 @@ def create_base_org_db(org_path: Path) -> Path:
 
         CREATE TABLE sessions (
             id TEXT PRIMARY KEY,
-            worker_id TEXT,
-            state TEXT,
+            worker_id TEXT NOT NULL UNIQUE,
+            provider TEXT NOT NULL,
+            model TEXT,
+            command TEXT NOT NULL,
+            args TEXT,
+            working_directory TEXT,
             tmux_session_name TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
+            pid INTEGER,
+            state TEXT NOT NULL CHECK(state IN ('starting', 'idle', 'running', 'stopped', 'crashed')),
+            state_version INTEGER NOT NULL DEFAULT 0,
+            started_at DATETIME,
+            stopped_at DATETIME,
+            last_activity DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
         );
 
         CREATE TABLE worker_state (
@@ -129,7 +141,11 @@ def create_base_org_db(org_path: Path) -> Path:
 
         CREATE TABLE channels (
             id TEXT PRIMARY KEY,
-            name TEXT
+            name TEXT NOT NULL,
+            type TEXT NOT NULL CHECK(type IN ('team', 'topic', 'direct')),
+            team_id TEXT,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
         );
 
         CREATE TABLE messages (
@@ -221,8 +237,8 @@ def create_base_org_db(org_path: Path) -> Path:
     """, (now.isoformat(),))
 
     conn.execute("""
-        INSERT INTO sessions VALUES
-        ('session-ceo', 'worker-ceo', 'running', 'org-test-org-ceo')
+        INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state)
+        VALUES ('session-ceo', 'worker-ceo', 'claude_code', 'claude-code', 'org-test-org-ceo', 'running')
     """)
 
     conn.commit()
@@ -247,7 +263,7 @@ def add_messages_to_channel(db_path: Path, channel_name: str, messages: list[dic
         channel_id = row[0]
     else:
         channel_id = f"ch-{channel_name}"
-        conn.execute("INSERT INTO channels VALUES (?, ?)", (channel_id, channel_name))
+        conn.execute("INSERT INTO channels (id, name, type) VALUES (?, ?, ?)", (channel_id, channel_name, 'topic'))
 
     # Add messages
     now = datetime.now()
@@ -343,7 +359,7 @@ def org_with_empty_channel():
 
         # Add board-channel but no messages
         conn = sqlite3.connect(str(db_path))
-        conn.execute("INSERT INTO channels VALUES ('ch-board', 'board-channel')")
+        conn.execute("INSERT INTO channels (id, name, type) VALUES ('ch-board', 'board-channel', 'topic')")
         conn.commit()
         conn.close()
 

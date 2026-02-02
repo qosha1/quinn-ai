@@ -198,6 +198,9 @@ class MessagesView(Widget):
                 self._messages = self.app.org_connection.get_channel_messages(
                     self._current_channel_id
                 )
+                # Clear table before repopulating (fixes placeholder row persistence bug)
+                table = self.query_one("#messages-table", DataTable)
+                table.clear()
                 self._populate_table_from_connection()
 
                 # Update unread count for current channel
@@ -297,8 +300,14 @@ class MessagesView(Widget):
 
     async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle message selection."""
+        from ..logging_config import get_board_logger
+        logger = get_board_logger(__name__)
+
         table = self.query_one("#messages-table", DataTable)
         row_key = event.row_key
+
+        logger.debug(f"Row selected - row_key: {row_key}")
+        logger.debug(f"Available message IDs: {[m.id for m in self._messages]}")
 
         # Find message by ID
         self._selected_message = next(
@@ -306,7 +315,11 @@ class MessagesView(Widget):
         )
 
         if not self._selected_message:
+            logger.warning(f"No message found for row_key: {row_key}")
+            self.app.notify(f"Could not find message: {row_key}", severity="error")
             return
+
+        logger.info(f"Message selected: {self._selected_message.id}")
 
         # Update detail view
         header = self.query_one("#detail-header", Label)
