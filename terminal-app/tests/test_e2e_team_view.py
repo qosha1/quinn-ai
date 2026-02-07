@@ -40,7 +40,8 @@ def create_org_db_with_workers(
     conn = sqlite3.connect(str(db_path))
     now = datetime.now()
 
-    # Add Engineering team (Executive already created by shared utility)
+    # Add both teams (Executive not created when include_ceo=False)
+    conn.execute("INSERT INTO teams (id, name) VALUES ('team-exec', 'Executive')")
     conn.execute("INSERT INTO teams (id, name) VALUES ('team-eng', 'Engineering')")
 
     # Set CEO ID from first worker if available
