@@ -40,7 +40,7 @@ def run_notification_cleanup(db, retention_days: int) -> dict:
                 f"--format=json",
             ],
             org_path,
-            worker_id="system",
+            worker_id="worker-ceo",  # Use CEO for system operations
         )
 
         if result.returncode == 0:
@@ -95,7 +95,7 @@ def create_notification_bead(
                 f"--assignee={worker_id}",
             ],
             org_path,
-            worker_id="system",
+            worker_id="worker-ceo",  # Use CEO for system operations
         )
 
         if result.returncode == 0:
@@ -236,7 +236,7 @@ def mark_notification_read(db, notification_id: str) -> bool:
                 "--reason=Read by worker",
             ],
             org_path,
-            worker_id="system",
+            worker_id="worker-ceo",  # Use CEO for system operations
         )
 
         return result.returncode == 0
