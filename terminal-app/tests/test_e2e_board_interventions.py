@@ -773,7 +773,7 @@ class TestBoardChannelMessages:
         ).fetchone()
 
         assert result is not None, "board-channel should exist"
-        assert result[2] == "board", "Should be board type channel"
+        assert result[2] == "topic", "board-channel should be topic type channel"
 
         conn.close()
 
@@ -795,7 +795,7 @@ class TestBoardChannelMessages:
         conn_db.execute("""
             INSERT INTO messages VALUES
             ('msg-team-1', 'ch-team', NULL, NULL, 'worker-dev1',
-             'Team message not for board', 1, 'normal', ?)
+             'Team message not for board', 1, 'whenever', ?)
         """, (now,))
 
         conn_db.commit()
