@@ -31,8 +31,8 @@ class TestDashboardView:
             metrics_row = app.query_one("#metrics-row")
             assert metrics_row is not None
 
-            activity_panel = app.query_one("#activity-panel")
-            assert activity_panel is not None
+            activity_widget = app.query_one("#activity-widget")
+            assert activity_widget is not None
 
     @pytest.mark.asyncio
     async def test_dashboard_displays_metrics(self):
@@ -109,11 +109,11 @@ class TestDashboardView:
 
     @pytest.mark.asyncio
     async def test_activity_panel_exists(self):
-        """Activity panel should show recent activity area."""
+        """Activity widget should show recent activity area."""
         app = BoardApp(BoardConfig.default())
         async with app.run_test() as pilot:
-            activity_content = app.query_one("#activity-content")
-            assert activity_content is not None
+            activity_widget = app.query_one("#activity-widget")
+            assert activity_widget is not None
 
     @pytest.mark.asyncio
     async def test_metric_cards_exist(self):
