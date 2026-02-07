@@ -16,13 +16,15 @@ from board_ui.app import BoardApp
 from board_ui.config import BoardConfig
 from board_ui.views.team import TeamView
 
+from .conftest import create_test_org_db
+
 
 def create_org_db_with_workers(
     org_path: Path,
     workers_data: list[dict],
     status: str = "running"
 ) -> Path:
-    """Create org database with custom worker data.
+    """Create org database with custom worker data using shared utility.
 
     Args:
         org_path: Path to org folder
@@ -32,142 +34,29 @@ def create_org_db_with_workers(
     Returns:
         Path to created database
     """
-    live_path = org_path / "live"
-    live_path.mkdir(parents=True, exist_ok=True)
+    # Create database with production schema (without CEO to avoid conflicts)
+    db_path = create_test_org_db(org_path, status=status, include_ceo=False)
 
-    db_path = live_path / "quinn.db"
     conn = sqlite3.connect(str(db_path))
+    now = datetime.now()
 
-    # Create all required tables
-    conn.executescript("""
-        CREATE TABLE org_state (
-            id TEXT PRIMARY KEY,
-            status TEXT,
-            ceo_worker_id TEXT,
-            started_at TEXT,
-            stopped_at TEXT
-        );
-
-        CREATE TABLE teams (
-            id TEXT PRIMARY KEY,
-            name TEXT
-        );
-
-        CREATE TABLE workers (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            role TEXT,
-            team_id TEXT,
-            manager_id TEXT,
-            status TEXT,
-            created_at TEXT,
-            FOREIGN KEY (team_id) REFERENCES teams(id)
-        );
-
-        CREATE TABLE sessions (
-            id TEXT PRIMARY KEY,
-            worker_id TEXT,
-            state TEXT,
-            tmux_session_name TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE worker_state (
-            id INTEGER PRIMARY KEY,
-            worker_id TEXT,
-            runtime_status TEXT,
-            current_task_id TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE channels (
-            id TEXT PRIMARY KEY,
-            name TEXT
-        );
-
-        CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            channel_id TEXT,
-            thread_id TEXT,
-            parent_id TEXT,
-            from_worker_id TEXT,
-            content TEXT,
-            priority INTEGER,
-            time_sensitivity TEXT,
-            created_at TEXT,
-            FOREIGN KEY (channel_id) REFERENCES channels(id)
-        );
-
-        CREATE TABLE notification_beads (
-            id TEXT PRIMARY KEY,
-            message_id TEXT,
-            status TEXT,
-            read_at TEXT,
-            FOREIGN KEY (message_id) REFERENCES messages(id)
-        );
-
-        CREATE TABLE okrs (
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            description TEXT,
-            owner_worker_id TEXT,
-            status TEXT,
-            parent_okr_id TEXT,
-            key_results TEXT,
-            due_date TEXT,
-            created_at TEXT,
-            FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE budget_pools (
-            id TEXT PRIMARY KEY,
-            period_start TEXT,
-            period_end TEXT,
-            created_at TEXT
-        );
-
-        CREATE TABLE budget_allocations (
-            id TEXT PRIMARY KEY,
-            pool_id TEXT,
-            worker_id TEXT,
-            FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
-        );
-
-        CREATE TABLE budget_balances (
-            id TEXT PRIMARY KEY,
-            allocation_id TEXT,
-            allocated REAL,
-            spent REAL,
-            available REAL,
-            FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
-        );
-
-        CREATE TABLE budget_transactions (
-            id TEXT PRIMARY KEY,
-            type TEXT,
-            amount REAL,
-            created_at TEXT
-        );
-    """)
-
-    # Insert teams
-    conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
-    conn.execute("INSERT INTO teams VALUES ('team-eng', 'Engineering')")
+    # Add Engineering team (Executive already created by shared utility)
+    conn.execute("INSERT INTO teams (id, name) VALUES ('team-eng', 'Engineering')")
 
     # Set CEO ID from first worker if available
     ceo_id = workers_data[0]["id"] if workers_data else None
-
-    # Insert org state
-    now = datetime.now()
-    conn.execute("""
-        INSERT INTO org_state (id, status, ceo_worker_id, started_at)
-        VALUES ('default', ?, ?, ?)
-    """, (status, ceo_id, now.isoformat()))
+    if ceo_id:
+        conn.execute("""
+            UPDATE org_state
+            SET ceo_worker_id = ?, started_at = ?
+            WHERE id = 'default'
+        """, (ceo_id, now.isoformat()))
 
     # Insert workers and sessions
     for worker in workers_data:
         conn.execute("""
-            INSERT INTO workers VALUES (?, ?, ?, ?, ?, 'active', ?)
+            INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at)
+            VALUES (?, ?, ?, ?, ?, 'active', 50, ?)
         """, (
             worker["id"],
             worker["name"],
@@ -181,15 +70,14 @@ def create_org_db_with_workers(
         if worker.get("session_state"):
             tmux_name = f"org-{org_path.name}-{worker['name'].lower()}"
             conn.execute("""
-                INSERT INTO sessions VALUES (?, ?, ?, ?)
+                INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state)
+                VALUES (?, ?, 'claude_code', 'claude-code', ?, ?)
             """, (
                 f"session-{worker['id']}",
                 worker["id"],
-                worker["session_state"],
-                tmux_name
+                tmux_name,
+                worker["session_state"]
             ))
-
-    conn.execute("INSERT INTO channels VALUES ('ch-esc', 'escalations')")
 
     conn.commit()
     conn.close()

@@ -20,11 +20,11 @@ from board_ui.services.org_discovery import (
     StopResult,
 )
 
+from .conftest import create_test_org_db
+
 
 def create_mock_org_db(org_path: Path, status: str = "running") -> Path:
-    """Create a mock org database for testing.
-
-    Based on the schema from test_org_connection.py fixture.
+    """Create a mock org database for testing using shared utility.
 
     Args:
         org_path: Path to org folder
@@ -33,152 +33,8 @@ def create_mock_org_db(org_path: Path, status: str = "running") -> Path:
     Returns:
         Path to created database
     """
-    from datetime import datetime
-
-    live_path = org_path / "live"
-    live_path.mkdir(parents=True, exist_ok=True)
-
-    db_path = live_path / "quinn.db"
-    conn = sqlite3.connect(str(db_path))
-
-    # Create all tables that org_connection expects (from test_org_connection.py)
-    conn.executescript("""
-        CREATE TABLE org_state (
-            id TEXT PRIMARY KEY,
-            status TEXT,
-            ceo_worker_id TEXT,
-            started_at TEXT,
-            stopped_at TEXT
-        );
-
-        CREATE TABLE teams (
-            id TEXT PRIMARY KEY,
-            name TEXT
-        );
-
-        CREATE TABLE workers (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            role TEXT,
-            team_id TEXT,
-            manager_id TEXT,
-            status TEXT,
-            created_at TEXT,
-            FOREIGN KEY (team_id) REFERENCES teams(id)
-        );
-
-        CREATE TABLE sessions (
-            id TEXT PRIMARY KEY,
-            worker_id TEXT,
-            state TEXT,
-            tmux_session_name TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE worker_state (
-            id INTEGER PRIMARY KEY,
-            worker_id TEXT,
-            runtime_status TEXT,
-            current_task_id TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE channels (
-            id TEXT PRIMARY KEY,
-            name TEXT
-        );
-
-        CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            channel_id TEXT,
-            thread_id TEXT,
-            parent_id TEXT,
-            from_worker_id TEXT,
-            content TEXT,
-            priority INTEGER,
-            time_sensitivity TEXT,
-            created_at TEXT,
-            FOREIGN KEY (channel_id) REFERENCES channels(id)
-        );
-
-        CREATE TABLE notification_beads (
-            id TEXT PRIMARY KEY,
-            message_id TEXT,
-            status TEXT,
-            read_at TEXT,
-            FOREIGN KEY (message_id) REFERENCES messages(id)
-        );
-
-        CREATE TABLE okrs (
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            description TEXT,
-            owner_worker_id TEXT,
-            status TEXT,
-            parent_okr_id TEXT,
-            key_results TEXT,
-            due_date TEXT,
-            created_at TEXT,
-            FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE budget_pools (
-            id TEXT PRIMARY KEY,
-            period_start TEXT,
-            period_end TEXT,
-            created_at TEXT
-        );
-
-        CREATE TABLE budget_allocations (
-            id TEXT PRIMARY KEY,
-            pool_id TEXT,
-            worker_id TEXT,
-            FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
-        );
-
-        CREATE TABLE budget_balances (
-            id TEXT PRIMARY KEY,
-            allocation_id TEXT,
-            allocated REAL,
-            spent REAL,
-            available REAL,
-            FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
-        );
-
-        CREATE TABLE budget_transactions (
-            id TEXT PRIMARY KEY,
-            type TEXT,
-            amount REAL,
-            created_at TEXT
-        );
-    """)
-
-    if status != "uninitialized":
-        # Insert test data
-        now = datetime.now()
-        conn.execute("""
-            INSERT INTO org_state (id, status, ceo_worker_id, started_at)
-            VALUES ('default', ?, 'worker-ceo', ?)
-        """, (status, now.isoformat()))
-
-        conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
-
-        conn.execute("""
-            INSERT INTO workers VALUES
-            ('worker-ceo', 'Alice', 'CEO', 'team-exec', NULL, 'active', ?)
-        """, (now.isoformat(),))
-
-        if status == "running":
-            conn.execute("""
-                INSERT INTO sessions VALUES
-                ('session-ceo', 'worker-ceo', 'running', 'org-test-org-ceo')
-            """)
-
-        conn.execute("INSERT INTO channels VALUES ('ch-esc', 'escalations')")
-
-    conn.commit()
-    conn.close()
-    return db_path
+    include_ceo = (status != "uninitialized")
+    return create_test_org_db(org_path, status=status, include_ceo=include_ceo)
 
 
 class TestE2EOrgDiscovery:
