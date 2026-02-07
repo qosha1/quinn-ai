@@ -1094,8 +1094,13 @@ class QuinnAIOrgConnection(OrgConnection):
         thread_id = msg_row["thread_id"] or message_id
 
         # Create response message
-        # Use a special "board" worker ID for board responses
+        # Use CEO worker ID for board responses (CEO represents the board)
         import uuid
+
+        ceo = self.get_ceo()
+        if not ceo:
+            logger.warning("Cannot send board response: CEO worker not found")
+            return False
 
         response_id = f"msg-{str(uuid.uuid4())[:8]}"
         now = datetime.now()
@@ -1105,8 +1110,8 @@ class QuinnAIOrgConnection(OrgConnection):
                 """INSERT INTO messages
                    (id, channel_id, thread_id, parent_id, from_worker_id, content,
                     priority, time_sensitivity, created_at)
-                   VALUES (?, ?, ?, ?, 'board', ?, 3, 'immediate', ?)""",
-                (response_id, channel_id, thread_id, message_id, response, now),
+                   VALUES (?, ?, ?, ?, ?, ?, 3, 'immediate', ?)""",
+                (response_id, channel_id, thread_id, message_id, ceo.id, response, now),
             )
             self._db.connection.commit()
 
