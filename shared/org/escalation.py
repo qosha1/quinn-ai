@@ -222,6 +222,7 @@ class BoardNotifier:
         db_path: str | None = None,
         client: BdClient | None = None,
         max_notifications: int | None = None,
+        message_creator: Any | None = None,
     ):
         """
         Initialize the board notifier.
@@ -234,11 +235,14 @@ class BoardNotifier:
             client: Optional BdClient instance (for dependency injection).
             max_notifications: Max notifications to keep in memory (prevents leak).
                 Defaults to 1000. Older notifications are discarded.
+            message_creator: Optional MessageCreator for board messages.
         """
         self._callback = notification_callback
         self._client = client or BdClient(bd_command=bd_command, db_path=db_path)
         max_size = max_notifications or self.DEFAULT_MAX_NOTIFICATIONS
         self._notifications: deque[dict[str, Any]] = deque(maxlen=max_size)
+        self._message_creator = message_creator
+        self._db_path = db_path
 
     def notify(self, issue: str, context: dict[str, Any]) -> str | None:
         """
@@ -278,48 +282,38 @@ class BoardNotifier:
         if not bead_id:
             logger.warning("Failed to create board escalation bead for: %s", issue[:50])
 
-        # Create message in board-channel for board to see
-        try:
-            from cli.core.queries import create_message_with_notifications, generate_id
-            from cli.core.constants import DEFAULT_BOARD_CHANNEL
-            from cli.core.db import Database
-
-            # Get database connection from BdClient's db_path
-            if self._client._db_path:
-                db = Database(self._client._db_path)
-
-                # Get board-channel ID
-                board_channel_row = db.fetchone(
-                    "SELECT id FROM channels WHERE name = ?",
-                    (DEFAULT_BOARD_CHANNEL,)
+        # Create board message if message_creator provided
+        if self._message_creator and self._db_path:
+            try:
+                from_worker_id = context.get("worker_id", "system")
+                escalation_path = " → ".join(context.get("escalation_path", []))
+                message_content = (
+                    f"**ESCALATION**\n\n"
+                    f"{issue}\n\n"
+                    f"**Path:** {escalation_path}\n\n"
+                    f"**Context:**\n```json\n{json.dumps(context, indent=2)}\n```"
                 )
 
-                if board_channel_row:
-                    # Format escalation message
-                    from_worker_id = context.get("worker_id", "system")
-                    escalation_path = " → ".join(context.get("escalation_path", []))
-                    message_content = (
-                        f"**ESCALATION**\n\n"
-                        f"{issue}\n\n"
-                        f"**Path:** {escalation_path}\n\n"
-                        f"**Context:**\n```json\n{json.dumps(context, indent=2)}\n```"
+                message_id = self._message_creator.create_board_message(
+                    channel_name="board-channel",
+                    from_worker_id=from_worker_id,
+                    content=message_content,
+                    priority=4,  # Critical
+                    time_sensitivity="immediate",
+                )
+
+                if message_id:
+                    logger.info(
+                        f"Created board message {message_id} for escalation {bead_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"Failed to create board message for escalation {bead_id}"
                     )
 
-                    # Create message with notifications
-                    create_message_with_notifications(
-                        db=db,
-                        channel_id=board_channel_row["id"],
-                        from_worker_id=from_worker_id,
-                        content=message_content,
-                        priority=4,  # Critical priority
-                        time_sensitivity="immediate",
-                        message_id=generate_id("msg"),
-                    )
-
-                db.close()
-        except Exception as e:
-            # Don't fail escalation if message creation fails
-            logger.warning(f"Failed to create board-channel message for escalation: {e}")
+            except Exception as e:
+                # During development, log but don't fail
+                logger.error(f"Board message creation failed: {e}", exc_info=True)
 
         # Invoke callback for immediate notification
         if self._callback:

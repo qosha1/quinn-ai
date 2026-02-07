@@ -142,15 +142,25 @@ class TestEscalationMessageCreation:
         # Import escalation system
         from shared.org.escalation import BoardNotifier
         from shared.bd import BdClient
+        from cli.core.messaging import BoardMessageCreator
 
-        # Create board notifier with callback
+        # Create board notifier with callback and message creator
         notifications = []
         def on_notify(issue: str, context: dict):
             notifications.append({"issue": issue, "context": context})
 
+        message_creator = BoardMessageCreator(db_path)
+
+        # Mock BdClient to avoid bd CLI calls (we're testing message creation, not bead creation)
+        mock_client = MagicMock(spec=BdClient)
+        mock_client.create_issue.return_value = "test-bead-id"
+        mock_client._db_path = str(db_path)
+
         notifier = BoardNotifier(
             notification_callback=on_notify,
             db_path=str(db_path),
+            message_creator=message_creator,
+            client=mock_client,
         )
 
         # Trigger escalation
@@ -163,13 +173,10 @@ class TestEscalationMessageCreation:
         bead_id = notifier.notify(issue, context)
         assert bead_id is not None
 
-        # Verify: Bead created (existing behavior)
-        client = BdClient(db_path=str(db_path))
-        beads = client.list_issues()
-        escalation_beads = [b for b in beads if b.get("type") == "board_escalation"]
-        assert len(escalation_beads) >= 1
+        # Verify: Bead creation was called on mock
+        mock_client.create_issue.assert_called_once()
 
-        # Verify: Message ALSO created in board-channel (NEW behavior)
+        # Verify: Message created in board-channel (NEW behavior - this is what we're testing)
         conn = QuinnAIOrgConnection(org_path)
         messages = conn.get_board_messages()
 
@@ -614,8 +621,20 @@ class TestFullInterventionFlow:
 
         # Step 1: Create escalation
         from shared.org.escalation import BoardNotifier
+        from shared.bd import BdClient
+        from cli.core.messaging import BoardMessageCreator
 
-        notifier = BoardNotifier(db_path=str(db_path))
+        # Mock BdClient to avoid bd CLI dependency
+        mock_client = MagicMock(spec=BdClient)
+        mock_client.create_issue.return_value = "test-escalation-bead"
+        mock_client._db_path = str(db_path)
+
+        message_creator = BoardMessageCreator(db_path)
+        notifier = BoardNotifier(
+            db_path=str(db_path),
+            message_creator=message_creator,
+            client=mock_client,
+        )
 
         issue = "Worker is repeatedly failing tasks"
         context = {
