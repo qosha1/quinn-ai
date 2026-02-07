@@ -33,200 +33,108 @@ def org_with_budget_balances():
     with tempfile.TemporaryDirectory() as tmpdir:
         org_path = Path(tmpdir) / "test-org-with-balances"
         org_path.mkdir()
-        live_path = org_path / "live"
-        live_path.mkdir()
 
-        db_path = live_path / "quinn.db"
+        # Create database with production schema
+        db_path = create_test_org_db(
+            org_path,
+            org_name="test-org-with-balances",
+            status="running",
+            include_ceo=True,
+            ceo_name="Alice",
+            include_board_channel=False,
+        )
+
         conn = sqlite3.connect(str(db_path))
 
-        # Create all required tables
-        conn.executescript("""
-            CREATE TABLE org_state (
-                id TEXT PRIMARY KEY,
-                status TEXT,
-                ceo_worker_id TEXT,
-                started_at TEXT,
-                stopped_at TEXT
-            );
-
-            CREATE TABLE teams (
-                id TEXT PRIMARY KEY,
-                name TEXT
-            );
-
-            CREATE TABLE workers (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                role TEXT,
-                team_id TEXT,
-                manager_id TEXT,
-                status TEXT,
-                created_at TEXT,
-                FOREIGN KEY (team_id) REFERENCES teams(id)
-            );
-
-            CREATE TABLE sessions (
-                id TEXT PRIMARY KEY,
-                worker_id TEXT,
-                state TEXT,
-                tmux_session_name TEXT,
-                FOREIGN KEY (worker_id) REFERENCES workers(id)
-            );
-
-            CREATE TABLE worker_state (
-                id INTEGER PRIMARY KEY,
-                worker_id TEXT,
-                runtime_status TEXT,
-                current_task_id TEXT,
-                FOREIGN KEY (worker_id) REFERENCES workers(id)
-            );
-
-            CREATE TABLE channels (
-                id TEXT PRIMARY KEY,
-                name TEXT
-            );
-
-            CREATE TABLE messages (
-                id TEXT PRIMARY KEY,
-                channel_id TEXT,
-                thread_id TEXT,
-                parent_id TEXT,
-                from_worker_id TEXT,
-                content TEXT,
-                priority INTEGER,
-                time_sensitivity TEXT,
-                created_at TEXT,
-                FOREIGN KEY (channel_id) REFERENCES channels(id)
-            );
-
-            CREATE TABLE notification_beads (
-                id TEXT PRIMARY KEY,
-                message_id TEXT,
-                status TEXT,
-                read_at TEXT,
-                FOREIGN KEY (message_id) REFERENCES messages(id)
-            );
-
-            CREATE TABLE okrs (
-                id TEXT PRIMARY KEY,
-                title TEXT,
-                description TEXT,
-                owner_worker_id TEXT,
-                status TEXT,
-                parent_okr_id TEXT,
-                key_results TEXT,
-                due_date TEXT,
-                created_at TEXT,
-                FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
-            );
-
-            CREATE TABLE budget_pools (
-                id TEXT PRIMARY KEY,
-                period_start TEXT,
-                period_end TEXT,
-                created_at TEXT
-            );
-
-            CREATE TABLE budget_allocations (
-                id TEXT PRIMARY KEY,
-                pool_id TEXT,
-                worker_id TEXT,
-                FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
-            );
-
-            CREATE TABLE budget_balances (
-                id TEXT PRIMARY KEY,
-                allocation_id TEXT,
-                allocated REAL,
-                spent REAL,
-                available REAL,
-                FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
-            );
-
-            CREATE TABLE budget_transactions (
-                id TEXT PRIMARY KEY,
-                type TEXT,
-                amount REAL,
-                created_at TEXT
-            );
-        """)
-
-        # Insert test data
+        # Schema already created by shared utility
+        # Add additional test data
         now = datetime.now()
         period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         period_end = period_start + timedelta(days=30)
 
+        # Add Engineering team
+        conn.execute("INSERT INTO teams (id, name) VALUES ('team-eng', 'Engineering')")
+
+        # Add developer worker (CEO already created)
         conn.execute("""
-            INSERT INTO org_state (id, status, ceo_worker_id, started_at)
-            VALUES ('default', 'running', 'worker-ceo', ?)
+            INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at)
+            VALUES ('worker-dev1', 'Bob', 'Developer', 'team-eng', 'worker-ceo', 'active', 50, ?)
         """, (now.isoformat(),))
 
-        conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
-        conn.execute("INSERT INTO teams VALUES ('team-eng', 'Engineering')")
-
+        # Add developer session (CEO session already created if status='running')
         conn.execute("""
-            INSERT INTO workers VALUES
-            ('worker-ceo', 'Alice', 'CEO', 'team-exec', NULL, 'active', ?)
-        """, (now.isoformat(),))
-        conn.execute("""
-            INSERT INTO workers VALUES
-            ('worker-dev1', 'Bob', 'Developer', 'team-eng', 'worker-ceo', 'active', ?)
+            INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state, created_at)
+            VALUES ('session-dev1', 'worker-dev1', 'claude_code', 'claude-code', 'org-test-org-dev1', 'idle', ?)
         """, (now.isoformat(),))
 
-        conn.execute("""
-            INSERT INTO sessions VALUES
-            ('session-ceo', 'worker-ceo', 'running', 'org-test-org-ceo')
-        """)
-        conn.execute("""
-            INSERT INTO sessions VALUES
-            ('session-dev1', 'worker-dev1', 'idle', 'org-test-org-dev1')
-        """)
-
-        conn.execute("INSERT INTO channels VALUES ('ch-esc', 'escalations')")
+        # Add escalations channel
+        conn.execute("INSERT INTO channels (id, name, type) VALUES ('ch-esc', 'escalations', 'topic')")
 
         # Add unread messages
         conn.execute("""
-            INSERT INTO messages VALUES
-            ('msg-1', 'ch-esc', NULL, NULL, 'worker-dev1', 'Need help with API design', 3, 'normal', ?)
+            INSERT INTO messages (id, channel_id, thread_id, parent_id, from_worker_id, content, priority, time_sensitivity, created_at)
+            VALUES ('msg-1', 'ch-esc', NULL, NULL, 'worker-dev1', 'Need help with API design', 3, 'hours', ?)
         """, (now.isoformat(),))
         conn.execute("""
-            INSERT INTO notification_beads VALUES ('nb-1', 'msg-1', 'pending', NULL)
-        """)
+            INSERT INTO notification_beads (id, worker_id, message_id, channel_id, status, priority, created_at)
+            VALUES ('nb-1', 'worker-ceo', 'msg-1', 'ch-esc', 'pending', 3, ?)
+        """, (now.isoformat(),))
 
-        # Create budget pool with balances
+        # Create budget pool
         conn.execute("""
-            INSERT INTO budget_pools VALUES
-            ('pool-1', ?, ?, ?)
+            INSERT INTO budget_pools (id, name, total_credits, period_start, period_end, created_at, updated_at)
+            VALUES ('pool-1', 'Q1 Budget', 1000.00, ?, ?, ?, ?)
+        """, (period_start.isoformat(), period_end.isoformat(), now.isoformat(), now.isoformat()))
+
+        # Create budget allocations
+        conn.execute("""
+            INSERT INTO budget_allocations (
+                id, worker_id, pool_id, allocated_credits, spent_credits, reserved_credits,
+                period_start, period_end, can_delegate, created_at, updated_at
+            )
+            VALUES ('alloc-ceo', 'worker-ceo', 'pool-1', 100.0, 0.0, 0.0, ?, ?, 0, ?, ?)
+        """, (period_start.isoformat(), period_end.isoformat(), now.isoformat(), now.isoformat()))
+        conn.execute("""
+            INSERT INTO budget_allocations (
+                id, worker_id, pool_id, allocated_credits, spent_credits, reserved_credits,
+                period_start, period_end, can_delegate, created_at, updated_at
+            )
+            VALUES ('alloc-dev1', 'worker-dev1', 'pool-1', 50.0, 0.0, 0.0, ?, ?, 0, ?, ?)
+        """, (period_start.isoformat(), period_end.isoformat(), now.isoformat(), now.isoformat()))
+
+        # Create budget balances (correct state)
+        conn.execute("""
+            INSERT INTO budget_balances (
+                allocation_id, worker_id, allocated, spent, reserved, available, delegated,
+                period_start, period_end, updated_at
+            )
+            VALUES ('alloc-ceo', 'worker-ceo', 100.0, 25.50, 0.0, 74.50, 0.0, ?, ?, ?)
+        """, (period_start.isoformat(), period_end.isoformat(), now.isoformat()))
+        conn.execute("""
+            INSERT INTO budget_balances (
+                allocation_id, worker_id, allocated, spent, reserved, available, delegated,
+                period_start, period_end, updated_at
+            )
+            VALUES ('alloc-dev1', 'worker-dev1', 50.0, 12.75, 0.0, 37.25, 0.0, ?, ?, ?)
         """, (period_start.isoformat(), period_end.isoformat(), now.isoformat()))
 
-        conn.execute("""
-            INSERT INTO budget_allocations VALUES
-            ('alloc-ceo', 'pool-1', 'worker-ceo')
-        """)
-        conn.execute("""
-            INSERT INTO budget_allocations VALUES
-            ('alloc-dev1', 'pool-1', 'worker-dev1')
-        """)
-
-        # Populate budget_balances (correct state)
-        conn.execute("""
-            INSERT INTO budget_balances VALUES
-            ('bal-ceo', 'alloc-ceo', 100.0, 25.50, 74.50)
-        """)
-        conn.execute("""
-            INSERT INTO budget_balances VALUES
-            ('bal-dev1', 'alloc-dev1', 50.0, 12.75, 37.25)
-        """)
-
-        # Add spend transactions
+        # Add spend transactions for today
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         conn.execute("""
-            INSERT INTO budget_transactions VALUES
-            ('tx-1', 'spend', -5.25, ?)
+            INSERT INTO budget_transactions (
+                id, allocation_id, worker_id, type, amount, provider, model,
+                description, created_at
+            )
+            VALUES ('tx-1', 'alloc-ceo', 'worker-ceo', 'spend', -5.25, 'anthropic', 'claude-3-opus',
+                    'API call cost', ?)
         """, (today_start.isoformat(),))
         conn.execute("""
-            INSERT INTO budget_transactions VALUES
-            ('tx-2', 'spend', -3.10, ?)
+            INSERT INTO budget_transactions (
+                id, allocation_id, worker_id, type, amount, provider, model,
+                description, created_at
+            )
+            VALUES ('tx-2', 'alloc-dev1', 'worker-dev1', 'spend', -3.10, 'anthropic', 'claude-3-sonnet',
+                    'API call cost', ?)
         """, ((today_start + timedelta(hours=2)).isoformat(),))
 
         conn.commit()
@@ -245,158 +153,28 @@ def org_without_budget_balances():
     with tempfile.TemporaryDirectory() as tmpdir:
         org_path = Path(tmpdir) / "test-org-broken-budget"
         org_path.mkdir()
-        live_path = org_path / "live"
-        live_path.mkdir()
 
-        db_path = live_path / "quinn.db"
+        db_path = create_test_org_db(org_path, status="running", include_ceo=True)
         conn = sqlite3.connect(str(db_path))
-
-        # Create all required tables
-        conn.executescript("""
-            CREATE TABLE org_state (
-                id TEXT PRIMARY KEY,
-                status TEXT,
-                ceo_worker_id TEXT,
-                started_at TEXT,
-                stopped_at TEXT
-            );
-
-            CREATE TABLE teams (
-                id TEXT PRIMARY KEY,
-                name TEXT
-            );
-
-            CREATE TABLE workers (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                role TEXT,
-                team_id TEXT,
-                manager_id TEXT,
-                status TEXT,
-                created_at TEXT,
-                FOREIGN KEY (team_id) REFERENCES teams(id)
-            );
-
-            CREATE TABLE sessions (
-                id TEXT PRIMARY KEY,
-                worker_id TEXT,
-                state TEXT,
-                tmux_session_name TEXT,
-                FOREIGN KEY (worker_id) REFERENCES workers(id)
-            );
-
-            CREATE TABLE worker_state (
-                id INTEGER PRIMARY KEY,
-                worker_id TEXT,
-                runtime_status TEXT,
-                current_task_id TEXT,
-                FOREIGN KEY (worker_id) REFERENCES workers(id)
-            );
-
-            CREATE TABLE channels (
-                id TEXT PRIMARY KEY,
-                name TEXT
-            );
-
-            CREATE TABLE messages (
-                id TEXT PRIMARY KEY,
-                channel_id TEXT,
-                thread_id TEXT,
-                parent_id TEXT,
-                from_worker_id TEXT,
-                content TEXT,
-                priority INTEGER,
-                time_sensitivity TEXT,
-                created_at TEXT,
-                FOREIGN KEY (channel_id) REFERENCES channels(id)
-            );
-
-            CREATE TABLE notification_beads (
-                id TEXT PRIMARY KEY,
-                message_id TEXT,
-                status TEXT,
-                read_at TEXT,
-                FOREIGN KEY (message_id) REFERENCES messages(id)
-            );
-
-            CREATE TABLE okrs (
-                id TEXT PRIMARY KEY,
-                title TEXT,
-                description TEXT,
-                owner_worker_id TEXT,
-                status TEXT,
-                parent_okr_id TEXT,
-                key_results TEXT,
-                due_date TEXT,
-                created_at TEXT,
-                FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
-            );
-
-            CREATE TABLE budget_pools (
-                id TEXT PRIMARY KEY,
-                period_start TEXT,
-                period_end TEXT,
-                created_at TEXT
-            );
-
-            CREATE TABLE budget_allocations (
-                id TEXT PRIMARY KEY,
-                pool_id TEXT,
-                worker_id TEXT,
-                FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
-            );
-
-            CREATE TABLE budget_balances (
-                id TEXT PRIMARY KEY,
-                allocation_id TEXT,
-                allocated REAL,
-                spent REAL,
-                available REAL,
-                FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
-            );
-
-            CREATE TABLE budget_transactions (
-                id TEXT PRIMARY KEY,
-                type TEXT,
-                amount REAL,
-                created_at TEXT
-            );
-        """)
 
         # Insert test data
         now = datetime.now()
         period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         period_end = period_start + timedelta(days=30)
 
-        conn.execute("""
-            INSERT INTO org_state (id, status, ceo_worker_id, started_at)
-            VALUES ('default', 'running', 'worker-ceo', ?)
-        """, (now.isoformat(),))
-
-        conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
-
-        conn.execute("""
-            INSERT INTO workers VALUES
-            ('worker-ceo', 'Alice', 'CEO', 'team-exec', NULL, 'active', ?)
-        """, (now.isoformat(),))
-
-        conn.execute("""
-            INSERT INTO sessions VALUES
-            ('session-ceo', 'worker-ceo', 'running', 'org-test-org-ceo')
-        """)
-
-        conn.execute("INSERT INTO channels VALUES ('ch-esc', 'escalations')")
-
         # Create budget pool with allocations but NO balances (broken state)
         conn.execute("""
-            INSERT INTO budget_pools VALUES
-            ('pool-1', ?, ?, ?)
-        """, (period_start.isoformat(), period_end.isoformat(), now.isoformat()))
+            INSERT INTO budget_pools (id, name, total_credits, period_start, period_end, created_at, updated_at)
+            VALUES ('pool-1', 'Q1 Budget', 1000.00, ?, ?, ?, ?)
+        """, (period_start.isoformat(), period_end.isoformat(), now.isoformat(), now.isoformat()))
 
         conn.execute("""
-            INSERT INTO budget_allocations VALUES
-            ('alloc-ceo', 'pool-1', 'worker-ceo')
-        """)
+            INSERT INTO budget_allocations (
+                id, worker_id, pool_id, allocated_credits, spent_credits, reserved_credits,
+                period_start, period_end, can_delegate, created_at, updated_at
+            )
+            VALUES ('alloc-ceo', 'worker-ceo', 'pool-1', 100.0, 0.0, 0.0, ?, ?, 0, ?, ?)
+        """, (period_start.isoformat(), period_end.isoformat(), now.isoformat(), now.isoformat()))
 
         # IMPORTANT: budget_balances table exists but is EMPTY
         # This is the broken state we're testing
@@ -413,182 +191,59 @@ def org_with_active_workers():
     with tempfile.TemporaryDirectory() as tmpdir:
         org_path = Path(tmpdir) / "test-org-active"
         org_path.mkdir()
-        live_path = org_path / "live"
-        live_path.mkdir()
 
-        db_path = live_path / "quinn.db"
+        db_path = create_test_org_db(org_path, status="running", include_ceo=True)
         conn = sqlite3.connect(str(db_path))
-
-        # Create all required tables
-        conn.executescript("""
-            CREATE TABLE org_state (
-                id TEXT PRIMARY KEY,
-                status TEXT,
-                ceo_worker_id TEXT,
-                started_at TEXT,
-                stopped_at TEXT
-            );
-
-            CREATE TABLE teams (
-                id TEXT PRIMARY KEY,
-                name TEXT
-            );
-
-            CREATE TABLE workers (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                role TEXT,
-                team_id TEXT,
-                manager_id TEXT,
-                status TEXT,
-                created_at TEXT,
-                FOREIGN KEY (team_id) REFERENCES teams(id)
-            );
-
-            CREATE TABLE sessions (
-                id TEXT PRIMARY KEY,
-                worker_id TEXT,
-                state TEXT,
-                tmux_session_name TEXT,
-                FOREIGN KEY (worker_id) REFERENCES workers(id)
-            );
-
-            CREATE TABLE worker_state (
-                id INTEGER PRIMARY KEY,
-                worker_id TEXT,
-                runtime_status TEXT,
-                current_task_id TEXT,
-                FOREIGN KEY (worker_id) REFERENCES workers(id)
-            );
-
-            CREATE TABLE channels (
-                id TEXT PRIMARY KEY,
-                name TEXT
-            );
-
-            CREATE TABLE messages (
-                id TEXT PRIMARY KEY,
-                channel_id TEXT,
-                thread_id TEXT,
-                parent_id TEXT,
-                from_worker_id TEXT,
-                content TEXT,
-                priority INTEGER,
-                time_sensitivity TEXT,
-                created_at TEXT,
-                FOREIGN KEY (channel_id) REFERENCES channels(id)
-            );
-
-            CREATE TABLE notification_beads (
-                id TEXT PRIMARY KEY,
-                message_id TEXT,
-                status TEXT,
-                read_at TEXT,
-                FOREIGN KEY (message_id) REFERENCES messages(id)
-            );
-
-            CREATE TABLE okrs (
-                id TEXT PRIMARY KEY,
-                title TEXT,
-                description TEXT,
-                owner_worker_id TEXT,
-                status TEXT,
-                parent_okr_id TEXT,
-                key_results TEXT,
-                due_date TEXT,
-                created_at TEXT,
-                FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
-            );
-
-            CREATE TABLE budget_pools (
-                id TEXT PRIMARY KEY,
-                period_start TEXT,
-                period_end TEXT,
-                created_at TEXT
-            );
-
-            CREATE TABLE budget_allocations (
-                id TEXT PRIMARY KEY,
-                pool_id TEXT,
-                worker_id TEXT,
-                FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
-            );
-
-            CREATE TABLE budget_balances (
-                id TEXT PRIMARY KEY,
-                allocation_id TEXT,
-                allocated REAL,
-                spent REAL,
-                available REAL,
-                FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
-            );
-
-            CREATE TABLE budget_transactions (
-                id TEXT PRIMARY KEY,
-                type TEXT,
-                amount REAL,
-                created_at TEXT
-            );
-        """)
 
         # Insert test data with 3 active workers
         now = datetime.now()
         period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         period_end = period_start + timedelta(days=30)
 
+        # Add Engineering team (Executive and CEO already created by shared utility)
+        conn.execute("INSERT INTO teams (id, name) VALUES ('team-eng', 'Engineering')")
+
+        # Add 2 developers (CEO already exists from shared utility)
         conn.execute("""
-            INSERT INTO org_state (id, status, ceo_worker_id, started_at)
-            VALUES ('default', 'running', 'worker-ceo', ?)
+            INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at)
+            VALUES ('worker-dev1', 'Bob', 'Developer', 'team-eng', 'worker-ceo', 'pending', 50, ?)
+        """, (now.isoformat(),))
+        conn.execute("""
+            INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at)
+            VALUES ('worker-dev2', 'Charlie', 'Developer', 'team-eng', 'worker-ceo', 'pending', 50, ?)
         """, (now.isoformat(),))
 
-        conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
-        conn.execute("INSERT INTO teams VALUES ('team-eng', 'Engineering')")
-
-        # CEO + 2 developers
+        # All 3 have active sessions (CEO session already created by shared utility)
         conn.execute("""
-            INSERT INTO workers VALUES
-            ('worker-ceo', 'Alice', 'CEO', 'team-exec', NULL, 'active', ?)
-        """, (now.isoformat(),))
-        conn.execute("""
-            INSERT INTO workers VALUES
-            ('worker-dev1', 'Bob', 'Developer', 'team-eng', 'worker-ceo', 'active', ?)
-        """, (now.isoformat(),))
-        conn.execute("""
-            INSERT INTO workers VALUES
-            ('worker-dev2', 'Charlie', 'Developer', 'team-eng', 'worker-ceo', 'active', ?)
-        """, (now.isoformat(),))
-
-        # All 3 have active sessions
-        conn.execute("""
-            INSERT INTO sessions VALUES
-            ('session-ceo', 'worker-ceo', 'running', 'org-test-org-ceo')
+            INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state)
+            VALUES ('session-dev1', 'worker-dev1', 'claude_code', 'claude-code', 'org-test-org-dev1', 'running')
         """)
         conn.execute("""
-            INSERT INTO sessions VALUES
-            ('session-dev1', 'worker-dev1', 'running', 'org-test-org-dev1')
+            INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state)
+            VALUES ('session-dev2', 'worker-dev2', 'claude_code', 'claude-code', 'org-test-org-dev2', 'idle')
         """)
-        conn.execute("""
-            INSERT INTO sessions VALUES
-            ('session-dev2', 'worker-dev2', 'idle', 'org-test-org-dev2')
-        """)
-
-        conn.execute("INSERT INTO channels VALUES ('ch-esc', 'escalations')")
 
         # Create budget pool with balances
         conn.execute("""
-            INSERT INTO budget_pools VALUES
-            ('pool-1', ?, ?, ?)
+            INSERT INTO budget_pools (id, name, total_credits, period_start, period_end, created_at, updated_at)
+            VALUES ('pool-1', 'Q1 Budget', 1000.00, ?, ?, ?, ?)
+        """, (period_start.isoformat(), period_end.isoformat(), now.isoformat(), now.isoformat()))
+
+        conn.execute("""
+            INSERT INTO budget_allocations (
+                id, worker_id, pool_id, allocated_credits, spent_credits, reserved_credits,
+                period_start, period_end, can_delegate, created_at, updated_at
+            )
+            VALUES ('alloc-ceo', 'worker-ceo', 'pool-1', 100.0, 0.0, 0.0, ?, ?, 0, ?, ?)
+        """, (period_start.isoformat(), period_end.isoformat(), now.isoformat(), now.isoformat()))
+
+        conn.execute("""
+            INSERT INTO budget_balances (
+                allocation_id, worker_id, allocated, spent, reserved, available, delegated,
+                period_start, period_end, updated_at
+            )
+            VALUES ('alloc-ceo', 'worker-ceo', 100.0, 0.0, 0.0, 100.0, 0.0, ?, ?, ?)
         """, (period_start.isoformat(), period_end.isoformat(), now.isoformat()))
-
-        conn.execute("""
-            INSERT INTO budget_allocations VALUES
-            ('alloc-ceo', 'pool-1', 'worker-ceo')
-        """)
-
-        conn.execute("""
-            INSERT INTO budget_balances VALUES
-            ('bal-ceo', 'alloc-ceo', 100.0, 0.0, 100.0)
-        """)
 
         conn.commit()
         conn.close()
@@ -677,145 +332,8 @@ class TestE2EDashboard:
         with tempfile.TemporaryDirectory() as tmpdir:
             org_path = Path(tmpdir) / "test-org"
             org_path.mkdir()
-            live_path = org_path / "live"
-            live_path.mkdir()
 
-            db_path = live_path / "quinn.db"
-            conn = sqlite3.connect(str(db_path))
-
-            # Minimal org setup
-            conn.executescript("""
-                CREATE TABLE org_state (
-                    id TEXT PRIMARY KEY,
-                    status TEXT,
-                    ceo_worker_id TEXT,
-                    started_at TEXT,
-                    stopped_at TEXT
-                );
-
-                CREATE TABLE teams (
-                    id TEXT PRIMARY KEY,
-                    name TEXT
-                );
-
-                CREATE TABLE workers (
-                    id TEXT PRIMARY KEY,
-                    name TEXT,
-                    role TEXT,
-                    team_id TEXT,
-                    manager_id TEXT,
-                    status TEXT,
-                    created_at TEXT,
-                    FOREIGN KEY (team_id) REFERENCES teams(id)
-                );
-
-                CREATE TABLE sessions (
-                    id TEXT PRIMARY KEY,
-                    worker_id TEXT,
-                    state TEXT,
-                    tmux_session_name TEXT,
-                    FOREIGN KEY (worker_id) REFERENCES workers(id)
-                );
-
-                CREATE TABLE worker_state (
-                    id INTEGER PRIMARY KEY,
-                    worker_id TEXT,
-                    runtime_status TEXT,
-                    current_task_id TEXT,
-                    FOREIGN KEY (worker_id) REFERENCES workers(id)
-                );
-
-                CREATE TABLE channels (
-                    id TEXT PRIMARY KEY,
-                    name TEXT
-                );
-
-                CREATE TABLE messages (
-                    id TEXT PRIMARY KEY,
-                    channel_id TEXT,
-                    thread_id TEXT,
-                    parent_id TEXT,
-                    from_worker_id TEXT,
-                    content TEXT,
-                    priority INTEGER,
-                    time_sensitivity TEXT,
-                    created_at TEXT,
-                    FOREIGN KEY (channel_id) REFERENCES channels(id)
-                );
-
-                CREATE TABLE notification_beads (
-                    id TEXT PRIMARY KEY,
-                    message_id TEXT,
-                    status TEXT,
-                    read_at TEXT,
-                    FOREIGN KEY (message_id) REFERENCES messages(id)
-                );
-
-                CREATE TABLE okrs (
-                    id TEXT PRIMARY KEY,
-                    title TEXT,
-                    description TEXT,
-                    owner_worker_id TEXT,
-                    status TEXT,
-                    parent_okr_id TEXT,
-                    key_results TEXT,
-                    due_date TEXT,
-                    created_at TEXT,
-                    FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
-                );
-
-                CREATE TABLE budget_pools (
-                    id TEXT PRIMARY KEY,
-                    period_start TEXT,
-                    period_end TEXT,
-                    created_at TEXT
-                );
-
-                CREATE TABLE budget_allocations (
-                    id TEXT PRIMARY KEY,
-                    pool_id TEXT,
-                    worker_id TEXT,
-                    FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
-                );
-
-                CREATE TABLE budget_balances (
-                    id TEXT PRIMARY KEY,
-                    allocation_id TEXT,
-                    allocated REAL,
-                    spent REAL,
-                    available REAL,
-                    FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
-                );
-
-                CREATE TABLE budget_transactions (
-                    id TEXT PRIMARY KEY,
-                    type TEXT,
-                    amount REAL,
-                    created_at TEXT
-                );
-            """)
-
-            now = datetime.now()
-            conn.execute("""
-                INSERT INTO org_state (id, status, ceo_worker_id, started_at)
-                VALUES ('default', 'running', 'worker-ceo', ?)
-            """, (now.isoformat(),))
-
-            conn.execute("INSERT INTO teams VALUES ('team-exec', 'Executive')")
-            conn.execute("""
-                INSERT INTO workers VALUES
-                ('worker-ceo', 'TestCEO', 'CEO', 'team-exec', NULL, 'active', ?)
-            """, (now.isoformat(),))
-
-            conn.execute("""
-                INSERT INTO sessions VALUES
-                ('session-ceo', 'worker-ceo', 'running', 'org-test-org-ceo')
-            """)
-
-            conn.execute("INSERT INTO channels VALUES ('ch-esc', 'escalations')")
-
-            conn.commit()
-            conn.close()
+            db_path = create_test_org_db(org_path, status="running", include_ceo=True)
 
             async with app.run_test() as pilot:
                 await pilot.pause()
@@ -841,132 +359,8 @@ class TestE2EDashboard:
         with tempfile.TemporaryDirectory() as tmpdir:
             org_path = Path(tmpdir) / "fresh-org"
             org_path.mkdir()
-            live_path = org_path / "live"
-            live_path.mkdir()
 
-            db_path = live_path / "quinn.db"
-            conn = sqlite3.connect(str(db_path))
-
-            # Minimal fresh org - no workers, no sessions, no budget
-            conn.executescript("""
-                CREATE TABLE org_state (
-                    id TEXT PRIMARY KEY,
-                    status TEXT,
-                    ceo_worker_id TEXT,
-                    started_at TEXT,
-                    stopped_at TEXT
-                );
-
-                CREATE TABLE teams (
-                    id TEXT PRIMARY KEY,
-                    name TEXT
-                );
-
-                CREATE TABLE workers (
-                    id TEXT PRIMARY KEY,
-                    name TEXT,
-                    role TEXT,
-                    team_id TEXT,
-                    manager_id TEXT,
-                    status TEXT,
-                    created_at TEXT,
-                    FOREIGN KEY (team_id) REFERENCES teams(id)
-                );
-
-                CREATE TABLE sessions (
-                    id TEXT PRIMARY KEY,
-                    worker_id TEXT,
-                    state TEXT,
-                    tmux_session_name TEXT,
-                    FOREIGN KEY (worker_id) REFERENCES workers(id)
-                );
-
-                CREATE TABLE worker_state (
-                    id INTEGER PRIMARY KEY,
-                    worker_id TEXT,
-                    runtime_status TEXT,
-                    current_task_id TEXT,
-                    FOREIGN KEY (worker_id) REFERENCES workers(id)
-                );
-
-                CREATE TABLE channels (
-                    id TEXT PRIMARY KEY,
-                    name TEXT
-                );
-
-                CREATE TABLE messages (
-                    id TEXT PRIMARY KEY,
-                    channel_id TEXT,
-                    thread_id TEXT,
-                    parent_id TEXT,
-                    from_worker_id TEXT,
-                    content TEXT,
-                    priority INTEGER,
-                    time_sensitivity TEXT,
-                    created_at TEXT,
-                    FOREIGN KEY (channel_id) REFERENCES channels(id)
-                );
-
-                CREATE TABLE notification_beads (
-                    id TEXT PRIMARY KEY,
-                    message_id TEXT,
-                    status TEXT,
-                    read_at TEXT,
-                    FOREIGN KEY (message_id) REFERENCES messages(id)
-                );
-
-                CREATE TABLE okrs (
-                    id TEXT PRIMARY KEY,
-                    title TEXT,
-                    description TEXT,
-                    owner_worker_id TEXT,
-                    status TEXT,
-                    parent_okr_id TEXT,
-                    key_results TEXT,
-                    due_date TEXT,
-                    created_at TEXT,
-                    FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
-                );
-
-                CREATE TABLE budget_pools (
-                    id TEXT PRIMARY KEY,
-                    period_start TEXT,
-                    period_end TEXT,
-                    created_at TEXT
-                );
-
-                CREATE TABLE budget_allocations (
-                    id TEXT PRIMARY KEY,
-                    pool_id TEXT,
-                    worker_id TEXT,
-                    FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
-                );
-
-                CREATE TABLE budget_balances (
-                    id TEXT PRIMARY KEY,
-                    allocation_id TEXT,
-                    allocated REAL,
-                    spent REAL,
-                    available REAL,
-                    FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
-                );
-
-                CREATE TABLE budget_transactions (
-                    id TEXT PRIMARY KEY,
-                    type TEXT,
-                    amount REAL,
-                    created_at TEXT
-                );
-            """)
-
-            # Uninitialized org state
-            conn.execute("""
-                INSERT INTO org_state (id, status, ceo_worker_id, started_at)
-                VALUES ('default', 'initialized', NULL, NULL)
-            """)
-
-            conn.commit()
-            conn.close()
+            db_path = create_test_org_db(org_path, status="initialized", include_ceo=False)
 
             config = BoardConfig(org_paths=[Path(tmpdir)])
             app = BoardApp(config)
@@ -1014,11 +408,12 @@ class TestE2EDashboard:
             await dashboard.refresh_data()
             await pilot.pause()
 
-            # Verify CEO status is displayed
+            # Verify CEO status is displayed (shows session state, not worker status)
             ceo_status_label = app.query_one("#ceo-status", Label)
             status_text = get_label_text(ceo_status_label)
             assert "Status:" in status_text
-            assert status_text in ("Status: Active", "Status: Inactive")
+            # Session states: running, idle, stopped, crashed
+            assert any(state in status_text for state in ["Idle", "Running", "Stopped", "Crashed"])
 
     @pytest.mark.asyncio
     async def test_dashboard_metric_cards_exist(self, org_with_budget_balances):

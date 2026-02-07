@@ -786,7 +786,10 @@ class TestBoardChannelMessages:
         now = datetime.now().isoformat()
 
         # Create another channel
-        conn_db.execute("INSERT INTO channels VALUES ('ch-team', 'team-eng', 'team')")
+        conn_db.execute("""
+            INSERT INTO channels (id, name, type, team_id, created_at)
+            VALUES ('ch-team', 'team-eng', 'team', NULL, ?)
+        """, (now,))
 
         # Add message to team channel
         conn_db.execute("""

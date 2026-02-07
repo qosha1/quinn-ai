@@ -26,226 +26,13 @@ from board_ui.config import BoardConfig
 from board_ui.services.org_connection import QuinnAIOrgConnection
 from board_ui.widgets.ceo_briefing import CEOBriefingWidget
 
+from .conftest import create_test_org_db
+
 
 # ==================
 # TEST FIXTURES
 # ==================
-
-
-def create_org_db(
-    org_path: Path,
-    status: str = "initialized",
-    include_ceo: bool = True,
-    include_board_channel: bool = True,
-) -> Path:
-    """Create a complete org database for testing.
-
-    Args:
-        org_path: Path to org folder
-        status: Org status ('uninitialized', 'initialized', 'running', 'stopped')
-        include_ceo: Whether to create CEO worker
-        include_board_channel: Whether to create board-channel
-
-    Returns:
-        Path to created database
-    """
-    live_path = org_path / "live"
-    live_path.mkdir(parents=True, exist_ok=True)
-
-    db_path = live_path / "quinn.db"
-    conn = sqlite3.connect(str(db_path))
-
-    # Create all required tables
-    conn.executescript("""
-        CREATE TABLE org_state (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL DEFAULT 'My Organization',
-            status TEXT,
-            ceo_worker_id TEXT,
-            started_at TEXT,
-            stopped_at TEXT,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE teams (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            parent_team_id TEXT,
-            lead_id TEXT,
-            channel_id TEXT,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (parent_team_id) REFERENCES teams(id) ON DELETE SET NULL,
-            FOREIGN KEY (lead_id) REFERENCES workers(id) ON DELETE SET NULL,
-            FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE SET NULL
-        );
-
-        CREATE TABLE workers (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            role TEXT NOT NULL,
-            team_id TEXT NOT NULL,
-            manager_id TEXT,
-            status TEXT NOT NULL,
-            skills TEXT NOT NULL DEFAULT '{}',
-            cost INTEGER NOT NULL DEFAULT 50,
-            hiring_authority_scope TEXT,
-            delegated_budget INTEGER NOT NULL DEFAULT 0,
-            max_reports INTEGER NOT NULL DEFAULT 10,
-            offboarding_ask_bead_id TEXT,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (team_id) REFERENCES teams(id),
-            FOREIGN KEY (manager_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE sessions (
-            id TEXT PRIMARY KEY,
-            worker_id TEXT,
-            state TEXT,
-            tmux_session_name TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE worker_state (
-            id INTEGER PRIMARY KEY,
-            worker_id TEXT,
-            runtime_status TEXT,
-            current_task_id TEXT,
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE channels (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            type TEXT NOT NULL CHECK(type IN ('team', 'topic', 'direct')),
-            team_id TEXT,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE channel_subscriptions (
-            id INTEGER PRIMARY KEY,
-            channel_id TEXT,
-            worker_id TEXT,
-            subscribed_at TEXT,
-            FOREIGN KEY (channel_id) REFERENCES channels(id),
-            FOREIGN KEY (worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            channel_id TEXT,
-            thread_id TEXT,
-            parent_id TEXT,
-            from_worker_id TEXT,
-            content TEXT,
-            priority INTEGER,
-            time_sensitivity TEXT,
-            created_at TEXT,
-            FOREIGN KEY (channel_id) REFERENCES channels(id)
-        );
-
-        CREATE TABLE notification_beads (
-            id TEXT PRIMARY KEY,
-            worker_id TEXT,
-            message_id TEXT,
-            channel_id TEXT,
-            status TEXT,
-            priority INTEGER DEFAULT 2,
-            read_at TEXT,
-            created_at TEXT,
-            expires_at TEXT,
-            FOREIGN KEY (message_id) REFERENCES messages(id),
-            FOREIGN KEY (worker_id) REFERENCES workers(id),
-            FOREIGN KEY (channel_id) REFERENCES channels(id)
-        );
-
-        CREATE TABLE okrs (
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            description TEXT,
-            owner_worker_id TEXT,
-            status TEXT,
-            parent_okr_id TEXT,
-            key_results TEXT,
-            due_date TEXT,
-            created_at TEXT,
-            FOREIGN KEY (owner_worker_id) REFERENCES workers(id)
-        );
-
-        CREATE TABLE budget_pools (
-            id TEXT PRIMARY KEY,
-            period_start TEXT,
-            period_end TEXT,
-            created_at TEXT
-        );
-
-        CREATE TABLE budget_allocations (
-            id TEXT PRIMARY KEY,
-            pool_id TEXT,
-            worker_id TEXT,
-            FOREIGN KEY (pool_id) REFERENCES budget_pools(id)
-        );
-
-        CREATE TABLE budget_balances (
-            id TEXT PRIMARY KEY,
-            allocation_id TEXT,
-            allocated REAL,
-            spent REAL,
-            available REAL,
-            FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id)
-        );
-
-        CREATE TABLE budget_transactions (
-            id TEXT PRIMARY KEY,
-            type TEXT,
-            amount REAL,
-            created_at TEXT
-        );
-    """)
-
-    now = datetime.now()
-
-    # Insert org state
-    ceo_id = "worker-ceo" if include_ceo else None
-    started_at = now.isoformat() if status == "running" else None
-
-    conn.execute("""
-        INSERT INTO org_state (id, status, ceo_worker_id, started_at)
-        VALUES ('default', ?, ?, ?)
-    """, (status, ceo_id, started_at))
-
-    # Create executive team and CEO if requested
-    if include_ceo:
-        conn.execute("INSERT INTO teams (id, name) VALUES ('team-exec', 'Executive')")
-        conn.execute("""
-            INSERT INTO workers (id, name, role, team_id, manager_id, status, cost, created_at)
-            VALUES ('worker-ceo', 'TestCEO', 'CEO', 'team-exec', NULL, 'pending', 100, ?)
-        """, (now.isoformat(),))
-
-        # CEO session (optional, based on status)
-        if status == "running":
-            conn.execute("""
-                INSERT INTO sessions (id, worker_id, provider, command, tmux_session_name, state)
-                VALUES ('session-ceo', 'worker-ceo', 'claude_code', 'claude-code', 'qn-worker-ceo', 'idle')
-            """)
-
-    # Create board-channel if requested
-    if include_board_channel:
-        conn.execute("INSERT INTO channels (id, name, type) VALUES ('ch-board', 'board-channel', 'topic')")
-
-        # Subscribe CEO to board-channel
-        if include_ceo:
-            conn.execute("""
-                INSERT INTO channel_subscriptions (channel_id, worker_id, subscribed_at)
-                VALUES ('ch-board', 'worker-ceo', ?)
-            """, (now.isoformat(),))
-
-    conn.commit()
-    conn.close()
-
-    return db_path
+# (Using shared create_test_org_db from conftest.py)
 
 
 def create_briefing_file(org_path: Path, content: str) -> Path:
@@ -369,7 +156,7 @@ We are a startup focused on developer tools.
 """
 
         # Create database and briefing file
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, briefing_content)
 
         # TODO: This will fail until org.start() implementation is complete
@@ -423,7 +210,7 @@ We are a startup focused on developer tools.
         org_path.mkdir()
 
         # Create org WITHOUT briefing file
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
 
         # Start org (should succeed without briefing)
         from cli.core.db import Database
@@ -471,7 +258,7 @@ We are a startup focused on developer tools.
         briefing_content = "# Mission\n\nTest briefing content"
 
         # Create org with briefing
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, briefing_content)
 
         from cli.core.db import Database
@@ -536,7 +323,7 @@ class TestOrgConnectionBriefingMethods:
         org_path.mkdir()
 
         # Create org database
-        create_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
 
         # Create connection and send briefing
         conn = QuinnAIOrgConnection(org_path)
@@ -592,7 +379,7 @@ Test mission statement.
 """
 
         # Create org and briefing
-        create_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, briefing_content)
 
         # Test get_current_briefing
@@ -606,7 +393,7 @@ Test mission statement.
         # Test with org that has no briefing
         org_path_no_briefing = tmp_path / "test-org-no-briefing"
         org_path_no_briefing.mkdir()
-        create_org_db(org_path_no_briefing, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path_no_briefing, status="running", include_ceo=True, include_board_channel=True)
 
         conn_no_briefing = QuinnAIOrgConnection(org_path_no_briefing)
         current_none = conn_no_briefing.get_current_briefing()
@@ -636,7 +423,7 @@ Test mission statement.
         updated_content = "# Mission\nUpdated briefing with new directives"
 
         # Create org with original briefing
-        create_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, original_content)
 
         conn = QuinnAIOrgConnection(org_path)
@@ -697,7 +484,7 @@ class TestBoardAppBriefingIntegration:
         org_path.mkdir()
 
         # Create org
-        create_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
 
         config = BoardConfig(org_paths=[tmp_path])
         app = BoardApp(config)
@@ -841,7 +628,7 @@ We are creating tools for distributed teams.
         original_briefing = "# Mission\nOriginal directives"
 
         # Create and start org with briefing
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, original_briefing)
 
         from cli.core.db import Database
@@ -895,7 +682,7 @@ class TestBriefingEdgeCases:
         org_path.mkdir()
 
         # Create empty briefing
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, "")
 
         from cli.core.db import Database
@@ -929,7 +716,7 @@ And `unclosed code block
 ####### Too many hashes
 """
 
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, malformed_content)
 
         from cli.core.db import Database
@@ -955,7 +742,7 @@ And `unclosed code block
         org_path.mkdir()
 
         # Create org WITHOUT board-channel
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=False)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=False)
         create_briefing_file(org_path, "# Mission\nTest")
 
         from cli.core.db import Database
@@ -985,7 +772,7 @@ And `unclosed code block
         org_path.mkdir()
 
         # Create org without briefing (old org)
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
         # Note: NO briefing file created
 
         from cli.core.db import Database
@@ -1014,7 +801,7 @@ And `unclosed code block
         org_path = tmp_path / "test-org"
         org_path.mkdir()
 
-        create_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, "# Original")
 
         conn = QuinnAIOrgConnection(org_path)
@@ -1049,7 +836,7 @@ class TestBriefingNotificationInteraction:
         org_path = tmp_path / "test-org"
         org_path.mkdir()
 
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, "# Mission\nTest briefing")
 
         from cli.core.db import Database
@@ -1090,7 +877,7 @@ class TestBriefingNotificationInteraction:
         org_path = tmp_path / "test-org"
         org_path.mkdir()
 
-        create_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
         create_briefing_file(org_path, "# Mission\nHigh priority briefing")
 
         from cli.core.db import Database
