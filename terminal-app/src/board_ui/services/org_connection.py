@@ -1351,6 +1351,7 @@ class QuinnAIOrgConnection(OrgConnection):
                 self._db.connection.commit()
 
                 self._log_intervention("pause", worker_id, reason or "Board paused worker")
+                self._notify_ceo_of_intervention("pause", worker_id, reason or "Board paused worker")
                 return True
             else:
                 logger.error(f"Failed to pause worker {worker_id}: {result.stderr}")
@@ -1380,6 +1381,7 @@ class QuinnAIOrgConnection(OrgConnection):
                 self._db.connection.commit()
 
                 self._log_intervention("resume", worker_id, "Board resumed worker")
+                self._notify_ceo_of_intervention("resume", worker_id, "Board resumed worker")
                 return True
             else:
                 logger.error(f"Failed to resume worker {worker_id}: {result.stderr}")
@@ -1436,6 +1438,12 @@ class QuinnAIOrgConnection(OrgConnection):
             if not channel_id:
                 return
 
+            # Get CEO worker to use as sender (CEO represents the board)
+            ceo = self.get_ceo()
+            if not ceo:
+                logger.warning("Cannot log intervention: CEO worker not found")
+                return
+
             message_id = f"msg-{str(uuid.uuid4())[:8]}"
 
             content = (
@@ -1448,8 +1456,8 @@ class QuinnAIOrgConnection(OrgConnection):
             self._db.execute(
                 """INSERT INTO messages
                    (id, channel_id, from_worker_id, content, priority, time_sensitivity, created_at)
-                   VALUES (?, ?, 'board', ?, 3, 'immediate', ?)""",
-                (message_id, channel_id, content, now),
+                   VALUES (?, ?, ?, ?, 3, 'immediate', ?)""",
+                (message_id, channel_id, ceo.id, content, now),
             )
             self._db.connection.commit()
         except Exception as e:
@@ -1464,6 +1472,12 @@ class QuinnAIOrgConnection(OrgConnection):
             if not channel_id:
                 return
 
+            # Get CEO worker
+            ceo = self.get_ceo()
+            if not ceo:
+                logger.warning("Cannot notify CEO: CEO worker not found")
+                return
+
             message_id = f"msg-{str(uuid.uuid4())[:8]}"
             now = datetime.now()
 
@@ -1475,24 +1489,22 @@ class QuinnAIOrgConnection(OrgConnection):
                 f"Time: {now.isoformat()}"
             )
 
-            # Create message
+            # Create message (from CEO, representing the board)
             self._db.execute(
                 """INSERT INTO messages
                    (id, channel_id, from_worker_id, content, priority, time_sensitivity, created_at)
-                   VALUES (?, ?, 'board', ?, 4, 'immediate', ?)""",
-                (message_id, channel_id, content, now),
+                   VALUES (?, ?, ?, ?, 4, 'immediate', ?)""",
+                (message_id, channel_id, ceo.id, content, now),
             )
 
             # Create notification bead for CEO
-            ceo = self.get_ceo()
-            if ceo:
-                notification_id = f"nb-{str(uuid.uuid4())[:8]}"
-                self._db.execute(
-                    """INSERT INTO notification_beads
-                       (id, worker_id, message_id, channel_id, status, priority, created_at, read_at, expires_at)
-                       VALUES (?, ?, ?, ?, 'pending', 4, ?, NULL, NULL)""",
-                    (notification_id, ceo.id, message_id, channel_id, now),
-                )
+            notification_id = f"nb-{str(uuid.uuid4())[:8]}"
+            self._db.execute(
+                """INSERT INTO notification_beads
+                   (id, worker_id, message_id, channel_id, status, priority, created_at, read_at, expires_at)
+                   VALUES (?, ?, ?, ?, 'pending', 4, ?, NULL, NULL)""",
+                (notification_id, ceo.id, message_id, channel_id, now),
+            )
 
             self._db.connection.commit()
         except Exception as e:
