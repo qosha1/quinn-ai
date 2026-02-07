@@ -37,6 +37,7 @@ def create_test_org_db(
     include_ceo: bool = True,
     ceo_name: str = "TestCEO",
     include_board_channel: bool = True,
+    init_beads: bool = False,
 ) -> Path:
     """Create a complete test org database with production schema.
 
@@ -50,6 +51,7 @@ def create_test_org_db(
         include_ceo: Whether to create CEO worker
         ceo_name: Name for CEO worker
         include_board_channel: Whether to create board-channel
+        init_beads: Whether to initialize .beads directory with bd init
 
     Returns:
         Path to created database
@@ -92,6 +94,13 @@ def create_test_org_db(
                 VALUES ('session-ceo', 'worker-ceo', 'claude_code', 'claude-code', 'qn-worker-ceo', 'idle')
             """)
 
+        # Grant CEO write permissions for beads operations
+        # Level 3 = PERM_LEVEL_WRITE (from cli/core/constants.py)
+        conn.execute("""
+            INSERT INTO permissions (id, bead_id, grantee_type, grantee_id, level, granted_at)
+            VALUES ('perm-ceo-global', NULL, 'worker', 'worker-ceo', 3, ?)
+        """, (now.isoformat(),))
+
     # Create board-channel if requested
     if include_board_channel:
         conn.execute(
@@ -107,6 +116,20 @@ def create_test_org_db(
 
     conn.commit()
     conn.close()
+
+    # Initialize beads if requested
+    if init_beads:
+        import subprocess
+        print(f"DEBUG: Running bd init in {org_path}")
+        result = subprocess.run(
+            ["bd", "init", "--prefix", org_name, "--quiet"],
+            cwd=org_path,
+            capture_output=True,
+            text=True,
+        )
+        print(f"DEBUG: bd init returncode={result.returncode}, stdout={result.stdout}, stderr={result.stderr}")
+        if result.returncode != 0:
+            print(f"Warning: bd init failed: {result.stderr}")
 
     return db_path
 

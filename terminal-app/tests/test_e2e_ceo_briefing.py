@@ -156,7 +156,7 @@ We are a startup focused on developer tools.
 """
 
         # Create database and briefing file
-        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, briefing_content)
 
         # TODO: This will fail until org.start() implementation is complete
@@ -210,7 +210,7 @@ We are a startup focused on developer tools.
         org_path.mkdir()
 
         # Create org WITHOUT briefing file
-        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
 
         # Start org (should succeed without briefing)
         from cli.core.db import Database
@@ -258,7 +258,7 @@ We are a startup focused on developer tools.
         briefing_content = "# Mission\n\nTest briefing content"
 
         # Create org with briefing
-        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, briefing_content)
 
         from cli.core.db import Database
@@ -323,7 +323,7 @@ class TestOrgConnectionBriefingMethods:
         org_path.mkdir()
 
         # Create org database
-        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True, init_beads=True)
 
         # Create connection and send briefing
         conn = QuinnAIOrgConnection(org_path)
@@ -379,7 +379,7 @@ Test mission statement.
 """
 
         # Create org and briefing
-        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, briefing_content)
 
         # Test get_current_briefing
@@ -423,7 +423,7 @@ Test mission statement.
         updated_content = "# Mission\nUpdated briefing with new directives"
 
         # Create org with original briefing
-        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, original_content)
 
         conn = QuinnAIOrgConnection(org_path)
@@ -484,7 +484,7 @@ class TestBoardAppBriefingIntegration:
         org_path.mkdir()
 
         # Create org
-        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True, init_beads=True)
 
         config = BoardConfig(org_paths=[tmp_path])
         app = BoardApp(config)
@@ -628,7 +628,7 @@ We are creating tools for distributed teams.
         original_briefing = "# Mission\nOriginal directives"
 
         # Create and start org with briefing
-        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, original_briefing)
 
         from cli.core.db import Database
@@ -682,7 +682,7 @@ class TestBriefingEdgeCases:
         org_path.mkdir()
 
         # Create empty briefing
-        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, "")
 
         from cli.core.db import Database
@@ -716,7 +716,7 @@ And `unclosed code block
 ####### Too many hashes
 """
 
-        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, malformed_content)
 
         from cli.core.db import Database
@@ -772,7 +772,7 @@ And `unclosed code block
         org_path.mkdir()
 
         # Create org without briefing (old org)
-        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
         # Note: NO briefing file created
 
         from cli.core.db import Database
@@ -801,7 +801,7 @@ And `unclosed code block
         org_path = tmp_path / "test-org"
         org_path.mkdir()
 
-        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="running", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, "# Original")
 
         conn = QuinnAIOrgConnection(org_path)
@@ -836,7 +836,7 @@ class TestBriefingNotificationInteraction:
         org_path = tmp_path / "test-org"
         org_path.mkdir()
 
-        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, "# Mission\nTest briefing")
 
         from cli.core.db import Database
@@ -877,7 +877,7 @@ class TestBriefingNotificationInteraction:
         org_path = tmp_path / "test-org"
         org_path.mkdir()
 
-        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True)
+        create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, "# Mission\nHigh priority briefing")
 
         from cli.core.db import Database

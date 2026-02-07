@@ -102,7 +102,7 @@ def create_notification_bead(
             _logger.debug(f"Created notification bead for worker {worker_id}")
             return message_id  # Return something as bead ID
         else:
-            _logger.warning(f"Failed to create notification bead: {result.stderr}")
+            _logger.warning(f"Failed to create notification bead: stderr={result.stderr}, stdout={result.stdout}, returncode={result.returncode}")
             return None
 
     except Exception as e:
