@@ -50,6 +50,39 @@ def _parse_intervention_command(text: str) -> Optional[dict]:
     return None
 
 
+def _execute_intervention(conn, command: dict) -> bool:
+    """Execute an intervention command via OrgConnection.
+
+    Args:
+        conn: OrgConnection instance
+        command: Parsed command dict with {action, worker_id, reason}
+
+    Returns:
+        True if intervention succeeded, False otherwise
+    """
+    if not command:
+        return False
+
+    action = command.get('action')
+    worker_id = command.get('worker_id')
+    reason = command.get('reason')
+
+    if not action or not worker_id:
+        return False
+
+    try:
+        if action == 'pause':
+            return conn.pause_worker(worker_id, reason)
+        elif action == 'resume':
+            return conn.resume_worker(worker_id)
+        elif action == 'fire':
+            return conn.fire_worker(worker_id, reason)
+        else:
+            return False
+    except Exception:
+        return False
+
+
 class MessagesView(Widget):
     """Messages inbox view for async board responses."""
 
