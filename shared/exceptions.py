@@ -5,6 +5,11 @@ These exceptions represent invalid operations or states in the
 business logic layer, independent of storage implementation.
 """
 
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
 
 class InvalidStateTransition(Exception):
     """Raised when attempting an invalid state transition.
@@ -108,11 +113,23 @@ class OrgStructureError(OrgStartError):
 
 
 class SessionSpawnError(OrgStartError):
-    """Session spawn failed."""
+    """Session spawn failed.
 
-    def __init__(self, worker_id: str, message: str):
-        self.worker_id = worker_id
-        super().__init__(f"Failed to spawn session for {worker_id}: {message}")
+    Accepts either a plain worker_id string or a SessionId object as the
+    first argument, so it can be raised at both the session provider layer
+    and the org-level business logic layer without requiring two classes.
+    """
+
+    def __init__(self, worker_id: "str | Any", message: str):
+        # Support SessionId objects (have .worker_id attr) as well as plain strings
+        if hasattr(worker_id, "worker_id"):
+            self.worker_id = str(worker_id.worker_id)
+            self.session_id = worker_id
+        else:
+            self.worker_id = str(worker_id)
+            self.session_id = None
+        self.cause = message
+        super().__init__(f"Failed to spawn session for {self.worker_id}: {message}")
 
 
 class SessionStartTimeout(OrgStartError):
@@ -165,3 +182,67 @@ class DelegationNotFoundError(Exception):
     def __init__(self, delegate_id: str):
         self.delegate_id = delegate_id
         super().__init__(f"No active delegation found for worker '{delegate_id}'")
+
+
+# --- Budget domain ---
+
+class BudgetExhaustedError(Exception):
+    """Raised when worker budget is exhausted."""
+
+    def __init__(
+        self,
+        worker_id: str,
+        required: float,
+        available: float,
+        message: str | None = None,
+    ):
+        self.worker_id = worker_id
+        self.required = required
+        self.available = available
+        if message is None:
+            message = (
+                f"Budget exhausted for worker '{worker_id}'. "
+                f"Required: ${required:.4f}, Available: ${available:.4f}"
+            )
+        super().__init__(message)
+
+
+class NoBudgetAllocationError(Exception):
+    """Raised when worker has no budget allocation."""
+
+    def __init__(self, worker_id: str):
+        self.worker_id = worker_id
+        super().__init__(
+            f"No budget allocation found for worker '{worker_id}'. "
+            "Contact your manager to request budget allocation."
+        )
+
+
+class BudgetAllocationError(Exception):
+    """Raised when budget allocation fails."""
+
+    pass
+
+
+# --- Context domain ---
+
+class OrgContextError(Exception):
+    """Base exception for OrgContext errors."""
+
+    pass
+
+
+class OrgNotFoundError(OrgContextError):
+    """Raised when org path doesn't exist or isn't initialized."""
+
+    def __init__(self, org_path: "Path"):
+        self.org_path = org_path
+        super().__init__(f"Organization not found or not initialized: {org_path}")
+
+
+# --- Storage domain ---
+
+class StorageError(Exception):
+    """Base exception for storage operations."""
+
+    pass

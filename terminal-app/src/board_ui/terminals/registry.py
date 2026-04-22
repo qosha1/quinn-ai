@@ -50,8 +50,11 @@ def get_available_terminals() -> list[TerminalType]:
             # Provider failed to instantiate - skip
             continue
 
-    # Sort by preference (Kitty > iTerm > macOS Terminal > Generic)
+    # Sort by preference (tmux link > Kitty > iTerm > macOS Terminal > Generic)
+    # When inside tmux (board via ttyd), link-window wins — no nesting, works in browser.
+    # When NOT inside tmux, Kitty/iTerm/etc take over.
     preference_order = [
+        TerminalType.TMUX_LINK,
         TerminalType.KITTY,
         TerminalType.ITERM2,
         TerminalType.ALACRITTY,

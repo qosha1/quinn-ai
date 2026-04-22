@@ -107,7 +107,7 @@ def demote_cmd(
 
         # Check for direct reports
         cursor = db.execute(
-            "SELECT COUNT(*) FROM workers WHERE manager_id = ? AND lifecycle_status != 'terminated'",
+            "SELECT COUNT(*) FROM workers WHERE manager_id = ? AND status != 'terminated'",
             (target.id,)
         )
         direct_reports_count = cursor.fetchone()[0]
@@ -192,7 +192,8 @@ def demote_cmd(
 
         # Perform demotion (revoke authority)
         try:
-            target.revoke_authority(
+            demoter.revoke_authority(
+                delegate=target,
                 cascade=cascade,
                 reason=f"Demoted: {reason}",
             )

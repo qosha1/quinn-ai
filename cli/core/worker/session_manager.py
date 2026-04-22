@@ -22,6 +22,7 @@ from ..sessions.persistence import (
     update_session_pid,
     get_session_for_worker,
     delete_session_record,
+    delete_session_for_worker,
 )
 from ..logging import get_logger, log_session_spawn, log_session_stop
 from shared import (
@@ -383,17 +384,24 @@ class WorkerSessionManager:
         Raises:
             ActiveSessionExistsError: If worker already has an active session
         """
-        # Check for existing active session before spawning
-        # This prevents duplicate sessions for the same worker
+        # Check for existing session before spawning
         existing_session = get_session_for_worker(self.worker.db, self.worker.id)
         if existing_session is not None:
-            # Only block if session is in an active state
             active_states = ("starting", "running", "idle")
             if existing_session.get("state") in active_states:
+                # Actively running session — block the spawn
                 raise ActiveSessionExistsError(
                     worker_id=self.worker.id,
                     existing_session_id=existing_session["id"],
                 )
+            else:
+                # Stale stopped/crashed record from an unclean shutdown — clean it up
+                # so the UNIQUE(worker_id) constraint doesn't block the new insert
+                _logger.debug(
+                    f"Cleaning up stale session record for worker {self.worker.id} "
+                    f"(state={existing_session.get('state')}, id={existing_session.get('id')})"
+                )
+                delete_session_for_worker(self.worker.db, self.worker.id)
 
         # Ensure worker_state row exists before session state callbacks fire.
         # The attach_session callback calls update_worker_runtime_status which

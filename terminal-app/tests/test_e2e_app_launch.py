@@ -276,3 +276,90 @@ class TestE2EAppLaunch:
                 from board_ui.views.org_tabs import OrgTabBar
                 tab_bar = app.query_one("#org-tab-bar", OrgTabBar)
                 assert "hidden" not in tab_bar.classes
+
+
+class TestDatabaseLockRetry:
+    """Tests for Bug 1: Database lock retry with exponential backoff."""
+
+    @pytest.mark.asyncio
+    async def test_connect_retries_on_database_locked(self):
+        """_connect_to_org should retry up to 3 times when DatabaseLocked is raised."""
+        from unittest.mock import patch, MagicMock, AsyncMock
+        from board_ui.services.org_connection import DatabaseLocked
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            org_path = Path(tmpdir) / "locked-org"
+            create_test_org_db(org_path, status="running")
+
+            config = BoardConfig(org_paths=[])
+            app = BoardApp(config)
+
+            call_count = 0
+
+            original_init = None
+
+            def mock_connection_factory(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count < 3:
+                    raise DatabaseLocked(org_path / "live" / "quinn.db", Exception("database is locked"))
+                # On 3rd attempt, succeed by calling original constructor
+                from board_ui.services.org_connection import QuinnAIOrgConnection
+                # We need to bypass the mock to actually create the connection
+                # Use __new__ + manual init
+                instance = object.__new__(QuinnAIOrgConnection)
+                # Manually replicate __init__ behavior for test
+                instance._org_path = org_path
+                instance._db = None
+                instance._is_connected_flag = True
+                instance._connected = True
+                instance._polling_enabled = False
+                instance._last_change_id = 0
+                instance._client_id = "test"
+                instance._lock = __import__('threading').Lock()
+                instance._subscriber_lock = __import__('threading').Lock()
+                instance._subscribers = []
+                return instance
+
+            async with app.run_test() as pilot:
+                await pilot.pause()
+
+                with patch('board_ui.app.QuinnAIOrgConnection', side_effect=mock_connection_factory):
+                    with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+                        await app._connect_to_org(org_path)
+
+                        # Should have called constructor 3 times (2 failures + 1 success)
+                        assert call_count == 3, f"Expected 3 attempts, got {call_count}"
+
+                        # Should have called asyncio.sleep twice with backoff delays
+                        assert mock_sleep.call_count == 2
+                        # First retry delay: 0.5s
+                        assert mock_sleep.call_args_list[0][0][0] == pytest.approx(0.5)
+                        # Second retry delay: 1.0s
+                        assert mock_sleep.call_args_list[1][0][0] == pytest.approx(1.0)
+
+    @pytest.mark.asyncio
+    async def test_connect_gives_up_after_max_retries(self):
+        """_connect_to_org should give up and show error after 3 failed retries."""
+        from unittest.mock import patch, AsyncMock
+        from board_ui.services.org_connection import DatabaseLocked
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            org_path = Path(tmpdir) / "locked-org"
+            create_test_org_db(org_path, status="running")
+
+            config = BoardConfig(org_paths=[])
+            app = BoardApp(config)
+
+            def always_locked(*args, **kwargs):
+                raise DatabaseLocked(org_path / "live" / "quinn.db", Exception("database is locked"))
+
+            async with app.run_test() as pilot:
+                await pilot.pause()
+
+                with patch('board_ui.app.QuinnAIOrgConnection', side_effect=always_locked):
+                    with patch('asyncio.sleep', new_callable=AsyncMock):
+                        await app._connect_to_org(org_path)
+
+                        # Should NOT be connected after all retries fail
+                        assert app._active_org_path is None or org_path not in app._org_connections

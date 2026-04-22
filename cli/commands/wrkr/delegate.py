@@ -158,7 +158,7 @@ def delegate_cmd(
             return
 
         # Verify caller has permission on the task
-        if not can_worker_access_bead(db, worker_id, task_id, PermissionLevel.DELEGATE):
+        if not can_worker_access_bead(db, worker_id, task_id, PermissionLevel.WRITE):
             if as_json:
                 click.echo(json.dumps({
                     "error": "no_permission",

@@ -22,8 +22,13 @@ from core.queries import (
     update_worker_runtime_status,
     update_worker_status,
 )
-from core.sessions.persistence import get_session_for_worker
-from shared import SessionSpawnError
+from core.sessions.persistence import (
+    get_session_for_worker,
+    create_session_record,
+    update_session_state,
+    delete_session_for_worker,
+)
+from shared import SessionSpawnError, ActiveSessionExistsError
 
 
 @pytest.fixture
@@ -194,3 +199,160 @@ def test_auto_repair_eliminates_manual_workaround(test_worker: Worker, test_db: 
     assert worker_state.runtime_status == "stopped"
 
     # Spawn can proceed without manual workaround
+
+
+def _make_mock_session(worker_id: str, session_id: str, state: SessionState = SessionState.RUNNING) -> Mock:
+    """Build a mock SessionInterface that succeeds on start()."""
+    mock_session = Mock(spec=SessionInterface)
+    mock_session.id = session_id
+    mock_session.provider_name = "test_provider"
+    mock_session.state = state
+    mock_session.pid = None
+    mock_session.platform_session_name = f"qn-{session_id}"
+    mock_session.config = SessionConfig(
+        worker_id=worker_id,
+        provider="test_provider",
+        command="test",
+        args=[],
+    )
+    mock_session.bind_to_worker = Mock()
+
+    state_change_callback = None
+
+    def capture_callback(callback):
+        nonlocal state_change_callback
+        state_change_callback = callback
+
+    mock_session.on_state_change = capture_callback
+
+    def mock_start():
+        if state_change_callback:
+            state_change_callback(SessionState.STARTING, state)
+
+    mock_session.start = mock_start
+    return mock_session
+
+
+def test_double_spawn_raises_active_session_error(test_worker: Worker, test_db: Database):
+    """Test that spawning for a worker with an existing active session raises an error, not silently succeeds.
+
+    Covers the double-spawn guard: the board UI could trigger start twice in quick
+    succession. The second spawn must fail loudly via ActiveSessionExistsError so
+    the caller knows the operation was rejected.
+    """
+    # Arrange: insert a session record in the DB simulating an already-running session
+    create_session_record(
+        db=test_db,
+        session_id="existing-session-1",
+        worker_id=test_worker.id,
+        provider="test_provider",
+        command="test",
+        state="running",
+    )
+
+    # Confirm the guard sees an active session
+    assert test_worker.is_session_active is True
+
+    mock_session = _make_mock_session(test_worker.id, "new-session-1")
+
+    with patch.object(test_worker._budget_mgr, "enforce_spawn_budget") as mock_budget:
+        mock_budget.return_value = Mock(allocation_id="alloc-1")
+
+        # Act + Assert: second spawn must raise ActiveSessionExistsError, never silently no-op
+        with pytest.raises(ActiveSessionExistsError) as exc_info:
+            test_worker.spawn_session(mock_session)
+
+    err = exc_info.value
+    assert err.worker_id == test_worker.id
+    assert err.existing_session_id == "existing-session-1"
+
+    # The new session must NOT have been written to the DB
+    session_in_db = get_session_for_worker(test_db, test_worker.id)
+    assert session_in_db is not None
+    assert session_in_db["id"] == "existing-session-1", (
+        "Only the original session should exist; the duplicate must not have been persisted"
+    )
+
+
+def test_crash_recovery_restart_spawns_fresh_session(test_worker: Worker, test_db: Database):
+    """Test that after a worker session is marked 'crashed', cleanup allows a fresh spawn.
+
+    Simulates the board UI restart flow:
+    1. A session exists and crashes.
+    2. The DB session record is updated to 'crashed' and then removed (cleanup).
+    3. A new session can be spawned without hitting the double-spawn guard.
+    """
+    # Arrange: session exists and is now in crashed state
+    create_session_record(
+        db=test_db,
+        session_id="crashed-session-1",
+        worker_id=test_worker.id,
+        provider="test_provider",
+        command="test",
+        state="crashed",
+    )
+    # Mark worker runtime as crashed too
+    update_worker_runtime_status(test_db, test_worker.id, "crashed")
+    test_worker._state_data = None  # invalidate cache
+
+    # Verify crashed state is visible
+    test_worker.refresh()
+    assert test_worker.runtime_status == "crashed"
+
+    # The crashed session record should NOT block a new spawn
+    # (only 'starting', 'running', 'idle' block; 'crashed' does not)
+    assert test_worker.is_session_active is False, (
+        "A crashed session must not block a new spawn"
+    )
+
+    # Cleanup: delete the crashed DB record (mirrors what restart does)
+    delete_session_for_worker(test_db, test_worker.id)
+    # Reset runtime status to stopped so the transition to 'starting' is valid
+    update_worker_runtime_status(test_db, test_worker.id, "stopped")
+    test_worker._state_data = None
+
+    mock_session = _make_mock_session(test_worker.id, "fresh-session-1", state=SessionState.RUNNING)
+
+    with patch.object(test_worker._budget_mgr, "enforce_spawn_budget") as mock_budget, \
+         patch.object(test_worker._budget_mgr, "record_spawn_spend"):
+        mock_budget.return_value = Mock(allocation_id="alloc-2")
+
+        # Act: spawn should succeed after crash cleanup
+        test_worker.spawn_session(mock_session)
+
+    # Assert: fresh session persisted correctly
+    fresh_record = get_session_for_worker(test_db, test_worker.id)
+    assert fresh_record is not None
+    assert fresh_record["id"] == "fresh-session-1"
+    assert fresh_record["state"] == "running"
+
+    # Worker is_session_active now reflects the live session
+    assert test_worker.is_session_active is True
+
+
+def test_runtime_status_set_correctly_after_successful_spawn(test_worker: Worker, test_db: Database):
+    """Test that worker runtime_status reflects the spawned session state (not left as 'stopped').
+
+    After a successful spawn, the state-change callback fired by session.start() must
+    have updated worker_state.runtime_status to 'running'. If it remains 'stopped',
+    the board UI would show the worker as inactive even though a session is live.
+    """
+    mock_session = _make_mock_session(test_worker.id, "status-check-session-1", state=SessionState.RUNNING)
+
+    with patch.object(test_worker._budget_mgr, "enforce_spawn_budget") as mock_budget, \
+         patch.object(test_worker._budget_mgr, "record_spawn_spend"):
+        mock_budget.return_value = Mock(allocation_id="alloc-3")
+
+        test_worker.spawn_session(mock_session)
+
+    # Reload state from DB to avoid any in-memory caching masking the real value
+    test_worker.refresh()
+    worker_state = get_worker_state(test_db, test_worker.id)
+
+    assert worker_state is not None
+    assert worker_state.runtime_status == "running", (
+        f"runtime_status must be 'running' after a successful spawn, got '{worker_state.runtime_status}'"
+    )
+
+    # is_session_active must agree
+    assert test_worker.is_session_active is True

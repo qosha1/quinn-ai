@@ -22,12 +22,11 @@ from ..logging_config import get_board_logger
 logger = get_board_logger(__name__)
 
 
-class TeamView(Widget):
+class TeamView(VerticalScroll):
     """Team view with worker list and jump-in buttons."""
 
     DEFAULT_CSS = """
     TeamView {
-        layout: vertical;
         height: 100%;
     }
 
@@ -58,6 +57,7 @@ class TeamView(Widget):
         self._workers: list[WorkerInfo] = []
         self._current_filter = "all"
         self._refresh_interval_seconds = 2  # Auto-refresh every 2 seconds
+        self._spawning_session: set[str] = set()  # worker IDs currently spawning
 
     def compose(self) -> ComposeResult:
         with Container(id="team-header"):
@@ -291,25 +291,25 @@ class TeamView(Widget):
             return False
 
     async def _open_worker_chat(self, worker: WorkerInfo) -> None:
-        """Open a chat window with a worker."""
-        if not worker.tmux_session_name:
-            self.app.notify(f"{worker.name} has no active session", severity="warning")
-            return
+        """Open a chat window with a worker.
 
-        # Detect if running in browser context (via ttyd)
-        import os
-        is_browser_context = os.environ.get('TERM_PROGRAM') == 'ttyd' or 'ttyd' in os.environ.get('TERM', '')
+        If the worker has no active session, spawns one first.
+        If the session is stale, cleans it up and spawns a new one.
+        """
+        if worker.id in self._spawning_session:
+            return  # Already spawning
 
-        if is_browser_context:
-            # Running in browser - show notification with instructions
-            # For now, CEO is on port 7683, other workers would need their own ports
-            port = 7683 if "ceo" in worker.role.lower() else "????"
-            self.app.notify(
-                f"💬 Open {worker.name} chat in new tab: http://localhost:{port}",
-                severity="information",
-                timeout=10
-            )
-            return
+        tmux_session = worker.tmux_session_name
+
+        # No session? Start one.
+        if not tmux_session:
+            self._spawning_session.add(worker.id)
+            try:
+                tmux_session = await self._ensure_worker_session(worker)
+            finally:
+                self._spawning_session.discard(worker.id)
+            if not tmux_session:
+                return
 
         from ..terminals import get_terminal_provider
 
@@ -319,44 +319,75 @@ class TeamView(Widget):
             return
 
         try:
-            # Attempt to attach to session (validates session exists)
             window_handle = terminal.attach_to_session(
                 title=f"Chat with {worker.name}",
-                session_name=worker.tmux_session_name,
+                session_name=tmux_session,
             )
-
-            # Track the window for potential cleanup
             self._open_windows[worker.id] = window_handle
 
-            self.app.notify(f"Opened chat window with {worker.name}")
-        except ValueError as e:
-            # Session doesn't exist or is invalid - auto-cleanup stale session
-            logger.warning(f"Session validation failed for {worker.name}: {e}")
+        except ValueError:
+            # Session is stale — clean it up and spawn a fresh one
+            logger.warning(f"Stale session for {worker.name}, respawning...")
+            await self._cleanup_stale_session(worker)
 
-            # Trigger automatic cleanup of stale session
-            cleanup_success = await self._cleanup_stale_session(worker)
+            self._spawning_session.add(worker.id)
+            try:
+                tmux_session = await self._ensure_worker_session(worker)
+            finally:
+                self._spawning_session.discard(worker.id)
+            if not tmux_session:
+                return
 
-            if cleanup_success:
-                self.app.notify(
-                    f"Session for {worker.name} was stale and has been cleaned up. "
-                    f"Use 'qn wrkr restart {worker.id}' to spawn a new session.",
-                    severity="warning",
-                    timeout=10,
+            try:
+                window_handle = terminal.attach_to_session(
+                    title=f"Chat with {worker.name}",
+                    session_name=tmux_session,
                 )
-            else:
-                self.app.notify(
-                    f"Session for {worker.name} is dead or invalid. "
-                    f"Use 'qn wrkr cleanup {worker.id}' then 'qn wrkr restart {worker.id}' to recover.",
-                    severity="error",
-                    timeout=10,
-                )
+                self._open_windows[worker.id] = window_handle
+            except Exception as e:
+                logger.error(f"Failed to open chat after respawn for {worker.name}: {e}")
+                self.app.notify(f"Failed to open chat: {e}", severity="error")
 
-            # Refresh workers to show updated state
-            await self.refresh_workers()
         except Exception as e:
-            # Other errors (AppleScript, permissions, etc.)
             logger.error(f"Failed to open chat for {worker.name}: {e}")
             self.app.notify(f"Failed to open chat: {e}", severity="error")
+
+    async def _ensure_worker_session(self, worker: WorkerInfo) -> str | None:
+        """Ensure a worker has a running session, spawning if needed.
+
+        Args:
+            worker: WorkerInfo to ensure session for
+
+        Returns:
+            tmux_session_name if session is running, None on failure
+        """
+        if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+            self.app.notify("No org connected", severity="error")
+            return None
+
+        conn = self.app.org_connection
+        self.app.notify(f"Starting session for {worker.name}...", severity="information")
+
+        try:
+            bg = self.app.run_worker(
+                lambda: conn.restart_worker_session(worker.id),
+                thread=True,
+            )
+            success, tmux_name = await bg.wait()
+        except Exception as e:
+            self.app.notify(f"Failed to start session: {e}", severity="error")
+            return None
+
+        if not success or not tmux_name:
+            self.app.notify(
+                f"Failed to start session for {worker.name}",
+                severity="error",
+            )
+            return None
+
+        self.app.notify(f"Session started for {worker.name}", severity="success")
+        await self.refresh_workers()
+        return tmux_name
 
     async def _hire_worker(self) -> None:
         """Hire a new worker.

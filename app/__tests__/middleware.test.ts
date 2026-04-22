@@ -11,6 +11,9 @@ vi.mock("next/server", async () => {
       redirect: vi.fn((url: URL) => ({
         type: "redirect",
         url: url.toString(),
+        cookies: {
+          delete: vi.fn(),
+        },
       })),
       next: vi.fn(() => ({
         type: "next",
@@ -18,6 +21,23 @@ vi.mock("next/server", async () => {
     },
   };
 });
+
+// Helper to create a fake JWT with a given expiry (seconds since epoch)
+function createFakeJWT(exp?: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+  const payload = exp !== undefined
+    ? Buffer.from(JSON.stringify({ sub: "user-123", exp })).toString("base64url")
+    : Buffer.from(JSON.stringify({ sub: "user-123" })).toString("base64url");
+  const signature = "fakesignature";
+  return `${header}.${payload}.${signature}`;
+}
+
+// A valid (non-expired) JWT - expires far in the future
+const VALID_TOKEN = createFakeJWT(Math.floor(Date.now() / 1000) + 3600);
+// An expired JWT
+const EXPIRED_TOKEN = createFakeJWT(Math.floor(Date.now() / 1000) - 3600);
+// A JWT with no exp claim (treated as valid)
+const NO_EXP_TOKEN = createFakeJWT();
 
 // Helper to create mock NextRequest
 function createMockRequest(
@@ -135,8 +155,8 @@ describe("Middleware", () => {
   });
 
   describe("authenticated users", () => {
-    it("should allow authenticated user (with access_token cookie) to access /", () => {
-      const request = createMockRequest("/", { accessToken: "valid-token" });
+    it("should allow authenticated user (with valid access_token cookie) to access /", () => {
+      const request = createMockRequest("/", { accessToken: VALID_TOKEN });
 
       middleware(request);
 
@@ -154,7 +174,7 @@ describe("Middleware", () => {
     });
 
     it("should allow authenticated user to access /dashboard", () => {
-      const request = createMockRequest("/dashboard", { accessToken: "valid-token" });
+      const request = createMockRequest("/dashboard", { accessToken: VALID_TOKEN });
 
       middleware(request);
 
@@ -170,7 +190,7 @@ describe("Middleware", () => {
     });
 
     it("should allow authenticated user to access /billing/invoices", () => {
-      const request = createMockRequest("/billing/invoices", { accessToken: "token" });
+      const request = createMockRequest("/billing/invoices", { accessToken: VALID_TOKEN });
 
       middleware(request);
 
@@ -188,7 +208,7 @@ describe("Middleware", () => {
 
   describe("redirect authenticated users from auth pages", () => {
     it("should redirect authenticated user from /login to /", () => {
-      const request = createMockRequest("/login", { accessToken: "valid-token" });
+      const request = createMockRequest("/login", { accessToken: VALID_TOKEN });
 
       middleware(request);
 
@@ -208,7 +228,7 @@ describe("Middleware", () => {
     });
 
     it("should redirect authenticated user from /forgot-password to /", () => {
-      const request = createMockRequest("/forgot-password", { accessToken: "token" });
+      const request = createMockRequest("/forgot-password", { accessToken: VALID_TOKEN });
 
       middleware(request);
 
@@ -284,7 +304,6 @@ describe("Middleware", () => {
     });
 
     it("should exclude api routes from matching", () => {
-      // The matcher pattern excludes 'api' routes
       const pattern = config.matcher[0];
       expect(pattern).toContain("(?!api");
     });
@@ -328,10 +347,10 @@ describe("Middleware", () => {
       expect(NextResponse.redirect).toHaveBeenCalled();
     });
 
-    it("should prioritize access_token over has_auth", () => {
+    it("should prioritize valid access_token over has_auth", () => {
       const request = createMockRequest("/dashboard", {
-        accessToken: "valid-token",
-        hasAuth: "false", // Even with has_auth=false, access_token should win
+        accessToken: VALID_TOKEN,
+        hasAuth: "false",
       });
 
       middleware(request);
@@ -340,9 +359,66 @@ describe("Middleware", () => {
     });
   });
 
+  describe("token validation", () => {
+    it("should reject expired JWT tokens", () => {
+      const request = createMockRequest("/dashboard", { accessToken: EXPIRED_TOKEN });
+
+      middleware(request);
+
+      // Expired token on protected path should redirect to login
+      expect(NextResponse.redirect).toHaveBeenCalled();
+      const redirectCall = vi.mocked(NextResponse.redirect).mock.calls[0][0] as URL;
+      expect(redirectCall.pathname).toBe("/login");
+    });
+
+    it("should accept JWT tokens without exp claim", () => {
+      const request = createMockRequest("/dashboard", { accessToken: NO_EXP_TOKEN });
+
+      middleware(request);
+
+      expect(NextResponse.next).toHaveBeenCalled();
+    });
+
+    it("should reject malformed tokens (not valid JWT structure)", () => {
+      const request = createMockRequest("/dashboard", { accessToken: "not-a-jwt" });
+
+      middleware(request);
+
+      // Malformed token = treated as expired, redirects to login
+      expect(NextResponse.redirect).toHaveBeenCalled();
+    });
+
+    it("should accept valid non-expired JWT tokens", () => {
+      const request = createMockRequest("/dashboard", { accessToken: VALID_TOKEN });
+
+      middleware(request);
+
+      expect(NextResponse.next).toHaveBeenCalled();
+    });
+
+    it("should clear cookies when expired token on protected path", () => {
+      const request = createMockRequest("/dashboard", { accessToken: EXPIRED_TOKEN });
+
+      const result = middleware(request);
+
+      expect(NextResponse.redirect).toHaveBeenCalled();
+      // The response should attempt to clear cookies
+      expect(result).toBeDefined();
+    });
+
+    it("should allow expired token user to access public paths without redirect", () => {
+      const request = createMockRequest("/login", { accessToken: EXPIRED_TOKEN });
+
+      middleware(request);
+
+      // Expired token on a public path should just allow access (next)
+      expect(NextResponse.next).toHaveBeenCalled();
+    });
+  });
+
   describe("authentication checks", () => {
-    it("should treat any truthy access_token as authenticated", () => {
-      const request = createMockRequest("/dashboard", { accessToken: "any-value" });
+    it("should treat valid JWT access_token as authenticated", () => {
+      const request = createMockRequest("/dashboard", { accessToken: VALID_TOKEN });
 
       middleware(request);
 

@@ -634,7 +634,7 @@ def stop_org(
             returncode=-1,
         )
 
-    cmd = _get_qn_command() + ["--org-path", str(org_path), "org", "stop"]
+    cmd = _get_qn_command() + ["--org-path", str(org_path), "org", "stop", "--yes"]
 
     if force:
         cmd.append("--force")

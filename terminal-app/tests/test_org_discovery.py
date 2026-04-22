@@ -370,3 +370,29 @@ class TestValidateOrgPath:
 
             assert result.success is False
             assert "Not a valid org directory" in result.message
+
+    def test_stop_org_passes_yes_flag(self, temp_org_dir):
+        """stop_org must pass --yes to avoid hanging on confirmation prompt.
+
+        Without --yes, qn org stop prompts for confirmation when there are
+        active sessions. In a TUI background thread, there's no interactive
+        stdin, so the subprocess hangs until timeout or fails.
+        """
+        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="Organization stopped successfully",
+                stderr="",
+            )
+
+            stop_org(temp_org_dir)
+
+            # Find the actual stop command call (not --help check)
+            calls = mock_run.call_args_list
+            stop_calls = [c for c in calls if "org" in str(c) and "stop" in str(c)]
+            assert len(stop_calls) == 1
+
+            stop_cmd_args = stop_calls[0][0][0]  # First positional arg = command list
+            assert "--yes" in stop_cmd_args, (
+                "stop_org must pass --yes to avoid hanging on confirmation prompt"
+            )

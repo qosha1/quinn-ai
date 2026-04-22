@@ -17,6 +17,7 @@ from typing import Optional
 
 class TerminalType(Enum):
     """Supported terminal emulators."""
+    TMUX_LINK = "tmux-link"  # link-window into current tmux session (no nesting)
     KITTY = "kitty"
     ITERM2 = "iterm2"
     MACOS_TERMINAL = "terminal"

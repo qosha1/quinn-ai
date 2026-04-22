@@ -14,6 +14,7 @@ import pytest
 from core.db import init_database
 from core.org import Org
 from core.sessions.tmux_spawner import TmuxSpawner
+from core.sessions.spawner import SpawnerConfig
 from shared.enums import OrgStatus
 
 
@@ -44,52 +45,33 @@ class TestOrgRestartWithOrphanedSessions:
     """Test that org restart handles orphaned tmux sessions correctly."""
 
     def test_restart_with_orphaned_session_fails_without_cleanup(self, db, initialized_org_obj):
-        """Verify that orphaned sessions cause restart to fail (current bug)."""
+        """Verify that orphaned sessions cause restart to fail."""
         org = initialized_org_obj
         ceo = org.ceo
 
+        tmux_session_name = f"qn-{ceo.id}"
+        spawner = TmuxSpawner()
+
         try:
-
-            # Simulate orphaned session - create a tmux session with the worker's name
-            tmux_session_name = f"qn-{ceo.id}"
-            spawner = TmuxSpawner()
-
             # Create an orphaned session directly
             result = subprocess.run(
                 ["tmux", "new-session", "-d", "-s", tmux_session_name, "bash"],
                 capture_output=True,
             )
             assert result.returncode == 0, "Failed to create test orphaned session"
-
-            # Verify the orphaned session exists
             assert spawner.is_alive(tmux_session_name), "Orphaned session should exist"
 
-            # Now try to start the org - this should fail with current code
-            # because it will try to create a session with the same name
-            from core.session import SessionConfig
-            from core.sessions.registry import get_default_registry
-
-            registry = get_default_registry()
-            adapter = registry.get("claude_code")
-
-            # Get org_path from db_path
-            org_path = db.path.parent.parent
-
-            session_config = SessionConfig(
+            # Trying to spawn another session with the same name should fail
+            config = SpawnerConfig(
+                command="bash",
+                session_name=tmux_session_name,
                 worker_id=ceo.id,
-                provider="claude_code",
-                command="claude",
-                args="--dangerously-skip-permissions",
-                working_dir=org_path / "storage" / "workers" / ceo.id,
-                env_overrides={},
             )
-
-            # This should fail because tmux session already exists
-            with pytest.raises(Exception, match="Failed to spawn|returned non-zero exit status"):
-                adapter.spawn(session_config)
+            spawn_result = spawner.spawn(config)
+            assert not spawn_result.success, "Spawn should fail when session already exists"
+            assert spawn_result.error and "already exists" in spawn_result.error
 
         finally:
-            # Cleanup: kill the orphaned session
             try:
                 spawner.stop(tmux_session_name, force=True)
             except Exception:
@@ -101,17 +83,17 @@ class TestOrgRestartWithOrphanedSessions:
         org = initialized_org_obj
         ceo = org.ceo
 
+        tmux_session_name = f"qn-{ceo.id}"
+        spawner = TmuxSpawner()
+
         try:
-
             # Simulate orphaned session
-            tmux_session_name = f"qn-{ceo.id}"
-            spawner = TmuxSpawner()
-
             result = subprocess.run(
                 ["tmux", "new-session", "-d", "-s", tmux_session_name, "bash"],
                 capture_output=True,
             )
             assert result.returncode == 0
+            assert spawner.is_alive(tmux_session_name)
 
             # Run startup cleanup to remove orphaned sessions
             from core.sessions import run_startup_cleanup
@@ -122,36 +104,19 @@ class TestOrgRestartWithOrphanedSessions:
             assert cleanup_result.tmux_sessions_killed > 0, "Should have killed orphaned session"
             assert not spawner.is_alive(tmux_session_name), "Orphaned session should be gone"
 
-            # Now spawning should succeed
-            from core.session import SessionConfig
-            from core.sessions.registry import get_default_registry
-
-            registry = get_default_registry()
-            adapter = registry.get("claude_code")
-
-            # Get org_path from db_path
-            org_path = db.path.parent.parent
-
-            session_config = SessionConfig(
+            # Spawning a new session with the same name should now succeed
+            config = SpawnerConfig(
+                command="bash",
+                session_name=tmux_session_name,
                 worker_id=ceo.id,
-                provider="claude_code",
-                command="claude",
-                args="--dangerously-skip-permissions",
-                working_dir=org_path / "storage" / "workers" / ceo.id,
-                env_overrides={},
             )
-
-            # This should now succeed
-            adapter.spawn(session_config)
-
-            # Verify session was created
-            new_session_name = f"qn-{ceo.id}"
-            assert spawner.is_alive(new_session_name), "New session should exist"
+            spawn_result = spawner.spawn(config)
+            assert spawn_result.success, f"Spawn should succeed after cleanup: {spawn_result.error}"
+            assert spawner.is_alive(tmux_session_name), "New session should exist"
 
         finally:
-            # Cleanup
             try:
-                spawner.stop(f"qn-{ceo.id}", force=True)
+                spawner.stop(tmux_session_name, force=True)
             except Exception:
                 pass
             db.close()

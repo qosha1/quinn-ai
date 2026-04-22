@@ -1,0 +1,38 @@
+================================================================================
+QUINNAI BOARD - TEAM
+================================================================================
+
+Filter: All
+
+Workers (3 displayed, 3 total):
+
+--------------------------------------------------------------------------------
+Name: RecipeSimpli CEO
+ID: wrkr-081b461f
+Role: ★ CEO
+Team: Executive
+Manager: None
+Status: Working... [auto]
+Session State: running
+Session Mode: autonomous
+Tmux Session: qn-wrkr-081b461f
+
+--------------------------------------------------------------------------------
+Name: Senior Full-Stack Engineer
+ID: wrkr-f699b742
+Role: engineer
+Team: Executive
+Manager: RecipeSimpli CEO
+Status: No session
+Session Mode: interactive
+
+--------------------------------------------------------------------------------
+Name: Full-Stack Engineer
+ID: wrkr-ea14c66f
+Role: engineer
+Team: Executive
+Manager: RecipeSimpli CEO
+Status: No session
+Session Mode: interactive
+
+================================================================================

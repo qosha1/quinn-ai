@@ -191,7 +191,8 @@ class TestOrgInitializationIntegration:
         with OrgContext.create(org_path) as ctx:
             # At minimum, org should be initialized
             org = ctx.org
-            assert org.status.value in ["initialized", "running", "stopped"]
+            status = org.status.value if hasattr(org.status, "value") else org.status
+            assert status in ["initialized", "running", "stopped"]
 
 
 class TestEscalationFlows:

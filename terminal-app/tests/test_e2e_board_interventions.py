@@ -92,6 +92,20 @@ def test_org_with_workers(tmp_path):
         VALUES ('session-dev3', 'worker-dev3', 'claude_code', 'claude-code', 'org-test-org-dev3', 'running', 12348, ?)
     """, (now,))
 
+    # Worker runtime state for direct call support (Worker.stop_session() needs these)
+    conn.execute("""
+        INSERT INTO worker_state (worker_id, runtime_status, updated_at)
+        VALUES ('worker-dev1', 'running', ?)
+    """, (now,))
+    conn.execute("""
+        INSERT INTO worker_state (worker_id, runtime_status, updated_at)
+        VALUES ('worker-dev2', 'stopped', ?)
+    """, (now,))
+    conn.execute("""
+        INSERT INTO worker_state (worker_id, runtime_status, updated_at)
+        VALUES ('worker-dev3', 'running', ?)
+    """, (now,))
+
     # board-channel and CEO subscription already created by shared utility
 
     conn.commit()
@@ -370,17 +384,12 @@ class TestInterventionCommandParsing:
 
 
 class TestOrgConnectionInterventions:
-    """Test OrgConnection intervention methods that execute qn CLI commands."""
+    """Test OrgConnection intervention methods via direct cli.core calls."""
 
-    @patch('subprocess.run')
-    def test_pause_worker_via_connection(self, mock_run, test_org_with_workers):
-        """Test pausing worker through org connection."""
+    def test_pause_worker_via_connection(self, test_org_with_workers):
+        """Test pausing worker through org connection calls Worker.stop_session() directly."""
         org_path, db_path = test_org_with_workers
 
-        # Mock successful subprocess call
-        mock_run.return_value = MagicMock(returncode=0, stdout="Worker paused")
-
-        # Create connection
         conn = QuinnAIOrgConnection(org_path)
 
         # Verify worker is running
@@ -391,12 +400,6 @@ class TestOrgConnectionInterventions:
         # Pause worker
         try:
             success = conn.pause_worker("worker-dev1", "test pause")
-
-            # Verify subprocess was called with correct qn command
-            mock_run.assert_called()
-            call_args = mock_run.call_args
-            assert "qn" in str(call_args), "Should call qn CLI"
-            assert "pause" in str(call_args) or "stop" in str(call_args)
 
             # Verify success
             assert success is True
@@ -411,15 +414,10 @@ class TestOrgConnectionInterventions:
 
         conn.close()
 
-    @patch('subprocess.run')
-    def test_resume_worker_via_connection(self, mock_run, test_org_with_workers):
-        """Test resuming paused worker through org connection."""
+    def test_resume_worker_via_connection(self, test_org_with_workers):
+        """Test resuming paused worker through org connection calls runtime_status update directly."""
         org_path, db_path = test_org_with_workers
 
-        # Mock successful subprocess call
-        mock_run.return_value = MagicMock(returncode=0, stdout="Worker resumed")
-
-        # Create connection
         conn = QuinnAIOrgConnection(org_path)
 
         # Verify worker is stopped
@@ -431,34 +429,29 @@ class TestOrgConnectionInterventions:
         try:
             success = conn.resume_worker("worker-dev2")
 
-            # Verify subprocess was called
-            mock_run.assert_called()
-            call_args = mock_run.call_args
-            assert "qn" in str(call_args), "Should call qn CLI"
-            assert "resume" in str(call_args) or "start" in str(call_args)
-
             # Verify success
             assert success is True
 
-            # Verify state changed
-            worker_after = conn.get_worker("worker-dev2")
-            # Session should be back to running or idle
-            assert worker_after.session_state in [SessionState.RUNNING, SessionState.IDLE]
+            # Runtime status should be 'starting' (org session manager will pick it up)
+            from cli.core.db import open_database
+            db = open_database(db_path)
+            row = db.fetchone(
+                "SELECT runtime_status FROM worker_state WHERE worker_id = ?",
+                ("worker-dev2",)
+            )
+            db.close()
+            assert row is not None
+            assert row["runtime_status"] == "starting"
 
         except AttributeError:
             pytest.skip("resume_worker method not yet implemented")
 
         conn.close()
 
-    @patch('subprocess.run')
-    def test_fire_worker_via_connection(self, mock_run, test_org_with_workers):
-        """Test firing (terminating) worker through org connection."""
+    def test_fire_worker_via_connection(self, test_org_with_workers):
+        """Test firing (terminating) worker through org connection calls Worker.terminate() directly."""
         org_path, db_path = test_org_with_workers
 
-        # Mock successful subprocess call
-        mock_run.return_value = MagicMock(returncode=0, stdout="Worker terminated")
-
-        # Create connection
         conn = QuinnAIOrgConnection(org_path)
 
         # Verify worker is active
@@ -469,12 +462,6 @@ class TestOrgConnectionInterventions:
         # Fire worker
         try:
             success = conn.fire_worker("worker-dev3", "test termination")
-
-            # Verify subprocess was called
-            mock_run.assert_called()
-            call_args = mock_run.call_args
-            assert "qn" in str(call_args), "Should call qn CLI"
-            assert "fire" in str(call_args) or "terminate" in str(call_args)
 
             # Verify success
             assert success is True
@@ -520,13 +507,9 @@ class TestOrgConnectionInterventions:
 class TestInterventionAuditLogging:
     """Test that interventions create audit logs in board-channel."""
 
-    @patch('subprocess.run')
-    def test_intervention_creates_audit_log(self, mock_run, test_org_with_workers):
+    def test_intervention_creates_audit_log(self, test_org_with_workers):
         """Test that interventions create audit log messages."""
         org_path, db_path = test_org_with_workers
-
-        # Mock successful subprocess call
-        mock_run.return_value = MagicMock(returncode=0, stdout="Worker paused")
 
         conn = QuinnAIOrgConnection(org_path)
 
@@ -611,13 +594,9 @@ class TestCEONotifications:
 class TestFullInterventionFlow:
     """Integration tests for complete intervention workflows."""
 
-    @patch('subprocess.run')
-    def test_full_intervention_flow(self, mock_run, test_org_with_workers):
+    def test_full_intervention_flow(self, test_org_with_workers):
         """Test complete flow: escalation → board reply → intervention → audit → notification."""
         org_path, db_path = test_org_with_workers
-
-        # Mock successful subprocess calls
-        mock_run.return_value = MagicMock(returncode=0, stdout="Success")
 
         # Step 1: Create escalation
         from shared.org.escalation import BoardNotifier
@@ -720,26 +699,18 @@ class TestFullInterventionFlow:
 class TestInterventionErrorHandling:
     """Test error handling in intervention system."""
 
-    @patch('subprocess.run')
-    def test_failed_intervention_returns_false(self, mock_run, test_org_with_workers):
-        """Test that failed interventions return False."""
+    def test_failed_intervention_returns_false(self, test_org_with_workers):
+        """Test that failed interventions return False for nonexistent workers."""
         org_path, db_path = test_org_with_workers
-
-        # Mock failed subprocess call
-        mock_run.return_value = MagicMock(returncode=1, stderr="Error: worker not found")
 
         conn = QuinnAIOrgConnection(org_path)
 
         try:
-            # Try to pause worker
-            success = conn.pause_worker("worker-dev1", "test")
+            # Try to pause a worker that doesn't exist
+            success = conn.pause_worker("worker-nonexistent", "test")
 
-            # Should return False on failure
-            assert success is False, "Should return False on subprocess failure"
-
-            # Worker state should be unchanged
-            worker = conn.get_worker("worker-dev1")
-            assert worker.session_state == SessionState.RUNNING  # Still running
+            # Should return False for missing worker
+            assert success is False, "Should return False for nonexistent worker"
 
         except AttributeError:
             pytest.skip("pause_worker method not yet implemented")
@@ -753,17 +724,13 @@ class TestInterventionErrorHandling:
         conn = QuinnAIOrgConnection(org_path)
 
         try:
-            # Pause without reason (should use default)
-            with patch('subprocess.run') as mock_run:
-                mock_run.return_value = MagicMock(returncode=0)
+            success = conn.pause_worker("worker-dev1", None)
+            assert success is True
 
-                success = conn.pause_worker("worker-dev1", None)
-                assert success is True
-
-                # Audit log should still be created (with default reason or no reason)
-                messages = conn.get_board_messages()
-                audit_msgs = [m for m in messages if "paused" in m.content.lower()]
-                assert len(audit_msgs) >= 1
+            # Audit log should still be created (with default reason or no reason)
+            messages = conn.get_board_messages()
+            audit_msgs = [m for m in messages if "paused" in m.content.lower()]
+            assert len(audit_msgs) >= 1
 
         except AttributeError:
             pytest.skip("pause_worker method not yet implemented")
@@ -843,12 +810,9 @@ class TestBoardChannelMessages:
 class TestBoardMessageReplies:
     """Test board reply functionality that triggers interventions."""
 
-    @patch('subprocess.run')
-    def test_send_board_response_with_command(self, mock_run, test_org_with_escalation):
+    def test_send_board_response_with_command(self, test_org_with_escalation):
         """Test sending board response that contains intervention command."""
         org_path, db_path = test_org_with_escalation
-
-        mock_run.return_value = MagicMock(returncode=0, stdout="Success")
 
         conn = QuinnAIOrgConnection(org_path)
 

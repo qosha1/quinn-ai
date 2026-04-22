@@ -228,13 +228,13 @@ class TestTmuxSpawnerStop:
 
         mock_run.side_effect = [send_keys_result, kill_result]
 
-        result = tmux_spawner.stop("test-session", force=False)
+        result = tmux_spawner.stop(f"{TMUX_SESSION_PREFIX}worker-1", force=False)
 
         assert result
         # Should send Ctrl+C first
         first_call = mock_run.call_args_list[0][0][0]
         assert "send-keys" in first_call
-        assert "test-session" in first_call
+        assert f"{TMUX_SESSION_PREFIX}worker-1" in first_call
         assert "C-c" in first_call
         # Then kill
         assert "kill-session" in mock_run.call_args_list[1][0][0]
@@ -245,7 +245,7 @@ class TestTmuxSpawnerStop:
         kill_result = Mock(returncode=0)
         mock_run.return_value = kill_result
 
-        result = tmux_spawner.stop("test-session", force=True)
+        result = tmux_spawner.stop(f"{TMUX_SESSION_PREFIX}worker-1", force=True)
 
         assert result
         # Should only call kill-session
@@ -257,7 +257,7 @@ class TestTmuxSpawnerStop:
         """Should return False on failure."""
         mock_run.return_value = Mock(returncode=1)
 
-        result = tmux_spawner.stop("test-session", force=True)
+        result = tmux_spawner.stop(f"{TMUX_SESSION_PREFIX}worker-1", force=True)
 
         assert not result
 
@@ -266,9 +266,29 @@ class TestTmuxSpawnerStop:
         """Should handle subprocess errors."""
         mock_run.side_effect = subprocess.SubprocessError("error")
 
-        result = tmux_spawner.stop("test-session")
+        result = tmux_spawner.stop(f"{TMUX_SESSION_PREFIX}worker-1")
 
         assert not result
+
+    @patch("subprocess.run")
+    def test_stop_refuses_non_prefixed_session(self, mock_run, tmux_spawner):
+        """Should refuse to kill sessions without the QuinnAI prefix.
+
+        This guards against accidentally killing the board's own tmux session
+        or any other non-worker session.
+        """
+        result = tmux_spawner.stop("quinnai-board", force=True)
+
+        assert not result
+        mock_run.assert_not_called()
+
+    @patch("subprocess.run")
+    def test_stop_refuses_bare_session_name(self, mock_run, tmux_spawner):
+        """Should refuse to kill sessions with no prefix at all."""
+        result = tmux_spawner.stop("my-session", force=True)
+
+        assert not result
+        mock_run.assert_not_called()
 
 
 class TestTmuxSpawnerIsAlive:

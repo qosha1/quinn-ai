@@ -1,5 +1,5 @@
 """
-Org Stop Controller - 7-phase graceful shutdown orchestration.
+Org Stop Controller - graceful shutdown orchestration.
 
 Implements the complete org stop sequence:
 1. Validation and preparation
@@ -92,7 +92,7 @@ class OrgStopResult:
 
 
 class OrgStopController:
-    """Orchestrates the 7-phase org stop sequence.
+    """Orchestrates the org stop sequence.
 
     Usage:
         controller = OrgStopController(db, org_path, org)
@@ -144,43 +144,43 @@ class OrgStopController:
         self._result = OrgStopResult(success=False)
 
         try:
-            # Phase 1: Validation and preparation
-            phase1 = self._phase1_validate_and_prepare()
+            # Validation and preparation
+            phase1 = self._validate_and_prepare()
             self._result.phases.append(phase1)
             if not phase1.success:
                 return self._finalize_result()
 
-            # If force mode, skip phases 2-3
+            # If force mode, skip wrap-up and ack phases
             if not force:
-                # Phase 2: Send wrap-up requests
-                phase2 = self._phase2_send_wrapup_requests(graceful_timeout)
+                # Send wrap-up requests
+                phase2 = self._send_wrapup_requests(graceful_timeout)
                 self._result.phases.append(phase2)
                 if not phase2.success:
-                    _logger.warning("Phase 2 had issues, continuing to phase 3")
+                    _logger.warning("Send wrap-up requests had issues, continuing to wait for acknowledgements")
 
-                # Phase 3: Wait for acknowledgements
-                phase3 = self._phase3_wait_for_acks()
+                # Wait for acknowledgements
+                phase3 = self._wait_for_acknowledgements()
                 self._result.phases.append(phase3)
                 self._result.workers_acked = phase3.details.get("acks_received", 0)
 
-            # Phase 4: Stop sessions
-            phase4 = self._phase4_stop_sessions(force)
+            # Stop sessions
+            phase4 = self._stop_sessions(force)
             self._result.phases.append(phase4)
             self._result.sessions_terminated = phase4.details.get("sessions_stopped", 0)
 
-            # Phase 5: Update worker states
-            phase5 = self._phase5_update_worker_states()
+            # Update worker states
+            phase5 = self._update_worker_states()
             self._result.phases.append(phase5)
             self._result.workers_stopped = phase5.details.get("workers_updated", 0)
 
-            # Phase 6: Persist state and cleanup
+            # Persist state and cleanup
             if save_state:
-                phase6 = self._phase6_persist_state(cleanup)
+                phase6 = self._persist_state(cleanup)
                 self._result.phases.append(phase6)
                 self._result.states_saved = phase6.details.get("states_saved", 0)
 
-            # Phase 7: Transition org to STOPPED
-            phase7 = self._phase7_transition_org()
+            # Transition org to STOPPED
+            phase7 = self._transition_org_to_stopped()
             self._result.phases.append(phase7)
 
             self._result.success = phase7.success
@@ -200,11 +200,11 @@ class OrgStopController:
         return self._result
 
     # ===================
-    # PHASE 1: Validation and Preparation
+    # Validation and Preparation
     # ===================
 
-    def _phase1_validate_and_prepare(self) -> StopPhaseResult:
-        """Phase 1: Validate org can be stopped and prepare worker states."""
+    def _validate_and_prepare(self) -> StopPhaseResult:
+        """Validate org can be stopped and prepare worker states."""
         start = time.time()
 
         try:
@@ -262,7 +262,7 @@ class OrgStopController:
             )
 
         except Exception as e:
-            _logger.exception("Phase 1 failed")
+            _logger.exception("Validation and preparation failed")
             return StopPhaseResult(
                 phase=1,
                 name="Validation and Preparation",
@@ -277,14 +277,14 @@ class OrgStopController:
         return STOP_TIMEOUT_BY_ROLE.get(role_lower, DEFAULT_STOP_TIMEOUT)
 
     # ===================
-    # PHASE 2: Send Wrap-up Requests
+    # Send Wrap-up Requests
     # ===================
 
-    def _phase2_send_wrapup_requests(
+    def _send_wrapup_requests(
         self,
         graceful_timeout: Optional[int] = None,
     ) -> StopPhaseResult:
-        """Phase 2: Send wrap-up notifications to all active workers."""
+        """Send wrap-up notifications to all active workers."""
         start = time.time()
 
         if not self._worker_states:
@@ -378,7 +378,7 @@ class OrgStopController:
             )
 
         except Exception as e:
-            _logger.exception("Phase 2 failed")
+            _logger.exception("Send wrap-up requests failed")
             return StopPhaseResult(
                 phase=2,
                 name="Send Wrap-up Requests",
@@ -402,11 +402,11 @@ class OrgStopController:
         )
 
     # ===================
-    # PHASE 3: Wait for Acknowledgements
+    # Wait for Acknowledgements
     # ===================
 
-    def _phase3_wait_for_acks(self) -> StopPhaseResult:
-        """Phase 3: Wait for workers to acknowledge wrap-up."""
+    def _wait_for_acknowledgements(self) -> StopPhaseResult:
+        """Wait for workers to acknowledge wrap-up."""
         start = time.time()
 
         if not self._worker_states:
@@ -488,11 +488,11 @@ class OrgStopController:
         return new_acks
 
     # ===================
-    # PHASE 4: Stop Sessions
+    # Stop Sessions
     # ===================
 
-    def _phase4_stop_sessions(self, force: bool) -> StopPhaseResult:
-        """Phase 4: Stop all worker sessions."""
+    def _stop_sessions(self, force: bool) -> StopPhaseResult:
+        """Stop all worker sessions."""
         start = time.time()
 
         try:
@@ -543,7 +543,7 @@ class OrgStopController:
             )
 
         except Exception as e:
-            _logger.exception("Phase 4 failed")
+            _logger.exception("Stop sessions failed")
             return StopPhaseResult(
                 phase=4,
                 name="Stop Sessions",
@@ -553,11 +553,11 @@ class OrgStopController:
             )
 
     # ===================
-    # PHASE 5: Update Worker States
+    # Update Worker States
     # ===================
 
-    def _phase5_update_worker_states(self) -> StopPhaseResult:
-        """Phase 5: Update worker runtime states to stopped."""
+    def _update_worker_states(self) -> StopPhaseResult:
+        """Update worker runtime states to stopped."""
         start = time.time()
 
         updated_count = 0
@@ -589,11 +589,11 @@ class OrgStopController:
         )
 
     # ===================
-    # PHASE 6: Persist State and Cleanup
+    # Persist State and Cleanup
     # ===================
 
-    def _phase6_persist_state(self, cleanup: bool) -> StopPhaseResult:
-        """Phase 6: Save worker resume states and run cleanup."""
+    def _persist_state(self, cleanup: bool) -> StopPhaseResult:
+        """Save worker resume states and run cleanup."""
         start = time.time()
 
         saved_count = 0
@@ -695,11 +695,11 @@ class OrgStopController:
         self.db.connection.commit()
 
     # ===================
-    # PHASE 7: Transition Org to STOPPED
+    # Transition Org to STOPPED
     # ===================
 
-    def _phase7_transition_org(self) -> StopPhaseResult:
-        """Phase 7: Transition org to STOPPED state."""
+    def _transition_org_to_stopped(self) -> StopPhaseResult:
+        """Transition org to STOPPED state."""
         start = time.time()
 
         try:
@@ -725,7 +725,7 @@ class OrgStopController:
             )
 
         except Exception as e:
-            _logger.exception("Phase 7 failed")
+            _logger.exception("Transition org to STOPPED failed")
             return StopPhaseResult(
                 phase=7,
                 name="Transition Org to STOPPED",

@@ -106,10 +106,25 @@ class HealthStatusWidget(Widget):
             status_class = "health-critical"
             status_text = "Critical Issues"
 
-        score_label.update(
-            f"{emoji} {status_text} ({health.workers_with_issues}/{health.total_workers} workers with issues)"
-        )
-        score_label.set_class(health.overall_score != "healthy", status_class)
+        if health.overall_score == "healthy":
+            if health.workers_with_issues == 0:
+                display_text = f"{emoji} {status_text}"
+            else:
+                display_text = (
+                    f"{emoji} {status_text} ({health.workers_with_issues} workers have notes)"
+                )
+        else:
+            display_text = (
+                f"{emoji} {status_text}"
+                f" ({health.workers_with_issues}/{health.total_workers} workers with issues)"
+            )
+
+        score_label.update(display_text)
+
+        # Remove all health state classes then apply the current one
+        for cls in ("health-healthy", "health-warning", "health-critical"):
+            score_label.remove_class(cls)
+        score_label.add_class(status_class)
 
         # Update issue list
         issue_container = self.query_one("#issue-list", Vertical)

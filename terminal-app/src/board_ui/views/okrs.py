@@ -23,12 +23,11 @@ if TYPE_CHECKING:
 logger = get_board_logger(__name__)
 
 
-class OKRsView(Widget):
+class OKRsView(VerticalScroll):
     """OKRs view with cascading objectives."""
 
     DEFAULT_CSS = """
     OKRsView {
-        layout: vertical;
         height: 100%;
     }
 
@@ -61,7 +60,7 @@ class OKRsView(Widget):
             yield Label("Objectives & Key Results", classes="panel-title")
             yield Label("Board -> CEO -> Directors -> Managers -> Workers", classes="metric-label")
 
-        with VerticalScroll(id="okr-tree-container"):
+        with Container(id="okr-tree-container"):
             tree: Tree = Tree("Organization OKRs", id="okr-tree")
             tree.root.expand()
 

@@ -144,7 +144,7 @@ class OpenAISession(SessionInterface):
         rather than spawning a subprocess.
         """
         if not self._api_key:
-            from core.session import SessionSpawnError
+            from shared.exceptions import SessionSpawnError
             raise SessionSpawnError(self._id, "OpenAI API key is required")
 
         provider_config = ProviderConfig(

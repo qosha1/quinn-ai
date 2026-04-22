@@ -12,21 +12,23 @@ Shows:
 from typing import Optional
 
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Label, Static
 from textual.widget import Widget
 
 from ..interfaces.org_connection import OrgInfo, WorkerInfo, BudgetSummary, OrgStatus
 from ..widgets.recent_activity import RecentActivityWidget
 from ..widgets.health_status import HealthStatusWidget
+from ..logging_config import get_board_logger
+
+logger = get_board_logger(__name__)
 
 
-class DashboardView(Widget):
+class DashboardView(VerticalScroll):
     """Main dashboard view."""
 
     DEFAULT_CSS = """
     DashboardView {
-        layout: vertical;
         height: 100%;
     }
 
@@ -70,8 +72,21 @@ class DashboardView(Widget):
     }
 
     #activity-widget {
-        height: 1fr;
+        height: auto;
+        max-height: 12;
         margin-bottom: 1;
+    }
+
+    #actions-panel {
+        height: auto;
+    }
+
+    .action-buttons {
+        height: auto;
+    }
+
+    .action-buttons Button {
+        margin-right: 1;
     }
 
     #chat-ceo-btn {
@@ -88,6 +103,7 @@ class DashboardView(Widget):
         self._ceo: Optional[WorkerInfo] = None
         self._org_info: Optional[OrgInfo] = None
         self._budget: Optional[BudgetSummary] = None
+        self._spawning_session: bool = False  # Guard against double-spawn
         self._refresh_interval_seconds = 2  # Auto-refresh every 2 seconds
 
     def compose(self) -> ComposeResult:
@@ -156,26 +172,30 @@ class DashboardView(Widget):
 
         conn = self.app.org_connection
 
-        # Get org info
-        self._org_info = conn.get_org_info()
-        self._update_org_metrics()
-        self._update_org_action_buttons()
+        try:
+            # Get org info
+            self._org_info = conn.get_org_info()
+            self._update_org_metrics()
+            self._update_org_action_buttons()
 
-        # Get CEO
-        self._ceo = conn.get_ceo()
-        self._update_ceo_card()
+            # Get CEO
+            self._ceo = conn.get_ceo()
+            self._update_ceo_card()
 
-        # Get budget
-        self._budget = conn.get_budget_summary()
-        self._update_budget_metrics()
+            # Get budget
+            self._budget = conn.get_budget_summary()
+            self._update_budget_metrics()
 
-        # Get unread count
-        unread = conn.get_unread_count()
-        self._update_unread_count(unread)
+            # Get unread count
+            unread = conn.get_unread_count()
+            self._update_unread_count(unread)
 
-        # Get health status
-        health = conn.get_health_status()
-        self._update_health_status(health)
+            # Get health status
+            health = conn.get_health_status()
+            self._update_health_status(health)
+        except Exception as e:
+            logger.error(f"Error refreshing dashboard data: {e}")
+            self.app.notify("Failed to refresh dashboard data", severity="warning")
 
     def _update_org_metrics(self) -> None:
         """Update org metrics display."""
@@ -287,53 +307,86 @@ class DashboardView(Widget):
             await self._restart_org()
 
     async def _open_ceo_chat(self) -> None:
-        """Open a chat window with the CEO."""
-        if not self._ceo or not self._ceo.tmux_session_name:
-            self.app.notify("CEO has no active session", severity="warning")
+        """Open a chat window with the CEO.
+
+        If the CEO has no active session, spawns one first, then opens the window.
+        """
+        if not self._ceo:
+            self.app.notify("No CEO found", severity="warning")
             return
 
-        # Detect if running in browser context (via ttyd)
-        import os
-        is_browser_context = os.environ.get('TERM_PROGRAM') == 'ttyd' or 'ttyd' in os.environ.get('TERM', '')
+        if self._spawning_session:
+            return  # Already in progress
 
-        if is_browser_context:
-            # Running in browser - show URL to open
-            self.app.notify(
-                "💬 Open CEO Chat in new tab: http://localhost:7683 (or port 7683 on this server)",
-                severity="information",
-                timeout=10
+        tmux_session = self._ceo.tmux_session_name
+
+        # No session? Start one.
+        if not tmux_session:
+            self._spawning_session = True
+            try:
+                tmux_session = await self._ensure_worker_session(self._ceo)
+            finally:
+                self._spawning_session = False
+            if not tmux_session:
+                return
+
+        self._attach_to_worker(self._ceo.name, tmux_session)
+
+    async def _ensure_worker_session(self, worker) -> str | None:
+        """Ensure a worker has a running session, spawning if needed.
+
+        Args:
+            worker: WorkerInfo to ensure session for
+
+        Returns:
+            tmux_session_name if session is running, None on failure
+        """
+        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+            self.app.notify("No org connected", severity="error")
+            return None
+
+        conn = self.app.org_connection
+        self.app.notify(f"Starting session for {worker.name}...", severity="information")
+
+        try:
+            bg = self.app.run_worker(
+                lambda: conn.restart_worker_session(worker.id),
+                thread=True,
             )
+            success, tmux_name = await bg.wait()
+        except Exception as e:
+            self.app.notify(f"Failed to start session: {e}", severity="error")
+            return None
+
+        if not success or not tmux_name:
+            self.app.notify(
+                f"Failed to start session for {worker.name}",
+                severity="error",
+            )
+            return None
+
+        self.app.notify(f"Session started for {worker.name}", severity="success")
+        await self.refresh_data()
+        return tmux_name
+
+    def _attach_to_worker(self, worker_name: str, tmux_session: str) -> None:
+        """Open a terminal window attached to a worker's tmux session."""
+        from ..terminals import get_terminal_provider
+
+        terminal = get_terminal_provider()
+        if terminal is None:
+            self.app.notify("No terminal available", severity="error")
             return
 
         try:
-            from ..terminals import get_terminal_provider
-
-            terminal = get_terminal_provider()
-            if terminal is None:
-                self.app.notify(
-                    "No terminal emulator available. Supported: iTerm2, Kitty, Terminal.app",
-                    severity="error"
-                )
-                return
-
-            # Validate terminal type
-            self.app.notify(f"Opening {terminal.terminal_type.value} window...", timeout=2)
-
             terminal.attach_to_session(
-                title="Chat with CEO",
-                session_name=self._ceo.tmux_session_name,
+                title=f"Chat with {worker_name}",
+                session_name=tmux_session,
             )
-            self.app.notify("Opened CEO chat window", severity="success")
-
         except ValueError as e:
-            # Specific error from tmux session validation
             self.app.notify(f"Session error: {e}", severity="error")
-        except ImportError as e:
-            # Terminal module import failed
-            self.app.notify(f"Terminal module error: {e}", severity="error")
         except Exception as e:
-            # Generic error
-            self.app.notify(f"Failed to open chat: {type(e).__name__}: {e}", severity="error")
+            self.app.notify(f"Failed to open chat: {e}", severity="error")
 
     async def _start_org(self) -> None:
         """Start the organization."""

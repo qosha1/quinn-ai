@@ -190,6 +190,9 @@ class TmuxSpawner(SpawnStrategy):
     def stop(self, session_id: str, force: bool = False) -> bool:
         """Stop a tmux session.
 
+        Only stops sessions whose name starts with the QuinnAI prefix to avoid
+        accidentally killing unrelated sessions (e.g., the board's own session).
+
         Args:
             session_id: Tmux session name
             force: If True, kill immediately without cleanup
@@ -197,6 +200,9 @@ class TmuxSpawner(SpawnStrategy):
         Returns:
             True if session was stopped
         """
+        if not session_id.startswith(TMUX_SESSION_PREFIX):
+            return False
+
         try:
             if not force:
                 # Try graceful shutdown first - send Ctrl+C

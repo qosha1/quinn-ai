@@ -12,7 +12,7 @@ Shows:
 from typing import Optional
 
 from textual.app import ComposeResult
-from textual.containers import Container, Vertical, Horizontal
+from textual.containers import Container, Vertical, Horizontal, VerticalScroll
 from textual.widgets import Button, Label, Static, Select
 from textual.widget import Widget
 from textual.message import Message
@@ -34,12 +34,11 @@ class ProviderTestRequested(Message):
         super().__init__()
 
 
-class SettingsView(Widget):
+class SettingsView(VerticalScroll):
     """Settings view for provider configuration."""
 
     DEFAULT_CSS = """
     SettingsView {
-        layout: vertical;
         height: 100%;
         padding: 1 2;
     }

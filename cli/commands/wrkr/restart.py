@@ -11,10 +11,11 @@ from commands.context import pass_context, Context
 from core.db import open_database, get_org_db_path
 from core.worker import Worker
 from core.sessions.binding_manager import get_binding_manager
-from core.sessions.persistence import get_session_for_worker, update_session_state
+from core.sessions.persistence import get_session_for_worker, update_session_state, delete_session_record
 from core.session import SessionConfig
 from core.storage import StorageManager
 from core.onboarding import get_worker_env_vars, load_onboarding_context
+from core.constants import DEFAULT_ORG_ID
 from datetime import datetime
 from shared import WorkerNotFound
 
@@ -74,6 +75,16 @@ def restart_cmd(
     db = open_database(db_path)
 
     try:
+        # Check org status - cannot restart workers if org is not running
+        org_row = db.fetchone(
+            "SELECT status FROM org_state WHERE id = ?", (DEFAULT_ORG_ID,)
+        )
+        if not org_row or org_row["status"] in ("stopped", "uninitialized"):
+            raise click.ClickException(
+                "Cannot restart worker: org is not running.\n"
+                "Start it with: qn org start"
+            )
+
         try:
             worker = Worker.get(db, worker_id)
         except WorkerNotFound:
@@ -93,15 +104,12 @@ def restart_cmd(
             tmux_session = session_record.get("tmux_session_name")
             current_state = session_record.get("state")
 
-            # Only cleanup if forced or session is in inactive state
-            should_cleanup = force or current_state in ("stopped", "crashed", None)
-
-            if not should_cleanup and current_state in ("starting", "running", "idle"):
-                if not force:
-                    raise click.ClickException(
-                        f"Worker session is currently {current_state}. "
-                        f"Use --force to restart anyway."
-                    )
+            # Block restart of active session unless --force is given
+            if current_state in ("starting", "running", "idle") and not force:
+                raise click.ClickException(
+                    f"Worker session is currently {current_state}. "
+                    f"Use --force to restart anyway."
+                )
 
             click.echo("Cleaning up existing session...")
 
@@ -114,8 +122,16 @@ def restart_cmd(
                     stopped_at=datetime.now(),
                 )
 
-            # Clear tmux session name
+            # Kill and clear tmux session
             if tmux_session:
+                import subprocess
+                try:
+                    subprocess.run(
+                        ["tmux", "kill-session", "-t", tmux_session],
+                        capture_output=True, timeout=5,
+                    )
+                except Exception:
+                    pass
                 db.execute(
                     """UPDATE sessions
                        SET tmux_session_name = NULL
@@ -147,6 +163,10 @@ def restart_cmd(
                     worker.terminate_session(force=True)
                 except Exception as e:
                     click.echo(f"  Warning: Could not terminate: {e}")
+
+            # Delete old session record so new spawn can create a fresh one
+            if session_id:
+                delete_session_record(db, session_id)
 
             click.echo("✓ Cleaned up existing session")
             click.echo("")

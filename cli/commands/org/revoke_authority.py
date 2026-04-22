@@ -185,7 +185,8 @@ def revoke_authority_cmd(
 
         # Perform revocation
         try:
-            target.revoke_authority(
+            revoker.revoke_authority(
+                delegate=target,
                 cascade=cascade,
                 reason=reason,
             )

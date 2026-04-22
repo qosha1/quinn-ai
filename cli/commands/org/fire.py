@@ -223,7 +223,8 @@ def fire_cmd(
         if has_authority:
             click.echo("  Revoking hiring authority...")
             try:
-                target_worker.revoke_authority(
+                auth_manager.revoke_authority(
+                    delegate=target_worker,
                     cascade=True,
                     reason=f"Terminated: {reason}",
                 )

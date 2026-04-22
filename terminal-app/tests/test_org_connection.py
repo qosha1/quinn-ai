@@ -712,3 +712,141 @@ class TestCursorBasedPolling:
         assert org_conn.has_pending_changes(1) is False
 
         org_conn.close()
+
+
+class TestSendBoardResponseErrorLogging:
+    """Tests for Bug 2: send_board_response and mark_message_read error logging."""
+
+    def test_send_board_response_logs_exception(self, temp_org_with_db, caplog):
+        """send_board_response should log the actual exception on failure, not silently swallow it."""
+        import logging
+        org_path, db_path = temp_org_with_db
+
+        conn = QuinnAIOrgConnection(org_path, database_factory=MockDatabase)
+
+        # Drop notification_beads table to force the INSERT to fail inside the try block
+        # The send_board_response method does: fetchone(messages) -> INSERT -> mark_message_read
+        # We need the fetchone to succeed but the INSERT to fail
+        # Easiest: make the execute fail by putting a constraint violation
+        # Actually, drop the 'messages' table *after* the fetchone by mocking
+        # Better approach: use a message that exists but make the INSERT fail via constraint
+        # Let's trigger an error by making the commit fail
+        original_execute = conn._db.execute
+
+        def failing_execute(sql, params=None):
+            if sql.strip().startswith("INSERT INTO messages"):
+                raise Exception("simulated DB write error")
+            return original_execute(sql, params)
+
+        conn._db.execute = failing_execute
+
+        with caplog.at_level(logging.ERROR):
+            result = conn.send_board_response("msg-1", "test reply")
+
+        assert result is False
+        # The key assertion: the error should be logged, not swallowed
+        assert any("Failed to send board response" in record.message for record in caplog.records), \
+            "Should log the specific error when send_board_response fails"
+
+        conn.close()
+
+    def test_mark_message_read_logs_exception(self, temp_org_with_db, caplog):
+        """mark_message_read should log the actual exception on failure, not silently swallow it."""
+        import logging
+        org_path, db_path = temp_org_with_db
+
+        conn = QuinnAIOrgConnection(org_path, database_factory=MockDatabase)
+
+        # Drop notification_beads to force failure
+        conn._db.connection.execute("DROP TABLE notification_beads")
+
+        with caplog.at_level(logging.ERROR):
+            result = conn.mark_message_read("msg-1")
+
+        assert result is False
+        assert any("Failed to mark message" in record.message for record in caplog.records), \
+            "Should log the specific error when mark_message_read fails"
+
+        conn.close()
+
+
+class TestSQLiteThreadSafety:
+    """SQLite connections must be usable from background threads (run_worker(thread=True))."""
+
+    def test_start_org_accessible_from_background_thread(self, temp_org_with_db):
+        """start_org must not raise ProgrammingError when called from a background thread.
+
+        Dashboard uses run_worker(thread=True) to call org actions without blocking
+        the TUI event loop. The _Sqlite3Wrapper must allow cross-thread access,
+        otherwise all org actions fail silently with a ProgrammingError.
+        """
+        import threading
+        from unittest.mock import patch, MagicMock
+        from board_ui.services.org_connection import QuinnAIOrgConnection
+        from board_ui.interfaces.org_connection import OrgInfo, OrgStatus
+
+        org_path, db_path = temp_org_with_db
+
+        # Use real _Sqlite3Wrapper (no MockDatabase) so thread safety is tested
+        conn = QuinnAIOrgConnection(org_path)
+
+        errors = []
+
+        def call_start_org():
+            try:
+                with patch.object(conn, "get_org_info") as mock_info, \
+                     patch("board_ui.services.org_discovery.start_org") as mock_start:
+                    mock_info.return_value = OrgInfo(
+                        path=org_path, name="test", status=OrgStatus.STOPPED,
+                        ceo_worker_id=None, worker_count=0, active_session_count=0,
+                        started_at=None, stopped_at=None,
+                    )
+                    mock_start.return_value = MagicMock(success=True)
+                    conn.start_org()
+            except Exception as e:
+                errors.append(e)
+
+        t = threading.Thread(target=call_start_org)
+        t.start()
+        t.join(timeout=5)
+
+        assert not errors, (
+            f"start_org raised exception from background thread: {errors[0]}"
+        )
+
+        conn.close()
+
+    def test_sqlite_wrapper_allows_cross_thread_access(self, temp_org_with_db):
+        """_Sqlite3Wrapper connection must be opened with check_same_thread=False.
+
+        Without this, any method that accesses the DB from a background thread
+        raises: ProgrammingError: SQLite objects created in a thread can only
+        be used in that same thread.
+        """
+        import threading
+
+        org_path, db_path = temp_org_with_db
+
+        # Use the real _Sqlite3Wrapper (no MockDatabase factory)
+        from board_ui.services.org_connection import QuinnAIOrgConnection, _Sqlite3Wrapper
+
+        wrapper = _Sqlite3Wrapper(db_path)
+
+        errors = []
+
+        def read_from_thread():
+            try:
+                wrapper.fetchone("SELECT 1")
+            except Exception as e:
+                errors.append(e)
+
+        t = threading.Thread(target=read_from_thread)
+        t.start()
+        t.join(timeout=5)
+
+        assert not errors, (
+            f"_Sqlite3Wrapper raised exception from background thread: {errors[0]}\n"
+            "Fix: open SQLite with check_same_thread=False"
+        )
+
+        wrapper.close()

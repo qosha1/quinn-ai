@@ -1,5 +1,5 @@
 """
-Tests for OrgStopController - 7-phase graceful shutdown orchestration.
+Tests for OrgStopController - graceful shutdown orchestration.
 """
 
 import tempfile
@@ -133,7 +133,7 @@ class TestPhase1Validation:
     def test_phase1_running_org(self, db, org_path, org, mock_tmux):
         """Should validate running org."""
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        result = controller._phase1_validate_and_prepare()
+        result = controller._validate_and_prepare()
         assert result.success
         assert result.phase == 1
         assert "Validation and Preparation" in result.name
@@ -145,7 +145,7 @@ class TestPhase1Validation:
         org.refresh()
 
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        result = controller._phase1_validate_and_prepare()
+        result = controller._validate_and_prepare()
         assert result.success
         assert result.details.get("already_stopped") is True
 
@@ -157,7 +157,7 @@ class TestPhase1Validation:
         org.refresh()
 
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        result = controller._phase1_validate_and_prepare()
+        result = controller._validate_and_prepare()
         assert not result.success
 
     def test_phase1_builds_worker_states(self, db, org_path, org, ceo, mock_tmux):
@@ -172,7 +172,7 @@ class TestPhase1Validation:
         )
 
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        result = controller._phase1_validate_and_prepare()
+        result = controller._validate_and_prepare()
 
         assert result.success
         assert len(controller._worker_states) == 1
@@ -208,8 +208,8 @@ class TestPhase2WrapupRequests:
     def test_phase2_no_workers(self, db, org_path, org, mock_tmux):
         """Should handle no active workers."""
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        controller._phase1_validate_and_prepare()
-        result = controller._phase2_send_wrapup_requests()
+        controller._validate_and_prepare()
+        result = controller._send_wrapup_requests()
         assert result.success
         assert "No active workers" in result.message
 
@@ -227,8 +227,8 @@ class TestPhase2WrapupRequests:
         )
 
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        controller._phase1_validate_and_prepare()
-        result = controller._phase2_send_wrapup_requests()
+        controller._validate_and_prepare()
+        result = controller._send_wrapup_requests()
 
         # Phase 2 succeeds even if individual notifications fail
         # (bd CLI may not be available in test environment)
@@ -257,8 +257,8 @@ class TestPhase4SessionStop:
         )
 
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        controller._phase1_validate_and_prepare()
-        result = controller._phase4_stop_sessions(force=True)
+        controller._validate_and_prepare()
+        result = controller._stop_sessions(force=True)
 
         assert result.success
         assert result.details.get("sessions_found", 0) >= 0
@@ -266,8 +266,8 @@ class TestPhase4SessionStop:
     def test_phase4_force_mode(self, db, org_path, org, mock_tmux):
         """Force mode should skip graceful shutdown."""
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        controller._phase1_validate_and_prepare()
-        result = controller._phase4_stop_sessions(force=True)
+        controller._validate_and_prepare()
+        result = controller._stop_sessions(force=True)
         assert result.success
 
 
@@ -286,8 +286,8 @@ class TestPhase5WorkerStates:
         )
 
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        controller._phase1_validate_and_prepare()
-        result = controller._phase5_update_worker_states()
+        controller._validate_and_prepare()
+        result = controller._update_worker_states()
 
         assert result.success
         assert result.details.get("workers_updated") >= 0
@@ -308,8 +308,8 @@ class TestPhase6StatePersistence:
         )
 
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        controller._phase1_validate_and_prepare()
-        result = controller._phase6_persist_state(cleanup=False)
+        controller._validate_and_prepare()
+        result = controller._persist_state(cleanup=False)
 
         assert result.success
         assert "states_saved" in result.details
@@ -317,8 +317,8 @@ class TestPhase6StatePersistence:
     def test_phase6_runs_cleanup(self, db, org_path, org, mock_tmux):
         """Should run cleanup when requested."""
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        controller._phase1_validate_and_prepare()
-        result = controller._phase6_persist_state(cleanup=True)
+        controller._validate_and_prepare()
+        result = controller._persist_state(cleanup=True)
 
         assert result.success
         assert "cleanup_result" in result.details
@@ -330,7 +330,7 @@ class TestPhase7OrgTransition:
     def test_phase7_stops_org(self, db, org_path, org, mock_tmux):
         """Should transition org to stopped."""
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
-        result = controller._phase7_transition_org()
+        result = controller._transition_org_to_stopped()
 
         assert result.success
         org.refresh()
@@ -366,8 +366,16 @@ class TestFullExecution:
 
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
 
-        # Patch time.sleep to speed up test
-        with patch("time.sleep"):
+        # Stub the ack-wait step to return immediately — it is tested independently
+        no_ack_result = StopPhaseResult(
+            phase=3,
+            name="Wait for Acknowledgements",
+            success=True,
+            duration_seconds=0.0,
+            message="0/1 acknowledgements",
+            details={"acks_received": 0, "acks_expected": 1, "unacked_workers": []},
+        )
+        with patch.object(controller, "_wait_for_acknowledgements", return_value=no_ack_result):
             result = controller.execute(force=False, save_state=True, cleanup=True)
 
         assert result.success
@@ -377,7 +385,15 @@ class TestFullExecution:
         """Should respect graceful_timeout override."""
         controller = OrgStopController(db, org_path, org, tmux_spawner=mock_tmux)
 
-        with patch("time.sleep"):
+        no_ack_result = StopPhaseResult(
+            phase=3,
+            name="Wait for Acknowledgements",
+            success=True,
+            duration_seconds=0.0,
+            message="0/0 acknowledgements",
+            details={"acks_received": 0, "acks_expected": 0, "unacked_workers": []},
+        )
+        with patch.object(controller, "_wait_for_acknowledgements", return_value=no_ack_result):
             result = controller.execute(
                 force=False,
                 graceful_timeout=10,

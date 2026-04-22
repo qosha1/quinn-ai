@@ -30,6 +30,7 @@ from typing import Optional, TYPE_CHECKING
 
 from .db import Database, open_database, init_database, get_org_db_path
 from .config import OrgConfig, load_org_config, get_org_config_path
+from shared.exceptions import OrgContextError, OrgNotFoundError
 
 if TYPE_CHECKING:
     from .budget import BudgetService
@@ -37,20 +38,6 @@ if TYPE_CHECKING:
     from .storage import StorageManager
     from .org import Org
     from shared.escalation.manager import EscalationManager
-
-
-class OrgContextError(Exception):
-    """Base exception for OrgContext errors."""
-
-    pass
-
-
-class OrgNotFoundError(OrgContextError):
-    """Raised when org path doesn't exist or isn't initialized."""
-
-    def __init__(self, org_path: Path):
-        self.org_path = org_path
-        super().__init__(f"Organization not found or not initialized: {org_path}")
 
 
 class OrgContext:

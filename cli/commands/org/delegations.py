@@ -5,6 +5,7 @@ View delegation chains and authority grants.
 """
 
 import json
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 import click
@@ -17,6 +18,20 @@ from core.queries import (
     get_delegation_audit,
     get_delegation_chain,
 )
+
+
+def _parse_dt(value) -> datetime:
+    """Parse a datetime value that may be a string or datetime object."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        # Handle ISO format with or without microseconds
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                continue
+    raise ValueError(f"Cannot parse datetime: {value!r}")
 
 
 def format_delegation_tree(db, root_id: str, prefix: str = "", is_last: bool = True) -> List[str]:
@@ -139,7 +154,7 @@ def delegations_cmd(
                         "role": target.role,
                     },
                     "authority": {
-                        "allowed_roles": target.hiring_authority_scope.allowed_roles,
+                        "allowed_roles": list(target.hiring_authority_scope.allowed_roles),
                         "max_cost": target.hiring_authority_scope.max_cost,
                         "budget": target.delegated_budget,
                         "max_reports": target.max_reports,
@@ -149,11 +164,11 @@ def delegations_cmd(
                 }
 
                 if grant:
-                    delegator = Worker(db, grant.delegated_by)
+                    delegator = Worker(db, grant.delegator_id)
                     output["delegated_by"] = {
                         "id": delegator.id,
                         "name": delegator.name,
-                        "granted_at": grant.granted_at.isoformat(),
+                        "granted_at": _parse_dt(grant.granted_at).isoformat(),
                     }
 
                 for d in downstream:
@@ -162,7 +177,7 @@ def delegations_cmd(
                         "id": delegate.id,
                         "name": delegate.name,
                         "role": delegate.role,
-                        "granted_at": d.granted_at.isoformat(),
+                        "granted_at": _parse_dt(d.granted_at).isoformat(),
                     })
 
                 click.echo(json.dumps(output, indent=2))
@@ -176,8 +191,8 @@ def delegations_cmd(
             from core.queries import get_delegation_grant
             grant = get_delegation_grant(db, target.id)
             if grant:
-                delegator = Worker(db, grant.delegated_by)
-                click.echo(f"  Delegated by: {delegator.name} ({grant.granted_at.strftime('%Y-%m-%d %H:%M:%S')})")
+                delegator = Worker(db, grant.delegator_id)
+                click.echo(f"  Delegated by: {delegator.name} ({_parse_dt(grant.granted_at).strftime('%Y-%m-%d %H:%M:%S')})")
             else:
                 click.echo("  Delegated by: None (root authority)")
 
@@ -203,7 +218,7 @@ def delegations_cmd(
                     delegate = Worker(db, d.delegate_id)
                     click.echo(
                         f"    {delegate.name} ({delegate.role}) - "
-                        f"{d.granted_at.strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"{_parse_dt(d.granted_at).strftime('%Y-%m-%d %H:%M:%S')}"
                     )
             else:
                 click.echo("\n  Delegated to: None")
@@ -231,8 +246,8 @@ def delegations_cmd(
 
             if include_revoked:
                 # Show all records including revoked
-                active = [r for r in audit_records if r.action == "granted"]
-                revoked = [r for r in audit_records if r.action == "revoked"]
+                active = [r for r in audit_records if r.event_type == "granted"]
+                revoked = [r for r in audit_records if r.event_type in ("revoked", "cascade_revoked", "terminated_revoked")]
 
                 if json_output:
                     output = {
@@ -241,21 +256,21 @@ def delegations_cmd(
                     }
 
                     for record in active:
-                        delegator = Worker(db, record.delegated_by)
+                        delegator = Worker(db, record.delegator_id)
                         delegate = Worker(db, record.delegate_id)
                         output["active"].append({
                             "delegator": delegator.name,
                             "delegate": delegate.name,
-                            "granted_at": record.performed_at.isoformat(),
+                            "granted_at": _parse_dt(record.timestamp).isoformat(),
                         })
 
                     for record in revoked:
-                        delegator = Worker(db, record.delegated_by)
+                        delegator = Worker(db, record.delegator_id)
                         delegate = Worker(db, record.delegate_id)
                         output["revoked"].append({
                             "delegator": delegator.name,
                             "delegate": delegate.name,
-                            "revoked_at": record.performed_at.isoformat(),
+                            "revoked_at": _parse_dt(record.timestamp).isoformat(),
                             "reason": record.reason,
                         })
 
@@ -269,19 +284,19 @@ def delegations_cmd(
                 click.echo("-" * 65)
 
                 for record in active:
-                    delegator = Worker(db, record.delegated_by)
+                    delegator = Worker(db, record.delegator_id)
                     delegate = Worker(db, record.delegate_id)
                     click.echo(
                         f"{delegator.name:<15} {delegate.name:<15} "
-                        f"{'active':<10} {record.performed_at.strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"{'active':<10} {_parse_dt(record.timestamp).strftime('%Y-%m-%d %H:%M:%S')}"
                     )
 
                 for record in revoked:
-                    delegator = Worker(db, record.delegated_by)
+                    delegator = Worker(db, record.delegator_id)
                     delegate = Worker(db, record.delegate_id)
                     click.echo(
                         f"{delegator.name:<15} {delegate.name:<15} "
-                        f"{'revoked':<10} {record.performed_at.strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"{'revoked':<10} {_parse_dt(record.timestamp).strftime('%Y-%m-%d %H:%M:%S')}"
                     )
 
             else:
@@ -294,7 +309,7 @@ def delegations_cmd(
                     WHERE hiring_authority_scope IS NOT NULL
                     AND hiring_authority_scope != '{}'
                     AND hiring_authority_scope != '{"allowed_roles": []}'
-                    AND lifecycle_status != 'terminated'
+                    AND status != 'terminated'
                 """)
                 workers_with_authority = cursor.fetchall()
 
@@ -308,12 +323,12 @@ def delegations_cmd(
                 if json_output:
                     output = []
                     for grant in all_grants:
-                        delegator = Worker(db, grant.delegated_by)
+                        delegator = Worker(db, grant.delegator_id)
                         delegate = Worker(db, grant.delegate_id)
                         output.append({
                             "delegator": delegator.name,
                             "delegate": delegate.name,
-                            "granted_at": grant.granted_at.isoformat(),
+                            "granted_at": _parse_dt(grant.granted_at).isoformat(),
                         })
                     click.echo(json.dumps(output, indent=2))
                     return
@@ -330,11 +345,11 @@ def delegations_cmd(
                 click.echo("-" * 55)
 
                 for grant in all_grants:
-                    delegator = Worker(db, grant.delegated_by)
+                    delegator = Worker(db, grant.delegator_id)
                     delegate = Worker(db, grant.delegate_id)
                     click.echo(
                         f"{delegator.name:<15} {delegate.name:<15} "
-                        f"{grant.granted_at.strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"{_parse_dt(grant.granted_at).strftime('%Y-%m-%d %H:%M:%S')}"
                     )
 
     finally:

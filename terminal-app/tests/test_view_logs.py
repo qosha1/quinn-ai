@@ -331,3 +331,21 @@ class TestLogsView:
             with patch.object(logs_view, "_log_reader") as mock_reader:
                 mock_reader.tail_logs.return_value = []
                 await logs_view.refresh_logs()
+
+    @pytest.mark.asyncio
+    async def test_log_entries_container_is_not_scrollable(self):
+        """LogsView itself is VerticalScroll — entries container must be plain Container.
+
+        Having a nested ScrollableContainer inside LogsView (which is VerticalScroll)
+        causes scroll event capture conflicts where the outer view scroll intercepts
+        events before reaching log entries.
+        """
+        from textual.containers import ScrollableContainer, VerticalScroll
+        app = _TestApp()
+
+        async with app.run_test() as pilot:
+            log_container = app.query_one("#log-entries-container")
+            assert not isinstance(log_container, (ScrollableContainer, VerticalScroll)), (
+                "#log-entries-container must not be ScrollableContainer or VerticalScroll — "
+                "LogsView is already VerticalScroll. Use a plain Container to avoid nested scroll conflicts."
+            )

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Label, Select, Static, Switch
 from textual.widget import Widget
 
@@ -35,12 +35,11 @@ except ImportError:
     LogReader = None
 
 
-class LogsView(Widget):
+class LogsView(VerticalScroll):
     """Logs tab view with filtering and search."""
 
     DEFAULT_CSS = """
     LogsView {
-        layout: vertical;
         height: 100%;
     }
 
@@ -179,7 +178,7 @@ class LogsView(Widget):
                 )
                 yield Label("Auto-refresh", id="auto-refresh-label")
 
-        with ScrollableContainer(id="log-entries-container"):
+        with Container(id="log-entries-container"):
             pass  # Will be populated dynamically
 
         with Horizontal(id="log-pagination"):
@@ -226,7 +225,7 @@ class LogsView(Widget):
 
     async def _display_logs(self, logs: list[dict]) -> None:
         """Display log entries in the UI."""
-        container = self.query_one("#log-entries-container", ScrollableContainer)
+        container = self.query_one("#log-entries-container", Container)
 
         # Remove existing entries
         for child in list(container.children):

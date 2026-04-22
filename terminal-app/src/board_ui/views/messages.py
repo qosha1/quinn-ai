@@ -21,6 +21,9 @@ from textual.widgets import Button, DataTable, Input, Label, Select, Static, Tex
 from textual.widget import Widget
 
 from ..interfaces.org_connection import Message
+from ..logging_config import get_board_logger
+
+logger = get_board_logger(__name__)
 
 
 def _parse_intervention_command(text: str) -> Optional[dict]:
@@ -79,7 +82,8 @@ def _execute_intervention(conn, command: dict) -> bool:
             return conn.fire_worker(worker_id, reason)
         else:
             return False
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error executing intervention {action} on {worker_id}: {e}")
         return False
 
 
@@ -152,7 +156,7 @@ class MessagesView(Widget):
         self._current_channel_id: Optional[str] = None
 
     def compose(self) -> ComposeResult:
-        with Container(id="message-list"):
+        with Vertical(id="message-list"):
             with Container(id="message-list-header"):
                 yield Label("Messages", classes="panel-title")
                 yield Select(
@@ -166,10 +170,10 @@ class MessagesView(Widget):
             table.add_columns("Pri", "From", "Preview", "Time")
             yield table
 
-        with Container(id="message-detail"):
+        with Vertical(id="message-detail"):
             yield Label("Select a message", id="detail-header", classes="panel-title")
 
-            with Container(id="message-content"):
+            with VerticalScroll(id="message-content"):
                 yield Static(
                     "Click on a message in the list to view its contents.",
                     id="message-body",
@@ -219,34 +223,39 @@ class MessagesView(Widget):
     async def refresh_messages(self) -> None:
         """Refresh channels and messages from org connection."""
         if hasattr(self.app, 'org_connection') and self.app.org_connection:
-            # Load channels
-            self._channels = self.app.org_connection.get_all_channels()
-            self._update_channel_selector()
+            try:
+                # Load channels
+                self._channels = self.app.org_connection.get_all_channels()
+                self._update_channel_selector()
 
-            # Load messages from current channel (or first channel if none selected)
-            if not self._current_channel_id and self._channels:
-                self._current_channel_id = self._channels[0]["id"]
+                # Load messages from current channel (or first channel if none selected)
+                if not self._current_channel_id and self._channels:
+                    self._current_channel_id = self._channels[0]["id"]
 
-            if self._current_channel_id:
-                self._messages = self.app.org_connection.get_channel_messages(
-                    self._current_channel_id
-                )
-                # Clear table before repopulating (fixes placeholder row persistence bug)
-                table = self.query_one("#messages-table", DataTable)
-                table.clear()
-                self._populate_table_from_connection()
+                if self._current_channel_id:
+                    self._messages = self.app.org_connection.get_channel_messages(
+                        self._current_channel_id
+                    )
+                    # Clear table before repopulating (fixes placeholder row persistence bug)
+                    table = self.query_one("#messages-table", DataTable)
+                    table.clear()
+                    self._populate_table_from_connection()
 
-                # Update unread count for current channel
-                current_channel = next(
-                    (c for c in self._channels if c["id"] == self._current_channel_id),
-                    None
-                )
-                unread_count = current_channel["unread_count"] if current_channel else 0
-                self._update_unread_label(unread_count)
-            else:
-                table = self.query_one("#messages-table", DataTable)
-                table.clear()
-                self._update_unread_label(0)
+                    # Update unread count for current channel
+                    current_channel = next(
+                        (c for c in self._channels if c["id"] == self._current_channel_id),
+                        None
+                    )
+                    unread_count = current_channel["unread_count"] if current_channel else 0
+                    self._update_unread_label(unread_count)
+                else:
+                    table = self.query_one("#messages-table", DataTable)
+                    table.clear()
+                    self._update_unread_label(0)
+            except Exception as e:
+                logger.error(f"Error refreshing messages: {e}")
+                self.app.notify("Failed to refresh messages", severity="warning")
+                return
         else:
             self._populate_placeholder_data()
 
@@ -382,6 +391,9 @@ class MessagesView(Widget):
     async def _execute_intervention(self, intervention: dict) -> tuple[bool, str]:
         """Execute board intervention.
 
+        Validates that the worker exists before attempting the action,
+        and includes worker name in success/failure messages.
+
         Returns:
             (success, message)
         """
@@ -392,20 +404,27 @@ class MessagesView(Widget):
         worker_id = intervention['worker_id']
         reason = intervention.get('reason', '')
 
+        # Validate worker exists before attempting intervention
+        conn = self.app.org_connection
+        worker = conn.get_worker(worker_id)
+        if not worker:
+            return False, f"Worker '{worker_id}' not found"
+
         try:
             if action == 'pause':
-                success = self.app.org_connection.pause_worker(worker_id, reason)
-                return success, f"Worker {worker_id} paused" if success else "Pause failed"
+                success = conn.pause_worker(worker_id, reason)
+                return success, f"Worker {worker.name} paused" if success else f"Failed to pause {worker.name} (check logs for details)"
             elif action == 'resume':
-                success = self.app.org_connection.resume_worker(worker_id)
-                return success, f"Worker {worker_id} resumed" if success else "Resume failed"
+                success = conn.resume_worker(worker_id)
+                return success, f"Worker {worker.name} resumed" if success else f"Failed to resume {worker.name} (check logs for details)"
             elif action == 'fire':
-                success = self.app.org_connection.fire_worker(worker_id, reason)
-                return success, f"Worker {worker_id} terminated" if success else "Termination failed"
+                success = conn.fire_worker(worker_id, reason)
+                return success, f"Worker {worker.name} terminated" if success else f"Failed to terminate {worker.name} (check logs for details)"
             else:
                 return False, f"Unknown action: {action}"
         except Exception as e:
-            return False, str(e)
+            logger.error(f"Intervention {action} on {worker_id} raised: {e}")
+            return False, f"Error during {action}: {e}"
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
@@ -434,6 +453,9 @@ class MessagesView(Widget):
             success, message = await self._execute_intervention(intervention)
             if success:
                 self.app.notify(message, severity="information")
+                # Trigger full refresh so team/dashboard reflect the change
+                if hasattr(self.app, '_refresh_all_views'):
+                    await self.app._refresh_all_views()
                 # Also send the reply as a message for audit trail
                 # ... fall through to send message ...
             else:
@@ -451,7 +473,12 @@ class MessagesView(Widget):
                 reply_input.text = ""
                 await self.refresh_messages()
             else:
-                self.app.notify("Failed to send reply", severity="error")
+                # Check if CEO exists to give specific feedback
+                ceo = self.app.org_connection.get_ceo()
+                if not ceo:
+                    self.app.notify("Cannot send reply: CEO worker not found", severity="error")
+                else:
+                    self.app.notify("Failed to send reply (check logs for details)", severity="error")
         else:
             self.app.notify("Not connected to org", severity="error")
 

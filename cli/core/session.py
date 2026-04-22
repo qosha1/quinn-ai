@@ -17,6 +17,8 @@ import logging
 import threading
 import uuid
 
+from shared.exceptions import SessionSpawnError  # noqa: F401 - canonical definition, re-exported here
+
 # Import canonical SessionState and transitions from shared/core/state
 from shared.core.state import (
     SessionState,
@@ -138,13 +140,6 @@ class SessionError(Exception):
     def __init__(self, session_id: SessionId, message: str):
         super().__init__(f"Session {session_id}: {message}")
         self.session_id = session_id
-
-
-class SessionSpawnError(SessionError):
-    """Failed to spawn session process."""
-    def __init__(self, session_id: SessionId, cause: str):
-        super().__init__(session_id, f"Failed to spawn: {cause}")
-        self.cause = cause
 
 
 class SessionAlreadyRunningError(SessionError):

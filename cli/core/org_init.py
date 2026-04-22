@@ -630,3 +630,30 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
             ceo_role="",
             error=str(e),
         )
+
+
+def initialize_org(
+    org_path: Path,
+    org_name: str,
+    ceo_name: str,
+    ceo_role: str,
+) -> bool:
+    """Convenience wrapper around init_org with flat keyword arguments.
+
+    Args:
+        org_path: Directory to initialize the org in
+        org_name: Human-readable org name
+        ceo_name: CEO's name
+        ceo_role: CEO's role title
+
+    Returns:
+        True if initialization succeeded, False otherwise
+    """
+    config = OrgInitConfig(
+        path=org_path,
+        name=org_name,
+        ceo_name=ceo_name,
+        ceo_role=ceo_role,
+    )
+    result = init_org(config)
+    return result.success

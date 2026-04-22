@@ -768,13 +768,10 @@ class TestWorkerRegistryIntegration:
         def mock_get_default():
             return mock_default_registry
 
-        monkeypatch.setattr(
-            "cli.core.worker.get_default_registry",
-            mock_get_default,
-            raising=False
-        )
-        # Also patch at the sessions.registry module level
-        import cli.core.sessions.registry as registry_module
+        # Patch the module that session_manager.py actually imports from.
+        # session_manager.py uses a local import: from ..sessions.registry import get_default_registry
+        # which resolves to core.sessions.registry (not cli.core.sessions.registry).
+        import core.sessions.registry as registry_module
         monkeypatch.setattr(registry_module, "get_default_registry", mock_get_default)
 
         # Worker has no registry set
@@ -1043,18 +1040,18 @@ class TestConcurrentSessionProtection:
         active_worker_with_budget.spawn_session(session)
         assert session.started is True
 
-    def test_stopped_session_record_blocks_new_spawn(
+    def test_stopped_session_record_is_auto_cleaned_on_spawn(
         self, active_worker_with_budget, db
     ):
-        """Stopped session record blocks new sessions via UNIQUE constraint.
+        """Stale stopped session records are auto-cleaned during spawn precondition check.
 
-        This is by design - old session records must be cleaned up before
-        spawning a new session. The UNIQUE constraint on worker_id ensures
-        data integrity even if the initial check passes.
+        After a crash or unclean shutdown, a stopped session record may remain in the DB.
+        _validate_spawn_preconditions should delete it automatically so the new spawn
+        can proceed without hitting the UNIQUE(worker_id) constraint.
         """
-        from core.sessions.persistence import create_session_record
+        from core.sessions.persistence import create_session_record, get_session_for_worker
 
-        # Create a stopped session record (not cleaned up)
+        # Create a stopped session record (simulates unclean shutdown)
         create_session_record(
             db=db,
             session_id="stopped-session",
@@ -1064,14 +1061,14 @@ class TestConcurrentSessionProtection:
             state="stopped",
         )
 
-        # Should pass the initial active-state check but fail at DB insert
-        # due to UNIQUE constraint, which is then converted to ActiveSessionExistsError
+        # Spawn should succeed - the stale record is cleaned up automatically
         session = MockSession()
-        with pytest.raises(ActiveSessionExistsError) as exc_info:
-            active_worker_with_budget.spawn_session(session)
+        active_worker_with_budget.spawn_session(session)
 
-        # The error correctly identifies the blocking session
-        assert exc_info.value.existing_session_id == "stopped-session"
+        # Old stale record is gone; new session record exists
+        current = get_session_for_worker(db, active_worker_with_budget.id)
+        assert current is not None
+        assert current["id"] != "stopped-session"
 
     def test_race_condition_handled_via_unique_constraint(self, active_worker_with_budget, db):
         """Race condition caught by UNIQUE constraint should raise ActiveSessionExistsError."""
@@ -2595,3 +2592,60 @@ class TestCumulativeBudgetTracking:
         # (cumulative should be 0 since previous is terminated)
         can_hire, reason = manager.can_hire("Developer", 80)
         assert can_hire, f"Should allow hire after terminating previous: {reason}"
+
+
+class TestRuntimeTransitionEdgeCases:
+    """Test edge cases in runtime state transitions.
+
+    These tests cover scenarios where the session dies or is force-stopped
+    before it fully starts, requiring recovery from unusual states.
+    """
+
+    @pytest.fixture
+    def active_worker(self, db, team, worker_data):
+        """Get worker in active lifecycle state."""
+        worker = Worker.get(db, worker_data.id)
+        worker.start_onboarding()
+        worker.complete_onboarding()
+        return worker
+
+    def test_stop_session_from_starting_state(self, active_worker):
+        """stop_session() must succeed when session is in 'starting' state.
+
+        A session can be in 'starting' if it died immediately after spawn
+        before transitioning to 'running'. The board UI must be able to
+        force-stop sessions in any active state during org shutdown.
+        """
+        active_worker.start_session()
+        assert active_worker.runtime_status == "starting"
+
+        # Must not raise InvalidStateTransition
+        active_worker.stop_session()
+        assert active_worker.runtime_status == "stopped"
+
+    def test_stop_session_from_working_state(self, active_worker):
+        """stop_session() must succeed when session is in 'working' state."""
+        active_worker.start_session()
+        active_worker.session_ready()
+        active_worker.finish_work()  # -> idle
+        active_worker.begin_work("task-abc")  # -> running/working
+        assert active_worker.runtime_status == "running"
+
+        active_worker.stop_session()
+        assert active_worker.runtime_status == "stopped"
+
+    def test_restart_sequence_from_crashed_in_starting(self, active_worker):
+        """mark_crashed() from 'starting' then restart must succeed.
+
+        If a session crashes during startup, the worker should be able to
+        transition: starting -> crashed -> starting (restart).
+        """
+        active_worker.start_session()
+        assert active_worker.runtime_status == "starting"
+
+        active_worker.mark_crashed()
+        assert active_worker.runtime_status == "crashed"
+
+        # Must be able to restart
+        active_worker.start_session()
+        assert active_worker.runtime_status == "starting"

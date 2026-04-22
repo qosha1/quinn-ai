@@ -13,6 +13,7 @@ from typing import Optional
 
 from .db import Database
 from .queries import get_worker
+from shared.exceptions import StorageError
 
 
 # Storage directory names (no magic values in function bodies)
@@ -24,11 +25,6 @@ ARCHIVE_DIR = "archive"
 
 # Default shared topics
 DEFAULT_SHARED_TOPICS = ["engineering", "legal", "company"]
-
-
-class StorageError(Exception):
-    """Base exception for storage operations."""
-    pass
 
 
 class WorkerStorageNotFound(StorageError):

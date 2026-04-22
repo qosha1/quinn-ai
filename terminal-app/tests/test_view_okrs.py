@@ -171,3 +171,23 @@ class TestOKRsView:
             tree = app.query_one("#okr-tree", Tree)
             assert tree.root.label is not None
             assert "OKR" in str(tree.root.label) or "Organization" in str(tree.root.label)
+
+    @pytest.mark.asyncio
+    async def test_okrs_tree_container_is_not_scroll(self):
+        """OKRsView itself is VerticalScroll — inner container must be plain Container.
+
+        Having a nested VerticalScroll inside OKRsView (which is VerticalScroll)
+        causes scroll event capture conflicts where the outer container intercepts
+        scroll before the Tree or inner container can handle it.
+        """
+        from textual.containers import VerticalScroll
+        app = BoardApp(BoardConfig.default())
+        async with app.run_test() as pilot:
+            app.action_switch_tab("okrs")
+            await pilot.pause()
+
+            tree_container = app.query_one("#okr-tree-container")
+            assert not isinstance(tree_container, VerticalScroll), (
+                "#okr-tree-container must not be VerticalScroll — OKRsView is already VerticalScroll. "
+                "Use a plain Container to avoid nested scroll conflicts."
+            )

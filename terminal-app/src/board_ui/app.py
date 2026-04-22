@@ -47,6 +47,7 @@ from .services import (
     discover_available_orgs,
     start_org,
 )
+from .services.org_connection import DatabaseLocked
 
 
 class BoardApp(App):
@@ -281,12 +282,57 @@ class BoardApp(App):
     async def _connect_to_org(self, org_path: Path) -> None:
         """Connect to an organization.
 
+        Retries up to 3 times with exponential backoff if the database is locked.
+
         Args:
             org_path: Path to the org folder
         """
+        import asyncio
+
+        max_retries = 3
+        connection = None
+
+        # Retry loop for DatabaseLocked
+        for attempt in range(max_retries):
+            try:
+                connection = QuinnAIOrgConnection(org_path)
+                break  # success
+            except DatabaseLocked:
+                if attempt < max_retries - 1:
+                    delay = 0.5 * (2 ** attempt)  # 0.5, 1.0, 2.0
+                    self.notify(
+                        f"Database locked, retrying in {delay:.1f}s... ({attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    error_msg = f"Database locked after {max_retries} retries"
+                    self.notify(error_msg, severity="error")
+                    no_org_view = self.query_one("#no-org-view", NoOrgView)
+                    no_org_view.show_error(error_msg)
+                    return
+            except OrgNotFound:
+                error_msg = f"Org not found at {org_path}"
+                self.notify(error_msg, severity="error")
+                no_org_view = self.query_one("#no-org-view", NoOrgView)
+                no_org_view.show_error(error_msg)
+                return
+            except DatabaseNotFound:
+                error_msg = f"Org not initialized at {org_path}"
+                self.notify(error_msg, severity="warning")
+                no_org_view = self.query_one("#no-org-view", NoOrgView)
+                no_org_view.show_error(error_msg)
+                return
+            except OrgConnectionError as e:
+                error_msg = f"Connection failed: {e}"
+                self.notify(error_msg, severity="error")
+                no_org_view = self.query_one("#no-org-view", NoOrgView)
+                no_org_view.show_error(error_msg)
+                return
+
+        if connection is None:
+            return
+
         try:
-            # Create connection and store in multi-org dict
-            connection = QuinnAIOrgConnection(org_path)
             self._org_connections[org_path] = connection
             self._active_org_path = org_path
 
@@ -312,17 +358,7 @@ class BoardApp(App):
             # Refresh all views with new connection data
             await self._refresh_all_views()
 
-        except OrgNotFound:
-            error_msg = f"Org not found at {org_path}"
-            self.notify(error_msg, severity="error")
-            no_org_view = self.query_one("#no-org-view", NoOrgView)
-            no_org_view.show_error(error_msg)
-        except DatabaseNotFound:
-            error_msg = f"Org not initialized at {org_path}"
-            self.notify(error_msg, severity="warning")
-            no_org_view = self.query_one("#no-org-view", NoOrgView)
-            no_org_view.show_error(error_msg)
-        except OrgConnectionError as e:
+        except Exception as e:
             error_msg = f"Connection failed: {e}"
             self.notify(error_msg, severity="error")
             no_org_view = self.query_one("#no-org-view", NoOrgView)
