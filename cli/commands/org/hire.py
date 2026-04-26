@@ -147,9 +147,16 @@ def hire_cmd(
         # Start session (hire == spawn + start + onboard)
         click.echo("")
         click.echo("Starting worker session...")
+        from shared.exceptions import NoBudgetAllocationError
         try:
             _start_workday_for_hire(ctx, new_worker)
             click.echo(f"Session started for {new_worker.name}")
+        except NoBudgetAllocationError:
+            # Fresh-org case: managers haven't allocated per-worker budget yet.
+            # Not really a failure — frame it as the expected 2-step flow.
+            click.echo(f"Worker created. Allocate budget first, then start the session:")
+            click.echo(f"  qn org budget allocate {new_worker.name} <amount>")
+            click.echo(f"  qn org start --worker {new_worker.name}")
         except Exception as e:
             click.echo(f"Warning: Failed to start session: {e}")
             click.echo("You can start manually with: qn org start")
