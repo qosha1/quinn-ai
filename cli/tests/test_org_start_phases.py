@@ -256,9 +256,9 @@ class TestPhase2Transition:
 class TestPhase3Onboarding:
     """Test Phase 3: Onboarding preparation."""
 
-    @patch('cli.commands.org.start.prepare_worker_onboarding')
-    @patch('cli.commands.org.start.get_worker_env_vars')
-    @patch('cli.commands.org.start.get_default_registry')
+    @patch('cli.core.org_start_controller.prepare_worker_onboarding')
+    @patch('cli.core.org_start_controller.get_worker_env_vars')
+    @patch('cli.core.org_start_controller.get_default_registry')
     def test_onboarding_prepares_worker(
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir
     ):
@@ -288,9 +288,9 @@ class TestPhase3Onboarding:
 class TestPhase4SessionSpawn:
     """Test Phase 4: Session spawn."""
 
-    @patch('cli.commands.org.start.prepare_worker_onboarding')
-    @patch('cli.commands.org.start.get_worker_env_vars')
-    @patch('cli.commands.org.start.get_default_registry')
+    @patch('cli.core.org_start_controller.prepare_worker_onboarding')
+    @patch('cli.core.org_start_controller.get_worker_env_vars')
+    @patch('cli.core.org_start_controller.get_default_registry')
     def test_session_spawn_creates_session(
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir
     ):
@@ -319,9 +319,9 @@ class TestPhase4SessionSpawn:
         assert config.command == "claude"
         assert "--arg1" in config.args
 
-    @patch('cli.commands.org.start.prepare_worker_onboarding')
-    @patch('cli.commands.org.start.get_worker_env_vars')
-    @patch('cli.commands.org.start.get_default_registry')
+    @patch('cli.core.org_start_controller.prepare_worker_onboarding')
+    @patch('cli.core.org_start_controller.get_worker_env_vars')
+    @patch('cli.core.org_start_controller.get_default_registry')
     def test_session_spawn_checks_provider_exists(
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir
     ):
@@ -347,9 +347,9 @@ class TestPhase4SessionSpawn:
 
         assert "unknown_provider" in str(exc_info.value)
 
-    @patch('cli.commands.org.start.prepare_worker_onboarding')
-    @patch('cli.commands.org.start.get_worker_env_vars')
-    @patch('cli.commands.org.start.get_default_registry')
+    @patch('cli.core.org_start_controller.prepare_worker_onboarding')
+    @patch('cli.core.org_start_controller.get_worker_env_vars')
+    @patch('cli.core.org_start_controller.get_default_registry')
     def test_session_spawn_skips_if_already_active(
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir, capsys
     ):
@@ -542,11 +542,11 @@ class TestStartSequenceIntegration:
         assert initialized_org.status == OrgStatus.RUNNING.value
 
         # Mock spawn to fail
-        with patch('cli.commands.org.start.prepare_worker_onboarding') as mock_onboard:
+        with patch('cli.core.org_start_controller.prepare_worker_onboarding') as mock_onboard:
             mock_onboard.return_value = Mock()
-            with patch('cli.commands.org.start.get_worker_env_vars') as mock_env:
+            with patch('cli.core.org_start_controller.get_worker_env_vars') as mock_env:
                 mock_env.return_value = {}
-                with patch('cli.commands.org.start.get_default_registry') as mock_reg:
+                with patch('cli.core.org_start_controller.get_default_registry') as mock_reg:
                     mock_reg_instance = MagicMock()
                     mock_reg_instance.has.return_value = True
                     mock_reg.return_value = mock_reg_instance
