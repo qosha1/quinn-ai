@@ -17,7 +17,6 @@ a clean shutdown with state preservation for resume.
 import json
 import logging
 import time
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -43,52 +42,31 @@ from .sessions import (
 )
 from .sessions.tmux_spawner import TmuxSpawner
 
+# Data classes and message templates moved to dedicated modules; re-exported
+# below so existing 'from cli.core.stop_controller import OrgStopResult, ...'
+# style imports continue to work.
+from .stop_controller_models import (
+    WorkerStopState,
+    StopPhaseResult,
+    OrgStopResult,
+)
+from .stop_controller_messages import build_wrapup_message
+
 if TYPE_CHECKING:
     from .queries.worker import Worker as WorkerData
 
 _logger = logging.getLogger(__name__)
 
 
-@dataclass
-class WorkerStopState:
-    """Tracks stop state for a single worker."""
-
-    worker_id: str
-    worker_name: str
-    role: str
-    timeout_seconds: int
-    wrapup_sent_at: Optional[datetime] = None
-    ack_received_at: Optional[datetime] = None
-    ack_message: Optional[str] = None
-    session_stopped: bool = False
-    state_saved: bool = False
-    error: Optional[str] = None
-
-
-@dataclass
-class StopPhaseResult:
-    """Result of a stop phase."""
-
-    phase: int
-    name: str
-    success: bool
-    duration_seconds: float
-    message: str
-    details: dict = field(default_factory=dict)
-
-
-@dataclass
-class OrgStopResult:
-    """Complete result of org stop operation."""
-
-    success: bool
-    phases: list[StopPhaseResult] = field(default_factory=list)
-    workers_stopped: int = 0
-    workers_acked: int = 0
-    sessions_terminated: int = 0
-    states_saved: int = 0
-    errors: list[str] = field(default_factory=list)
-    total_duration_seconds: float = 0.0
+__all__ = [
+    "OrgStopController",
+    "OrgStopResult",
+    "StopPhaseResult",
+    "WorkerStopState",
+    "get_resume_state",
+    "consume_resume_state",
+    "cleanup_expired_resume_states",
+]
 
 
 class OrgStopController:
@@ -338,7 +316,7 @@ class OrgStopController:
                         self.db,
                         channel_id=general.id,
                         from_worker_id=sender_id,
-                        content=self._build_wrapup_message(state, timeout),
+                        content=build_wrapup_message(state, timeout),
                         priority=0,  # Highest priority
                         time_sensitivity="immediate",
                     )
@@ -386,20 +364,6 @@ class OrgStopController:
                 duration_seconds=time.time() - start,
                 message=f"Failed to send wrap-up requests: {e}",
             )
-
-    def _build_wrapup_message(self, state: WorkerStopState, timeout: int) -> str:
-        """Build wrap-up notification content."""
-        return (
-            f"**Workday Ending**\n\n"
-            f"Worker: {state.worker_name} ({state.role})\n\n"
-            f"Please wrap up your current work:\n"
-            f"1. Save any work in progress to shared/\n"
-            f"2. Document incomplete work in beads\n"
-            f"3. Commit any changes\n\n"
-            f"Timeout: {timeout} seconds\n\n"
-            f"Reply with 'ACK' to acknowledge.\n"
-            f"After timeout, your session will be terminated."
-        )
 
     # ===================
     # Wait for Acknowledgements
