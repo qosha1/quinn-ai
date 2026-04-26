@@ -407,6 +407,36 @@ cli/
   tests/           pytest suite
 ```
 
+### Test harnesses
+
+For tests that need "a worker has an active session" without spawning a real
+process or tmux:
+
+```python
+from cli.tests.harness import with_fake_session_registry
+
+def test_hire_binds_session(initialized_org):
+    with with_fake_session_registry() as fake_cls:
+        runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "hire", "--name", "alice", "--role", "engineer",
+            "--manager", ceo_id, "--cost", "50",
+        ])
+        spawned = fake_cls.created()
+        assert any(s.config.worker_id == ... for s in spawned)
+```
+
+`with_fake_session_registry()` swaps the default `SessionRegistry` so all
+adapters (including `claude_code`, `codex`, `gemini`, `openai`) are routed to
+`FakeSession` for the duration of the block. The fake records every spawn,
+input, and termination call; tests can inspect or drive state via the
+classmethods on `FakeSession`. The previous registry is restored on exit.
+
+A lower-level `FakeSpawner` (in `cli/tests/harness/fake_spawner.py`) implements
+the `SpawnStrategy` ABC for tests that exercise `SpawnerFactory` directly. Most
+audit tests need `FakeSession`, not `FakeSpawner` — the hire/start path goes
+through the SessionRegistry, not the SpawnerFactory.
+
 ### Conventions worth keeping
 
 - New magic values go in `core/constants/`. Importers `from cli.core.constants import …`.
