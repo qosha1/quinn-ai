@@ -78,14 +78,13 @@ def tmux_with_fake_cli() -> Iterator[TmuxSession]:
 
     spawner = TmuxSpawner()
     # Run fake_cli as a python module so import resolution works.
-    # NOTE: env_vars in SpawnerConfig is unreliable (see bead quinn-ai-ad8 —
-    # TmuxSpawner sets env BEFORE new-session, so values don't reach the
-    # spawned process). Pass --worker via args instead until that's fixed.
+    # env_vars now reach the process after the quinn-ai-ad8 fix.
     config = SpawnerConfig(
         command=sys.executable,
-        args=["-m", FAKE_CLI_MODULE, "--worker", "fakecli-test", "--interval", "0.2"],
+        args=["-m", FAKE_CLI_MODULE, "--interval", "0.2"],
         session_name=f"qn-fakecli-{int(time.time() * 1000) % 100000}",
         worker_id="fakecli-test",
+        env_vars={"QUINN_WORKER_ID": "fakecli-test"},
     )
     result: SpawnResult = spawner.spawn(config)
     if not result.success:

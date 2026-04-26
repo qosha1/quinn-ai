@@ -129,12 +129,15 @@ class TmuxSpawner(SpawnStrategy):
             if config.working_directory:
                 tmux_args.extend(["-c", str(config.working_directory)])
 
+            # Set environment variables for the spawned process via
+            # `tmux new-session -e KEY=VALUE`. The previous implementation
+            # used `set-environment` BEFORE create which silently no-op'd
+            # because the session didn't exist yet (bug quinn-ai-ad8).
+            for key, value in config.env_vars.items():
+                tmux_args.extend(["-e", f"{key}={value}"])
+
             # Add the command
             tmux_args.append(cmd_str)
-
-            # Set environment variables
-            for key, value in config.env_vars.items():
-                self._run_tmux("set-environment", "-t", session_name, key, value)
 
             # Create session
             result = self._run_tmux(*tmux_args)
