@@ -24,6 +24,16 @@ from shared.wrkr.memory.interface import MockMemory
 from shared.queue.interface import MockQueue
 
 
+def _tmux_available() -> bool:
+    """True iff a tmux binary is on PATH.
+
+    Used to gate fixtures that call subprocess.run(['tmux', ...]) so
+    pytest collection doesn't crash on hosts without tmux installed
+    (quinn-ai-0ou).
+    """
+    return shutil.which("tmux") is not None
+
+
 # =============================================================================
 # INTEGRATION TEST FIXTURES (Systemeval)
 # =============================================================================
@@ -68,6 +78,10 @@ def cleanup_org_sessions(org_path: Path) -> None:
         None
     """
     if not org_path.exists():
+        return
+
+    # tmux missing → nothing to clean up (quinn-ai-0ou).
+    if not _tmux_available():
         return
 
     # Get worker IDs from database
@@ -201,6 +215,10 @@ def verify_no_leaked_sessions():
         AssertionError: If quinn tmux sessions are detected after tests
     """
     yield
+
+    # tmux missing → no sessions to leak (quinn-ai-0ou).
+    if not _tmux_available():
+        return
 
     result = subprocess.run(
         ["tmux", "list-sessions"],
