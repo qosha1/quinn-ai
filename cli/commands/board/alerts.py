@@ -11,10 +11,10 @@ from typing import Optional
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
 from shared.enums import Priority
-from core.queries import (
+from cli.core.queries import (
     get_all_budget_pools,
     get_current_allocation,
     get_workers_by_runtime_status,
@@ -67,7 +67,7 @@ def _get_active_alerts(db) -> list[dict]:
     pools = get_all_budget_pools(db)
     if pools:
         # Get CEO allocation for budget check
-        from core.org import Org
+        from cli.core.org import Org
         org = Org.load(db)
         if org.ceo_worker_id:
             alloc = get_current_allocation(db, org.ceo_worker_id)

@@ -2,9 +2,9 @@
 
 import click
 
-from msgr.context import pass_context, MsgrContext
-from msgr.utils import resolve_channel, ChannelResolutionError
-from core.queries.channel import create_message_with_notifications
+from cli.msgr.context import pass_context, MsgrContext
+from cli.msgr.utils import resolve_channel, ChannelResolutionError
+from cli.core.queries.channel import create_message_with_notifications
 
 
 @click.command()

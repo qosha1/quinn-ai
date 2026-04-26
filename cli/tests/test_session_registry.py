@@ -5,8 +5,8 @@ Tests for SessionRegistry.
 import pytest
 from unittest.mock import Mock
 
-from core.session import SessionInterface, SessionConfig
-from core.sessions.registry import (
+from cli.core.session import SessionInterface, SessionConfig
+from cli.core.sessions.registry import (
     SessionRegistry,
     AdapterNotFoundError,
     get_default_registry,
@@ -15,7 +15,7 @@ from core.sessions.registry import (
     set_default_registry,
     reset_default_registry,
 )
-from core.sessions import ClaudeCodeSession
+from cli.core.sessions import ClaudeCodeSession
 
 
 class MockSessionAdapter(SessionInterface):
@@ -43,7 +43,7 @@ class MockSessionAdapter(SessionInterface):
         pass
 
     def _read_output(self, timeout_ms=None):
-        from core.session import SessionOutput
+        from cli.core.session import SessionOutput
         from datetime import datetime
         return SessionOutput(content="", timestamp=datetime.now())
 
@@ -87,7 +87,7 @@ class AnotherMockAdapter(SessionInterface):
         pass
 
     def _read_output(self, timeout_ms=None):
-        from core.session import SessionOutput
+        from cli.core.session import SessionOutput
         from datetime import datetime
         return SessionOutput(content="", timestamp=datetime.now())
 

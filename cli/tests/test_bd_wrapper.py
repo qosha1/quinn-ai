@@ -10,14 +10,14 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from core.bd_wrapper import (
+from cli.core.bd_wrapper import (
     _get_bead_info,
     check_lifecycle_transition,
     get_bundled_bd_path,
     get_org_beads_dir,
     run_bd,
 )
-from core.lifecycle import (
+from cli.core.lifecycle import (
     CannotCloseBeadError,
     InvalidStateTransitionError,
 )

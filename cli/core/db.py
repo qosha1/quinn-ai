@@ -5,14 +5,14 @@ DEPRECATED: This module is a backward-compatibility facade.
 All code has been refactored into cli.core.db package.
 
 Import from core.db instead:
-    from core.db import Database, init_database, open_database
+    from cli.core.db import Database, init_database, open_database
 
 This file will be removed in a future version.
 """
 
 # Re-export everything from the new package structure
 # This maintains backward compatibility for existing imports
-from core.db import (
+from cli.core.db import (
     # Main classes
     Database,
     TransactionalFileContext,

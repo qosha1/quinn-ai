@@ -5,13 +5,13 @@ Provides channel name resolution and helper functions.
 """
 
 from typing import Optional
-from core.db import Database
-from core.queries.channel import (
+from cli.core.db import Database
+from cli.core.queries.channel import (
     get_channel,
     get_channel_by_name,
     get_or_create_direct_channel,
 )
-from core.queries.worker import get_worker
+from cli.core.queries.worker import get_worker
 
 
 class ChannelResolutionError(Exception):

@@ -7,11 +7,11 @@ still has session references.
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.worker import Worker
-from core.sessions.binding_manager import get_binding_manager
-from core.sessions.persistence import get_session_for_worker, update_session_state
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.worker import Worker
+from cli.core.sessions.binding_manager import get_binding_manager
+from cli.core.sessions.persistence import get_session_for_worker, update_session_state
 from datetime import datetime
 from shared import WorkerNotFound
 

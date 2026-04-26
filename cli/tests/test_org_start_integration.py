@@ -16,9 +16,9 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-from core.org import Org
-from core.db import init_database
-from core.session import SessionConfig
+from cli.core.org import Org
+from cli.core.db import init_database
+from cli.core.session import SessionConfig
 from shared import InvalidOrgTransition
 from shared.enums import OrgStatus
 

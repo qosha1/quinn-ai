@@ -9,9 +9,9 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch, call
 
-from core.sessions.spawner import SpawnerConfig, SpawnFailedError
-from core.sessions.tmux_spawner import TmuxSpawner
-from core.constants import TMUX_SESSION_PREFIX
+from cli.core.sessions.spawner import SpawnerConfig, SpawnFailedError
+from cli.core.sessions.tmux_spawner import TmuxSpawner
+from cli.core.constants import TMUX_SESSION_PREFIX
 
 
 @pytest.fixture

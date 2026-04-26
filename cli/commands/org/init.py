@@ -8,8 +8,8 @@ from typing import List, Optional
 
 import click
 
-from commands.context import pass_context, Context
-from core.org_init import OrgInitConfig, ObjectiveConfig, init_org
+from cli.commands.context import pass_context, Context
+from cli.core.org_init import OrgInitConfig, ObjectiveConfig, init_org
 
 
 # Maximum number of OKRs to collect during interactive prompting
@@ -45,7 +45,7 @@ def _load_okrs_from_file(file_path: Path) -> List[ObjectiveConfig]:
         if not isinstance(okr, dict) or "title" not in okr:
             raise click.ClickException("Each OKR must have at least a 'title' field")
 
-        from core.org_init import KeyResultConfig
+        from cli.core.org_init import KeyResultConfig
 
         key_results = []
         for kr in okr.get("key_results", []):

@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from core.onboarding import (
+from cli.core.onboarding import (
     _generate_first_actions,
     _get_escalation_timeout,
     prepare_worker_onboarding,
 )
-from core.db import init_database
-from core.queries.okr import create_okr, KeyResult
-from core.constants import (
+from cli.core.db import init_database
+from cli.core.queries.okr import create_okr, KeyResult
+from cli.core.constants import (
     DEFAULT_ESCALATION_TIMEOUT_CEO,
     DEFAULT_ESCALATION_TIMEOUT_MANAGER,
     DEFAULT_ESCALATION_TIMEOUT_WORKER,

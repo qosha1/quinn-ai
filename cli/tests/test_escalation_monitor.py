@@ -8,9 +8,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from core.escalation_monitor import EscalationMonitor
-from core.db import init_database
-from core.constants import (
+from cli.core.escalation_monitor import EscalationMonitor
+from cli.core.db import init_database
+from cli.core.constants import (
     DEFAULT_ESCALATION_TIMEOUT_CEO,
     DEFAULT_ESCALATION_TIMEOUT_MANAGER,
     DEFAULT_ESCALATION_TIMEOUT_WORKER,
@@ -34,8 +34,8 @@ def test_db(temp_org_dir):
     db = init_database(db_path)
 
     # Run migration to v19
-    from core.db.migrations import migrate_database
-    from core.constants import DB_SCHEMA_VERSION
+    from cli.core.db.migrations import migrate_database
+    from cli.core.constants import DB_SCHEMA_VERSION
 
     # Get current version from config
     current_version_row = db.fetchone("SELECT value FROM config WHERE key = 'schema_version'")
@@ -49,7 +49,7 @@ def test_db(temp_org_dir):
         migrate_database(db, current_version, DB_SCHEMA_VERSION)
 
     # Create a test worker
-    from core.org import Org
+    from cli.core.org import Org
     org = Org(db)
     ceo = org.init("TestCEO", "CEO")
 

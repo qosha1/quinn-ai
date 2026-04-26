@@ -10,8 +10,8 @@ import re
 from pathlib import Path
 from typing import Optional, Type
 
-from providers.base import Provider, ProviderConfig
-from providers.registry.registry import ProviderRegistry
+from cli.providers.base import Provider, ProviderConfig
+from cli.providers.registry.registry import ProviderRegistry
 
 
 def _expand_env_vars(value: str) -> str:
@@ -146,13 +146,13 @@ def _get_default_provider_classes() -> dict[str, Type[Provider]]:
 
     # Only import if the module exists and is implemented
     try:
-        from providers.anthropic import AnthropicProvider
+        from cli.providers.anthropic import AnthropicProvider
         classes["anthropic"] = AnthropicProvider
     except ImportError:
         pass
 
     try:
-        from providers.openai import OpenAIProvider
+        from cli.providers.openai import OpenAIProvider
         classes["openai"] = OpenAIProvider
     except ImportError:
         pass
@@ -184,7 +184,7 @@ def create_registry_from_config(config: "ProvidersConfig") -> ProviderRegistry:
         registry.set_default(config.default)  # After registration
     """
     # Avoid circular import
-    from core.config import ProvidersConfig
+    from cli.core.config import ProvidersConfig
 
     registry = ProviderRegistry()
 

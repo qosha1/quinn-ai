@@ -599,7 +599,7 @@ class WorkerSessionManager:
 
     def _ensure_onboarding(self, config: "SessionConfig") -> None:
         """Ensure onboarding artifacts and session context are prepared."""
-        from core.onboarding import (
+        from cli.core.onboarding import (
             prepare_worker_onboarding,
             load_onboarding_context,
             get_worker_env_vars,

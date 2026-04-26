@@ -15,7 +15,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from commands.main import qn
+from cli.commands.main import qn
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +51,8 @@ def initialized_org(runner, temp_org):
 
 
 def get_ceo_worker_id(org_path: Path) -> str:
-    from core.db import open_database, get_org_db_path
-    from core.org import Org
+    from cli.core.db import open_database, get_org_db_path
+    from cli.core.org import Org
 
     db = open_database(get_org_db_path(org_path))
     org = Org.load(db)
@@ -63,9 +63,9 @@ def get_ceo_worker_id(org_path: Path) -> str:
 
 def create_worker(org_path: Path, name: str, manager_id: str, role: str = "developer") -> str:
     """Insert a worker directly into the database and activate them."""
-    from core.db import open_database, get_org_db_path
-    from core.queries import create_worker as db_create_worker, get_worker
-    from core.worker import Worker
+    from cli.core.db import open_database, get_org_db_path
+    from cli.core.queries import create_worker as db_create_worker, get_worker
+    from cli.core.worker import Worker
 
     db = open_database(get_org_db_path(org_path))
     try:
@@ -90,9 +90,9 @@ def create_worker(org_path: Path, name: str, manager_id: str, role: str = "devel
 
 def grant_authority(org_path: Path, worker_id: str, allowed_roles: list, max_cost: int = 60, budget: int = 500) -> None:
     """Give a worker hiring authority so they can act as manager/delegate."""
-    from core.db import open_database, get_org_db_path
-    from core.worker import Worker, HiringScope
-    from core.org import Org
+    from cli.core.db import open_database, get_org_db_path
+    from cli.core.worker import Worker, HiringScope
+    from cli.core.org import Org
 
     db = open_database(get_org_db_path(org_path))
     try:
@@ -280,9 +280,9 @@ class TestHireManagerLookup:
         ceo_id = get_ceo_worker_id(initialized_org)
         manager_id = create_worker(initialized_org, "FullManager", ceo_id)
         # Grant authority with max_reports=1
-        from core.db import open_database, get_org_db_path
-        from core.worker import Worker, HiringScope
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.worker import Worker, HiringScope
+        from cli.core.org import Org
 
         db = open_database(get_org_db_path(initialized_org))
         try:
@@ -464,9 +464,9 @@ class TestFireAuthorization:
     def test_fire_manager_no_manager_error_without_flag(self, runner, initialized_org):
         """Firing a worker that has no manager requires --manager flag."""
         # Worker at top level without a manager - manipulate DB directly
-        from core.db import open_database, get_org_db_path
-        from core.queries import create_worker as db_create_worker, get_worker
-        from core.worker import Worker
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import create_worker as db_create_worker, get_worker
+        from cli.core.worker import Worker
 
         db = open_database(get_org_db_path(initialized_org))
         try:
@@ -563,8 +563,8 @@ class TestFireReassignment:
 
         manager_id = create_worker(initialized_org, "SubManager", director_id)
         # Give SubManager delegated authority from Director
-        from core.db import open_database, get_org_db_path
-        from core.worker import Worker, HiringScope
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.worker import Worker, HiringScope
 
         db = open_database(get_org_db_path(initialized_org))
         try:
@@ -844,8 +844,8 @@ class TestDemoteHappyPath:
         grant_authority(initialized_org, director_id, allowed_roles=["developer", "analyst"], max_cost=80)
 
         lead_id = create_worker(initialized_org, "CascadeLead", director_id)
-        from core.db import open_database, get_org_db_path
-        from core.worker import Worker, HiringScope
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.worker import Worker, HiringScope
         db = open_database(get_org_db_path(initialized_org))
         try:
             director = Worker(db, director_id)
@@ -871,8 +871,8 @@ class TestDemoteHappyPath:
 
         # Director delegates authority to a direct report
         lead_id = create_worker(initialized_org, "InteractiveLead2", director_id)
-        from core.db import open_database, get_org_db_path
-        from core.worker import Worker, HiringScope
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.worker import Worker, HiringScope
         db = open_database(get_org_db_path(initialized_org))
         try:
             director = Worker(db, director_id)
@@ -917,7 +917,7 @@ class TestChartShow:
 
     def test_chart_show_empty_workers_message(self, runner, temp_org):
         """If org-chart/current.yaml exists but has no root, show empty message."""
-        from core.org_chart import ORG_CHART_DIR, ORG_CHART_CURRENT
+        from cli.core.org_chart import ORG_CHART_DIR, ORG_CHART_CURRENT
         chart_dir = temp_org / ORG_CHART_DIR
         chart_dir.mkdir(parents=True)
         (chart_dir / ORG_CHART_CURRENT).write_text(yaml.dump({"workers": {}, "hierarchy": {}}))
@@ -953,7 +953,7 @@ class TestChartDiff:
 
     def test_chart_diff_not_git_repo(self, runner, temp_org):
         """When git rev-parse fails, should report not a git repository."""
-        from core.org_chart import ORG_CHART_DIR, ORG_CHART_CURRENT
+        from cli.core.org_chart import ORG_CHART_DIR, ORG_CHART_CURRENT
         chart_dir = temp_org / ORG_CHART_DIR
         chart_dir.mkdir(parents=True)
         (chart_dir / ORG_CHART_CURRENT).write_text("{}")
@@ -1257,7 +1257,7 @@ class TestBudgetAllocate:
         create_worker(initialized_org, "BrokeReceiver", ceo_id)
 
         with patch("commands.org.budget.BudgetService.delegate_budget") as mock_delegate:
-            from commands.org.budget import BudgetAllocationError
+            from cli.commands.org.budget import BudgetAllocationError
             mock_delegate.side_effect = BudgetAllocationError("insufficient funds")
 
             result = runner.invoke(qn, [
@@ -1520,7 +1520,7 @@ class TestOkrShow:
 
 class TestOkrProgress:
     def test_okr_progress_no_key_results(self, runner, initialized_org):
-        from core.queries import OKR
+        from cli.core.queries import OKR
 
         mock_okr = MagicMock()
         mock_okr.title = "Test OKR"
@@ -1779,8 +1779,8 @@ class TestProviderSetWorker:
             "org", "provider", "set-worker", "TestCEO", "claude_code"
         ])
         # Clear via direct DB update (the '--' arg doesn't work with Click parsing)
-        from core.db import open_database, get_org_db_path
-        from core.queries import update_worker_preferred_provider, get_worker_by_name
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import update_worker_preferred_provider, get_worker_by_name
         db = open_database(get_org_db_path(initialized_org))
         try:
             w = get_worker_by_name(db, "TestCEO")
@@ -2100,8 +2100,8 @@ class TestRevokeAuthorityValidation:
         grant_authority(initialized_org, director_id, allowed_roles=["developer"], max_cost=80)
 
         lead_id = create_worker(initialized_org, "DownstreamLead", director_id)
-        from core.db import open_database, get_org_db_path
-        from core.worker import Worker, HiringScope
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.worker import Worker, HiringScope
         db = open_database(get_org_db_path(initialized_org))
         try:
             director = Worker(db, director_id)
@@ -2164,8 +2164,8 @@ class TestRevokeAuthorityHappyPath:
         grant_authority(initialized_org, director_id, allowed_roles=["developer"], max_cost=80)
 
         lead_id = create_worker(initialized_org, "CascadeRevokeLead", director_id)
-        from core.db import open_database, get_org_db_path
-        from core.worker import Worker, HiringScope
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.worker import Worker, HiringScope
         db = open_database(get_org_db_path(initialized_org))
         try:
             director = Worker(db, director_id)
@@ -2206,8 +2206,8 @@ class TestRevokeAuthorityHappyPath:
         l2_id = create_worker(initialized_org, "Level2", l1_id)
         l3_id = create_worker(initialized_org, "Level3", l2_id)
 
-        from core.db import open_database, get_org_db_path
-        from core.worker import Worker, HiringScope
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.worker import Worker, HiringScope
         db = open_database(get_org_db_path(initialized_org))
         try:
             l1 = Worker(db, l1_id)
@@ -2235,8 +2235,8 @@ class TestRevokeAuthorityHappyPath:
         grant_authority(initialized_org, director_id, allowed_roles=["developer"], max_cost=80)
 
         lead_id = create_worker(initialized_org, "InteractiveRevokeLead", director_id)
-        from core.db import open_database, get_org_db_path
-        from core.worker import Worker, HiringScope
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.worker import Worker, HiringScope
         db = open_database(get_org_db_path(initialized_org))
         try:
             director = Worker(db, director_id)
@@ -2315,8 +2315,8 @@ class TestDelegationsList:
         grant_authority(initialized_org, worker_id, allowed_roles=["developer"])
 
         # Revoke it (CEO revokes authority from the worker)
-        from core.db import open_database, get_org_db_path
-        from core.worker import Worker
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.worker import Worker
         db = open_database(get_org_db_path(initialized_org))
         try:
             ceo = Worker(db, ceo_id)

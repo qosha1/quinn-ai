@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from core.db import (
+from cli.core.db import (
     Database,
     init_database,
     SCHEMA_VERSION,
 )
-from core.queries import (
+from cli.core.queries import (
     # Teams & Workers (for fixtures)
     create_team,
     create_worker,
@@ -492,7 +492,7 @@ class TestKeyResults:
 
     def test_create_okr_with_key_results(self, db, ceo):
         """OKR can be created with key results."""
-        from core.queries import KeyResult
+        from cli.core.queries import KeyResult
 
         key_results = [
             KeyResult(metric="test_coverage", target=80, current=0, unit="%"),
@@ -511,7 +511,7 @@ class TestKeyResults:
 
     def test_get_okr_with_key_results(self, db, ceo):
         """Retrieved OKR includes key results."""
-        from core.queries import KeyResult
+        from cli.core.queries import KeyResult
 
         key_results = [KeyResult(metric="lighthouse", target=90, current=75, unit="score")]
         created = create_okr(db, title="Performance OKR", owner_id=ceo.id, key_results=key_results)
@@ -523,7 +523,7 @@ class TestKeyResults:
 
     def test_update_key_result(self, db, ceo):
         """Key result current value can be updated."""
-        from core.queries import KeyResult, update_okr_key_result
+        from cli.core.queries import KeyResult, update_okr_key_result
 
         key_results = [KeyResult(metric="test_coverage", target=80, current=50, unit="%")]
         okr = create_okr(db, title="Coverage OKR", owner_id=ceo.id, key_results=key_results)
@@ -534,7 +534,7 @@ class TestKeyResults:
 
     def test_update_nonexistent_key_result(self, db, ceo):
         """Updating nonexistent key result returns None."""
-        from core.queries import KeyResult, update_okr_key_result
+        from cli.core.queries import KeyResult, update_okr_key_result
 
         key_results = [KeyResult(metric="test_coverage", target=80, current=50, unit="%")]
         okr = create_okr(db, title="Coverage OKR", owner_id=ceo.id, key_results=key_results)
@@ -544,7 +544,7 @@ class TestKeyResults:
 
     def test_add_key_result(self, db, ceo):
         """Key result can be added to existing OKR."""
-        from core.queries import add_okr_key_result
+        from cli.core.queries import add_okr_key_result
 
         okr = create_okr(db, title="Empty OKR", owner_id=ceo.id)
         assert len(okr.key_results) == 0
@@ -558,7 +558,7 @@ class TestKeyResults:
 
     def test_add_duplicate_key_result_fails(self, db, ceo):
         """Adding duplicate key result metric returns None."""
-        from core.queries import KeyResult, add_okr_key_result
+        from cli.core.queries import KeyResult, add_okr_key_result
 
         key_results = [KeyResult(metric="test_coverage", target=80, current=50, unit="%")]
         okr = create_okr(db, title="Coverage OKR", owner_id=ceo.id, key_results=key_results)
@@ -572,7 +572,7 @@ class TestOKRProgress:
 
     def test_key_result_progress(self, db, ceo):
         """Key result progress is calculated correctly."""
-        from core.queries import KeyResult
+        from cli.core.queries import KeyResult
 
         kr = KeyResult(metric="test", target=100, current=75, unit="%")
         assert kr.progress() == 75.0
@@ -584,7 +584,7 @@ class TestOKRProgress:
 
     def test_key_result_progress_exceeds_target(self, db, ceo):
         """Progress caps at 100% when exceeding target."""
-        from core.queries import KeyResult
+        from cli.core.queries import KeyResult
 
         kr = KeyResult(metric="test", target=80, current=100, unit="%")
         assert kr.progress() == 100.0  # Capped at 100%
@@ -592,7 +592,7 @@ class TestOKRProgress:
 
     def test_okr_overall_progress(self, db, ceo):
         """OKR overall progress averages all key results."""
-        from core.queries import KeyResult
+        from cli.core.queries import KeyResult
 
         key_results = [
             KeyResult(metric="kr1", target=100, current=50, unit="%"),  # 50%
@@ -604,7 +604,7 @@ class TestOKRProgress:
 
     def test_okr_all_key_results_met(self, db, ceo):
         """OKR reports when all key results are met."""
-        from core.queries import KeyResult
+        from cli.core.queries import KeyResult
 
         key_results = [
             KeyResult(metric="kr1", target=80, current=80, unit="%"),
@@ -616,7 +616,7 @@ class TestOKRProgress:
 
     def test_okr_not_all_key_results_met(self, db, ceo):
         """OKR reports when not all key results are met."""
-        from core.queries import KeyResult
+        from cli.core.queries import KeyResult
 
         key_results = [
             KeyResult(metric="kr1", target=80, current=80, unit="%"),

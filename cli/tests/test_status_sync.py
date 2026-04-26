@@ -18,8 +18,8 @@ from time import sleep
 
 import pytest
 
-from core.db import Database, init_database
-from core.queries import (
+from cli.core.db import Database, init_database
+from cli.core.queries import (
     create_team,
     create_worker,
     get_worker,
@@ -28,7 +28,7 @@ from core.queries import (
     update_worker_runtime_status,
     get_worker_state,
 )
-from core.events import EventType, init_event_bus, get_event_bus
+from cli.core.events import EventType, init_event_bus, get_event_bus
 
 
 @pytest.fixture

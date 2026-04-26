@@ -9,7 +9,7 @@ import pytest
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
-from core.onboarding import _generate_first_actions
+from cli.core.onboarding import _generate_first_actions
 
 
 class TestMsgrPrompting:

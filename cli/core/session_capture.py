@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
 
-from core.activity_tracker import ActivityTracker
+from cli.core.activity_tracker import ActivityTracker
 
 _logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ class SessionCaptureService:
 
     def _capture_all_sessions(self) -> None:
         """Capture output from all active worker tmux sessions."""
-        from core.db import open_database, get_org_db_path
+        from cli.core.db import open_database, get_org_db_path
 
         db_path = get_org_db_path(self.org_path)
         if not db_path.exists():

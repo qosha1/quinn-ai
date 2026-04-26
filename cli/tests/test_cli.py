@@ -10,8 +10,8 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from commands.main import qn
-from commands.context import Context
+from cli.commands.main import qn
+from cli.commands.context import Context
 
 
 @pytest.fixture
@@ -185,8 +185,8 @@ class TestOrgGroup:
 
     def test_org_stop_worker_sends_wrapup(self, runner, temp_org):
         """qn org stop --worker should request wrap-up and close session."""
-        from core.db import open_database, get_org_db_path
-        from core.queries import get_channel_by_name, get_channel_messages
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import get_channel_by_name, get_channel_messages
 
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "start", "--no-spawn-ceo", "--skip-config-validation"])
@@ -277,8 +277,8 @@ class TestWrkrGroup:
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "start"])
         # Get CEO worker ID from database
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
         db = open_database(get_org_db_path(temp_org))
         org = Org.load(db)
         ceo_id = org.ceo_worker_id
@@ -315,8 +315,8 @@ class TestWrkrGroup:
         # Initialize org
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
         # Get CEO worker ID
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
         db = open_database(get_org_db_path(temp_org))
         org = Org.load(db)
         ceo_id = org.ceo_worker_id
@@ -389,8 +389,8 @@ class TestObserveCommand:
         # Initialize org
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
         # Get CEO worker ID
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
         db = open_database(get_org_db_path(temp_org))
         org = Org.load(db)
         ceo_id = org.ceo_worker_id

@@ -8,7 +8,7 @@ Provides structured logging for debugging with:
 - Enhanced JSON logging with per-component segregation
 
 Usage:
-    from core.logging import get_logger, configure_logging
+    from cli.core.logging import get_logger, configure_logging
 
     # Basic logging (legacy)
     configure_logging(org_path, verbose=args.verbose)
@@ -16,7 +16,7 @@ Usage:
     logger.info("Session spawned", worker_id=worker.id)
 
     # Enhanced JSON logging (per-component)
-    from core.logging import configure_enhanced_logging, get_component_logger
+    from cli.core.logging import configure_enhanced_logging, get_component_logger
     configure_enhanced_logging(org_path, component="worker", json_format=True)
     logger = get_component_logger("worker", "lifecycle")
     logger.info("Worker status changed", extra={

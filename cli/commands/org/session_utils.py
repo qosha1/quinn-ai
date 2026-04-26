@@ -5,9 +5,9 @@ from typing import Optional
 
 import click
 
-from core.session import SessionConfig
-from core.sessions.registry import get_default_registry
-from core.worker import Worker
+from cli.core.session import SessionConfig
+from cli.core.sessions.registry import get_default_registry
+from cli.core.worker import Worker
 
 
 def spawn_worker_session(

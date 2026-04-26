@@ -8,7 +8,7 @@ from typing import Optional
 
 import pytest
 
-from providers.base import (
+from cli.providers.base import (
     CompletionResult,
     Message,
     ModelCapabilities,
@@ -26,7 +26,7 @@ from providers.base import (
     calculate_retry_delay,
     with_retry,
 )
-from core.provider import (
+from cli.core.provider import (
     ProviderRegistry,
     load_providers_from_config,
     _expand_env_vars,
@@ -566,7 +566,7 @@ class TestIsRetryableError:
 
     def test_model_not_available_not_retryable(self):
         """ModelNotAvailableError should not be retryable."""
-        from providers.base import ModelNotAvailableError
+        from cli.providers.base import ModelNotAvailableError
         error = ModelNotAvailableError("Model not found", "anthropic")
         assert is_retryable_error(error) is False
 

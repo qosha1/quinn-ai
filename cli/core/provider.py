@@ -18,7 +18,7 @@ Key components:
 # Re-export everything from the refactored registry package
 # This maintains backward compatibility for existing imports
 
-from providers.registry import (
+from cli.providers.registry import (
     # Base
     DEFAULT_THRESHOLDS,
     DEFAULT_CODING_THRESHOLD,

@@ -11,11 +11,11 @@ from typing import Optional
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.queries import get_worker, get_worker_by_name, update_worker_preferred_provider
-from core.sessions.registry import get_default_registry
-from core.worker import Worker
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.queries import get_worker, get_worker_by_name, update_worker_preferred_provider
+from cli.core.sessions.registry import get_default_registry
+from cli.core.worker import Worker
 
 
 @click.group()

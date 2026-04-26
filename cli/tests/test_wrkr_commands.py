@@ -13,9 +13,9 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 from click.testing import CliRunner
 
-from commands.main import qn
-from core.db import init_database, get_org_db_path
-from core.queries import (
+from cli.commands.main import qn
+from cli.core.db import init_database, get_org_db_path
+from cli.core.queries import (
     create_team,
     create_worker,
     update_org_status,
@@ -23,7 +23,7 @@ from core.queries import (
     create_message,
     get_channel_by_name,
 )
-from core.sessions.persistence import create_session_record
+from cli.core.sessions.persistence import create_session_record
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ def org_dir():
 @pytest.fixture
 def db(org_dir):
     """Open database for the initialized org."""
-    from core.db import open_database
+    from cli.core.db import open_database
     db_path = get_org_db_path(org_dir)
     database = open_database(db_path)
     yield database
@@ -60,7 +60,7 @@ def db(org_dir):
 @pytest.fixture
 def ceo_id(db):
     """Get the CEO worker ID from the initialized org."""
-    from core.queries import get_org_state
+    from cli.core.queries import get_org_state
     state = get_org_state(db)
     return state.ceo_worker_id
 
@@ -509,7 +509,7 @@ class TestWrkrReport:
 
     def test_explicit_to_recipient_by_name(self, runner, org_dir, db, active_ceo, ceo_id):
         """report sends to explicit --to recipient by name."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         worker_data = get_worker(db, ceo_id)
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -741,10 +741,10 @@ class TestWrkrSearch:
 
     def test_happy_path_returns_matching_messages(self, runner, org_dir, db, active_ceo):
         """search displays matching messages."""
-        from core.queries import get_channel_by_name
+        from cli.core.queries import get_channel_by_name
         chan = get_channel_by_name(db, "general")
         if chan is None:
-            from core.queries import create_channel
+            from cli.core.queries import create_channel
             chan = create_channel(db, "general", "General channel", active_ceo)
 
         mock_msg = MagicMock()
@@ -764,10 +764,10 @@ class TestWrkrSearch:
 
     def test_messages_grouped_by_channel_in_output(self, runner, org_dir, db, active_ceo):
         """search groups results by channel."""
-        from core.queries import get_channel_by_name
+        from cli.core.queries import get_channel_by_name
         chan = get_channel_by_name(db, "general")
         if chan is None:
-            from core.queries import create_channel
+            from cli.core.queries import create_channel
             chan = create_channel(db, "general", "General", active_ceo)
 
         mock_msg = MagicMock()
@@ -935,7 +935,7 @@ def worker_with_report(org_dir, db, active_ceo):
     team_row = db.fetchone("SELECT id FROM teams LIMIT 1")
     team_id = team_row["id"] if team_row else None
     if team_id is None:
-        from core.queries import create_team
+        from cli.core.queries import create_team
         team = create_team(db, "Engineering")
         team_id = team.id
     report_data = create_worker(db, "Bob", "Engineer", team_id, 50, manager_id=active_ceo)
@@ -1038,7 +1038,7 @@ class TestWrkrDelegate:
 
     def test_no_permission_on_task(self, runner, org_dir, db, active_ceo, worker_with_report):
         """delegate fails when worker lacks permission on task."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
         with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=False):
             result = invoke_wrkr(
@@ -1051,7 +1051,7 @@ class TestWrkrDelegate:
 
     def test_no_permission_with_json(self, runner, org_dir, db, active_ceo, worker_with_report):
         """delegate --json returns JSON error when no permission."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
         with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=False):
             result = invoke_wrkr(
@@ -1065,7 +1065,7 @@ class TestWrkrDelegate:
 
     def test_happy_path_delegates_to_direct_report(self, runner, org_dir, db, active_ceo, worker_with_report):
         """delegate successfully delegates task to direct report."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -1098,7 +1098,7 @@ class TestWrkrDelegate:
 
     def test_case_insensitive_name_matching_for_target(self, runner, org_dir, db, active_ceo, worker_with_report):
         """delegate matches target by name case-insensitively."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -1115,7 +1115,7 @@ class TestWrkrDelegate:
 
     def test_with_reason_logged_in_comment(self, runner, org_dir, db, active_ceo, worker_with_report):
         """delegate passes reason to bd comment."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -1140,7 +1140,7 @@ class TestWrkrDelegate:
 
     def test_bd_update_fails(self, runner, org_dir, db, active_ceo, worker_with_report):
         """delegate fails when bd update fails."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -1158,7 +1158,7 @@ class TestWrkrDelegate:
 
     def test_comment_failure_is_non_critical(self, runner, org_dir, db, active_ceo, worker_with_report):
         """delegate succeeds even when comment bd call fails."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
         mock_update = MagicMock(returncode=0, stdout="", stderr="")
         mock_comment = MagicMock(returncode=1, stdout="", stderr="comment failed")
@@ -1179,7 +1179,7 @@ class TestWrkrDelegate:
 
     def test_bd_binary_not_found(self, runner, org_dir, db, active_ceo, worker_with_report):
         """delegate fails gracefully when bd binary not found."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
         with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=True):
             with patch("commands.wrkr.delegate.run_bd", side_effect=FileNotFoundError()):
@@ -1192,7 +1192,7 @@ class TestWrkrDelegate:
 
     def test_json_flag_success_output_format(self, runner, org_dir, db, active_ceo, worker_with_report):
         """delegate --json returns success JSON with expected fields."""
-        from core.queries import get_worker
+        from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
         mock_result = MagicMock()
         mock_result.returncode = 0

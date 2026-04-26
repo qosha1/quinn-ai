@@ -3,10 +3,10 @@
 import click
 from datetime import datetime
 
-from msgr.context import pass_context, MsgrContext
-from core.notifications import get_pending_notifications
-from core.queries.channel import get_channel
-from core.queries.worker import get_worker
+from cli.msgr.context import pass_context, MsgrContext
+from cli.core.notifications import get_pending_notifications
+from cli.core.queries.channel import get_channel
+from cli.core.queries.worker import get_worker
 
 
 @click.command()
@@ -49,7 +49,7 @@ def inbox(ctx: MsgrContext, unread: bool, channel: str, limit: int):
 
     # Filter by channel if specified
     if channel:
-        from msgr.utils import resolve_channel
+        from cli.msgr.utils import resolve_channel
         try:
             channel_id = resolve_channel(db, channel, worker_id)
             notifications = [n for n in notifications if n["channel_id"] == channel_id]

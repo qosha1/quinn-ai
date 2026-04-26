@@ -9,9 +9,9 @@ from typing import List
 
 import pytest
 
-from core.db import init_database
-from core.constants import ENTITY_TYPE_WORKER
-from core.events import (
+from cli.core.db import init_database
+from cli.core.constants import ENTITY_TYPE_WORKER
+from cli.core.events import (
     ENTITY_TYPES,
     Event,
     EventBus,

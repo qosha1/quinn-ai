@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.config import (
+from cli.core.config import (
     load_providers_config,
     load_worker_templates_config,
     load_budget_config,
@@ -35,7 +35,7 @@ from core.config import (
     mask_providers_config,
     PlaintextApiKeyWarning,
 )
-from core.constants import (
+from cli.core.constants import (
     COST_PER_1K_TOKENS_BUDGET,
     COST_PER_1K_TOKENS_STANDARD,
     COST_PER_1K_TOKENS_ADVANCED,

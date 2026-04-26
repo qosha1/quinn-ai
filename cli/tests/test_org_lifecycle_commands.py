@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock, call
 import pytest
 from click.testing import CliRunner
 
-from commands.main import qn
+from cli.commands.main import qn
 
 
 # ---------------------------------------------------------------------------
@@ -302,8 +302,8 @@ class TestOrgStart:
 
     def test_org_start_worker_preferred_provider_respected(self, runner, running_org):
         """Worker preferred_provider should override default."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
 
         db = open_database(get_org_db_path(running_org))
         org = Org.load(db)
@@ -325,8 +325,8 @@ class TestOrgStart:
 
     def test_org_start_explicit_provider_overrides_worker_preference(self, runner, running_org):
         """Explicit --provider on CLI should override worker preferred_provider."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
 
         db = open_database(get_org_db_path(running_org))
         org = Org.load(db)
@@ -362,8 +362,8 @@ class TestOrgStart:
 
     def test_org_start_session_spawn_failure_leaves_org_running(self, runner, initialized_org):
         """Session spawn failure should NOT roll back org to INITIALIZED."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
 
         with patch("commands.org.start._spawn_ceo_session_if_needed",
                    side_effect=Exception("spawn failed")):
@@ -395,7 +395,7 @@ class TestOrgStart:
 
     def test_org_start_cannot_start_from_uninitialized_state(self, runner, initialized_org):
         """Start with DB status='uninitialized' should fail with helpful message."""
-        from core.db import open_database, get_org_db_path
+        from cli.core.db import open_database, get_org_db_path
 
         db = open_database(get_org_db_path(initialized_org))
         db.execute("UPDATE org_state SET status='uninitialized'")
@@ -456,8 +456,8 @@ class TestOrgStart:
 
     def test_org_start_state_rollback_on_transition_failure(self, runner, initialized_org):
         """org.start() failure should roll back org to INITIALIZED status."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
 
         orig_start = Org.start
 
@@ -532,7 +532,7 @@ class TestOrgStop:
 
     def test_org_stop_force_skips_graceful_shutdown(self, runner, running_org):
         """--force should kill sessions without waiting."""
-        from core.stop_controller import OrgStopController
+        from cli.core.stop_controller import OrgStopController
 
         orig_execute = OrgStopController.execute
 
@@ -569,7 +569,7 @@ class TestOrgStop:
 
     def test_org_stop_graceful_timeout_passed_to_controller(self, runner, running_org):
         """--graceful-timeout should override per-role defaults."""
-        from core.stop_controller import OrgStopController
+        from cli.core.stop_controller import OrgStopController
 
         captured = {}
 
@@ -611,8 +611,8 @@ class TestOrgStop:
 
     def test_org_stop_worker_sends_wrapup_notification(self, runner, running_org):
         """--worker stop should send wrap-up notification to general channel."""
-        from core.db import open_database, get_org_db_path
-        from core.queries import get_channel_by_name, get_channel_messages
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import get_channel_by_name, get_channel_messages
 
         with patch("time.sleep"):  # skip graceful wait
             result = runner.invoke(qn, [
@@ -665,7 +665,7 @@ class TestOrgStop:
 
     def test_org_stop_no_cleanup_skips_notification_cleanup(self, runner, running_org):
         """--no-cleanup should skip notification cleanup."""
-        from core.stop_controller import OrgStopController
+        from cli.core.stop_controller import OrgStopController
 
         captured = {}
         orig_execute = OrgStopController.execute
@@ -711,7 +711,7 @@ class TestOrgStop:
 
     def test_org_stop_stop_controller_errors_truncated_at_10(self, runner, running_org):
         """Stop result with >10 errors should truncate display."""
-        from core.stop_controller import OrgStopResult
+        from cli.core.stop_controller import OrgStopResult
 
         fake_result = OrgStopResult(success=True)
         fake_result.workers_stopped = 1
@@ -735,7 +735,7 @@ class TestOrgStop:
 
     def test_org_stop_confirmation_shows_active_sessions(self, runner, running_org):
         """Confirmation prompt should list active sessions."""
-        from core.sessions import get_active_sessions
+        from cli.core.sessions import get_active_sessions
 
         # If there are active sessions the prompt would show them
         # We mock active sessions so confirmation is triggered
@@ -745,7 +745,7 @@ class TestOrgStop:
         with patch("commands.org.stop.get_active_sessions", return_value=[fake_session]):
             with patch("commands.org.stop.OrgStopController") as mock_ctrl_cls:
                 mock_ctrl = MagicMock()
-                from core.stop_controller import OrgStopResult
+                from cli.core.stop_controller import OrgStopResult
                 fake_result = OrgStopResult(success=True)
                 fake_result.workers_stopped = 1
                 fake_result.workers_acked = 0
@@ -814,8 +814,8 @@ class TestOrgRestart:
         ])
         assert result.exit_code == 0, result.output
         # Check org is running again
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
         db = open_database(get_org_db_path(running_org))
         org = Org.load(db)
         db.close()
@@ -831,7 +831,7 @@ class TestOrgRestart:
 
     def test_org_restart_force_passed_to_stop_phase(self, runner, running_org):
         """--force should result in force=True passed to OrgStopController."""
-        from core.stop_controller import OrgStopController, OrgStopResult
+        from cli.core.stop_controller import OrgStopController, OrgStopResult
 
         captured = {}
 
@@ -860,7 +860,7 @@ class TestOrgRestart:
         """--graceful-timeout should be forwarded to stop phase."""
         with patch("commands.org.stop.OrgStopController") as mock_ctrl_cls:
             captured = {}
-            from core.stop_controller import OrgStopResult
+            from cli.core.stop_controller import OrgStopResult
 
             def capture_execute(self, force, save_state, cleanup, graceful_timeout=None, **kwargs):
                 captured["graceful_timeout"] = graceful_timeout
@@ -900,7 +900,7 @@ class TestOrgRestart:
     def test_org_restart_stop_failure_raises_with_recovery_hint(self, runner, running_org):
         """Stop failure during restart should fail the command."""
         # Patch OrgStopController to raise so stop phase fails
-        from core.stop_controller import OrgStopController, OrgStopResult
+        from cli.core.stop_controller import OrgStopController, OrgStopResult
 
         def fail_execute(self, **kwargs):
             r = OrgStopResult(success=False)
@@ -931,7 +931,7 @@ class TestOrgRestart:
             stop_invoked[0] = True
 
         with patch("commands.org.stop.OrgStopController") as mock_ctrl_cls:
-            from core.stop_controller import OrgStopResult
+            from cli.core.stop_controller import OrgStopResult
             fake_r = OrgStopResult(success=True)
             fake_r.workers_stopped = 0
             fake_r.workers_acked = 0
@@ -1043,7 +1043,7 @@ class TestOrgStatus:
 
     def test_org_status_no_ceo_shows_no_ceo_section(self, runner, initialized_org):
         """If org has no CEO, status should not show CEO section."""
-        from core.db import open_database, get_org_db_path
+        from cli.core.db import open_database, get_org_db_path
 
         # Remove CEO worker
         db = open_database(get_org_db_path(initialized_org))
@@ -1108,8 +1108,8 @@ class TestOrgLogs:
 
     def test_org_logs_worker_found_by_id(self, runner, initialized_org):
         """qn org logs should find worker by ID."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
 
         db = open_database(get_org_db_path(initialized_org))
         org = Org.load(db)
@@ -1205,7 +1205,7 @@ class TestOrgLogs:
     def test_org_logs_get_tmux_session_name_uses_prefix(self):
         """get_tmux_session_name should use TMUX_SESSION_PREFIX constant."""
         from cli.commands.org.logs import get_tmux_session_name
-        from core.constants import TMUX_SESSION_PREFIX
+        from cli.core.constants import TMUX_SESSION_PREFIX
 
         name = get_tmux_session_name("worker-123")
         assert name.startswith(TMUX_SESSION_PREFIX)
@@ -1301,9 +1301,9 @@ class TestOrgObserve:
         self, runner, initialized_org
     ):
         """Active session in DB but missing tmux should hint at cleanup."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
-        from core.queries import get_worker_by_name as _real_gwbn
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
+        from cli.core.queries import get_worker_by_name as _real_gwbn
 
         db = open_database(get_org_db_path(initialized_org))
         org = Org.load(db)
@@ -1323,8 +1323,8 @@ class TestOrgObserve:
 
     def test_org_observe_output_shows_worker_info_before_attaching(self, runner, initialized_org):
         """Successful observe should print worker info."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
 
         db = open_database(get_org_db_path(initialized_org))
         org = Org.load(db)
@@ -1346,8 +1346,8 @@ class TestOrgObserve:
         self, runner, initialized_org
     ):
         """--stream mode should exit cleanly on KeyboardInterrupt."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
 
         db = open_database(get_org_db_path(initialized_org))
         org = Org.load(db)
@@ -1368,8 +1368,8 @@ class TestOrgObserve:
 
     def test_org_observe_stream_session_ended_message(self, runner, initialized_org):
         """--stream mode should print 'Session ended' when tmux session disappears."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
 
         db = open_database(get_org_db_path(initialized_org))
         org = Org.load(db)
@@ -1395,8 +1395,8 @@ class TestOrgObserve:
 
     def test_org_observe_poll_interval_passed_to_stream_mode(self, runner, initialized_org):
         """--poll-interval should be forwarded to stream_session_output."""
-        from core.db import open_database, get_org_db_path
-        from core.org import Org
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.org import Org
 
         db = open_database(get_org_db_path(initialized_org))
         org = Org.load(db)
@@ -1516,7 +1516,7 @@ class TestOrgCleanup:
         self, runner, initialized_org
     ):
         """--retention-days should change notification cleanup cutoff."""
-        from core.notifications import run_notification_cleanup
+        from cli.core.notifications import run_notification_cleanup
 
         captured = {}
 
@@ -1537,7 +1537,7 @@ class TestOrgCleanup:
 
     def test_org_cleanup_orphaned_tmux_sessions_killed(self, runner, initialized_org):
         """Orphaned tmux sessions should be killed."""
-        from core.sessions.cleanup import CleanupResult
+        from cli.core.sessions.cleanup import CleanupResult
 
         fake_orphan = MagicMock()
         fake_orphan.session_name = "qn-orphan-123"
@@ -1566,7 +1566,7 @@ class TestOrgCleanup:
         self, runner, initialized_org
     ):
         """Stale DB records should be marked crashed, not deleted, by default."""
-        from core.sessions.cleanup import CleanupResult
+        from cli.core.sessions.cleanup import CleanupResult
 
         fake_result = CleanupResult(
             orphaned_tmux_sessions=[],
@@ -1593,7 +1593,7 @@ class TestOrgCleanup:
         self, runner, initialized_org
     ):
         """--delete-stale-sessions should delete records instead of marking crashed."""
-        from core.sessions.cleanup import CleanupResult
+        from cli.core.sessions.cleanup import CleanupResult
 
         fake_result = CleanupResult(
             orphaned_tmux_sessions=[],
@@ -1619,7 +1619,7 @@ class TestOrgCleanup:
         self, runner, initialized_org
     ):
         """Session cleanup errors should be shown but not fail the command."""
-        from core.sessions.cleanup import CleanupResult
+        from cli.core.sessions.cleanup import CleanupResult
 
         fake_result = CleanupResult(
             orphaned_tmux_sessions=[],

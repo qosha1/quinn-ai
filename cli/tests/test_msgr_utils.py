@@ -4,10 +4,10 @@ import pytest
 from pathlib import Path
 import tempfile
 
-from core.db import init_database
-from core.queries.worker import create_worker
-from core.queries.channel import create_channel, subscribe_to_channel
-from msgr.utils import (
+from cli.core.db import init_database
+from cli.core.queries.worker import create_worker
+from cli.core.queries.channel import create_channel, subscribe_to_channel
+from cli.msgr.utils import (
     ChannelResolutionError,
     resolve_channel,
     format_channel_name,
@@ -30,7 +30,7 @@ def test_db():
 def setup_test_data(test_db):
     """Set up test workers and channels."""
     # Create a test team first
-    from core.queries.team import create_team
+    from cli.core.queries.team import create_team
     team = create_team(test_db, name="Engineering")
 
     # Create test workers
@@ -118,7 +118,7 @@ def test_resolve_dm_channel(setup_test_data):
     assert channel_id is not None
 
     # Verify it's a valid channel ID and it's a direct channel
-    from core.queries.channel import get_channel
+    from cli.core.queries.channel import get_channel
     channel = get_channel(db, channel_id)
     assert channel is not None
     assert channel.type == "direct"

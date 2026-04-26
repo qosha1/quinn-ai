@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.session import SessionInterface
-    from providers.registry.registry import ProviderRegistry
+    from cli.core.session import SessionInterface
+    from cli.providers.registry.registry import ProviderRegistry
 
 
 def create_session_for_worker(
@@ -45,9 +45,9 @@ def create_session_for_worker(
         AdapterNotFoundError: If no session adapter for the provider
     """
     # Import here to avoid circular imports
-    from core.session import SessionConfig
-    from core.sessions.registry import get_default_registry
-    from providers.registry.selection import select_provider_for_worker
+    from cli.core.session import SessionConfig
+    from cli.core.sessions.registry import get_default_registry
+    from cli.providers.registry.selection import select_provider_for_worker
 
     # Select provider
     selection = select_provider_for_worker(
@@ -131,20 +131,20 @@ def complete_with_budget(
         ProviderError: For other provider errors (wraps unexpected exceptions)
     """
     # Import here to avoid circular imports
-    from core.budget import (
+    from cli.core.budget import (
         BudgetEnforcer,
         estimate_cost,
         get_remaining_budget,
     )
-    from core.db import Database
-    from providers.base import (
+    from cli.core.db import Database
+    from cli.providers.base import (
         AuthenticationError,
         RateLimitError,
         ProviderTimeoutError,
         ProviderConnectionError,
         ProviderError,
     )
-    from providers.registry.selection import select_provider_for_worker
+    from cli.providers.registry.selection import select_provider_for_worker
 
     # Step 1: Select provider and model
     selection = select_provider_for_worker(

@@ -12,15 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from core.logging import get_logger
-from core.constants import LIVE_DIR
+from cli.core.logging import get_logger
+from cli.core.constants import LIVE_DIR
 
 
 # These imports will FAIL until we implement the modules
 try:
-    from core.logging import configure_enhanced_logging, get_component_logger
-    from core.log_formatters import StructuredJSONFormatter
-    from core.constants import LOG_RETENTION_DAYS, LOG_DATE_FORMAT, LOG_COMPONENTS
+    from cli.core.logging import configure_enhanced_logging, get_component_logger
+    from cli.core.log_formatters import StructuredJSONFormatter
+    from cli.core.constants import LOG_RETENTION_DAYS, LOG_DATE_FORMAT, LOG_COMPONENTS
 except ImportError:
     # Expected to fail initially - that's the point of TDD
     configure_enhanced_logging = None

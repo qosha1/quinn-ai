@@ -7,8 +7,8 @@ Tests strategy registration, selection, and factory management.
 import pytest
 from unittest.mock import MagicMock, patch
 
-from core.sessions.spawner import SpawnStrategy, SpawnerConfig, SpawnResult
-from core.sessions.spawner_factory import (
+from cli.core.sessions.spawner import SpawnStrategy, SpawnerConfig, SpawnResult
+from cli.core.sessions.spawner_factory import (
     SpawnerFactory,
     SpawnerNotFoundError,
     get_default_factory,

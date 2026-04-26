@@ -12,7 +12,7 @@ Tests the tier-based provider selection system including:
 
 import pytest
 
-from providers.base import (
+from cli.providers.base import (
     CostTier,
     CompletionResult,
     Message,
@@ -21,7 +21,7 @@ from providers.base import (
     Provider,
     ProviderConfig,
 )
-from core.provider import (
+from cli.core.provider import (
     DEFAULT_THRESHOLDS,
     ProviderRegistry,
     ProviderSelection,

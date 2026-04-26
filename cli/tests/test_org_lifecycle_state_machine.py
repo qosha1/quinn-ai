@@ -9,8 +9,8 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from core.db import init_database
-from core.org import Org
+from cli.core.db import init_database
+from cli.core.org import Org
 from shared import InvalidOrgTransition, ORG_TRANSITIONS
 from shared.enums import OrgStatus
 
@@ -94,7 +94,7 @@ class TestOrgT1UnintializedToInitialized:
 
     def test_t1_allocates_budget(self, org):
         """T1 should create budget pool and allocate to CEO."""
-        from core.queries.budget import get_current_allocation
+        from cli.core.queries.budget import get_current_allocation
 
         ceo = org.init(ceo_name="Test CEO", initial_budget=1000.0)
 
@@ -154,7 +154,7 @@ class TestOrgT2InitializedToRunning:
 
     def test_t2_delivers_briefing_if_exists(self, initialized_org):
         """T2 should deliver CEO briefing if config/ceo_briefing.md exists."""
-        from core.queries import get_messages_in_channel
+        from cli.core.queries import get_messages_in_channel
 
         # Create briefing file
         org_path = Path(initialized_org.db.db_path).parent.parent
@@ -373,7 +373,7 @@ class TestOrgPostconditions:
         assert org.ceo.lifecycle_status == "pending"
 
         # Budget allocated
-        from core.queries.budget import get_current_allocation
+        from cli.core.queries.budget import get_current_allocation
         allocation = get_current_allocation(org.db, org.ceo.id)
         assert allocation is not None
 

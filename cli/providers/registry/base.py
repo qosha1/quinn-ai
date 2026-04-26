@@ -10,14 +10,14 @@ This module contains:
 from dataclasses import dataclass
 from typing import Optional
 
-from core.constants import (
+from cli.core.constants import (
     COST_TIER_BUDGET_MAX,
     COST_TIER_STANDARD_MAX,
     COST_TIER_ADVANCED_MAX,
     DEFAULT_SKILL_THRESHOLDS,
 )
 
-from providers.base import (
+from cli.providers.base import (
     CostTier,
     ModelInfo,
     Provider,

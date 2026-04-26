@@ -14,8 +14,8 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from commands.main import qn
-from commands.config import check_env_vars
+from cli.commands.main import qn
+from cli.commands.config import check_env_vars
 
 
 @pytest.fixture

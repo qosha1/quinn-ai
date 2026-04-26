@@ -11,10 +11,10 @@ import sqlite3
 import click
 from typing import Optional
 
-from commands.context import pass_context, Context
-from core.bd_wrapper import run_bd
-from core.constants import BEAD_TYPE_EPIC
-from core.db import get_org_db_path, open_database
+from cli.commands.context import pass_context, Context
+from cli.core.bd_wrapper import run_bd
+from cli.core.constants import BEAD_TYPE_EPIC
+from cli.core.db import get_org_db_path, open_database
 
 _logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def list_cmd(ctx: Context, status: Optional[str], assignee: Optional[str], show_
       qn org okr list --status=in_progress
       qn org okr list --assignee=ceo
     """
-    from core.queries import list_okrs, get_worker_by_name
+    from cli.core.queries import list_okrs, get_worker_by_name
 
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)
@@ -239,7 +239,7 @@ def _create_okr(
     parent: Optional[str],
 ):
     """Shared implementation for set/add commands."""
-    from core.queries import get_worker_by_name, create_okr
+    from cli.core.queries import get_worker_by_name, create_okr
 
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)
@@ -597,8 +597,8 @@ def progress_cmd(ctx: Context, okr_id: str):
     Example:
       qn org okr progress okr-abc
     """
-    from core.db import open_database
-    from core.queries import get_okr
+    from cli.core.db import open_database
+    from cli.core.queries import get_okr
 
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)
@@ -673,8 +673,8 @@ def update_kr_cmd(ctx: Context, okr_id: str, metric: str, current: Optional[floa
       # Add with initial value
       qn org okr update-kr okr-abc --metric="bugs_fixed" --target=10 --current=3 --unit="count"
     """
-    from core.db import open_database
-    from core.queries import get_okr, update_okr_key_result, add_okr_key_result
+    from cli.core.db import open_database
+    from cli.core.queries import get_okr, update_okr_key_result, add_okr_key_result
 
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)

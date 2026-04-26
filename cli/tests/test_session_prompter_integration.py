@@ -8,15 +8,15 @@ import pytest
 from pathlib import Path
 from datetime import datetime
 
-from core.db import Database, open_database, init_database
-from core.session_prompter import SessionPrompter
-from core.queries import (
+from cli.core.db import Database, open_database, init_database
+from cli.core.session_prompter import SessionPrompter
+from cli.core.queries import (
     create_worker,
     create_team,
     get_worker_continuation_context,
     get_active_session_tmux_name,
 )
-from core.sessions.persistence import create_session_record
+from cli.core.sessions.persistence import create_session_record
 
 
 @pytest.fixture
@@ -128,7 +128,7 @@ class TestSessionPrompterIntegration:
 
     def test_prompt_rendering_with_real_context(self, test_db, test_org):
         """Test that prompts render correctly with real database context."""
-        from core.constants import CONTINUATION_PROMPT_SOFT_CHECK
+        from cli.core.constants import CONTINUATION_PROMPT_SOFT_CHECK
 
         worker = test_org["worker"]
         prompter = SessionPrompter(test_db, test_org["org_path"])

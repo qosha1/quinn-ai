@@ -11,13 +11,13 @@ Session = Worker's Brain. One session, one worker. Unbreakable 1:1.
 from datetime import datetime
 from typing import Optional
 
-from core.session import (
+from cli.core.session import (
     SessionInterface,
     SessionConfig,
     SessionOutput,
 )
-from providers.base import ProviderConfig
-from providers.openai import OpenAIProvider, TOKEN_COSTS
+from cli.providers.base import ProviderConfig
+from cli.providers.openai import OpenAIProvider, TOKEN_COSTS
 from shared.core import Message
 
 

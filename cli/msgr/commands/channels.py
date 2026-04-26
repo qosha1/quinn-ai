@@ -2,9 +2,9 @@
 
 import click
 
-from msgr.context import pass_context, MsgrContext
-from msgr.utils import format_channel_name
-from core.queries.channel import get_worker_channels
+from cli.msgr.context import pass_context, MsgrContext
+from cli.msgr.utils import format_channel_name
+from cli.core.queries.channel import get_worker_channels
 
 
 @click.command()

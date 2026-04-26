@@ -2,8 +2,8 @@
 
 import click
 
-from msgr.context import pass_context, MsgrContext
-from core.notifications import mark_notification_read
+from cli.msgr.context import pass_context, MsgrContext
+from cli.core.notifications import mark_notification_read
 
 
 @click.command()

@@ -73,7 +73,7 @@ class WorkerLifecycleManager:
         self._validate_lifecycle_transition("onboarding")
 
         # Generate onboarding files before transitioning state
-        from core.onboarding import prepare_worker_onboarding
+        from cli.core.onboarding import prepare_worker_onboarding
         org_path = self.worker._storage_mgr.get_org_path()
         prepare_worker_onboarding(self.worker.db, self.worker.id, org_path)
 

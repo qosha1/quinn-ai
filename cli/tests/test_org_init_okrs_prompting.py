@@ -8,12 +8,12 @@ from unittest.mock import patch, MagicMock
 import pytest
 from click.testing import CliRunner
 
-from commands.main import qn
-from core.org_init import OrgInitConfig, ObjectiveConfig, init_org
-from core.org import Org
-from core.db import init_database, open_database, get_org_db_path
-from core.queries.okr import get_okrs_by_owner
-from core.constants import DEFAULT_BOOTSTRAP_OKR_TITLE
+from cli.commands.main import qn
+from cli.core.org_init import OrgInitConfig, ObjectiveConfig, init_org
+from cli.core.org import Org
+from cli.core.db import init_database, open_database, get_org_db_path
+from cli.core.queries.okr import get_okrs_by_owner
+from cli.core.constants import DEFAULT_BOOTSTRAP_OKR_TITLE
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ class TestOKRsFileImport:
         db = open_database(db_path)
         try:
             # Get CEO to find their OKRs
-            from core.org import Org
+            from cli.core.org import Org
             org = Org.load(db)
             ceo_id = org.ceo_worker_id
 
@@ -134,7 +134,7 @@ class TestSkipOKRsFlag:
         db_path = get_org_db_path(temp_org_dir)
         db = open_database(db_path)
         try:
-            from core.org import Org
+            from cli.core.org import Org
             org = Org.load(db)
             ceo_id = org.ceo_worker_id
 
@@ -170,7 +170,7 @@ class TestInteractiveOKRPrompting:
         db_path = get_org_db_path(temp_org_dir)
         db = open_database(db_path)
         try:
-            from core.org import Org
+            from cli.core.org import Org
             org = Org.load(db)
             ceo_id = org.ceo_worker_id
 
@@ -200,7 +200,7 @@ class TestInteractiveOKRPrompting:
         db_path = get_org_db_path(temp_org_dir)
         db = open_database(db_path)
         try:
-            from core.org import Org
+            from cli.core.org import Org
             org = Org.load(db)
             ceo_id = org.ceo_worker_id
 
@@ -228,7 +228,7 @@ class TestInteractiveOKRPrompting:
         db_path = get_org_db_path(temp_org_dir)
         db = open_database(db_path)
         try:
-            from core.org import Org
+            from cli.core.org import Org
             org = Org.load(db)
             ceo_id = org.ceo_worker_id
 

@@ -7,19 +7,19 @@ of providers and models based on cost and skill requirements.
 
 from typing import Optional
 
-from providers.base import (
+from cli.providers.base import (
     CostTier,
     ModelInfo,
     ModelNotAvailableError,
     Provider,
 )
 
-from providers.registry.base import (
+from cli.providers.registry.base import (
     DEFAULT_THRESHOLDS,
     skills_to_capabilities,
 )
 
-from providers.registry.selection import _select_model_for_tier
+from cli.providers.registry.selection import _select_model_for_tier
 
 
 class ProviderRegistry:

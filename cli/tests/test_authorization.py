@@ -9,9 +9,9 @@ import subprocess
 
 import pytest
 
-from core.db import init_database
-from core.queries import create_team, create_worker
-from core.authorization import AuthorizationManager
+from cli.core.db import init_database
+from cli.core.queries import create_team, create_worker
+from cli.core.authorization import AuthorizationManager
 
 
 @pytest.fixture

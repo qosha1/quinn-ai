@@ -15,12 +15,12 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from commands.main import qn
-from commands.board.status import _format_budget_bar
-from core.db import open_database, get_org_db_path
-from core.org import Org
-from core.worker import Worker
-from core.queries import (
+from cli.commands.main import qn
+from cli.commands.board.status import _format_budget_bar
+from cli.core.db import open_database, get_org_db_path
+from cli.core.org import Org
+from cli.core.worker import Worker
+from cli.core.queries import (
     create_budget_pool,
     create_budget_allocation,
     update_allocation_spend,
@@ -268,7 +268,7 @@ class TestBoardStatusAlerts:
             org = Org.load(db)
             ceo_id = org.ceo_worker_id
             # Get the existing CEO allocation (created by org init)
-            from core.queries import get_current_allocation
+            from cli.core.queries import get_current_allocation
             alloc = get_current_allocation(db, ceo_id)
             if alloc is None:
                 # Create one if not present
@@ -302,7 +302,7 @@ class TestBoardStatusAlerts:
             ceo_worker = Worker.get(db, ceo_id)
             ceo_worker.start_session()
             ceo_worker.session_ready()
-            from core.queries import update_worker_runtime_status
+            from cli.core.queries import update_worker_runtime_status
             update_worker_runtime_status(db, ceo_id, "idle")
 
             # Hire 3 more workers under CEO and put them in idle runtime state
@@ -524,7 +524,7 @@ class TestBoardUICommand:
 
     def test_parse_terminal_kitty(self, runner):
         """board ui --terminal kitty should map to TerminalType.KITTY."""
-        from commands.board.ui import _parse_terminal
+        from cli.commands.board.ui import _parse_terminal
 
         mock_terminal = MagicMock()
         mock_terminal.KITTY = "KITTY_VALUE"
@@ -541,7 +541,7 @@ class TestBoardUICommand:
 
     def test_parse_terminal_iterm(self, runner):
         """board ui --terminal iterm should map to TerminalType.ITERM2."""
-        from commands.board.ui import _parse_terminal
+        from cli.commands.board.ui import _parse_terminal
 
         mock_terminal = MagicMock()
         mock_terminal.KITTY = "KITTY_VALUE"
@@ -558,7 +558,7 @@ class TestBoardUICommand:
 
     def test_parse_terminal_macos(self, runner):
         """board ui --terminal terminal should map to TerminalType.MACOS_TERMINAL."""
-        from commands.board.ui import _parse_terminal
+        from cli.commands.board.ui import _parse_terminal
 
         mock_terminal = MagicMock()
         mock_terminal.KITTY = "KITTY_VALUE"
@@ -575,7 +575,7 @@ class TestBoardUICommand:
 
     def test_parse_terminal_auto_returns_none(self, runner):
         """board ui --terminal auto should map to None preferred_terminal."""
-        from commands.board.ui import _parse_terminal
+        from cli.commands.board.ui import _parse_terminal
 
         mock_terminal = MagicMock()
         with patch.dict("sys.modules", {
@@ -588,7 +588,7 @@ class TestBoardUICommand:
 
     def test_parse_terminal_import_error_returns_none(self):
         """_parse_terminal should return None when board_ui not installed."""
-        from commands.board.ui import _parse_terminal
+        from cli.commands.board.ui import _parse_terminal
 
         with patch.dict("sys.modules", {
             "board_ui.interfaces.terminal": None

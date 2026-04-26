@@ -430,8 +430,8 @@ class Org:
             _logger.debug("Continuation engine already running")
             return
 
-        from core.continuation_engine import ContinuationEngine
-        from core.constants import CONTINUATION_ENGINE_POLL_INTERVAL
+        from cli.core.continuation_engine import ContinuationEngine
+        from cli.core.constants import CONTINUATION_ENGINE_POLL_INTERVAL
 
         self._escalation_monitor = ContinuationEngine(
             self._org_path,
@@ -463,8 +463,8 @@ class Org:
             _logger.debug("Activity reporter already running")
             return
 
-        from core.activity_reporter import ActivityReporter
-        from core.constants import (
+        from cli.core.activity_reporter import ActivityReporter
+        from cli.core.constants import (
             DEFAULT_ACTIVITY_REPORT_INTERVAL,
             DEFAULT_ACTIVITY_CREATE_BEADS,
         )
@@ -501,8 +501,8 @@ class Org:
             _logger.debug("Session capture service already running")
             return
 
-        from core.session_capture import SessionCaptureService
-        from core.constants import DEFAULT_SESSION_CAPTURE_INTERVAL
+        from cli.core.session_capture import SessionCaptureService
+        from cli.core.constants import DEFAULT_SESSION_CAPTURE_INTERVAL
 
         # Create and start session capture
         self._session_capture = SessionCaptureService(

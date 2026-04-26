@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from core.db import (
+from cli.core.db import (
     Database,
     TransactionalFileContext,
     init_database,
@@ -15,7 +15,7 @@ from core.db import (
     get_org_db_path,
     SCHEMA_VERSION,
 )
-from core.queries import (
+from cli.core.queries import (
     # Org
     get_org_state,
     update_org_status,
@@ -697,7 +697,7 @@ class TestConnectionManagement:
 
     def test_custom_busy_timeout(self, db_path):
         """Should accept custom busy timeout."""
-        from core.db import Database
+        from cli.core.db import Database
 
         # Ensure parent directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -713,7 +713,7 @@ class TestConnectionManagement:
 
     def test_wal_can_be_disabled(self, db_path):
         """Should allow disabling WAL mode."""
-        from core.db import Database
+        from cli.core.db import Database
 
         # Ensure parent directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)

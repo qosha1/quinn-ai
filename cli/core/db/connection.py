@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Optional
 
-from core.constants import DEFAULT_DB_BUSY_TIMEOUT_MS
+from cli.core.constants import DEFAULT_DB_BUSY_TIMEOUT_MS
 
 from .cleanup import register_database
 from .context import TransactionalFileContext

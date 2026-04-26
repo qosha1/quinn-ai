@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from core.session import (
+from cli.core.session import (
     SessionInterface,
     SessionConfig,
     SessionOutput,
@@ -18,7 +18,7 @@ from core.session import (
     SessionSpawnError,
     SessionTimeoutError,
 )
-from core.constants import TMUX_SESSION_PREFIX
+from cli.core.constants import TMUX_SESSION_PREFIX
 
 from shared.pyterm import (
     AgentSession,

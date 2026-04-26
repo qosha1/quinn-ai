@@ -391,7 +391,7 @@ def stop_all_sessions(
 
             # Update worker runtime state
             if worker_id:
-                from core.queries import update_worker_runtime_status
+                from cli.core.queries import update_worker_runtime_status
                 update_worker_runtime_status(db, worker_id, "stopped")
 
             result.sessions_stopped += 1

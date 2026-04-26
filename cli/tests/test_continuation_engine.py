@@ -11,11 +11,11 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-from core.continuation_engine import ContinuationEngine, ContinuationPolicy
-from core.db import init_database, open_database, Database
-from core.queries.worker import create_worker, create_worker_state
-from core.queries.activity import record_activity_signal
-from core.constants import (
+from cli.core.continuation_engine import ContinuationEngine, ContinuationPolicy
+from cli.core.db import init_database, open_database, Database
+from cli.core.queries.worker import create_worker, create_worker_state
+from cli.core.queries.activity import record_activity_signal
+from cli.core.constants import (
     CONTINUATION_NUDGE_1_MINUTES,
     CONTINUATION_NUDGE_2_MINUTES,
     CONTINUATION_WARNING_MINUTES,
@@ -47,7 +47,7 @@ def db(temp_org_dir):
     db = init_database(db_path)
 
     # Run migrations to current version
-    from core.db.migrations import migrate_database
+    from cli.core.db.migrations import migrate_database
 
     current_version_row = db.fetchone("SELECT value FROM config WHERE key = 'schema_version'")
     if current_version_row:

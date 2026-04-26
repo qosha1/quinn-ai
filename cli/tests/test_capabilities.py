@@ -4,7 +4,7 @@ Unit tests for worker skills to model capabilities mapping.
 
 import pytest
 
-from core.capabilities import (
+from cli.core.capabilities import (
     ALL_CAPABILITIES,
     SKILL_THRESHOLDS,
     filter_capabilities_by_skills,

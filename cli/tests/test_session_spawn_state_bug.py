@@ -12,17 +12,17 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from core.db import init_database, Database
-from core.session import SessionConfig, SessionInterface, SessionState
-from core.worker import Worker
-from core.queries import (
+from cli.core.db import init_database, Database
+from cli.core.session import SessionConfig, SessionInterface, SessionState
+from cli.core.worker import Worker
+from cli.core.queries import (
     create_worker,
     create_team,
     get_worker_state,
     update_worker_runtime_status,
     update_worker_status,
 )
-from core.sessions.persistence import (
+from cli.core.sessions.persistence import (
     get_session_for_worker,
     create_session_record,
     update_session_state,

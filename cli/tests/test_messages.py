@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from core.db import init_database
-from core.queries import (
+from cli.core.db import init_database
+from cli.core.queries import (
     # Teams & Workers (for setup)
     create_team,
     create_worker,

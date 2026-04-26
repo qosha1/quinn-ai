@@ -14,10 +14,10 @@ from typing import Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from core.db import Database
-from core.worker import Worker
-from core.queries import get_team, get_worker, get_worker_allocated_budget, get_okrs_by_owner
-from core.storage import StorageManager
+from cli.core.db import Database
+from cli.core.worker import Worker
+from cli.core.queries import get_team, get_worker, get_worker_allocated_budget, get_okrs_by_owner
+from cli.core.storage import StorageManager
 from shared.exceptions import WorkerNotFound
 
 _logger = logging.getLogger(__name__)
@@ -378,7 +378,7 @@ def _get_escalation_timeout(worker_role: str, is_ceo: bool, is_manager: bool) ->
     Returns:
         Timeout in minutes before idle triggers escalation
     """
-    from core.constants import (
+    from cli.core.constants import (
         DEFAULT_ESCALATION_TIMEOUT_CEO,
         DEFAULT_ESCALATION_TIMEOUT_MANAGER,
         DEFAULT_ESCALATION_TIMEOUT_WORKER,

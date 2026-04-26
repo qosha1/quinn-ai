@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from core.db import init_database
-from core.org import Org
-from core.sessions.tmux_spawner import TmuxSpawner
-from core.sessions.spawner import SpawnerConfig
+from cli.core.db import init_database
+from cli.core.org import Org
+from cli.core.sessions.tmux_spawner import TmuxSpawner
+from cli.core.sessions.spawner import SpawnerConfig
 from shared.enums import OrgStatus
 
 
@@ -96,7 +96,7 @@ class TestOrgRestartWithOrphanedSessions:
             assert spawner.is_alive(tmux_session_name)
 
             # Run startup cleanup to remove orphaned sessions
-            from core.sessions import run_startup_cleanup
+            from cli.core.sessions import run_startup_cleanup
 
             cleanup_result = run_startup_cleanup(db)
 
@@ -124,7 +124,7 @@ class TestOrgRestartWithOrphanedSessions:
     def test_startup_cleanup_is_idempotent(self, db, initialized_org_obj):
         """Verify that running cleanup multiple times is safe."""
         try:
-            from core.sessions import run_startup_cleanup
+            from cli.core.sessions import run_startup_cleanup
 
             # Run cleanup when there are no orphans
             result1 = run_startup_cleanup(db)

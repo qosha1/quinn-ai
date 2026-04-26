@@ -15,12 +15,12 @@ from unittest.mock import patch, MagicMock, call
 import pytest
 from click.testing import CliRunner
 
-from commands.main import qn
-from commands.org.observe import (
+from cli.commands.main import qn
+from cli.commands.org.observe import (
     get_tmux_session_name,
     stream_session_output,
 )
-from core.constants import TMUX_SESSION_PREFIX
+from cli.core.constants import TMUX_SESSION_PREFIX
 
 
 @pytest.fixture
@@ -45,8 +45,8 @@ def initialized_org(runner, temp_org):
     if result.exit_code != 0:
         pytest.fail(f"org init failed (exit {result.exit_code}): {result.output}\nexception: {result.exception}")
 
-    from core.db import open_database, get_org_db_path
-    from core.org import Org
+    from cli.core.db import open_database, get_org_db_path
+    from cli.core.org import Org
 
     db_path = get_org_db_path(temp_org)
     if not db_path.exists():
@@ -65,8 +65,8 @@ def set_worker_runtime_status(temp_org, worker_id: str, status: str) -> None:
 
     Creates the worker_state row if it doesn't exist, then updates the status.
     """
-    from core.db import open_database, get_org_db_path
-    from core.queries import (
+    from cli.core.db import open_database, get_org_db_path
+    from cli.core.queries import (
         update_worker_runtime_status,
         get_worker_state,
         create_worker_state,

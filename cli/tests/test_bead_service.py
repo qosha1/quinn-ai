@@ -8,11 +8,11 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from core.db import init_database
-from core.queries import create_team, create_worker, grant_permission
-from core.permissions import PermissionLevel, PermissionDenied
-from core.bead_service import BeadService, BeadResult
-from core.constants import GRANTEE_TYPE_WORKER, BEAD_TYPE_TASK, BEAD_TYPE_BUG
+from cli.core.db import init_database
+from cli.core.queries import create_team, create_worker, grant_permission
+from cli.core.permissions import PermissionLevel, PermissionDenied
+from cli.core.bead_service import BeadService, BeadResult
+from cli.core.constants import GRANTEE_TYPE_WORKER, BEAD_TYPE_TASK, BEAD_TYPE_BUG
 
 
 @pytest.fixture

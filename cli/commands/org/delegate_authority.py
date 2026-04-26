@@ -9,11 +9,11 @@ from typing import Optional
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.worker import Worker
-from core.queries import get_worker_by_name
-from core.constants import DELEGATION_PRESETS
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.worker import Worker
+from cli.core.queries import get_worker_by_name
+from cli.core.constants import DELEGATION_PRESETS
 from shared.exceptions import (
     CircularDelegationError,
     ConcurrentModificationError,
@@ -229,7 +229,7 @@ def delegate_authority_cmd(
                 return
 
         # Build hiring scope
-        from core.worker import HiringScope
+        from cli.core.worker import HiringScope
         scope = HiringScope(
             allowed_roles=allowed_roles,
             max_cost=final_max_cost,

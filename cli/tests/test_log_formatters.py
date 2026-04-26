@@ -13,7 +13,7 @@ import pytest
 
 # This import will FAIL until we implement the module
 try:
-    from core.log_formatters import StructuredJSONFormatter
+    from cli.core.log_formatters import StructuredJSONFormatter
 except ImportError:
     # Expected to fail initially - that's the point of TDD
     StructuredJSONFormatter = None

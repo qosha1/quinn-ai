@@ -10,8 +10,8 @@ from typing import Optional
 
 import click
 
-from commands.context import pass_context, Context
-from core.config import (
+from cli.commands.context import pass_context, Context
+from cli.core.config import (
     ProvidersConfig,
     ProviderSettings,
     load_providers_config,
@@ -20,7 +20,7 @@ from core.config import (
     mask_secret,
     check_plaintext_api_keys,
 )
-from providers.base import ProviderConfig, AuthenticationError, ProviderConnectionError
+from cli.providers.base import ProviderConfig, AuthenticationError, ProviderConnectionError
 
 
 # Required environment variables for each provider

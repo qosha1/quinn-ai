@@ -10,8 +10,8 @@ from typing import Optional
 
 import click
 
-from core.org_discovery import find_org_root
-from msgr.context import MsgrContext
+from cli.core.org_discovery import find_org_root
+from cli.msgr.context import MsgrContext
 
 
 @click.group()
@@ -61,10 +61,10 @@ def msgr(ctx, org_path: Optional[Path], worker_id: Optional[str]):
 
 
 # Register commands explicitly
-from msgr.commands.inbox import inbox
-from msgr.commands.send import send
-from msgr.commands.channels import channels
-from msgr.commands.read import read
+from cli.msgr.commands.inbox import inbox
+from cli.msgr.commands.send import send
+from cli.msgr.commands.channels import channels
+from cli.msgr.commands.read import read
 
 msgr.add_command(inbox)
 msgr.add_command(send)

@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from core.db import Database, init_database
-from core.constants import REFERENCE_TYPE_TASK
-from core.queries import (
+from cli.core.db import Database, init_database
+from cli.core.constants import REFERENCE_TYPE_TASK
+from cli.core.queries import (
     # Workers and teams (for setup)
     create_team,
     create_worker,
@@ -674,7 +674,7 @@ class TestBudgetEnforcementFunctions:
             period_end=pool.period_end,
             pool_id=pool.id,
         )
-        from core.queries import create_budget_balance
+        from cli.core.queries import create_budget_balance
         create_budget_balance(
             db,
             allocation_id=allocation.id,
@@ -687,7 +687,7 @@ class TestBudgetEnforcementFunctions:
 
     def test_estimate_cost_budget_tier(self):
         """Should estimate cost for budget tier models."""
-        from core.budget import estimate_cost
+        from cli.core.budget import estimate_cost
 
         # Budget tier: ~$0.00025/1K input, ~$0.00125/1K output
         cost = estimate_cost("budget", input_tokens=1000, output_tokens=1000)
@@ -697,7 +697,7 @@ class TestBudgetEnforcementFunctions:
 
     def test_estimate_cost_standard_tier(self):
         """Should estimate cost for standard tier models."""
-        from core.budget import estimate_cost
+        from cli.core.budget import estimate_cost
 
         # Standard tier: ~$0.003/1K input, ~$0.015/1K output
         cost = estimate_cost("standard", input_tokens=1000, output_tokens=1000)
@@ -707,7 +707,7 @@ class TestBudgetEnforcementFunctions:
 
     def test_estimate_cost_premium_tier(self):
         """Should estimate cost for premium tier models."""
-        from core.budget import estimate_cost
+        from cli.core.budget import estimate_cost
 
         # Premium tier: ~$0.015/1K input, ~$0.075/1K output
         cost = estimate_cost("premium", input_tokens=1000, output_tokens=1000)
@@ -717,8 +717,8 @@ class TestBudgetEnforcementFunctions:
 
     def test_estimate_cost_with_budget_config(self):
         """Should use BudgetConfig when provided."""
-        from core.budget import estimate_cost
-        from core.config import BudgetConfig, TierTokenCosts
+        from cli.core.budget import estimate_cost
+        from cli.core.config import BudgetConfig, TierTokenCosts
 
         # Create custom config with different rates
         config = BudgetConfig(
@@ -746,7 +746,7 @@ class TestBudgetEnforcementFunctions:
 
     def test_check_budget_sufficient(self, db, allocation_with_balance, developer):
         """Should approve when budget is sufficient."""
-        from core.budget import check_budget
+        from cli.core.budget import check_budget
 
         result = check_budget(db, developer.id, required_amount=100.0)
 
@@ -759,7 +759,7 @@ class TestBudgetEnforcementFunctions:
 
     def test_check_budget_insufficient(self, db, allocation_with_balance, developer):
         """Should reject when budget is insufficient."""
-        from core.budget import check_budget
+        from cli.core.budget import check_budget
 
         result = check_budget(db, developer.id, required_amount=1500.0)
 
@@ -771,7 +771,7 @@ class TestBudgetEnforcementFunctions:
 
     def test_check_budget_no_allocation(self, db, team):
         """Should raise when worker has no allocation."""
-        from core.budget import check_budget, NoBudgetAllocationError
+        from cli.core.budget import check_budget, NoBudgetAllocationError
 
         worker = create_worker(db, "No Budget Worker", "Dev", team.id, 50)
 
@@ -783,7 +783,7 @@ class TestBudgetEnforcementFunctions:
 
     def test_enforce_budget_sufficient(self, db, allocation_with_balance, developer):
         """Should return result when budget is sufficient."""
-        from core.budget import enforce_budget
+        from cli.core.budget import enforce_budget
 
         result = enforce_budget(db, developer.id, required_amount=100.0)
 
@@ -791,7 +791,7 @@ class TestBudgetEnforcementFunctions:
 
     def test_enforce_budget_insufficient_raises(self, db, allocation_with_balance, developer):
         """Should raise BudgetExhaustedError when insufficient."""
-        from core.budget import enforce_budget, BudgetExhaustedError
+        from cli.core.budget import enforce_budget, BudgetExhaustedError
 
         with pytest.raises(BudgetExhaustedError) as exc_info:
             enforce_budget(db, developer.id, required_amount=1500.0)
@@ -802,7 +802,7 @@ class TestBudgetEnforcementFunctions:
 
     def test_record_spend(self, db, allocation_with_balance, developer):
         """Should record spend transaction."""
-        from core.budget import record_spend
+        from cli.core.budget import record_spend
 
         txn = record_spend(
             db=db,
@@ -825,14 +825,14 @@ class TestBudgetEnforcementFunctions:
 
     def test_get_remaining_budget(self, db, allocation_with_balance, developer):
         """Should return remaining budget."""
-        from core.budget import get_remaining_budget
+        from cli.core.budget import get_remaining_budget
 
         remaining = get_remaining_budget(db, developer.id)
         assert remaining == 1000.0
 
     def test_get_remaining_budget_no_allocation(self, db, team):
         """Should return 0 for worker without allocation."""
-        from core.budget import get_remaining_budget
+        from cli.core.budget import get_remaining_budget
 
         worker = create_worker(db, "No Budget Worker", "Dev", team.id, 50)
         remaining = get_remaining_budget(db, worker.id)
@@ -854,7 +854,7 @@ class TestBudgetEnforcer:
             period_end=pool.period_end,
             pool_id=pool.id,
         )
-        from core.queries import create_budget_balance
+        from cli.core.queries import create_budget_balance
         create_budget_balance(
             db,
             allocation_id=allocation.id,
@@ -869,7 +869,7 @@ class TestBudgetEnforcer:
         self, db, allocation_with_balance, developer
     ):
         """Should allow operation when budget is sufficient."""
-        from core.budget import BudgetEnforcer
+        from cli.core.budget import BudgetEnforcer
 
         with BudgetEnforcer(db, developer.id, estimated_cost=10.0) as enforcer:
             # Simulate successful provider call
@@ -890,7 +890,7 @@ class TestBudgetEnforcer:
         self, db, allocation_with_balance, developer
     ):
         """Should raise before entering context when budget insufficient."""
-        from core.budget import BudgetEnforcer, BudgetExhaustedError
+        from cli.core.budget import BudgetEnforcer, BudgetExhaustedError
 
         with pytest.raises(BudgetExhaustedError):
             with BudgetEnforcer(db, developer.id, estimated_cost=2000.0):
@@ -900,7 +900,7 @@ class TestBudgetEnforcer:
         self, db, allocation_with_balance, developer
     ):
         """Should expose allocation_id from check result."""
-        from core.budget import BudgetEnforcer
+        from cli.core.budget import BudgetEnforcer
 
         with BudgetEnforcer(db, developer.id, estimated_cost=10.0) as enforcer:
             assert enforcer.allocation_id == allocation_with_balance.id
@@ -916,7 +916,7 @@ class TestBudgetEnforcer:
         self, db, allocation_with_balance, developer
     ):
         """Should warn if context exits without recording spend."""
-        from core.budget import BudgetEnforcer
+        from cli.core.budget import BudgetEnforcer
         import warnings
 
         with warnings.catch_warnings(record=True) as w:
@@ -933,7 +933,7 @@ class TestBudgetEnforcer:
         self, db, allocation_with_balance, developer
     ):
         """Should not warn if context exits due to exception."""
-        from core.budget import BudgetEnforcer
+        from cli.core.budget import BudgetEnforcer
         import warnings
 
         with warnings.catch_warnings(record=True) as w:
@@ -949,7 +949,7 @@ class TestBudgetEnforcer:
 
     def test_enforcer_with_reference(self, db, allocation_with_balance, developer):
         """Should record reference type and ID."""
-        from core.budget import BudgetEnforcer
+        from cli.core.budget import BudgetEnforcer
 
         with BudgetEnforcer(db, developer.id, estimated_cost=10.0) as enforcer:
             enforcer.record(
@@ -1019,7 +1019,7 @@ class TestBudgetServiceDelegation:
 
     def test_delegate_budget_success(self, db, pool, ceo_with_allocation, manager):
         """Should successfully delegate budget to subordinate."""
-        from core.budget import BudgetService
+        from cli.core.budget import BudgetService
 
         service = BudgetService(db)
         allocation_id = service.delegate_budget(
@@ -1036,7 +1036,7 @@ class TestBudgetServiceDelegation:
 
     def test_delegate_budget_negative_amount(self, db, ceo_with_allocation, manager):
         """Should reject negative delegation amount."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         service = BudgetService(db)
         with pytest.raises(BudgetAllocationError) as exc_info:
@@ -1049,7 +1049,7 @@ class TestBudgetServiceDelegation:
 
     def test_delegate_budget_zero_amount(self, db, ceo_with_allocation, manager):
         """Should reject zero delegation amount."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         service = BudgetService(db)
         with pytest.raises(BudgetAllocationError) as exc_info:
@@ -1062,7 +1062,7 @@ class TestBudgetServiceDelegation:
 
     def test_delegate_budget_source_cannot_delegate(self, db, pool, ceo, manager, developer):
         """Should reject when source has can_delegate=False."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         # Create allocation WITHOUT delegation permission
         allocation = create_budget_allocation(
@@ -1094,7 +1094,7 @@ class TestBudgetServiceDelegation:
 
     def test_delegate_budget_not_manager_of_target(self, db, pool, team, ceo_with_allocation, manager):
         """Should reject when source is not target's manager."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         # Create another worker NOT under CEO
         other_worker = create_worker(db, "Other Worker", "Dev", team.id, 50, manager_id=manager.id)
@@ -1110,7 +1110,7 @@ class TestBudgetServiceDelegation:
 
     def test_delegate_budget_exceeds_available_balance(self, db, pool, team, manager):
         """Should reject when amount exceeds available balance."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         # Create CEO with no delegation limit but limited balance
         ceo = create_worker(db, "Test CEO", "CEO", team.id, 90)
@@ -1147,7 +1147,7 @@ class TestBudgetServiceDelegation:
 
     def test_delegate_budget_exceeds_delegation_limit(self, db, ceo_with_allocation, manager):
         """Should reject when amount exceeds delegation limit."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         service = BudgetService(db)
         with pytest.raises(BudgetAllocationError) as exc_info:
@@ -1160,7 +1160,7 @@ class TestBudgetServiceDelegation:
 
     def test_delegate_budget_target_not_found(self, db, ceo_with_allocation):
         """Should reject when target worker doesn't exist."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         service = BudgetService(db)
         with pytest.raises(BudgetAllocationError) as exc_info:
@@ -1173,7 +1173,7 @@ class TestBudgetServiceDelegation:
 
     def test_delegate_budget_source_no_allocation(self, db, team, ceo, manager):
         """Should reject when source has no budget allocation."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         service = BudgetService(db)
         with pytest.raises(BudgetAllocationError) as exc_info:
@@ -1255,7 +1255,7 @@ class TestBudgetAmountValidation:
 
     def test_record_spend_negative_amount(self, db, pool, developer):
         """Should reject negative amount in record_spend."""
-        from core.budget import record_spend
+        from cli.core.budget import record_spend
 
         allocation = create_budget_allocation(
             db,
@@ -1289,7 +1289,7 @@ class TestBudgetAmountValidation:
 
     def test_record_spend_zero_amount(self, db, pool, developer):
         """Should reject zero amount in record_spend."""
-        from core.budget import record_spend
+        from cli.core.budget import record_spend
 
         allocation = create_budget_allocation(
             db,
@@ -1323,7 +1323,7 @@ class TestBudgetAmountValidation:
 
     def test_allocate_from_pool_negative_amount(self, db, pool, ceo, period):
         """Should reject negative amount in allocate_from_pool."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         service = BudgetService(db)
         with pytest.raises(BudgetAllocationError) as exc_info:
@@ -1338,7 +1338,7 @@ class TestBudgetAmountValidation:
 
     def test_allocate_from_pool_zero_amount(self, db, pool, ceo, period):
         """Should reject zero amount in allocate_from_pool."""
-        from core.budget import BudgetService, BudgetAllocationError
+        from cli.core.budget import BudgetService, BudgetAllocationError
 
         service = BudgetService(db)
         with pytest.raises(BudgetAllocationError) as exc_info:

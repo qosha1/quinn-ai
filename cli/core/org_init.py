@@ -117,7 +117,7 @@ def create_folder_structure(org_path: Path) -> None:
             │   └── company/
             └── workers/        # Worker lifetime (mirrors org-chart)
     """
-    from core.storage import StorageManager
+    from cli.core.storage import StorageManager
 
     # Config directory
     (org_path / "config").mkdir(parents=True, exist_ok=True)
@@ -349,8 +349,8 @@ def create_initial_okrs(
     Returns:
         List of OKR IDs created
     """
-    from core.queries.okr import create_okr, KeyResult
-    from core.constants import (
+    from cli.core.queries.okr import create_okr, KeyResult
+    from cli.core.constants import (
         DEFAULT_BOOTSTRAP_OKR_TITLE,
         DEFAULT_BOOTSTRAP_OKR_DESCRIPTION,
     )
@@ -437,8 +437,8 @@ def _create_bootstrap_okr(db, ceo_id: str) -> str:
     Returns:
         OKR ID of the created bootstrap OKR
     """
-    from core.queries.okr import create_okr, KeyResult
-    from core.constants import (
+    from cli.core.queries.okr import create_okr, KeyResult
+    from cli.core.constants import (
         DEFAULT_BOOTSTRAP_OKR_TITLE,
         DEFAULT_BOOTSTRAP_OKR_DESCRIPTION,
     )
@@ -483,7 +483,7 @@ def create_initial_tasks(org_path: Path, db, ceo_id: str, okr_ids: list[str]) ->
         ceo_id: CEO worker ID
         okr_ids: List of OKR IDs to link tasks to
     """
-    from core.bd_wrapper import run_bd
+    from cli.core.bd_wrapper import run_bd
 
     if not okr_ids:
         return
@@ -546,8 +546,8 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
     Returns:
         OrgInitResult with success status and details
     """
-    from core.db import init_database, get_org_db_path
-    from core.org import Org
+    from cli.core.db import init_database, get_org_db_path
+    from cli.core.org import Org
 
     org_path = config.path
     db_path = get_org_db_path(org_path)

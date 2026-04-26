@@ -10,11 +10,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
-from core.db import init_database
-from core.queries import create_team, create_worker, update_worker_runtime_status
-from core.session import SessionState
-from core.sessions.binding_manager import SessionBindingManager
-from core.sessions.state_sync import (
+from cli.core.db import init_database
+from cli.core.queries import create_team, create_worker, update_worker_runtime_status
+from cli.core.session import SessionState
+from cli.core.sessions.binding_manager import SessionBindingManager
+from cli.core.sessions.state_sync import (
     SessionStateSync,
     StateSyncConfig,
     DEFAULT_HEARTBEAT_THRESHOLD,
@@ -153,7 +153,7 @@ class TestSessionStateSyncStateChange:
         This test reproduces the bug where update_worker_runtime_status() tries to
         UPDATE a non-existent row, causing get_worker_state() to return None.
         """
-        from core.queries import get_worker_state
+        from cli.core.queries import get_worker_state
 
         # Verify no worker_state exists yet
         assert get_worker_state(db, worker.id) is None
@@ -173,7 +173,7 @@ class TestSessionStateSyncStateChange:
 
     def test_state_change_updates_worker(self, state_sync, db, worker, mock_session):
         """Should update worker runtime status on state change."""
-        from core.queries import get_worker_state
+        from cli.core.queries import get_worker_state
 
         state_sync.register_session(mock_session, worker.id)
 
@@ -322,7 +322,7 @@ class TestSessionStateSyncCheckAll:
     @patch("os.kill")
     def test_check_all_marks_crashed_in_db(self, mock_kill, state_sync, db, binding_manager, worker):
         """Should mark worker as crashed in database."""
-        from core.queries import get_worker_state
+        from cli.core.queries import get_worker_state
 
         mock_kill.side_effect = OSError("No such process")
 
@@ -373,7 +373,7 @@ class TestSessionStateSyncHeartbeat:
 
     def test_check_heartbeats_active(self, state_sync, db, binding_manager, worker):
         """Should identify active workers."""
-        from core.queries import update_worker_runtime_status
+        from cli.core.queries import update_worker_runtime_status
 
         # Update worker activity to now
         update_worker_runtime_status(db, worker.id, "running")
@@ -443,7 +443,7 @@ class TestSessionStateSyncHeartbeat:
 
     def test_check_heartbeats_multiple_workers(self, state_sync, db, team, binding_manager):
         """Should check multiple workers."""
-        from core.queries import update_worker_runtime_status
+        from cli.core.queries import update_worker_runtime_status
 
         worker1 = create_worker(db, "Alice", "Dev", team.id, 50)
         worker2 = create_worker(db, "Bob", "Dev", team.id, 50)
@@ -540,7 +540,7 @@ class TestSessionStateSyncIntegration:
 
     def test_full_session_lifecycle(self, state_sync, binding_manager, db, worker, mock_session):
         """Test complete session lifecycle monitoring."""
-        from core.queries import get_worker_state
+        from cli.core.queries import get_worker_state
 
         # Bind and register
         binding_manager.bind(worker.id, "session-123", pid=12345, session=mock_session)
@@ -581,7 +581,7 @@ class TestSessionStateSyncIntegration:
     @patch("os.kill")
     def test_crash_detection_via_pid(self, mock_kill, state_sync, binding_manager, db, worker):
         """Test crash detection via PID monitoring."""
-        from core.queries import get_worker_state
+        from cli.core.queries import get_worker_state
 
         crash_callback = Mock()
         state_sync.on_crash(crash_callback)

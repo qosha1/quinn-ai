@@ -18,8 +18,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 from click.testing import CliRunner
 
-from commands.main import qn
-from core.constants import BEAD_TYPE_EPIC
+from cli.commands.main import qn
+from cli.core.constants import BEAD_TYPE_EPIC
 
 
 @pytest.fixture
@@ -563,14 +563,14 @@ class TestOkrDatabaseIntegration:
 
     def test_list_from_db_shows_okrs(self, runner, initialized_org):
         """--from-db should list OKRs from database with progress."""
-        from core.db import open_database, get_org_db_path
-        from core.queries import create_okr, add_okr_key_result
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import create_okr, add_okr_key_result
 
         # Create an OKR directly in the database
         db = open_database(get_org_db_path(initialized_org))
         try:
             # Get CEO worker ID
-            from core.org import Org
+            from cli.core.org import Org
             org = Org.load(db)
             ceo_id = org.ceo_worker_id
 
@@ -602,8 +602,8 @@ class TestOkrDatabaseIntegration:
     @patch('cli.commands.org.okr.run_bd')
     def test_set_stores_in_database(self, mock_run_bd, runner, initialized_org):
         """OKR set should also store OKR in database."""
-        from core.db import open_database, get_org_db_path
-        from core.queries import get_okr
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import get_okr
 
         # Mock successful beads creation
         mock_run_bd.return_value = MagicMock(
@@ -634,13 +634,13 @@ class TestOkrDatabaseIntegration:
 
     def test_list_from_db_with_status_filter(self, runner, initialized_org):
         """--from-db should respect status filter."""
-        from core.db import open_database, get_org_db_path
-        from core.queries import create_okr
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import create_okr
 
         # Get CEO ID
         db = open_database(get_org_db_path(initialized_org))
         try:
-            from core.org import Org
+            from cli.core.org import Org
             org = Org.load(db)
             ceo_id = org.ceo_worker_id
 

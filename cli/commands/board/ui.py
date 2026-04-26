@@ -9,7 +9,7 @@ from typing import Optional
 
 import click
 
-from commands.context import pass_context
+from cli.commands.context import pass_context
 
 
 @click.command()

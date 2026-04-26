@@ -7,10 +7,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from core.org_init import create_initial_okrs, _create_bootstrap_okr
-from core.queries.okr import list_okrs, get_okrs_by_owner
-from core.db import init_database
-from core.constants import (
+from cli.core.org_init import create_initial_okrs, _create_bootstrap_okr
+from cli.core.queries.okr import list_okrs, get_okrs_by_owner
+from cli.core.db import init_database
+from cli.core.constants import (
     DEFAULT_BOOTSTRAP_OKR_TITLE,
     DEFAULT_BOOTSTRAP_OKR_DESCRIPTION,
 )
@@ -60,7 +60,7 @@ def test_create_initial_okrs_from_config(temp_org_dir, test_db):
     config_file.write_text(json.dumps(okrs_config, indent=2))
 
     # Create CEO worker
-    from core.org import Org
+    from cli.core.org import Org
     org = Org(test_db)
     ceo = org.init("Alice", "CEO")
 
@@ -91,7 +91,7 @@ def test_create_initial_okrs_from_config(temp_org_dir, test_db):
 def test_create_bootstrap_okr_no_config(temp_org_dir, test_db):
     """Test bootstrap OKR creation when no config file exists."""
     # Create CEO worker
-    from core.org import Org
+    from cli.core.org import Org
     org = Org(test_db)
     ceo = org.init("Bob", "CEO")
 
@@ -122,7 +122,7 @@ def test_create_initial_okrs_malformed_config(temp_org_dir, test_db):
     config_file.write_text("{ this is not valid json }")
 
     # Create CEO worker
-    from core.org import Org
+    from cli.core.org import Org
     org = Org(test_db)
     ceo = org.init("Charlie", "CEO")
 
@@ -138,7 +138,7 @@ def test_create_initial_okrs_malformed_config(temp_org_dir, test_db):
 def test_create_bootstrap_okr_directly(test_db):
     """Test _create_bootstrap_okr function directly."""
     # Create CEO worker
-    from core.org import Org
+    from cli.core.org import Org
     org = Org(test_db)
     ceo = org.init("Diana", "CEO")
 
@@ -174,7 +174,7 @@ def test_okr_key_results_have_valid_structure(temp_org_dir, test_db):
     config_file.write_text(json.dumps(okrs_config, indent=2))
 
     # Create CEO worker
-    from core.org import Org
+    from cli.core.org import Org
     org = Org(test_db)
     ceo = org.init("Eve", "CEO")
 
@@ -211,7 +211,7 @@ def test_multiple_okrs_from_config(temp_org_dir, test_db):
     config_file.write_text(json.dumps(okrs_config, indent=2))
 
     # Create CEO worker
-    from core.org import Org
+    from cli.core.org import Org
     org = Org(test_db)
     ceo = org.init("Frank", "CEO")
 
@@ -239,7 +239,7 @@ def test_okr_without_key_results(temp_org_dir, test_db):
     config_file.write_text(json.dumps(okrs_config, indent=2))
 
     # Create CEO worker
-    from core.org import Org
+    from cli.core.org import Org
     org = Org(test_db)
     ceo = org.init("Grace", "CEO")
 

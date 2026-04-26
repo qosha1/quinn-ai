@@ -5,7 +5,7 @@ from typing import Optional
 
 import click
 
-from core.db import Database
+from cli.core.db import Database
 
 
 class MsgrContext:

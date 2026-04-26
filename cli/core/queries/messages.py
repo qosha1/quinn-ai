@@ -130,7 +130,7 @@ def create_message_with_notifications(
         Created Message
     """
     # Import here to avoid circular imports
-    from core.notifications import create_notifications_for_message
+    from cli.core.notifications import create_notifications_for_message
 
     # Create the message first
     message = create_message(

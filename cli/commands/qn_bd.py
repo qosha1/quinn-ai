@@ -8,8 +8,8 @@ import os
 import sys
 from pathlib import Path
 
-from core.bd_wrapper import BeadPermissionError, run_bd
-from core.lifecycle import LifecycleError
+from cli.core.bd_wrapper import BeadPermissionError, run_bd
+from cli.core.lifecycle import LifecycleError
 
 
 def main():

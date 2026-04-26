@@ -22,7 +22,7 @@ def run_notification_cleanup(db, retention_days: int) -> dict:
     """
     try:
         from pathlib import Path
-        from core.bd_wrapper import run_bd
+        from cli.core.bd_wrapper import run_bd
 
         # Get org path from db
         db_path = Path(db.db_path)
@@ -77,7 +77,7 @@ def create_notification_bead(
         Bead ID if created, None otherwise
     """
     try:
-        from core.bd_wrapper import run_bd
+        from cli.core.bd_wrapper import run_bd
         from pathlib import Path
 
         # Get org path from db
@@ -123,7 +123,7 @@ def get_worker_notifications(db, worker_id: str, limit: int = 50) -> List[dict]:
     """
     try:
         from pathlib import Path
-        from core.bd_wrapper import run_bd
+        from cli.core.bd_wrapper import run_bd
         import json
 
         # Get org path from db
@@ -163,7 +163,7 @@ def get_pending_notifications(db, worker_id: str) -> List[dict]:
     """
     try:
         from pathlib import Path
-        from core.bd_wrapper import run_bd
+        from cli.core.bd_wrapper import run_bd
         import json
 
         # Get org path from db
@@ -222,7 +222,7 @@ def mark_notification_read(db, notification_id: str) -> bool:
     """
     try:
         from pathlib import Path
-        from core.bd_wrapper import run_bd
+        from cli.core.bd_wrapper import run_bd
 
         # Get org path from db
         db_path = Path(db.db_path)
@@ -267,7 +267,7 @@ def create_notifications_for_message(
     Returns:
         List of created notification bead IDs
     """
-    from core.queries.channel import get_channel_subscribers
+    from cli.core.queries.channel import get_channel_subscribers
 
     subscribers = get_channel_subscribers(db, channel_id)
     notifications = []

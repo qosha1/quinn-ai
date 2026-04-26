@@ -8,8 +8,8 @@ Provides copyable text output for debugging.
 import click
 from pathlib import Path
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
 
 
 def _get_health_status(org_path: Path) -> dict:

@@ -9,12 +9,12 @@ from typing import Optional
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.worker import Worker
-from core.bd_wrapper import run_bd
-from core.queries import get_workers_by_manager
-from core.permissions import (
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.worker import Worker
+from cli.core.bd_wrapper import run_bd
+from cli.core.queries import get_workers_by_manager
+from cli.core.permissions import (
     PermissionLevel,
     can_worker_access_bead,
 )

@@ -17,8 +17,8 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-from core.db import init_database, open_database, get_org_db_path
-from core.org import Org
+from cli.core.db import init_database, open_database, get_org_db_path
+from cli.core.org import Org
 from shared import InvalidOrgTransition, ConfigurationError
 from shared.enums import OrgStatus, RuntimeStatus
 
@@ -62,7 +62,7 @@ class TestPhase0Preflight:
 
     def test_preflight_requires_org_database(self, temp_org_dir):
         """Preflight should fail if org database doesn't exist."""
-        from commands.org.start import _validate_preflight
+        from cli.commands.org.start import _validate_preflight
 
         # Remove the database
         db_path = temp_org_dir / "live" / "quinn.db"
@@ -76,7 +76,7 @@ class TestPhase0Preflight:
 
     def test_preflight_requires_directory_structure(self, temp_org_dir, test_db):
         """Preflight should fail if required directories are missing."""
-        from commands.org.start import _validate_preflight
+        from cli.commands.org.start import _validate_preflight
 
         # Remove a required directory
         (temp_org_dir / "storage" / "shared").rmdir()
@@ -89,7 +89,7 @@ class TestPhase0Preflight:
 
     def test_preflight_can_skip_config_validation(self, temp_org_dir, test_db):
         """Preflight should succeed with skip_config_validation=True."""
-        from commands.org.start import _validate_preflight
+        from cli.commands.org.start import _validate_preflight
 
         # No providers.yaml, but skip validation
         db = _validate_preflight(temp_org_dir, skip_config_validation=True)
@@ -98,14 +98,14 @@ class TestPhase0Preflight:
 
     def test_determine_start_mode_first_start(self, initialized_org):
         """Determine start mode should return FIRST_START for initialized org."""
-        from commands.org.start import _determine_start_mode, StartMode
+        from cli.commands.org.start import _determine_start_mode, StartMode
 
         mode = _determine_start_mode(initialized_org)
         assert mode == StartMode.FIRST_START
 
     def test_determine_start_mode_resume(self, initialized_org):
         """Determine start mode should return RESUME for stopped org."""
-        from commands.org.start import _determine_start_mode, StartMode
+        from cli.commands.org.start import _determine_start_mode, StartMode
 
         initialized_org.start()
         initialized_org.stop()
@@ -115,7 +115,7 @@ class TestPhase0Preflight:
 
     def test_determine_start_mode_already_running(self, initialized_org):
         """Determine start mode should return ALREADY_RUNNING for running org."""
-        from commands.org.start import _determine_start_mode, StartMode
+        from cli.commands.org.start import _determine_start_mode, StartMode
 
         initialized_org.start()
 
@@ -133,7 +133,7 @@ class TestPhase1Cleanup:
     @patch('core.sessions.run_startup_cleanup')
     def test_cleanup_calls_startup_cleanup(self, mock_cleanup, test_db):
         """Cleanup should call run_startup_cleanup."""
-        from commands.org.start import _cleanup_orphaned_sessions
+        from cli.commands.org.start import _cleanup_orphaned_sessions
 
         mock_result = Mock()
         mock_result.tmux_sessions_killed = 0
@@ -148,7 +148,7 @@ class TestPhase1Cleanup:
     @patch('core.sessions.run_startup_cleanup')
     def test_cleanup_reports_killed_sessions(self, mock_cleanup, test_db, capsys):
         """Cleanup should report killed tmux sessions."""
-        from commands.org.start import _cleanup_orphaned_sessions
+        from cli.commands.org.start import _cleanup_orphaned_sessions
 
         mock_result = Mock()
         mock_result.tmux_sessions_killed = 2
@@ -165,7 +165,7 @@ class TestPhase1Cleanup:
     @patch('core.sessions.run_startup_cleanup')
     def test_cleanup_is_best_effort(self, mock_cleanup, test_db, capsys):
         """Cleanup failure should not raise, just warn."""
-        from commands.org.start import _cleanup_orphaned_sessions
+        from cli.commands.org.start import _cleanup_orphaned_sessions
 
         mock_cleanup.side_effect = Exception("Cleanup failed")
 
@@ -185,7 +185,7 @@ class TestPhase2Transition:
 
     def test_transition_from_initialized_to_running(self, initialized_org, temp_org_dir):
         """Transition should move org from INITIALIZED to RUNNING."""
-        from commands.org.start import _transition_org_state, StartMode
+        from cli.commands.org.start import _transition_org_state, StartMode
 
         old_status, new_status = _transition_org_state(
             initialized_org,
@@ -200,7 +200,7 @@ class TestPhase2Transition:
 
     def test_transition_from_stopped_to_running(self, initialized_org, temp_org_dir):
         """Transition should move org from STOPPED to RUNNING."""
-        from commands.org.start import _transition_org_state, StartMode
+        from cli.commands.org.start import _transition_org_state, StartMode
 
         # First start then stop
         initialized_org.start()
@@ -218,7 +218,7 @@ class TestPhase2Transition:
 
     def test_transition_activates_ceo(self, initialized_org, temp_org_dir):
         """Transition from INITIALIZED should activate CEO."""
-        from commands.org.start import _transition_org_state, StartMode
+        from cli.commands.org.start import _transition_org_state, StartMode
 
         assert initialized_org.ceo.lifecycle_status == "pending"
 
@@ -233,7 +233,7 @@ class TestPhase2Transition:
 
     def test_transition_handles_invalid_transition(self, initialized_org, temp_org_dir):
         """Transition should raise ClickException for invalid transitions."""
-        from commands.org.start import _transition_org_state, StartMode
+        from cli.commands.org.start import _transition_org_state, StartMode
         import click
 
         initialized_org.start()
@@ -263,7 +263,7 @@ class TestPhase3Onboarding:
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir
     ):
         """Session spawn should call prepare_worker_onboarding."""
-        from commands.org.start import _spawn_ceo_session_if_needed
+        from cli.commands.org.start import _spawn_ceo_session_if_needed
 
         # Setup mocks
         mock_onboarding.return_value = Mock()
@@ -295,7 +295,7 @@ class TestPhase4SessionSpawn:
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir
     ):
         """Session spawn should call ceo.spawn() with config."""
-        from commands.org.start import _spawn_ceo_session_if_needed
+        from cli.commands.org.start import _spawn_ceo_session_if_needed
 
         # Setup mocks
         mock_onboarding.return_value = Mock()
@@ -326,7 +326,7 @@ class TestPhase4SessionSpawn:
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir
     ):
         """Session spawn should raise if provider doesn't exist."""
-        from commands.org.start import _spawn_ceo_session_if_needed
+        from cli.commands.org.start import _spawn_ceo_session_if_needed
         from shared import SessionSpawnError
 
         # Setup mocks
@@ -354,7 +354,7 @@ class TestPhase4SessionSpawn:
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir, capsys
     ):
         """Session spawn should skip if CEO session already active."""
-        from commands.org.start import _spawn_ceo_session_if_needed
+        from cli.commands.org.start import _spawn_ceo_session_if_needed
 
         ceo = initialized_org.ceo
         # Mock is_session_active to return True
@@ -381,7 +381,7 @@ class TestPhase5Kickstart:
         self, mock_subprocess, initialized_org, temp_org_dir
     ):
         """Kickstart should write INITIAL_TASK.md."""
-        from commands.org.start import _send_initial_prompt_to_ceo
+        from cli.commands.org.start import _send_initial_prompt_to_ceo
 
         worker_dir = temp_org_dir / "storage" / "workers" / "ceo"
         worker_dir.mkdir(parents=True, exist_ok=True)
@@ -401,7 +401,7 @@ class TestPhase5Kickstart:
         self, mock_subprocess, initialized_org, temp_org_dir
     ):
         """Kickstart should send command to tmux session."""
-        from commands.org.start import _send_initial_prompt_to_ceo
+        from cli.commands.org.start import _send_initial_prompt_to_ceo
 
         worker_dir = temp_org_dir / "storage" / "workers" / "ceo"
         worker_dir.mkdir(parents=True, exist_ok=True)
@@ -418,7 +418,7 @@ class TestPhase5Kickstart:
         self, mock_subprocess, initialized_org, temp_org_dir, capsys
     ):
         """Kickstart failure should not raise, just warn."""
-        from commands.org.start import _send_initial_prompt_to_ceo
+        from cli.commands.org.start import _send_initial_prompt_to_ceo
 
         worker_dir = temp_org_dir / "storage" / "workers" / "ceo"
         worker_dir.mkdir(parents=True, exist_ok=True)
@@ -441,7 +441,7 @@ class TestPhase6Readiness:
 
     def test_wait_for_ready_succeeds_on_running(self, initialized_org):
         """Wait should succeed when session reaches RUNNING."""
-        from commands.org.start import _wait_for_ready
+        from cli.commands.org.start import _wait_for_ready
 
         ceo = initialized_org.ceo
 
@@ -461,7 +461,7 @@ class TestPhase6Readiness:
 
     def test_wait_for_ready_succeeds_on_idle(self, initialized_org):
         """Wait should succeed when session reaches IDLE."""
-        from commands.org.start import _wait_for_ready
+        from cli.commands.org.start import _wait_for_ready
 
         ceo = initialized_org.ceo
 
@@ -472,7 +472,7 @@ class TestPhase6Readiness:
 
     def test_wait_for_ready_times_out(self, initialized_org):
         """Wait should raise SessionStartTimeout on timeout."""
-        from commands.org.start import _wait_for_ready
+        from cli.commands.org.start import _wait_for_ready
         from shared import SessionStartTimeout
 
         ceo = initialized_org.ceo
@@ -494,7 +494,7 @@ class TestStartSequenceIntegration:
 
     def test_org_state_after_successful_start(self, initialized_org, temp_org_dir):
         """After successful start phases 0-2, org should be RUNNING with active CEO."""
-        from commands.org.start import (
+        from cli.commands.org.start import (
             _validate_preflight,
             _cleanup_orphaned_sessions,
             _transition_org_state,
@@ -530,7 +530,7 @@ class TestStartSequenceIntegration:
 
     def test_session_spawn_failure_does_not_rollback_org(self, initialized_org, temp_org_dir):
         """Session spawn failure should NOT rollback org state (per design)."""
-        from commands.org.start import (
+        from cli.commands.org.start import (
             _transition_org_state,
             _spawn_ceo_session_if_needed,
             StartMode,

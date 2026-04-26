@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from core.bd_wrapper import (
+from cli.core.bd_wrapper import (
     run_bd,
     get_bundled_bd_path,
     get_org_beads_dir,

@@ -14,15 +14,15 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
-from core.db import init_database, Database
-from core.queries.worker import (
+from cli.core.db import init_database, Database
+from cli.core.queries.worker import (
     create_worker,
     get_worker,
     update_worker_preferred_provider,
     get_worker_preferred_provider,
 )
-from core.queries.team import create_team
-from core.sessions.capabilities import (
+from cli.core.queries.team import create_team
+from cli.core.sessions.capabilities import (
     ProviderCapability,
     get_provider_capabilities,
     has_capability,
@@ -254,7 +254,7 @@ class TestSessionAdapterCapabilities:
 
     def test_claude_code_session_has_capabilities(self):
         """ClaudeCodeSession class has CAPABILITIES attribute."""
-        from core.sessions.claude_code import ClaudeCodeSession
+        from cli.core.sessions.claude_code import ClaudeCodeSession
 
         assert hasattr(ClaudeCodeSession, "CAPABILITIES")
         assert isinstance(ClaudeCodeSession.CAPABILITIES, list)
@@ -264,7 +264,7 @@ class TestSessionAdapterCapabilities:
 
     def test_codex_session_has_capabilities(self):
         """CodexSession class has CAPABILITIES attribute."""
-        from core.sessions.codex import CodexSession
+        from cli.core.sessions.codex import CodexSession
 
         assert hasattr(CodexSession, "CAPABILITIES")
         assert "shell" in CodexSession.CAPABILITIES
@@ -272,7 +272,7 @@ class TestSessionAdapterCapabilities:
 
     def test_gemini_session_has_capabilities(self):
         """GeminiSession class has CAPABILITIES attribute."""
-        from core.sessions.gemini import GeminiSession
+        from cli.core.sessions.gemini import GeminiSession
 
         assert hasattr(GeminiSession, "CAPABILITIES")
         assert "large_context" in GeminiSession.CAPABILITIES
@@ -280,7 +280,7 @@ class TestSessionAdapterCapabilities:
 
     def test_openai_session_has_capabilities(self):
         """OpenAISession class has CAPABILITIES attribute."""
-        from core.sessions.openai import OpenAISession
+        from cli.core.sessions.openai import OpenAISession
 
         assert hasattr(OpenAISession, "CAPABILITIES")
         assert "vision" in OpenAISession.CAPABILITIES
@@ -328,7 +328,7 @@ providers:
 
     def test_provider_list_command(self, runner, org_path):
         """qn org provider list shows available providers."""
-        from commands.main import qn
+        from cli.commands.main import qn
 
         result = runner.invoke(qn, ["--org-path", str(org_path), "org", "provider", "list"])
 
@@ -338,7 +338,7 @@ providers:
 
     def test_provider_default_show(self, runner, org_path):
         """qn org provider default shows current default."""
-        from commands.main import qn
+        from cli.commands.main import qn
 
         result = runner.invoke(qn, ["--org-path", str(org_path), "org", "provider", "default"])
 
@@ -347,7 +347,7 @@ providers:
 
     def test_provider_validate_success(self, runner, org_path):
         """qn org provider validate passes with valid config."""
-        from commands.main import qn
+        from cli.commands.main import qn
 
         result = runner.invoke(qn, ["--org-path", str(org_path), "org", "provider", "validate"])
 

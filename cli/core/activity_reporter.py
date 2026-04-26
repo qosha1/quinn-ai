@@ -13,9 +13,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from core.db import Database, open_database, get_org_db_path
-from core.activity_tracker import ActivityTracker
-from core.bd_wrapper import run_bd
+from cli.core.db import Database, open_database, get_org_db_path
+from cli.core.activity_tracker import ActivityTracker
+from cli.core.bd_wrapper import run_bd
 
 _logger = logging.getLogger(__name__)
 
@@ -121,8 +121,8 @@ class ActivityReporter:
                 return
 
             # Get or create activity-feed channel
-            from core.constants import DEFAULT_ACTIVITY_FEED_CHANNEL
-            from core.queries.channel import get_channel_by_name, create_channel
+            from cli.core.constants import DEFAULT_ACTIVITY_FEED_CHANNEL
+            from cli.core.queries.channel import get_channel_by_name, create_channel
 
             channel = get_channel_by_name(db, DEFAULT_ACTIVITY_FEED_CHANNEL)
             if not channel:
@@ -151,7 +151,7 @@ class ActivityReporter:
                 summary = tracker.create_activity_summary(minutes=report_minutes)
 
                 # Create message in board-channel
-                from core.queries import create_message, generate_id
+                from cli.core.queries import create_message, generate_id
 
                 message_content = f"## {worker_name} ({worker_role}) Activity\n\n{summary}"
 

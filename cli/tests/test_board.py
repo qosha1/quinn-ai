@@ -11,11 +11,11 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from commands.main import qn
-from core.db import open_database, get_org_db_path
-from core.org import Org
-from core.worker import Worker
-from core.queries import update_worker_runtime_status
+from cli.commands.main import qn
+from cli.core.db import open_database, get_org_db_path
+from cli.core.org import Org
+from cli.core.worker import Worker
+from cli.core.queries import update_worker_runtime_status
 
 
 @pytest.fixture

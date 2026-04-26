@@ -10,11 +10,11 @@ import sqlite3
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.worker import Worker
-from core.queries import get_worker_by_name
-from core.org import Org
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.worker import Worker
+from cli.core.queries import get_worker_by_name
+from cli.core.org import Org
 from shared.exceptions import WorkerNotFound
 
 _logger = logging.getLogger(__name__)
@@ -172,7 +172,7 @@ def fire_cmd(
                 )
 
         # Check for hiring authority
-        from core.queries import get_delegations_by_delegator
+        from cli.core.queries import get_delegations_by_delegator
         has_authority = bool(target_worker.hiring_authority_scope.allowed_roles)
         downstream_count = 0
         if has_authority:
@@ -260,7 +260,7 @@ def fire_cmd(
                 click.echo("  Hiring authority: Revoked")
 
         if not keep_storage:
-            from core.storage import StorageManager
+            from cli.core.storage import StorageManager
             storage = StorageManager(org_path, db)
             worker_path = storage.get_worker_path(target_worker.id)
             frozen_path = worker_path.parent / f"{worker_path.name}.frozen"
@@ -290,7 +290,7 @@ def _reassign_pending_work(db, org_path, from_worker_id: str, to_worker_id: str)
     Returns:
         Number of items reassigned
     """
-    from core.bd_wrapper import run_bd
+    from cli.core.bd_wrapper import run_bd
 
     # List work assigned to the terminated worker
     result = run_bd(

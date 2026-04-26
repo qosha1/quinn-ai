@@ -7,15 +7,15 @@ a new one.
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.worker import Worker
-from core.sessions.binding_manager import get_binding_manager
-from core.sessions.persistence import get_session_for_worker, update_session_state, delete_session_record
-from core.session import SessionConfig
-from core.storage import StorageManager
-from core.onboarding import get_worker_env_vars, load_onboarding_context
-from core.constants import DEFAULT_ORG_ID
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.worker import Worker
+from cli.core.sessions.binding_manager import get_binding_manager
+from cli.core.sessions.persistence import get_session_for_worker, update_session_state, delete_session_record
+from cli.core.session import SessionConfig
+from cli.core.storage import StorageManager
+from cli.core.onboarding import get_worker_env_vars, load_onboarding_context
+from cli.core.constants import DEFAULT_ORG_ID
 from datetime import datetime
 from shared import WorkerNotFound
 
@@ -196,7 +196,7 @@ def restart_cmd(
         )
 
         # Spawn session
-        from core.sessions.registry import get_default_registry
+        from cli.core.sessions.registry import get_default_registry
         registry = get_default_registry()
         worker.set_registry(registry)
 

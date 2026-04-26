@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 from datetime import datetime
 
-from core.session_prompter import SessionPrompter
-from core.db import Database
+from cli.core.session_prompter import SessionPrompter
+from cli.core.db import Database
 
 
 @pytest.fixture

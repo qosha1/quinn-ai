@@ -9,17 +9,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.db import init_database
-from core.org import Org
-from core.queries import (
+from cli.core.db import init_database
+from cli.core.org import Org
+from cli.core.queries import (
     create_team,
     create_worker,
     update_org_status,
     create_channel,
     subscribe_to_channel,
 )
-from core.worker import Worker
-from core.stop_controller import (
+from cli.core.worker import Worker
+from cli.core.stop_controller import (
     OrgStopController,
     OrgStopResult,
     WorkerStopState,
@@ -28,14 +28,14 @@ from core.stop_controller import (
     consume_resume_state,
     cleanup_expired_resume_states,
 )
-from core.constants import (
+from cli.core.constants import (
     STOP_TIMEOUT_CEO,
     STOP_TIMEOUT_MANAGER,
     STOP_TIMEOUT_WORKER,
     DEFAULT_STOP_TIMEOUT,
 )
-from core.sessions import create_session_record
-from core.sessions.tmux_spawner import TmuxSpawner
+from cli.core.sessions import create_session_record
+from cli.core.sessions.tmux_spawner import TmuxSpawner
 from shared.enums import OrgStatus
 
 

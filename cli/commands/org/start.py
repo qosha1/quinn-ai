@@ -46,25 +46,25 @@ from typing import Optional
 
 import click
 
-from commands.context import pass_context, Context
-from core.config import (
+from cli.commands.context import pass_context, Context
+from cli.core.config import (
     get_org_config_path,
     load_org_config,
     validate_and_raise,
 )
-from core.constants import SESSION_START_POLL_INTERVAL
-from core.db import open_database, get_org_db_path, Database
-from core.org import Org
-from core.org_chart import update_org_chart
-from core.onboarding import (
+from cli.core.constants import SESSION_START_POLL_INTERVAL
+from cli.core.db import open_database, get_org_db_path, Database
+from cli.core.org import Org
+from cli.core.org_chart import update_org_chart
+from cli.core.onboarding import (
     get_worker_env_vars,
     load_onboarding_context,
     prepare_worker_onboarding,
 )
-from core.session import SessionConfig
-from core.sessions.registry import get_default_registry
-from core.storage import StorageManager
-from core.worker import Worker
+from cli.core.session import SessionConfig
+from cli.core.sessions.registry import get_default_registry
+from cli.core.storage import StorageManager
+from cli.core.worker import Worker
 from shared import (
     InvalidOrgTransition,
     ConfigurationError,
@@ -260,7 +260,7 @@ def _cleanup_orphaned_sessions(db: Database) -> None:
     Args:
         db: Database instance
     """
-    from core.sessions import run_startup_cleanup
+    from cli.core.sessions import run_startup_cleanup
 
     try:
         result = run_startup_cleanup(db)
@@ -731,8 +731,8 @@ def _start_worker(
                 "Run 'qn org start' first or start the org before starting a worker."
             )
 
-        from core.queries import get_worker_by_name
-        from commands.org.session_utils import spawn_worker_session
+        from cli.core.queries import get_worker_by_name
+        from cli.commands.org.session_utils import spawn_worker_session
 
         worker_data = get_worker_by_name(db, worker)
         if not worker_data:

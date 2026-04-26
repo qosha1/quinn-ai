@@ -6,11 +6,11 @@ Search messages using full-text search. Supports FTS5 query syntax.
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.worker import Worker
-from core.queries import search_messages, get_channel
-from core.permissions import (
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.worker import Worker
+from cli.core.queries import search_messages, get_channel
+from cli.core.permissions import (
     PermissionLevel,
     can_worker_access_channel,
 )

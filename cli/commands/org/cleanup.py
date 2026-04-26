@@ -4,11 +4,11 @@ qn org cleanup command.
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path
-from core.notifications import run_notification_cleanup
-from core.constants import DEFAULT_NOTIFICATION_RETENTION_DAYS
-from core.sessions.cleanup import (
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
+from cli.core.notifications import run_notification_cleanup
+from cli.core.constants import DEFAULT_NOTIFICATION_RETENTION_DAYS
+from cli.core.sessions.cleanup import (
     find_all_orphans,
     cleanup_orphaned_sessions,
 )

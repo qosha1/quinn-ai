@@ -13,9 +13,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.db import init_database
-from core.queries import create_team, create_worker
-from core.sessions.cleanup import (
+from cli.core.db import init_database
+from cli.core.queries import create_team, create_worker
+from cli.core.sessions.cleanup import (
     TMUX_SESSION_PREFIX,
     OrphanedSession,
     CleanupResult,
@@ -25,7 +25,7 @@ from core.sessions.cleanup import (
     cleanup_orphaned_sessions,
     run_startup_cleanup,
 )
-from core.sessions.persistence import (
+from cli.core.sessions.persistence import (
     create_session_record,
     get_session_by_id,
     get_active_sessions,

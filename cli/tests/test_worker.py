@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from core.db import init_database
-from core.queries import create_team, create_worker, create_budget_pool, create_budget_allocation
-from core.worker import Worker, HiringScope
-from core.session import SessionState
+from cli.core.db import init_database
+from cli.core.queries import create_team, create_worker, create_budget_pool, create_budget_allocation
+from cli.core.worker import Worker, HiringScope
+from cli.core.session import SessionState
 from shared import (
     InvalidStateTransition,
     WorkerNotFound,
@@ -311,7 +311,7 @@ class TestSessionActive:
 
     def test_starting_is_active(self, worker):
         """Starting session is active."""
-        from core.sessions.persistence import create_session_record
+        from cli.core.sessions.persistence import create_session_record
         worker.start_onboarding()
         worker.start_session()
         # Create session record to match the state
@@ -327,7 +327,7 @@ class TestSessionActive:
 
     def test_running_is_active(self, worker):
         """Running session is active."""
-        from core.sessions.persistence import create_session_record
+        from cli.core.sessions.persistence import create_session_record
         worker.start_onboarding()
         worker.start_session()
         # Create session record before transitioning
@@ -344,7 +344,7 @@ class TestSessionActive:
 
     def test_idle_is_active(self, worker):
         """Idle session is active."""
-        from core.sessions.persistence import create_session_record
+        from cli.core.sessions.persistence import create_session_record
         worker.start_onboarding()
         worker.start_session()
         # Create session record before transitioning
@@ -362,7 +362,7 @@ class TestSessionActive:
 
     def test_stopped_is_inactive(self, worker):
         """Stopped session is inactive."""
-        from core.sessions.persistence import create_session_record
+        from cli.core.sessions.persistence import create_session_record
         worker.start_onboarding()
         worker.start_session()
         # Create session record before transitioning
@@ -592,7 +592,7 @@ class TestSessionManagement:
 
     def test_spawn_creates_worker_state_row(self, active_worker):
         """Spawn should create worker_state row if it doesn't exist (quinnai-598r)."""
-        from core.queries import get_worker_state
+        from cli.core.queries import get_worker_state
 
         # Verify no worker_state exists initially
         state_before = get_worker_state(active_worker.db, active_worker.id)
@@ -771,7 +771,7 @@ class TestWorkerRegistryIntegration:
         # Patch the module that session_manager.py actually imports from.
         # session_manager.py uses a local import: from ..sessions.registry import get_default_registry
         # which resolves to core.sessions.registry (not cli.core.sessions.registry).
-        import core.sessions.registry as registry_module
+        import cli.core.sessions.registry as registry_module
         monkeypatch.setattr(registry_module, "get_default_registry", mock_get_default)
 
         # Worker has no registry set
@@ -812,7 +812,7 @@ class TestWorkerRegistryIntegration:
 
     def test_spawn_respects_budget_enforcement(self, db, worker):
         """spawn() should enforce budget (via spawn_session)."""
-        from core.budget import NoBudgetAllocationError
+        from cli.core.budget import NoBudgetAllocationError
 
         # Active worker WITHOUT budget allocation
         worker.start_onboarding()
@@ -885,7 +885,7 @@ class TestWorkerOnboardingSpawn:
 
     def test_spawn_prepares_onboarding_context(self, worker_with_budget):
         """spawn() should prepare onboarding context when missing."""
-        from core.session import SessionConfig
+        from cli.core.session import SessionConfig
 
         worker, org_path = worker_with_budget
         registry = MockSessionRegistry()
@@ -939,7 +939,7 @@ class TestConcurrentSessionProtection:
 
     def test_spawn_raises_if_active_session_exists(self, active_worker_with_budget, db):
         """Should raise ActiveSessionExistsError if worker already has a session."""
-        from core.sessions.persistence import create_session_record
+        from cli.core.sessions.persistence import create_session_record
 
         # Manually create an active session record in the database
         create_session_record(
@@ -963,7 +963,7 @@ class TestConcurrentSessionProtection:
 
     def test_spawn_raises_for_starting_session(self, active_worker_with_budget, db):
         """Should raise if existing session is in 'starting' state."""
-        from core.sessions.persistence import create_session_record
+        from cli.core.sessions.persistence import create_session_record
 
         create_session_record(
             db=db,
@@ -980,7 +980,7 @@ class TestConcurrentSessionProtection:
 
     def test_spawn_raises_for_idle_session(self, active_worker_with_budget, db):
         """Should raise if existing session is in 'idle' state."""
-        from core.sessions.persistence import create_session_record
+        from cli.core.sessions.persistence import create_session_record
 
         create_session_record(
             db=db,
@@ -997,7 +997,7 @@ class TestConcurrentSessionProtection:
 
     def test_spawn_allows_after_stopped_session(self, active_worker_with_budget, db):
         """Should allow spawn if existing session is 'stopped'."""
-        from core.sessions.persistence import create_session_record, delete_session_record
+        from cli.core.sessions.persistence import create_session_record, delete_session_record
 
         # Create a stopped session
         create_session_record(
@@ -1020,7 +1020,7 @@ class TestConcurrentSessionProtection:
 
     def test_spawn_allows_after_crashed_session(self, active_worker_with_budget, db):
         """Should allow spawn if existing session is 'crashed'."""
-        from core.sessions.persistence import create_session_record, delete_session_record
+        from cli.core.sessions.persistence import create_session_record, delete_session_record
 
         # Create a crashed session
         create_session_record(
@@ -1049,7 +1049,7 @@ class TestConcurrentSessionProtection:
         _validate_spawn_preconditions should delete it automatically so the new spawn
         can proceed without hitting the UNIQUE(worker_id) constraint.
         """
-        from core.sessions.persistence import create_session_record, get_session_for_worker
+        from cli.core.sessions.persistence import create_session_record, get_session_for_worker
 
         # Create a stopped session record (simulates unclean shutdown)
         create_session_record(
@@ -1072,7 +1072,7 @@ class TestConcurrentSessionProtection:
 
     def test_race_condition_handled_via_unique_constraint(self, active_worker_with_budget, db):
         """Race condition caught by UNIQUE constraint should raise ActiveSessionExistsError."""
-        from core.sessions.persistence import create_session_record
+        from cli.core.sessions.persistence import create_session_record
         import sqlite3
 
         # Create a session that starts successfully but fails at DB insert
@@ -1107,7 +1107,7 @@ class TestConcurrentSessionProtection:
 # HIRING AUTHORITY TESTS
 # ===================
 
-from core.worker import (
+from cli.core.worker import (
     HiringScope,
     HiringError,
     InsufficientHiringAuthority,
@@ -1658,7 +1658,7 @@ class TestTerminateIntegration:
         """Get worker in offboarding state with storage initialized."""
         worker = worker_with_org_path
         # Create storage directory
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
         storage = StorageManager(org_path, worker.db)
         storage.ensure_worker_storage(worker.id, reports_to="")
 
@@ -1674,7 +1674,7 @@ class TestTerminateIntegration:
         Note: Storage is now frozen during start_offboarding(), not terminate().
         This test verifies storage remains frozen after termination.
         """
-        from core.storage import StorageManager, FROZEN_SUFFIX
+        from cli.core.storage import StorageManager, FROZEN_SUFFIX
 
         worker = offboarding_worker
 
@@ -1726,7 +1726,7 @@ class TestTerminateIntegration:
 
     def test_terminate_publishes_event(self, offboarding_worker):
         """terminate() should publish WORKER_FIRED event."""
-        from core.events import EventBus, EventType
+        from cli.core.events import EventBus, EventType
 
         worker = offboarding_worker
 
@@ -1796,7 +1796,7 @@ class TestTerminateIntegration:
 
     def test_terminate_handles_already_frozen_storage(self, db, team, org_path):
         """terminate() should succeed even if storage is already frozen."""
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
 
         # Create worker with storage
         worker_data = create_worker(db, "FrozenWorker", "Developer", team.id, 50)
@@ -1821,8 +1821,8 @@ class TestTerminateIntegration:
 # TERMINATION CLEANUP WORKFLOW TESTS
 # ===================
 
-from core.worker import cleanup_terminated_worker
-from core.storage import ARCHIVE_DIR, FROZEN_SUFFIX
+from cli.core.worker import cleanup_terminated_worker
+from cli.core.storage import ARCHIVE_DIR, FROZEN_SUFFIX
 
 
 class TestStartOffboardingWorkflow:
@@ -1848,7 +1848,7 @@ class TestStartOffboardingWorkflow:
         report = Worker(db, report_data.id, org_path=org_path)
 
         # Create storage for report
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
         storage = StorageManager(org_path, db)
         storage.ensure_worker_storage(report.id, reports_to=manager.id)
 
@@ -1856,7 +1856,7 @@ class TestStartOffboardingWorkflow:
 
     def test_start_offboarding_freezes_storage(self, manager_and_report, org_path):
         """start_offboarding() should freeze worker storage."""
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
 
         manager, report = manager_and_report
         storage = StorageManager(org_path, report.db)
@@ -1874,7 +1874,7 @@ class TestStartOffboardingWorkflow:
 
     def test_start_offboarding_creates_review_bead_for_manager(self, manager_and_report, org_path):
         """start_offboarding() should create review notification for manager."""
-        from core.notifications import get_pending_notifications
+        from cli.core.notifications import get_pending_notifications
 
         manager, report = manager_and_report
 
@@ -1896,8 +1896,8 @@ class TestStartOffboardingWorkflow:
 
     def test_start_offboarding_no_manager_no_bead(self, db, team, org_path):
         """start_offboarding() without manager should not create bead."""
-        from core.notifications import count_pending_notifications
-        from core.storage import StorageManager
+        from cli.core.notifications import count_pending_notifications
+        from cli.core.storage import StorageManager
 
         # Create worker without manager (CEO/root)
         worker_data = create_worker(db, "CEO", "CEO", team.id, 100)
@@ -1945,7 +1945,7 @@ class TestCleanupTerminatedWorker:
     @pytest.fixture
     def terminated_worker_with_files(self, db, team, org_path):
         """Create terminated worker with files in storage."""
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
 
         # Create worker
         worker_data = create_worker(db, "TermWorker", "Developer", team.id, 50)
@@ -2054,14 +2054,14 @@ class TestCleanupTerminatedWorker:
         )
 
         # Worker should still exist in DB
-        from core.queries import get_worker as get_worker_query
+        from cli.core.queries import get_worker as get_worker_query
         worker_data = get_worker_query(worker.db, worker.id)
         assert worker_data is not None
         assert worker_data.status == "terminated"
 
     def test_cleanup_nonexistent_worker_raises(self, db, org_path):
         """cleanup_terminated_worker() should raise for nonexistent worker."""
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
 
         storage = StorageManager(org_path, db)
 
@@ -2074,7 +2074,7 @@ class TestCleanupTerminatedWorker:
 
     def test_cleanup_non_terminated_worker_raises(self, db, team, org_path):
         """cleanup_terminated_worker() should raise if worker not terminated."""
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
 
         # Create active worker
         worker_data = create_worker(db, "ActiveWorker", "Developer", team.id, 50)
@@ -2093,7 +2093,7 @@ class TestCleanupTerminatedWorker:
 
     def test_cleanup_no_storage_succeeds(self, db, team, org_path):
         """cleanup_terminated_worker() should succeed if no storage exists."""
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
 
         # Create and terminate worker without storage
         worker_data = create_worker(db, "NoStorageWorker", "Developer", team.id, 50)
@@ -2124,8 +2124,8 @@ class TestFullTerminationWorkflow:
 
     def test_full_workflow(self, db, team, org_path):
         """Test complete workflow: active -> offboarding -> terminated -> cleanup."""
-        from core.storage import StorageManager
-        from core.notifications import get_pending_notifications
+        from cli.core.storage import StorageManager
+        from cli.core.notifications import get_pending_notifications
 
         # Create manager
         manager_data = create_worker(db, "Manager", "Manager", team.id, 70)
@@ -2182,7 +2182,7 @@ class TestFullTerminationWorkflow:
         assert not (archive_path / "scratch.txt").exists()
 
         # Worker record still in DB for audit
-        from core.queries import get_worker as get_worker_query
+        from cli.core.queries import get_worker as get_worker_query
         worker_data = get_worker_query(db, worker.id)
         assert worker_data is not None
         assert worker_data.status == "terminated"
@@ -2192,7 +2192,7 @@ class TestFullTerminationWorkflow:
 # OFFBOARDING ASK BEAD WORKFLOW TESTS
 # ===================
 
-from core.worker import check_offboarding_ask_completed, process_offboarding_cleanup
+from cli.core.worker import check_offboarding_ask_completed, process_offboarding_cleanup
 from shared.bd.client import InMemoryBdClient
 
 
@@ -2219,7 +2219,7 @@ class TestOffboardingAskBeadCreation:
         report = Worker(db, report_data.id, org_path=org_path)
 
         # Create storage for report
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
         storage = StorageManager(org_path, db)
         storage.ensure_worker_storage(report.id, reports_to=manager.id)
 
@@ -2316,7 +2316,7 @@ class TestProcessOffboardingCleanup:
     @pytest.fixture
     def terminated_worker_with_bead(self, db, team, org_path):
         """Create terminated worker with files and bead ID stored."""
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
 
         # Create worker
         worker_data = create_worker(db, "TermWorker", "Developer", team.id, 50)
@@ -2347,7 +2347,7 @@ class TestProcessOffboardingCleanup:
 
     def test_process_returns_none_if_not_terminated(self, db, team, org_path):
         """process_offboarding_cleanup() returns None if worker not terminated."""
-        from core.storage import StorageManager
+        from cli.core.storage import StorageManager
 
         # Create active worker
         worker_data = create_worker(db, "ActiveWorker", "Developer", team.id, 50)
@@ -2389,7 +2389,7 @@ class TestProcessOffboardingCleanup:
 
     def test_process_publishes_events(self, terminated_worker_with_bead, org_path):
         """process_offboarding_cleanup() publishes completion events."""
-        from core.events import EventBus, EventType
+        from cli.core.events import EventBus, EventType
 
         worker, storage = terminated_worker_with_bead
 
@@ -2419,9 +2419,9 @@ class TestOffboardingAskBeadIntegration:
 
     def test_full_workflow_with_mocked_bead_client(self, db, team, org_path, monkeypatch):
         """Test complete workflow: offboarding -> bead created -> bead closed -> cleanup."""
-        from core.storage import StorageManager
-        from core.events import EventBus, EventType
-        from core.adapters.beads import MockBeadsClient
+        from cli.core.storage import StorageManager
+        from cli.core.events import EventBus, EventType
+        from cli.core.adapters.beads import MockBeadsClient
 
         # Create manager
         manager_data = create_worker(db, "Manager", "Manager", team.id, 70)

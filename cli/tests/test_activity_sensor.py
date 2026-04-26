@@ -7,22 +7,22 @@ from pathlib import Path
 
 import pytest
 
-from core.activity_sensor import ActivitySensor, ActivitySignal
-from core.constants import (
+from cli.core.activity_sensor import ActivitySensor, ActivitySignal
+from cli.core.constants import (
     SIGNAL_STRENGTH_BEAD_UPDATE,
     SIGNAL_STRENGTH_FILE_CHANGE,
     SIGNAL_STRENGTH_HEARTBEAT,
     SIGNAL_STRENGTH_MESSAGE_SENT,
 )
-from core.db import init_database
-from core.queries.activity import (
+from cli.core.db import init_database
+from cli.core.queries.activity import (
     cleanup_old_signals,
     get_recent_signals,
     get_worker_last_activity,
     record_activity_signal,
 )
-from core.queries.worker import create_worker
-from core.queries.team import create_team
+from cli.core.queries.worker import create_worker
+from cli.core.queries.team import create_team
 
 
 @pytest.fixture
@@ -359,7 +359,7 @@ def test_activity_sensor_cleanup_old_signals(activity_sensor, worker):
 
 def test_message_sent_records_activity_signal(db, worker):
     """Test that sending a message records activity signal."""
-    from core.queries.channel import create_channel, create_message
+    from cli.core.queries.channel import create_channel, create_message
 
     # Create channel
     channel = create_channel(db, "test-channel", "topic")

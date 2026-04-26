@@ -19,12 +19,12 @@ from typing import Optional
 
 import click
 
-from commands.context import pass_context, Context
-from core.db import open_database, get_org_db_path, Database
-from core.org import Org
-from core.stop_controller import OrgStopController, OrgStopResult
-from core.sessions import get_active_sessions, stop_all_sessions
-from core.worker import Worker
+from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path, Database
+from cli.core.org import Org
+from cli.core.stop_controller import OrgStopController, OrgStopResult
+from cli.core.sessions import get_active_sessions, stop_all_sessions
+from cli.core.worker import Worker
 from shared import InvalidOrgTransition
 from shared.enums import OrgStatus
 from shared.exceptions import WorkerNotFound
@@ -307,8 +307,8 @@ def _stop_worker(
                 "Start the org before stopping a worker workday."
             )
 
-        from core.queries import get_worker_by_name, get_channel_by_name, create_default_org_channels, create_message
-        from core.notifications import create_notification_bead
+        from cli.core.queries import get_worker_by_name, get_channel_by_name, create_default_org_channels, create_message
+        from cli.core.notifications import create_notification_bead
 
         # Find worker
         worker_data = get_worker_by_name(db, worker)
