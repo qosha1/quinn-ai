@@ -54,3 +54,5 @@
 # - github.repo
 
 sync.remote: "git+https://github.com/qosha1/quinn-ai.git"
+
+export.auto: false

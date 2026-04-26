@@ -2,7 +2,7 @@
 QuinnAI shared business logic.
 
 This package contains conceptual models and business rules that are
-shared across all QuinnAI components (CLI, backend, etc.).
+shared across all QuinnAI components.
 
 - state_machines: State transition definitions
 - exceptions: Business logic exceptions

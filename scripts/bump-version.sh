@@ -151,7 +151,7 @@ No migration required.
 
 ---
 
-*Full changelog: [v${CURRENT_VERSION}...v${NEW_VERSION}](https://github.com/YOUR_ORG/b2b-saas-template/compare/v${CURRENT_VERSION}...v${NEW_VERSION})*
+*Full changelog: [v${CURRENT_VERSION}...v${NEW_VERSION}](https://github.com/qosha1/quinn-ai/compare/v${CURRENT_VERSION}...v${NEW_VERSION})*
 EOF
 
         log_info "Created release notes template at: $RELEASE_NOTES_FILE"
@@ -214,7 +214,7 @@ if [[ "$BUMP_TYPE" == "major" ]] || [[ "$BUMP_TYPE" == "minor" ]]; then
     rm -f "$CHANGELOG_FILE.bak"
 
     # Add version link at bottom
-    echo "[$NEW_VERSION]: https://github.com/YOUR_ORG/b2b-saas-template/compare/v${CURRENT_VERSION}...v${NEW_VERSION}" >> "$CHANGELOG_FILE"
+    echo "[$NEW_VERSION]: https://github.com/qosha1/quinn-ai/compare/v${CURRENT_VERSION}...v${NEW_VERSION}" >> "$CHANGELOG_FILE"
 
     log_success "Updated CHANGELOG.md"
 fi

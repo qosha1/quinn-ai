@@ -21,13 +21,5 @@ fi
 # Set PYTHONPATH to include CLI
 export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
 
-# Source environment variables if available
-ENV_FILE="$PROJECT_ROOT/.envs/.local/.django"
-if [ -f "$ENV_FILE" ]; then
-    set -a
-    source "$ENV_FILE"
-    set +a
-fi
-
 # Run the CLI
 exec python -m cli.commands.main "$@"

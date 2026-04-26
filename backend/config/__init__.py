@@ -1,3 +1,0 @@
-"""
-Django configuration package.
-"""

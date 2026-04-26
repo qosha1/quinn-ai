@@ -9,55 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.2.0] - 2025-01-21
-
-### Added
-- Code quality commandments verification tests
-- Template sync process for forked repos
-- Versioning and changelog system with bump-version.sh script
-- Release notes template and directory structure
-
-### Changed
-- Updated CLAUDE.md with agentic tools integration rules
-- Updated systemeval.yaml with test categories
-
-### Fixed
-- Empty except block in billing services
+## [0.2.0] - 2026-04-25
 
 ### Removed
-- Task-specific BILLING_IMPLEMENTATION_COMPLETE.md from root
-
----
-
-## [0.1.0] - 2024-12-31
+- B2B SaaS template residue: Django backend, NextJS dashboard and landing site, Playwright e2e suite, Docker Compose infrastructure, multi-tenant auth/billing/teams test scaffolding.
+- `Makefile` template-fetch / template-diff / template-merge / template-cherry targets and the upstream b2b-saas-template remote workflow.
+- `openspec/changes/` proposals tied to the B2B stack (auth-teams, backend-django-core, billing-stripe, comprehensive-testing, docker-infrastructure, frontend-app, landing-page).
+- `.envs/` Django/Postgres environment templates and the `verify-setup.sh` script that validated them.
+- `release-notes/TEMPLATE.md`, `DEPLOYMENT.md`, `DOCKER.md`.
 
 ### Added
-- Initial B2B SaaS template release
-- Django 5.1+ backend with DRF
-- NextJS 15 landing page with Tailwind and shadcn/ui
-- NextJS 15 dashboard app with JWT auth and Stripe
-- Multi-tenancy model (Company > Teams > Users)
-- Role-based access control (owner, admin, member, viewer)
-- Stripe billing integration with usage tracking
-- Docker Compose infrastructure (local and production)
-- Comprehensive test suites (pytest, vitest, playwright)
-- OpenSpec integration for spec-driven development
+- `tests/test_no_b2b_residue.py` and `tests/test_no_b2b_imports.py` guardrails to keep B2B template artifacts from creeping back in.
 
-### Infrastructure
-- PostgreSQL 16 database
-- Redis 7 for caching and Celery
-- Nginx reverse proxy (local)
-- Traefik reverse proxy (production)
-- Celery worker and beat scheduler
-
-### Security
-- JWT authentication with refresh tokens
-- API key authentication for programmatic access
-- CORS configuration
-- Environment-based secrets management
+### Fixed
+- `VERSION` and `pyproject.toml` versions now both report `0.2.0` (previously diverged at 0.2.0 / 0.1.0).
+- Removed stale `.envs/.local/.django` references from `cli/commands/config.py`, `scripts/setup-dev.sh`, `scripts/run-board.sh`, `scripts/run-qn.sh`.
+- Replaced upstream `YOUR_ORG/b2b-saas-template` GitHub URLs in `scripts/bump-version.sh` with this repository.
 
 ---
 
-[Unreleased]: https://github.com/YOUR_ORG/b2b-saas-template/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/YOUR_ORG/b2b-saas-template/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/YOUR_ORG/b2b-saas-template/releases/tag/v0.1.0
+[Unreleased]: https://github.com/qosha1/quinn-ai/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/qosha1/quinn-ai/releases/tag/v0.2.0

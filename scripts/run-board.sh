@@ -19,13 +19,5 @@ fi
 # Set PYTHONPATH to include both CLI and terminal-app
 export PYTHONPATH="$PROJECT_ROOT:$PROJECT_ROOT/terminal-app/src:$PYTHONPATH"
 
-# Source environment variables if available
-ENV_FILE="$PROJECT_ROOT/.envs/.local/.django"
-if [ -f "$ENV_FILE" ]; then
-    set -a
-    source "$ENV_FILE"
-    set +a
-fi
-
 # Run the board using the new qn board ui command
 exec qn board ui "$@"

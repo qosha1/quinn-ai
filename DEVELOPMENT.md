@@ -2,7 +2,7 @@
 
 ## Installing Development Dependencies
 
-The QuinnAI project uses a monorepo structure with multiple packages. The `shared/` package contains business logic used by `cli/`, `backend/`, and `wrkr/`.
+QuinnAI is a Python CLI tool. The `shared/` package contains business logic consumed by `cli/` and `terminal-app/`.
 
 ### Quick Setup
 
@@ -62,7 +62,6 @@ systemeval test
 
 # Run specific package tests
 python -m pytest cli/tests/ -v
-python -m pytest wrkr/tests/ -v
 python -m pytest tests/ -v
 ```
 

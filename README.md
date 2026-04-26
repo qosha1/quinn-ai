@@ -511,9 +511,6 @@ quinnai/
 │   ├── config/       # Default templates
 │   ├── scripts/      # Build scripts
 │   └── tests/
-├── backend/          # Django API (future)
-├── app/              # Dashboard UI (future)
-├── landing/          # Marketing site (future)
 ├── openspec/         # Project specs
 └── CLAUDE.md
 ```

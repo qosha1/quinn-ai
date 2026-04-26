@@ -226,9 +226,6 @@ def validate_cmd(test_connection: bool, org_path: Optional[Path], verbose: bool)
             fg="yellow"
         ))
         click.echo("Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY")
-        click.echo("")
-        click.echo("To load environment variables, run:")
-        click.echo("  set -a && source .envs/.local/.django && set +a")
 
     click.echo("")
 

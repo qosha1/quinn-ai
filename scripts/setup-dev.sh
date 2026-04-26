@@ -54,17 +54,6 @@ echo "✓ CLI installed"
 pip install -q -e "./terminal-app[dev]"
 echo "✓ Terminal app installed"
 
-# Check for environment file
-echo ""
-ENV_FILE="$PROJECT_ROOT/.envs/.local/.django"
-if [ -f "$ENV_FILE" ]; then
-    echo "✓ Environment file found"
-else
-    echo "⚠ No environment file at .envs/.local/.django"
-    echo "  Copy from example: cp .envs/.local/.django.example .envs/.local/.django"
-    echo "  Then add your API keys"
-fi
-
 # Validate installation
 echo ""
 echo "Validating installation..."
@@ -77,13 +66,13 @@ echo "=== Setup Complete ==="
 echo ""
 echo "Quick start:"
 echo "  source .venv/bin/activate"
-echo "  source .envs/.local/.django  # Load API keys"
+echo "  export ANTHROPIC_API_KEY=...  # or OPENAI_API_KEY"
 echo ""
 echo "Commands:"
 echo "  qn --help                    # CLI help"
 echo "  qn board ui                  # Launch board UI"
-echo "  ./scripts/run-qn.sh          # Run CLI (auto-loads env)"
-echo "  ./scripts/run-board.sh       # Run board (auto-loads env)"
+echo "  ./scripts/run-qn.sh          # Run CLI"
+echo "  ./scripts/run-board.sh       # Run board"
 echo ""
 echo "Create an org:"
 echo "  qn --org-path ~/orgs/my-org org init"

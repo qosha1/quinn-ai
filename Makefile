@@ -1,4 +1,4 @@
-.PHONY: help setup test board lint clean verify
+.PHONY: help setup test board lint clean
 
 # QuinnAI Project Makefile
 # RollerCoaster Tycoon for AI Organizations
@@ -12,18 +12,12 @@ help:
 	@echo "  make test-terminal-app  - Run terminal-app test suite"
 	@echo "  make test-all           - Run ALL test suites (CLI + terminal-app)"
 	@echo "  make lint               - Run ruff and black linters"
-	@echo "  make verify             - Verify installation is working"
 	@echo ""
 	@echo "Running QuinnAI:"
 	@echo "  make board      - Launch the board terminal UI"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean      - Clean up generated files (.pyc, __pycache__, etc.)"
-	@echo ""
-	@echo "Template Sync (from upstream b2b-saas-template):"
-	@echo "  make template-fetch  - Fetch latest from template repo"
-	@echo "  make template-diff   - Show changes since last sync"
-	@echo "  make template-merge  - Merge template updates"
 	@echo ""
 
 # Development setup
@@ -60,11 +54,6 @@ board:
 	@chmod +x scripts/run-board.sh
 	./scripts/run-board.sh
 
-# Verify installation
-verify:
-	@chmod +x scripts/verify-setup.sh
-	./scripts/verify-setup.sh
-
 # Linting
 lint:
 	@echo "Running ruff..."
@@ -89,30 +78,3 @@ clean:
 	find . -type f -name ".coverage" -delete
 	find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
 	@echo "Clean complete."
-
-# Template sync commands
-# Remote 'template' points to: https://github.com/qosha1/b2b-saas-template.git
-template-fetch:
-	@echo "Fetching latest from template repo..."
-	git fetch template
-
-template-diff:
-	@echo "Changes in template since last sync:"
-	git log HEAD..template/main --oneline
-	@echo ""
-	@echo "Files changed:"
-	git diff HEAD..template/main --stat
-
-template-merge:
-	@echo "Merging template updates..."
-	@echo "This will open an editor for conflict resolution if needed."
-	git merge template/main --no-commit --no-ff
-	@echo ""
-	@echo "Review changes with 'git status' and 'git diff --staged'"
-	@echo "Then commit with: git commit -m 'Merge template updates'"
-	@echo "Or abort with: git merge --abort"
-
-template-cherry:
-	@echo "Usage: make template-cherry COMMIT=<sha>"
-	@echo "Cherry-pick a specific commit from template"
-	@if [ -n "$(COMMIT)" ]; then git cherry-pick $(COMMIT) --no-commit; fi

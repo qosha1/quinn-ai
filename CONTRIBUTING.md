@@ -27,24 +27,18 @@ pip install -e "./terminal-app[dev]"
 
 ### Environment Configuration
 
-Copy the example environment file and add your API keys:
-
-```bash
-cp .envs/.local/.django.example .envs/.local/.django
-```
-
-Edit `.envs/.local/.django` with your keys:
+Export at least one provider API key in your shell:
 
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."
+# or
 export OPENAI_API_KEY="sk-..."
 ```
 
-Load environment before running:
+Activate the virtual environment before running QuinnAI commands:
 
 ```bash
 source .venv/bin/activate
-source .envs/.local/.django
 ```
 
 ## Code Style
@@ -63,7 +57,7 @@ make lint      # Check for issues
 make format    # Auto-fix issues
 ```
 
-Configuration is in `backend/pyproject.toml`:
+Configuration is in the root `pyproject.toml`:
 - ruff: E, W, F, I, B, C4, UP rules enabled
 - black: 100 character line length
 - isort: black profile

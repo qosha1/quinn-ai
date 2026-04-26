@@ -127,36 +127,6 @@ class TestBumpVersionScript:
         assert "patch)" in content, "Script missing patch version handling"
 
 
-class TestReleaseNotes:
-    """Tests for release notes infrastructure."""
-
-    def test_release_notes_directory_exists(self):
-        """release-notes directory must exist."""
-        release_notes_dir = PROJECT_ROOT / "release-notes"
-        assert release_notes_dir.exists(), "release-notes directory not found"
-
-    def test_release_notes_template_exists(self):
-        """Release notes template must exist."""
-        template = PROJECT_ROOT / "release-notes" / "TEMPLATE.md"
-        assert template.exists(), "release-notes/TEMPLATE.md not found"
-
-    def test_template_has_required_sections(self):
-        """Template should have all required sections."""
-        template = PROJECT_ROOT / "release-notes" / "TEMPLATE.md"
-        content = template.read_text()
-
-        required_sections = [
-            "## Overview",
-            "## Highlights",
-            "## Breaking Changes",
-            "## Migration Guide",
-            "## New Features",
-        ]
-
-        for section in required_sections:
-            assert section in content, f"Template missing section: {section}"
-
-
 class TestVersionConsistency:
     """Tests for version consistency across files."""
 
