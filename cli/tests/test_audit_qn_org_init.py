@@ -88,5 +88,7 @@ def test_init_skip_okrs_creates_bootstrap_okr_in_sqlite(runner, temp_org):
 
     assert len(rows) == 1, f"Expected exactly one bootstrap OKR, got: {rows}"
     bootstrap_id, bootstrap_title = rows[0]
-    assert bootstrap_id.startswith("okr-"), f"Bootstrap OKR id format unexpected: {bootstrap_id}"
+    # After quinn-ai-lxp the id is the bd issue id ({prefix}-{shortid}),
+    # not the legacy 'okr-...' format.
+    assert "-" in bootstrap_id, f"Bootstrap OKR id format unexpected: {bootstrap_id}"
     assert bootstrap_title, "Bootstrap OKR must have a title"

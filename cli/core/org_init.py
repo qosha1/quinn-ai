@@ -435,21 +435,82 @@ def create_initial_okrs(
             _logger.warning(f"Failed to parse initial_okrs.json: {e}. Creating bootstrap OKR.")
 
     # Priority 3: Create bootstrap OKR
-    okr_id = _create_bootstrap_okr(db, ceo_id)
+    okr_id = _create_bootstrap_okr(org_path, db, ceo_id)
     okr_ids.append(okr_id)
 
     return okr_ids
 
 
-def _create_bootstrap_okr(db, ceo_id: str) -> str:
+def _create_okr_bead(
+    org_path: Path,
+    title: str,
+    description: str,
+    ceo_id: str,
+    priority: int = 1,
+) -> Optional[str]:
+    """Create an OKR as a bead via `bd create` and return its id.
+
+    Returns None if bd is unavailable or the create failed; callers
+    should fall back to SQLite-only storage in that case.
+
+    The returned id (e.g. 'myorg-abc123') is suitable as the okr_id
+    parameter for cli.core.queries.okr.create_okr() so both stores
+    share the same identifier (quinn-ai-lxp).
+    """
+    import json
+    import re
+    from cli.core.bd_wrapper import run_bd
+
+    try:
+        result = run_bd(
+            args=[
+                "create", title,
+                "--type=epic",
+                "--label=okr",
+                f"--priority={priority}",
+                f"--description={description}",
+                f"--assignee={ceo_id}",
+                "--json",
+            ],
+            org_path=org_path,
+            worker_id=ceo_id,
+            skip_permission_check=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            return None
+        # bd may emit non-JSON warnings before the JSON object; find the
+        # first '{' and parse from there.
+        match = re.search(r"\{.*\}", result.stdout, re.DOTALL)
+        if not match:
+            return None
+        data = json.loads(match.group(0))
+        return data.get("id")
+    except Exception:
+        _logger = logging.getLogger(__name__)
+        _logger.exception("Failed to create OKR bead for '%s'", title)
+        return None
+
+
+def _create_bootstrap_okr(org_path: Path, db, ceo_id: str) -> str:
     """Create a bootstrap OKR when no config exists.
 
+    Writes the OKR to BOTH stores with the same id:
+    1. As a bead (via bd create) — source of truth for the dependency graph
+    2. To SQLite okrs table — supplemental for KR progress aggregation
+
+    If the bead-creation step fails (bd unavailable, permission issue),
+    we still write to SQLite with a generated id so init doesn't fail —
+    but `qn org okr list` (which reads beads) will not surface this OKR.
+
     Args:
+        org_path: Path to organization directory (for bd invocation)
         db: Database instance
         ceo_id: CEO worker ID
 
     Returns:
-        OKR ID of the created bootstrap OKR
+        OKR ID — either the bd issue id (when bead creation succeeded)
+        or a locally-generated 'okr-...' id (fallback).
     """
     from cli.core.queries.okr import create_okr, KeyResult
     from cli.core.constants import (
@@ -473,12 +534,22 @@ def _create_bootstrap_okr(db, ceo_id: str) -> str:
         ),
     ]
 
+    # Step 1: create as a bead so it shows up in `qn org okr list`
+    bead_id = _create_okr_bead(
+        org_path=org_path,
+        title=DEFAULT_BOOTSTRAP_OKR_TITLE,
+        description=DEFAULT_BOOTSTRAP_OKR_DESCRIPTION,
+        ceo_id=ceo_id,
+    )
+
+    # Step 2: mirror to SQLite using the same id (or generate one if step 1 failed)
     okr_id = create_okr(
         db=db,
         title=DEFAULT_BOOTSTRAP_OKR_TITLE,
         owner_id=ceo_id,
         description=DEFAULT_BOOTSTRAP_OKR_DESCRIPTION,
         status="active",
+        okr_id=bead_id,  # None → create_okr generates one
         key_results=key_results,
         due_date=None,
     )

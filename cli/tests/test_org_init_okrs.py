@@ -135,15 +135,17 @@ def test_create_initial_okrs_malformed_config(temp_org_dir, test_db):
     assert okrs[0].title == DEFAULT_BOOTSTRAP_OKR_TITLE
 
 
-def test_create_bootstrap_okr_directly(test_db):
+def test_create_bootstrap_okr_directly(temp_org_dir, test_db):
     """Test _create_bootstrap_okr function directly."""
     # Create CEO worker
     from cli.core.org import Org
     org = Org(test_db)
     ceo = org.init("Diana", "CEO")
 
-    # Create bootstrap OKR
-    _create_bootstrap_okr(test_db, ceo.id)
+    # Create bootstrap OKR (org_path is needed for the bd-create call;
+    # bd may not be available in this test env so the call falls back
+    # to SQLite-only — that's fine for this unit test)
+    _create_bootstrap_okr(temp_org_dir, test_db, ceo.id)
 
     # Verify OKR was created
     okrs = get_okrs_by_owner(test_db, ceo.id)

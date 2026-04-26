@@ -100,15 +100,18 @@ class TestBudgetStatus:
 # quinn-ai-9vw: qn org okr list
 # ============================================================
 class TestOkrList:
-    def test_empty_when_no_okrs_in_beads(self, runner, initialized_org):
-        # --skip-okrs creates the SQLite bootstrap OKR but no bead.
-        # `qn org okr list` (without --from-db) reads beads, so should be empty.
+    def test_lists_bootstrap_okr_in_beads_view(self, runner, initialized_org):
+        # After quinn-ai-lxp, --skip-okrs creates the bootstrap OKR as a bead
+        # AND in SQLite (same id). `qn org okr list` (reads beads) should
+        # surface the bootstrap OKR.
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
             "org", "okr", "list",
         ])
         assert result.exit_code == 0, result.output
-        assert "No OKRs found" in result.output
+        assert "Establish" in result.output, (
+            f"Expected bootstrap OKR title in beads view. Got:\n{result.output}"
+        )
 
     def test_from_db_shows_bootstrap_okr(self, runner, initialized_org):
         result = runner.invoke(qn, [
