@@ -437,6 +437,32 @@ the `SpawnStrategy` ABC for tests that exercise `SpawnerFactory` directly. Most
 audit tests need `FakeSession`, not `FakeSpawner` — the hire/start path goes
 through the SessionRegistry, not the SpawnerFactory.
 
+For tests that need to verify real tmux integration (capture-pane, send-keys,
+session naming) without a real LLM CLI, use the Layer-2 harness:
+
+```python
+import pytest
+
+@pytest.mark.tmux
+def test_logs_reads_scrollback(tmux_with_fake_cli):
+    output = tmux_with_fake_cli.spawner.read_output(tmux_with_fake_cli.session_name)
+    assert "FAKE-CLI: ready" in output
+```
+
+The `@pytest.mark.tmux` marker auto-skips when `tmux` isn't on PATH:
+
+- macOS: `brew install tmux`
+- Linux: `apt install tmux` (or distro equivalent)
+
+Default `pytest` runs everything; tests marked `tmux` skip cleanly when
+unavailable. To run only the tmux integration tests: `pytest -m tmux`. To
+explicitly exclude them: `pytest -m "not tmux"`.
+
+The `tmux_with_fake_cli` fixture spawns a real tmux session running
+`cli/tests/harness/fake_cli.py` — a stdlib-only Python script that prints a
+banner, runs a heartbeat loop, and echoes stdin. No API calls, no claude
+binary needed.
+
 ### Conventions worth keeping
 
 - New magic values go in `core/constants/`. Importers `from cli.core.constants import …`.
