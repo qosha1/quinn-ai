@@ -130,7 +130,7 @@ class TestPhase0Preflight:
 class TestPhase1Cleanup:
     """Test Phase 1: Orphaned session cleanup."""
 
-    @patch('core.sessions.run_startup_cleanup')
+    @patch('cli.core.sessions.run_startup_cleanup')
     def test_cleanup_calls_startup_cleanup(self, mock_cleanup, test_db):
         """Cleanup should call run_startup_cleanup."""
         from cli.commands.org.start import _cleanup_orphaned_sessions
@@ -145,7 +145,7 @@ class TestPhase1Cleanup:
 
         mock_cleanup.assert_called_once_with(test_db)
 
-    @patch('core.sessions.run_startup_cleanup')
+    @patch('cli.core.sessions.run_startup_cleanup')
     def test_cleanup_reports_killed_sessions(self, mock_cleanup, test_db, capsys):
         """Cleanup should report killed tmux sessions."""
         from cli.commands.org.start import _cleanup_orphaned_sessions
@@ -162,7 +162,7 @@ class TestPhase1Cleanup:
         assert "orphaned" in captured.out.lower()
         assert "2" in captured.out
 
-    @patch('core.sessions.run_startup_cleanup')
+    @patch('cli.core.sessions.run_startup_cleanup')
     def test_cleanup_is_best_effort(self, mock_cleanup, test_db, capsys):
         """Cleanup failure should not raise, just warn."""
         from cli.commands.org.start import _cleanup_orphaned_sessions
@@ -256,9 +256,9 @@ class TestPhase2Transition:
 class TestPhase3Onboarding:
     """Test Phase 3: Onboarding preparation."""
 
-    @patch('commands.org.start.prepare_worker_onboarding')
-    @patch('commands.org.start.get_worker_env_vars')
-    @patch('commands.org.start.get_default_registry')
+    @patch('cli.commands.org.start.prepare_worker_onboarding')
+    @patch('cli.commands.org.start.get_worker_env_vars')
+    @patch('cli.commands.org.start.get_default_registry')
     def test_onboarding_prepares_worker(
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir
     ):
@@ -288,9 +288,9 @@ class TestPhase3Onboarding:
 class TestPhase4SessionSpawn:
     """Test Phase 4: Session spawn."""
 
-    @patch('commands.org.start.prepare_worker_onboarding')
-    @patch('commands.org.start.get_worker_env_vars')
-    @patch('commands.org.start.get_default_registry')
+    @patch('cli.commands.org.start.prepare_worker_onboarding')
+    @patch('cli.commands.org.start.get_worker_env_vars')
+    @patch('cli.commands.org.start.get_default_registry')
     def test_session_spawn_creates_session(
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir
     ):
@@ -319,9 +319,9 @@ class TestPhase4SessionSpawn:
         assert config.command == "claude"
         assert "--arg1" in config.args
 
-    @patch('commands.org.start.prepare_worker_onboarding')
-    @patch('commands.org.start.get_worker_env_vars')
-    @patch('commands.org.start.get_default_registry')
+    @patch('cli.commands.org.start.prepare_worker_onboarding')
+    @patch('cli.commands.org.start.get_worker_env_vars')
+    @patch('cli.commands.org.start.get_default_registry')
     def test_session_spawn_checks_provider_exists(
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir
     ):
@@ -347,9 +347,9 @@ class TestPhase4SessionSpawn:
 
         assert "unknown_provider" in str(exc_info.value)
 
-    @patch('commands.org.start.prepare_worker_onboarding')
-    @patch('commands.org.start.get_worker_env_vars')
-    @patch('commands.org.start.get_default_registry')
+    @patch('cli.commands.org.start.prepare_worker_onboarding')
+    @patch('cli.commands.org.start.get_worker_env_vars')
+    @patch('cli.commands.org.start.get_default_registry')
     def test_session_spawn_skips_if_already_active(
         self, mock_registry, mock_env_vars, mock_onboarding, initialized_org, temp_org_dir, capsys
     ):
@@ -505,7 +505,7 @@ class TestStartSequenceIntegration:
         db = _validate_preflight(temp_org_dir, skip_config_validation=True)
 
         # Phase 1: Cleanup (mock to avoid tmux dependency)
-        with patch('core.sessions.run_startup_cleanup') as mock_cleanup:
+        with patch('cli.core.sessions.run_startup_cleanup') as mock_cleanup:
             mock_result = Mock()
             mock_result.tmux_sessions_killed = 0
             mock_result.db_records_updated = 0
@@ -542,11 +542,11 @@ class TestStartSequenceIntegration:
         assert initialized_org.status == OrgStatus.RUNNING.value
 
         # Mock spawn to fail
-        with patch('commands.org.start.prepare_worker_onboarding') as mock_onboard:
+        with patch('cli.commands.org.start.prepare_worker_onboarding') as mock_onboard:
             mock_onboard.return_value = Mock()
-            with patch('commands.org.start.get_worker_env_vars') as mock_env:
+            with patch('cli.commands.org.start.get_worker_env_vars') as mock_env:
                 mock_env.return_value = {}
-                with patch('commands.org.start.get_default_registry') as mock_reg:
+                with patch('cli.commands.org.start.get_default_registry') as mock_reg:
                     mock_reg_instance = MagicMock()
                     mock_reg_instance.has.return_value = True
                     mock_reg.return_value = mock_reg_instance
