@@ -170,3 +170,8 @@ cli/beads-org/
 cli/bin/bd
 /<MagicMock name='mock.org_path' id='4407647200'>
 /<MagicMock name='mock.org_path' id='4409410288'>
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "quinn_ai",
+  "project_id": "9f1ff2f7-f01a-4036-8542-528e9e0f6fee"
+}
