@@ -139,7 +139,10 @@ def init_cmd(
       {"title": "Build team", "key_results": [{"metric": "engineers", "target": 3}]}
     ]
     """
-    org_path = ctx.org_path
+    # init is special: the org doesn't exist yet, so the usual auto-discovery
+    # (walk up looking for live/quinn.db) can't help. Fall back to cwd —
+    # mirrors `git init` semantics.
+    org_path = ctx.org_path or Path.cwd()
 
     # Determine objectives
     objectives: List[ObjectiveConfig] = []

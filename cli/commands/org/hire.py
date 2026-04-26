@@ -13,6 +13,7 @@ from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker, InsufficientHiringAuthority, MaxReportsExceeded
 from cli.core.queries import get_worker_by_name
+from shared.exceptions import WorkerNotFound
 
 
 @click.command()
@@ -94,13 +95,12 @@ def hire_cmd(
     db = open_database(db_path)
 
     try:
-        # Find manager worker
+        # Find manager worker — try name first, fall back to ID lookup.
         manager_data = get_worker_by_name(db, manager)
         if not manager_data:
-            # Try by ID
             try:
                 manager_worker = Worker.get(db, manager)
-            except (ValueError, KeyError):
+            except (ValueError, KeyError, WorkerNotFound):
                 raise click.ClickException(
                     f"Manager '{manager}' not found.\n"
                     "Use 'qn org status' to see available workers."
@@ -166,6 +166,7 @@ def hire_cmd(
 def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
     """Start a worker session using worker's preferred provider or org defaults."""
     from cli.core.config import get_org_config_path
+    from cli.core.config.loaders import load_providers_config
     from cli.providers.registry import load_providers_from_config
     from cli.commands.org.session_utils import spawn_worker_session
 
@@ -182,10 +183,19 @@ def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
             provider = registry.get(provider_name)
             cli_command = provider.cli_command
     else:
-        # No preference - select based on cost and skills
-        provider = registry.select_for_worker(worker.cost, worker.skills)[0]
-        provider_name = provider.name
-        cli_command = provider.cli_command
+        # Try cost-based API provider selection first.
+        try:
+            provider = registry.select_for_worker(worker.cost, worker.skills)[0]
+            provider_name = provider.name
+            cli_command = provider.cli_command
+        except ValueError:
+            # No API provider can satisfy — fall back to the org's session
+            # default from providers.yaml. Cost selection only applies to
+            # API providers (anthropic, openai); session-CLI providers like
+            # claude_code use the user's subscription, not metered API.
+            providers_cfg = load_providers_config(config_path)
+            provider_name = providers_cfg.default or "claude_code"
+            cli_command = "claude"
 
     # Transition lifecycle for onboarding on first hire
     if worker.lifecycle_status == "pending":

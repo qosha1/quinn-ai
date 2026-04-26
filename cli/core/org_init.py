@@ -298,9 +298,12 @@ def init_beads(org_path: Path) -> None:
     env = os.environ.copy()
     env["BEADS_DIR"] = str(beads_dir)
 
-    # Initialize beads database
+    # --skip-hooks: bd's pre-commit hook calls `bd hooks run pre-commit`
+    # which deadlocks on the db lock held by the parent `bd init` (and the
+    # hook's `timeout` fallback isn't available on macOS by default).
+    # --non-interactive: we're not on a TTY during programmatic init.
     subprocess.run(
-        ["bd", "init"],
+        ["bd", "init", "--skip-hooks", "--non-interactive"],
         cwd=org_path,
         env=env,
         check=True,
@@ -523,6 +526,8 @@ def create_initial_tasks(org_path: Path, db, ceo_id: str, okr_ids: list[str]) ->
 
     try:
         for task in initial_tasks:
+            # NOTE: passing worker_id=ceo_id (not "system") so the activity_signals
+            # FK to workers.id holds. There is no "system" worker row.
             run_bd(
                 args=[
                     "create",
@@ -534,7 +539,7 @@ def create_initial_tasks(org_path: Path, db, ceo_id: str, okr_ids: list[str]) ->
                     f"--deps=serves:{okr_id}",
                 ],
                 org_path=org_path,
-                worker_id="system",  # System creates initial tasks
+                worker_id=ceo_id,
                 skip_permission_check=True,
                 capture_output=True,
             )

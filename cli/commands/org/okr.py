@@ -302,15 +302,26 @@ def _create_okr(
     if okr_id:
         db = open_database(db_path)
         try:
-            # Resolve owner name to worker ID
-            owner_id = owner
+            # Resolve owner name → worker_id. Order: by name, then by id,
+            # then (special-case) the literal "ceo" → Org.ceo_worker_id.
+            # Without this, the SQLite okrs.owner_worker_id FK fails because
+            # the literal string "ceo" isn't a valid worker id.
+            owner_id = None
             if owner:
                 worker = get_worker_by_name(db, owner)
                 if worker:
                     owner_id = worker.id
                 else:
-                    # Use owner as-is if not found (might be a worker ID)
-                    owner_id = owner
+                    from cli.core.worker import Worker
+                    from shared.exceptions import WorkerNotFound
+                    try:
+                        owner_id = Worker.get(db, owner).id
+                    except (ValueError, KeyError, WorkerNotFound):
+                        if owner.lower() == "ceo":
+                            from cli.core.org import Org
+                            ceo_id = Org(db).ceo_worker_id
+                            if ceo_id:
+                                owner_id = ceo_id
 
             # Parse due date if provided
             due_date = None
@@ -339,16 +350,23 @@ def _create_okr(
                     except ValueError:
                         pass
 
-            create_okr(
-                db=db,
-                title=title,
-                owner_id=owner_id,
-                parent_id=parent,
-                description=description,
-                status="active",
-                okr_id=okr_id,
-                due_date=due_date,
-            )
+            if not owner_id:
+                _logger.warning(
+                    "Could not resolve owner '%s' to a worker. "
+                    "Bead was created; skipping SQLite OKR row.",
+                    owner,
+                )
+            else:
+                create_okr(
+                    db=db,
+                    title=title,
+                    owner_id=owner_id,
+                    parent_id=parent,
+                    description=description,
+                    status="active",
+                    okr_id=okr_id,
+                    due_date=due_date,
+                )
         except sqlite3.Error as e:
             # Database storage is secondary - don't fail if it errors
             _logger.warning(f"Failed to store OKR in database (ignored): {e}")

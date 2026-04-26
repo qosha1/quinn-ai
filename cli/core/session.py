@@ -97,6 +97,10 @@ class SessionConfig:
     persist_transcript: bool = True
     transcript_db_path: Optional[Path] = None
 
+    # Optional welcome message to send into the session on spawn
+    # (also assigned post-construction by worker/session_manager.py).
+    welcome_message: Optional[str] = None
+
 
 @dataclass
 class SessionMetrics:
