@@ -1,6 +1,52 @@
 """Channel, message type, notification, and escalation constants."""
 
 # ===================
+# CHANNELS
+# ===================
+
+CHANNEL_TYPE_DIRECT = "direct"
+"""Direct (1:1 or small-group) channel type."""
+
+CHANNEL_TYPE_TEAM = "team"
+"""Team channel type."""
+
+CHANNEL_TYPE_TOPIC = "topic"
+"""Topic channel type."""
+
+# Channel-name templates. Use .format(...) — keeps callers from drifting.
+CHANNEL_NAME_HANDOFF_TEMPLATE = "handoff-{worker_id}"
+"""Channel name for an offboarding handoff between worker and manager."""
+
+CHANNEL_NAME_DM_TEMPLATE = "dm-{worker_id_1}-{worker_id_2}"
+"""Channel name for a direct message between two workers."""
+
+
+# ===================
+# MESSAGE TIME SENSITIVITY
+# ===================
+
+TIME_SENSITIVITY_IMMEDIATE = "immediate"
+"""Needs attention right now."""
+
+TIME_SENSITIVITY_HOURS = "hours"
+"""Needs attention within hours."""
+
+TIME_SENSITIVITY_WHENEVER = "whenever"
+"""No urgency."""
+
+
+# ===================
+# MESSAGE PRIORITY (1=highest, 4=lowest)
+# ===================
+
+MESSAGE_PRIORITY_URGENT = 1
+"""Highest message priority — urgent / blocking."""
+
+MESSAGE_PRIORITY_NORMAL = 2
+"""Default message priority."""
+
+
+# ===================
 # NOTIFICATIONS
 # ===================
 

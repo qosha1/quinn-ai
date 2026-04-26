@@ -166,7 +166,7 @@ def hire_cmd(
 def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
     """Start a worker session using worker's preferred provider or org defaults."""
     from cli.core.config import get_org_config_path
-    from cli.core.provider import load_providers_from_config
+    from cli.providers.registry import load_providers_from_config
     from cli.commands.org.session_utils import spawn_worker_session
 
     config_path = get_org_config_path(ctx.org_path) / "providers.yaml"

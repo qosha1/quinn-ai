@@ -14,10 +14,11 @@ from typing import Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from cli.core.db import Database
+from cli.core.db import Database, get_org_db_path
 from cli.core.worker import Worker
 from cli.core.queries import get_team, get_worker, get_worker_allocated_budget, get_okrs_by_owner
 from cli.core.storage import StorageManager
+from cli.core.constants import SHARED_DIR, STORAGE_DIR
 from shared.exceptions import WorkerNotFound
 
 _logger = logging.getLogger(__name__)
@@ -417,7 +418,7 @@ def _create_briefing(worker_dir: Path, ctx: OnboardingContext) -> None:
         org_mission=ctx.org_mission,
         okrs=ctx.okrs,
         worker_storage=str(worker_dir),
-        shared_storage=str(worker_dir.parent.parent / "shared"),
+        shared_storage=str(worker_dir.parent.parent / SHARED_DIR),
         is_ceo=ctx.is_ceo,
         is_manager=ctx.is_manager,
         timestamp=ctx.timestamp,
@@ -544,8 +545,8 @@ def get_worker_env_vars(
         "ORG_PATH": str(org_path),
         "QUINN_ORG_PATH": str(org_path),  # For qn-bd command
         "WORKER_STORAGE": str(worker_dir),
-        "SHARED_STORAGE": str(org_path / "storage" / "shared"),
-        "ORG_DB": str(org_path / "live" / "quinn.db"),
+        "SHARED_STORAGE": str(org_path / STORAGE_DIR / SHARED_DIR),
+        "ORG_DB": str(get_org_db_path(org_path)),
         "BRIEFING_PATH": str(worker_dir / "BRIEFING.md"),
         "WORKER_BUDGET_ALLOCATED": str(ctx.budget_allocated),
         "WORKER_COST_TIER": str(ctx.cost_tier),

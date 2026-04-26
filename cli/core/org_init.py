@@ -16,6 +16,17 @@ from importlib import resources
 
 import yaml
 
+from .constants import (
+    BEADS_DIR,
+    CONFIG_DIR,
+    LIVE_DIR,
+    ORG_CHART_DIR,
+    WORKERS_DIR,
+    STORAGE_DIR,
+    SHARED_DIR,
+    COMPANY_DIR,
+)
+
 
 @dataclass
 class ProviderConfig:
@@ -120,14 +131,14 @@ def create_folder_structure(org_path: Path) -> None:
     from cli.core.storage import StorageManager
 
     # Config directory
-    (org_path / "config").mkdir(parents=True, exist_ok=True)
+    (org_path / CONFIG_DIR).mkdir(parents=True, exist_ok=True)
 
     # Org-chart output directory
-    (org_path / "org-chart").mkdir(parents=True, exist_ok=True)
+    (org_path / ORG_CHART_DIR).mkdir(parents=True, exist_ok=True)
 
     # Runtime state
-    (org_path / "live").mkdir(parents=True, exist_ok=True)
-    (org_path / "live" / "workers").mkdir(exist_ok=True)
+    (org_path / LIVE_DIR).mkdir(parents=True, exist_ok=True)
+    (org_path / LIVE_DIR / WORKERS_DIR).mkdir(exist_ok=True)
 
     # Storage directories with default topics
     storage = StorageManager(org_path, db=None)
@@ -280,7 +291,7 @@ def init_beads(org_path: Path) -> None:
     Args:
         org_path: Path to organization directory
     """
-    beads_dir = org_path / ".beads"
+    beads_dir = org_path / BEADS_DIR
     if beads_dir.exists():
         return
 
@@ -309,7 +320,7 @@ def create_org_documentation(org_path: Path, org_name: str) -> None:
     templates_dir = _get_config_template_path() / "templates"
 
     # Shared company docs
-    company_dir = org_path / "storage" / "shared" / "company"
+    company_dir = org_path / STORAGE_DIR / SHARED_DIR / COMPANY_DIR
 
     for template_name in ["quickstart", "beads-workflow", "okr-guide"]:
         template_file = templates_dir / f"{template_name}.md.jinja2"

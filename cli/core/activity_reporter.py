@@ -1,9 +1,12 @@
-"""Activity reporting service.
+"""Worker activity reporting — the READ/PUBLISH side of the activity pipeline.
 
-Periodically sends worker activity summaries to the activity-feed channel
-so the board can monitor what workers are doing.
+Background service: on a timer, reads each worker's activity log
+(via ActivityTracker), summarizes recent events, and publishes to:
+  - the activity-feed channel (always)
+  - beads (optional, for queryable history)
 
-Optionally creates beads for activity summaries to provide queryable history.
+This module owns the *scheduling and fan-out*. It does not write to the
+activity log directly — that's `activity_tracker.py`.
 """
 
 import logging
@@ -16,6 +19,7 @@ from typing import Optional
 from cli.core.db import Database, open_database, get_org_db_path
 from cli.core.activity_tracker import ActivityTracker
 from cli.core.bd_wrapper import run_bd
+from cli.core.constants import BACKGROUND_THREAD_STOP_TIMEOUT
 
 _logger = logging.getLogger(__name__)
 
@@ -59,7 +63,7 @@ class ActivityReporter:
         self._thread.start()
         _logger.info(f"Activity reporter started (interval: {self.report_interval}s)")
 
-    def stop(self, timeout: float = 5.0) -> None:
+    def stop(self, timeout: float = BACKGROUND_THREAD_STOP_TIMEOUT) -> None:
         """Stop the activity reporter.
 
         Args:

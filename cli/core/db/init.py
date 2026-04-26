@@ -7,7 +7,7 @@ with migration support.
 
 from pathlib import Path
 
-from cli.core.constants import DB_SCHEMA_VERSION
+from cli.core.constants import DB_SCHEMA_VERSION, DEFAULT_DB_NAME, LIVE_DIR
 
 from .connection import Database
 from .migrations import migrate_database
@@ -84,4 +84,4 @@ def get_org_db_path(org_path: Path) -> Path:
     Returns:
         Path to quinn.db
     """
-    return org_path / "live" / "quinn.db"
+    return org_path / LIVE_DIR / DEFAULT_DB_NAME

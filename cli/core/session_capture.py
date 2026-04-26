@@ -17,6 +17,12 @@ from pathlib import Path
 from typing import Optional, List
 
 from cli.core.activity_tracker import ActivityTracker
+from cli.core.constants import (
+    BACKGROUND_THREAD_STOP_TIMEOUT,
+    TMUX_CAPTURE_LINES,
+    TMUX_CAPTURE_TIMEOUT_SECONDS,
+    TMUX_SESSION_PREFIX,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -58,7 +64,7 @@ class SessionCaptureService:
         self._thread.start()
         _logger.info(f"Session capture service started (interval: {self.capture_interval}s)")
 
-    def stop(self, timeout: float = 5.0) -> None:
+    def stop(self, timeout: float = BACKGROUND_THREAD_STOP_TIMEOUT) -> None:
         """Stop the session capture service.
 
         Args:
@@ -139,15 +145,19 @@ class SessionCaptureService:
             worker_id: Worker ID
             worker_name: Worker name
         """
-        tmux_session = f"qn-{worker_id}"
+        tmux_session = f"{TMUX_SESSION_PREFIX}{worker_id}"
 
-        # Capture pane output (last 100 lines)
         try:
             result = subprocess.run(
-                ["tmux", "capture-pane", "-t", tmux_session, "-p", "-S", "-100"],
+                [
+                    "tmux", "capture-pane",
+                    "-t", tmux_session,
+                    "-p",
+                    "-S", f"-{TMUX_CAPTURE_LINES}",
+                ],
                 capture_output=True,
                 text=True,
-                timeout=2
+                timeout=TMUX_CAPTURE_TIMEOUT_SECONDS,
             )
 
             if result.returncode != 0:

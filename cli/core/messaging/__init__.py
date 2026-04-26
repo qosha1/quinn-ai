@@ -1,12 +1,31 @@
 """Messaging subsystem for QuinnAI."""
 
+import logging
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 
 from .board_messages import BoardMessageCreator
+from ..constants import (
+    CHANNEL_NAME_DM_TEMPLATE,
+    CHANNEL_NAME_HANDOFF_TEMPLATE,
+    CHANNEL_TYPE_DIRECT,
+    MESSAGE_PRIORITY_NORMAL,
+    MESSAGE_PRIORITY_URGENT,
+    TIME_SENSITIVITY_HOURS,
+    TIME_SENSITIVITY_WHENEVER,
+)
+from ..queries import (
+    create_channel,
+    create_message,
+    subscribe_to_channel,
+)
+from ..notifications import create_notification_bead
 
 if TYPE_CHECKING:
     from ..db import Database
+
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,19 +52,12 @@ class MessagingService:
         manager_id: str,
     ) -> MessageResult:
         """Send offboarding notification to manager."""
-        from ..queries import (
-            create_channel,
-            subscribe_to_channel,
-            create_message,
-        )
-        from ..notifications import create_notification_bead
-
         try:
-            channel_name = f"handoff-{worker_id}"
+            channel_name = CHANNEL_NAME_HANDOFF_TEMPLATE.format(worker_id=worker_id)
             channel = create_channel(
                 self._db,
                 name=channel_name,
-                channel_type="direct",
+                channel_type=CHANNEL_TYPE_DIRECT,
             )
             subscribe_to_channel(self._db, channel.id, worker_id)
             subscribe_to_channel(self._db, channel.id, manager_id)
@@ -61,8 +73,8 @@ class MessagingService:
                     f"Please review their frozen storage and archive any useful files "
                     f"to shared/archive/{worker_id}/ before completing termination."
                 ),
-                priority=1,
-                time_sensitivity="hours",
+                priority=MESSAGE_PRIORITY_URGENT,
+                time_sensitivity=TIME_SENSITIVITY_HOURS,
             )
 
             notification_id = create_notification_bead(
@@ -70,7 +82,7 @@ class MessagingService:
                 worker_id=manager_id,
                 message_id=message.id,
                 channel_id=channel.id,
-                priority=1,
+                priority=MESSAGE_PRIORITY_URGENT,
             )
 
             return MessageResult(
@@ -81,6 +93,10 @@ class MessagingService:
             )
 
         except Exception as e:
+            _logger.exception(
+                "send_offboarding_notification failed for worker=%s manager=%s",
+                worker_id, manager_id,
+            )
             return MessageResult(success=False, error=str(e))
 
     def create_direct_channel(
@@ -90,15 +106,20 @@ class MessagingService:
         name: Optional[str] = None,
     ) -> MessageResult:
         """Create a direct channel between two workers."""
-        from ..queries import create_channel, subscribe_to_channel
-
         try:
-            channel_name = name or f"dm-{worker_id_1}-{worker_id_2}"
-            channel = create_channel(self._db, name=channel_name, channel_type="direct")
+            channel_name = name or CHANNEL_NAME_DM_TEMPLATE.format(
+                worker_id_1=worker_id_1,
+                worker_id_2=worker_id_2,
+            )
+            channel = create_channel(self._db, name=channel_name, channel_type=CHANNEL_TYPE_DIRECT)
             subscribe_to_channel(self._db, channel.id, worker_id_1)
             subscribe_to_channel(self._db, channel.id, worker_id_2)
             return MessageResult(success=True, channel_id=channel.id)
         except Exception as e:
+            _logger.exception(
+                "create_direct_channel failed for workers=%s,%s",
+                worker_id_1, worker_id_2,
+            )
             return MessageResult(success=False, error=str(e))
 
     def send_message(
@@ -106,12 +127,10 @@ class MessagingService:
         channel_id: str,
         from_worker_id: str,
         content: str,
-        priority: int = 2,
-        time_sensitivity: str = "whenever",
+        priority: int = MESSAGE_PRIORITY_NORMAL,
+        time_sensitivity: str = TIME_SENSITIVITY_WHENEVER,
     ) -> MessageResult:
         """Send a message to a channel."""
-        from ..queries import create_message
-
         try:
             message = create_message(
                 self._db,
@@ -123,6 +142,10 @@ class MessagingService:
             )
             return MessageResult(success=True, message_id=message.id, channel_id=channel_id)
         except Exception as e:
+            _logger.exception(
+                "send_message failed for channel=%s from=%s",
+                channel_id, from_worker_id,
+            )
             return MessageResult(success=False, error=str(e))
 
     def notify_worker(
@@ -130,11 +153,9 @@ class MessagingService:
         worker_id: str,
         message_id: str,
         channel_id: str,
-        priority: int = 2,
+        priority: int = MESSAGE_PRIORITY_NORMAL,
     ) -> MessageResult:
         """Create a notification for a worker about a message."""
-        from ..notifications import create_notification_bead
-
         try:
             notification_id = create_notification_bead(
                 self._db,
@@ -150,6 +171,10 @@ class MessagingService:
                 channel_id=channel_id,
             )
         except Exception as e:
+            _logger.exception(
+                "notify_worker failed for worker=%s message=%s",
+                worker_id, message_id,
+            )
             return MessageResult(success=False, error=str(e))
 
 

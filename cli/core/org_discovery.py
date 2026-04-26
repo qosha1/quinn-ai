@@ -7,6 +7,8 @@ Provides functions to find org root directory from current working directory.
 from pathlib import Path
 from typing import Optional
 
+from .constants import DEFAULT_DB_NAME, LIVE_DIR
+
 
 def find_org_root(start_path: Optional[Path] = None) -> Optional[Path]:
     """Find org root by walking up from start_path.
@@ -39,7 +41,7 @@ def find_org_root(start_path: Optional[Path] = None) -> Optional[Path]:
 
     # Walk up directory tree
     for parent in [current] + list(current.parents):
-        db_path = parent / "live" / "quinn.db"
+        db_path = parent / LIVE_DIR / DEFAULT_DB_NAME
         if db_path.exists():
             return parent
 

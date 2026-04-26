@@ -7,9 +7,10 @@ access and modify beads they have permission for.
 Per CLAUDE.md: "One Protocol For Everything" - all access through permissions.
 """
 
+import logging
+import subprocess
 from dataclasses import dataclass
 from typing import Optional, List, Any, TYPE_CHECKING
-import subprocess
 
 from .db import Database
 from .constants import BEAD_TYPE_TASK
@@ -24,6 +25,9 @@ from .queries import log_permission_audit
 
 if TYPE_CHECKING:
     pass
+
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -106,6 +110,7 @@ class BeadService:
         except FileNotFoundError:
             return BeadResult(success=False, error=f"bd not found at: {self._bd_path}")
         except Exception as e:
+            _logger.exception("Unexpected failure in run_bd_command")
             return BeadResult(success=False, error=str(e))
 
     def get_bead(self, worker_id: str, bead_id: str) -> BeadResult:

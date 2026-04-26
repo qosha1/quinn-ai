@@ -21,7 +21,7 @@ from cli.providers.base import (
     Provider,
     ProviderConfig,
 )
-from cli.core.provider import (
+from cli.providers.registry import (
     DEFAULT_THRESHOLDS,
     ProviderRegistry,
     ProviderSelection,

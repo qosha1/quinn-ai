@@ -35,6 +35,7 @@ from .constants import (
     CONTINUATION_WARNING_MINUTES_MANAGER,
     CONTINUATION_ESCALATE_MINUTES_MANAGER,
     CONTINUATION_ENGINE_POLL_INTERVAL,
+    BACKGROUND_THREAD_STOP_TIMEOUT,
 )
 
 logger = logging.getLogger(__name__)
@@ -138,7 +139,7 @@ class ContinuationEngine:
         self._thread.start()
         logger.info("Continuation engine started")
 
-    def stop(self, timeout: float = 5.0) -> None:
+    def stop(self, timeout: float = BACKGROUND_THREAD_STOP_TIMEOUT) -> None:
         """Stop monitoring gracefully.
 
         Args:

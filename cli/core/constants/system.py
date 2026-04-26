@@ -59,6 +59,48 @@ CONFIG_DIR = "config"
 ORG_CHART_DIR = "org-chart"
 """Org chart output directory name."""
 
+BEADS_DIR = ".beads"
+"""Beads issue-tracker directory name (within an org)."""
+
+STORAGE_DIR = "storage"
+"""Root directory for hierarchical worker/shared storage."""
+
+SHARED_DIR = "shared"
+"""Shared (org-lifetime) storage subdirectory."""
+
+WORKERS_DIR = "workers"
+"""Workers (worker-lifetime) storage subdirectory."""
+
+ARCHIVE_DIR = "archive"
+"""Archive subdirectory for terminated workers."""
+
+FROZEN_SUFFIX = ".frozen"
+"""Suffix appended to frozen worker storage directories."""
+
+COMPANY_DIR = "company"
+"""Company-wide shared storage subdirectory."""
+
+BOARD_DIR = "board"
+"""Board (executive notification) shared subdirectory."""
+
+INBOX_DIR = "inbox"
+"""Inbox subdirectory for board messages."""
+
+ONBOARDING_DIR = "onboarding"
+"""Onboarding directory name (in repo's shared/ package)."""
+
+CONFIGS_DIR = "configs"
+"""Configs subdirectory for onboarding role configurations."""
+
+LOGS_DIR = "logs"
+"""Directory containing per-component log files (under LIVE_DIR)."""
+
+ACTIVITY_DIR = "activity"
+"""Worker-activity log subdirectory (under LIVE_DIR/LOGS_DIR)."""
+
+DEFAULT_SHARED_TOPICS = ["engineering", "legal", "company"]
+"""Default shared-storage topics created on org init."""
+
 
 # ===================
 # TERMINAL

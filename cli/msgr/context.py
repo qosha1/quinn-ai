@@ -5,7 +5,7 @@ from typing import Optional
 
 import click
 
-from cli.core.db import Database
+from cli.core.db import Database, get_org_db_path
 
 
 class MsgrContext:
@@ -23,8 +23,7 @@ class MsgrContext:
     def db(self) -> Database:
         """Get database connection (lazy init)."""
         if self._db is None:
-            db_path = self.org_path / "live" / "quinn.db"
-            self._db = Database(str(db_path))
+            self._db = Database(str(get_org_db_path(self.org_path)))
         return self._db
 
     def close(self):

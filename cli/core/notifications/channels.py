@@ -18,6 +18,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+from cli.core.constants import BOARD_DIR, INBOX_DIR, SHARED_DIR, STORAGE_DIR
+
 _logger = logging.getLogger(__name__)
 
 
@@ -100,7 +102,7 @@ class FileQueueChannel(NotificationChannel):
             org_path: Path to organization directory
             retention_days: Days to retain notifications
         """
-        self.inbox_dir = org_path / "storage" / "shared" / "board" / "inbox"
+        self.inbox_dir = org_path / STORAGE_DIR / SHARED_DIR / BOARD_DIR / INBOX_DIR
         self.retention_days = retention_days
         self.inbox_dir.mkdir(parents=True, exist_ok=True)
 

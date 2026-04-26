@@ -35,6 +35,8 @@ from .constants import (
     BEAD_TYPE_RIG,
     BEAD_TYPE_CONVOY,
     BEAD_TYPE_EVENT,
+    BEADS_DIR,
+    BD_COMMAND_TIMEOUT_SECONDS,
 )
 from .lifecycle import (
     BeadBlockedError,
@@ -171,7 +173,7 @@ def _get_bead_info(
             env=env,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=BD_COMMAND_TIMEOUT_SECONDS,
         )
         if result.returncode != 0:
             return None
@@ -190,7 +192,14 @@ def _get_bead_info(
             "status": data.get("status", "open"),
             "depends_on": depends_on,
         }
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+    except subprocess.TimeoutExpired:
+        _logger.warning("bd show %s timed out after %ss", bead_id, BD_COMMAND_TIMEOUT_SECONDS)
+        return None
+    except json.JSONDecodeError:
+        _logger.warning("bd show %s returned non-JSON output", bead_id)
+        return None
+    except Exception:
+        _logger.exception("Unexpected failure resolving bead info for %s", bead_id)
         return None
 
 
@@ -402,7 +411,7 @@ def get_org_beads_dir(org_path: Path) -> Path:
     Returns:
         Path to org's .beads directory
     """
-    return org_path / ".beads"
+    return org_path / BEADS_DIR
 
 
 class OKRLinkWarning(UserWarning):

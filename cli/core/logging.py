@@ -31,15 +31,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from .constants import LIVE_DIR, LOG_RETENTION_DAYS, LOG_DATE_FORMAT
+from .constants import LIVE_DIR, LOGS_DIR, LOG_RETENTION_DAYS, LOG_DATE_FORMAT
 
 
 # ===================
 # CONSTANTS
 # ===================
-
-LOGS_DIR = "logs"
-"""Logs directory name within org."""
 
 LOG_FILE_NAME = "quinn.log"
 """Main log file name."""

@@ -107,8 +107,8 @@ class SessionPrompter:
         """
         try:
             return get_active_session_tmux_name(self.db, worker_id)
-        except Exception as e:
-            _logger.error(f"Error getting tmux session for {worker_id}: {e}")
+        except Exception:
+            _logger.exception("Error getting tmux session for %s", worker_id)
             return None
 
     def _get_worker_context(self, worker_id: str) -> dict:
@@ -122,8 +122,8 @@ class SessionPrompter:
         """
         try:
             return get_worker_continuation_context(self.db, worker_id)
-        except Exception as e:
-            _logger.error(f"Error getting context for {worker_id}: {e}")
+        except Exception:
+            _logger.exception("Error getting context for %s", worker_id)
             # Return minimal fallback context
             return {
                 "worker_id": worker_id,
@@ -177,8 +177,8 @@ class SessionPrompter:
                 f"Missing template key in context: {e}. Context: {context}"
             )
             return False
-        except Exception as e:
-            _logger.error(f"Error sending prompt to {tmux_name}: {e}")
+        except Exception:
+            _logger.exception("Error sending prompt to %s", tmux_name)
             return False
 
 

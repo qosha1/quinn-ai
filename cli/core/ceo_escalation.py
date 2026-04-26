@@ -1,9 +1,15 @@
-"""CEO-specific escalation helpers with org context enrichment.
+"""CEO-specific escalation enrichment — the PAYLOAD/ROUTING layer.
 
-Provides specialized escalation functionality for CEO role, including:
-- Org state context gathering (workers, work, blockers, OKRs)
-- Urgency level determination and mapping
-- Board notification with appropriate priority
+Helpers used when an escalation involving the CEO needs to be turned into
+something the board can act on: org-state context (workers, work, blockers,
+OKRs), urgency mapping, and notification priority routing.
+
+Pairs with `escalation_monitor.py`, which decides *when* to escalate (the
+detection/timing engine). This module decides *what to send and where*
+once that decision has been made.
+
+Rule of thumb: detection/threshold logic → escalation_monitor.py;
+CEO-specific context, payloads, and board routing → here.
 """
 
 import logging

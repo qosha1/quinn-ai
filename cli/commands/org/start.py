@@ -52,7 +52,15 @@ from cli.core.config import (
     load_org_config,
     validate_and_raise,
 )
-from cli.core.constants import SESSION_START_POLL_INTERVAL
+from cli.core.constants import (
+    CONFIG_DIR,
+    LIVE_DIR,
+    SESSION_START_POLL_INTERVAL,
+    SHARED_DIR,
+    STORAGE_DIR,
+    TMUX_SESSION_PREFIX,
+    WORKERS_DIR,
+)
 from cli.core.db import open_database, get_org_db_path, Database
 from cli.core.org import Org
 from cli.core.org_chart import update_org_chart
@@ -318,7 +326,12 @@ def _validate_preflight(org_path: Path, skip_config_validation: bool) -> Databas
             )
 
     # 3. Validate org directory structure
-    required_dirs = ["config", "live", "storage/shared", "storage/workers"]
+    required_dirs = [
+        CONFIG_DIR,
+        LIVE_DIR,
+        f"{STORAGE_DIR}/{SHARED_DIR}",
+        f"{STORAGE_DIR}/{WORKERS_DIR}",
+    ]
     for dir_name in required_dirs:
         dir_path = org_path / dir_name
         if not dir_path.exists():
@@ -630,7 +643,7 @@ Start by running: `msgr send #general "Hi team! I'm {ceo_name}, CEO. Starting wo
         time.sleep(2)
 
         # Send command via tmux to read the instructions
-        tmux_session = f"qn-{ceo.id}"
+        tmux_session = f"{TMUX_SESSION_PREFIX}{ceo.id}"
         command = f"cat INITIAL_TASK.md"
 
         try:

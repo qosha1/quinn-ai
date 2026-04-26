@@ -26,7 +26,7 @@ from cli.providers.base import (
     calculate_retry_delay,
     with_retry,
 )
-from cli.core.provider import (
+from cli.providers.registry import (
     ProviderRegistry,
     load_providers_from_config,
     _expand_env_vars,

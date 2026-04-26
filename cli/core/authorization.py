@@ -6,6 +6,7 @@ permission validation. All authorization logic should go through this module.
 """
 
 import json
+import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,9 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .db import Database
+
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -153,11 +157,13 @@ class AuthorizationManager:
             bead_ids = [bead.get("id", "unknown") for bead in beads_data]
             return True, f"Worker has {len(bead_ids)} active work item(s): {', '.join(bead_ids[:3])}"
 
-        except Exception as e:
-            # On any error, log and allow firing (fail open for safety)
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Failed to check critical work for {worker_id}: {e}")
+        except Exception:
+            # Fail open for safety: on any error we still allow firing,
+            # but log with full traceback so the failure isn't silent.
+            _logger.exception(
+                "Failed to check critical work for %s; allowing fire to proceed",
+                worker_id,
+            )
             return False, None
 
     def _can_hire(self, worker, target_id: Optional[str]) -> AuthorizationResult:

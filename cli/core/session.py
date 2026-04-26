@@ -25,6 +25,15 @@ from shared.core.state import (
     SESSION_STATE_TRANSITIONS,
 )
 
+from .constants import (
+    DEFAULT_IDLE_TIMEOUT,
+    DEFAULT_MAX_CONTEXT_TOKENS,
+    DEFAULT_RESPONSE_TIMEOUT,
+    DEFAULT_STARTUP_TIMEOUT,
+    DEFAULT_TERMINAL_COLS,
+    DEFAULT_TERMINAL_ROWS,
+)
+
 if TYPE_CHECKING:
     from shared.pyterm.state_monitor import StateMonitor
 
@@ -72,16 +81,16 @@ class SessionConfig:
     env_vars: dict[str, str] = field(default_factory=dict)
 
     # Terminal settings
-    cols: int = 120
-    rows: int = 40
+    cols: int = DEFAULT_TERMINAL_COLS
+    rows: int = DEFAULT_TERMINAL_ROWS
 
-    # Timeouts (milliseconds)
-    startup_timeout_ms: int = 30000
-    idle_timeout_ms: int = 300000    # 5 minutes
-    response_timeout_ms: int = 600000  # 10 minutes
+    # Timeouts (milliseconds — constants are seconds, scale up here)
+    startup_timeout_ms: int = DEFAULT_STARTUP_TIMEOUT * 1000
+    idle_timeout_ms: int = DEFAULT_IDLE_TIMEOUT * 1000
+    response_timeout_ms: int = DEFAULT_RESPONSE_TIMEOUT * 1000
 
     # Resource limits
-    max_context_tokens: int = 100000
+    max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS
     memory_limit_mb: Optional[int] = None
 
     # Session persistence

@@ -22,6 +22,19 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_HEARTBEAT_THRESHOLD = 60
 """Seconds before heartbeat is considered stale."""
 
+BACKGROUND_THREAD_STOP_TIMEOUT = 5.0
+"""Default timeout when stopping background subsystem threads
+(activity reporter, session capture, continuation engine)."""
+
+BD_COMMAND_TIMEOUT_SECONDS = 10
+"""Subprocess timeout for invocations of the bd CLI."""
+
+TMUX_CAPTURE_TIMEOUT_SECONDS = 2
+"""Subprocess timeout for `tmux capture-pane` calls."""
+
+TMUX_CAPTURE_LINES = 100
+"""Number of trailing pane lines to capture from tmux."""
+
 
 # ===================
 # POLLING INTERVALS (seconds)

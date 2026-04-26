@@ -14,17 +14,14 @@ from typing import Optional
 from .db import Database
 from .queries import get_worker
 from shared.exceptions import StorageError
-
-
-# Storage directory names (no magic values in function bodies)
-STORAGE_DIR = "storage"
-SHARED_DIR = "shared"
-WORKERS_DIR = "workers"
-FROZEN_SUFFIX = ".frozen"
-ARCHIVE_DIR = "archive"
-
-# Default shared topics
-DEFAULT_SHARED_TOPICS = ["engineering", "legal", "company"]
+from .constants import (
+    STORAGE_DIR,
+    SHARED_DIR,
+    WORKERS_DIR,
+    FROZEN_SUFFIX,
+    ARCHIVE_DIR,
+    DEFAULT_SHARED_TOPICS,
+)
 
 
 class WorkerStorageNotFound(StorageError):

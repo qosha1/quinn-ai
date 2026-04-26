@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional, TYPE_CHECKING
 
-from ..constants import DEFAULT_HEARTBEAT_THRESHOLD
+from ..constants import DEFAULT_HEARTBEAT_THRESHOLD, STORAGE_DIR, WORKERS_DIR
 from ..queries import (
     get_worker_state,
     create_worker_state,
@@ -624,7 +624,7 @@ class WorkerSessionManager:
             return
 
         org_path = self.worker._storage_mgr.get_org_path()
-        worker_dir = org_path / "storage" / "workers" / self.worker.id
+        worker_dir = org_path / STORAGE_DIR / WORKERS_DIR / self.worker.id
         onboarding_dir = worker_dir / ".onboarding"
         marker = onboarding_dir / "initialized"
 

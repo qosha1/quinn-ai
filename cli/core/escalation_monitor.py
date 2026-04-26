@@ -1,8 +1,17 @@
-"""Escalation monitoring service.
+"""Escalation monitoring — the DETECTION engine.
 
-Background service that monitors worker activity and creates escalations
-when workers are idle for too long. This addresses GAP 4: ensuring workers
-who are stuck get help automatically.
+Background service: polls workers, decides when one has been idle too long,
+and triggers an escalation. Owns the timing/poll loop and the threshold
+policy.
+
+Pairs with `ceo_escalation.py`, which provides CEO-specific *enrichment* —
+gathering org state (workers, work, blockers, OKRs), mapping urgency to
+notification priority, and routing to the board. When a CEO escalation
+fires from this monitor, it delegates context-building to ceo_escalation.
+
+Rule of thumb: anything on the timer/threshold side belongs here; anything
+that builds CEO-specific payloads or routes to the board belongs in
+ceo_escalation.
 """
 
 import logging

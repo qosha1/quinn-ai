@@ -1,7 +1,15 @@
-"""Worker activity tracking service.
+"""Worker activity tracking — the WRITE side of the activity pipeline.
 
-Monitors worker session activity and creates periodic summaries for the board.
-Tracks commands run, files edited, decisions made, and progress on tasks.
+Owns the per-worker `live/logs/activity/{worker_id}.jsonl` log: appending raw
+events (commands, file changes, decisions) and reading them back as
+summaries. Pure data layer — no scheduling, no fan-out.
+
+Pairs with `activity_reporter.py`, which is the READ/PUBLISH side:
+ActivityReporter periodically reads from this log on a background thread and
+publishes summaries to the activity-feed channel + (optionally) beads.
+
+Rule of thumb: writes/reads of the activity log live here; anything that
+runs on a timer or talks to other subsystems lives in activity_reporter.
 """
 
 import logging
@@ -9,6 +17,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List
 import json
+
+from .constants import ACTIVITY_DIR, LIVE_DIR, LOGS_DIR
 
 _logger = logging.getLogger(__name__)
 
@@ -25,7 +35,7 @@ class ActivityTracker:
         """
         self.org_path = org_path
         self.worker_id = worker_id
-        self.activity_log = org_path / "live" / "logs" / "activity" / f"{worker_id}.jsonl"
+        self.activity_log = org_path / LIVE_DIR / LOGS_DIR / ACTIVITY_DIR / f"{worker_id}.jsonl"
         self.activity_log.parent.mkdir(parents=True, exist_ok=True)
 
     def log_command(self, command: str, output: Optional[str] = None, success: bool = True) -> None:
@@ -109,8 +119,10 @@ class ActivityTracker:
         try:
             with open(self.activity_log, "a") as f:
                 f.write(json.dumps(activity_data) + "\n")
-        except Exception as e:
-            _logger.warning(f"Failed to log activity: {e}")
+        except (OSError, TypeError):
+            _logger.exception(
+                "Failed to log activity for worker=%s", self.worker_id
+            )
 
     def get_recent_activity(self, minutes: int = 30, limit: int = 50) -> List[dict]:
         """Get recent activity entries.
@@ -143,8 +155,10 @@ class ActivityTracker:
             activities.reverse()
             return activities[:limit]
 
-        except Exception as e:
-            _logger.warning(f"Failed to read activity log: {e}")
+        except OSError:
+            _logger.exception(
+                "Failed to read activity log for worker=%s", self.worker_id
+            )
             return []
 
     def create_activity_summary(self, minutes: int = 30) -> str:
