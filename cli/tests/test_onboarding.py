@@ -51,12 +51,17 @@ def test_load_worker_okrs_returns_key_results(tmp_path: Path) -> None:
 
         _create_sample_okr(db, ceo.id)
 
+        # Org init seeds a bootstrap OKR (quinn-ai-lxp) — find the sample
+        # by title rather than asserting a count.
         okrs = _load_worker_okrs(db, ceo.id)
-        assert len(okrs) == 1
-        okr = okrs[0]
-        assert "title" in okr and okr["title"] == "Onboarding visibility OKR"
-        assert len(okr["key_results"]) == 2
-        assert okr["key_results"][0]["metric"] == "lighthouse"
+        sample = next(
+            (o for o in okrs if o.get("title") == "Onboarding visibility OKR"),
+            None,
+        )
+        assert sample is not None, f"sample OKR missing; loaded: {[o.get('title') for o in okrs]}"
+        assert len(sample["key_results"]) == 2
+        metrics = [kr["metric"] for kr in sample["key_results"]]
+        assert "lighthouse" in metrics
     finally:
         db.close()
 

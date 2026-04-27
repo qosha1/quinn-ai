@@ -60,22 +60,22 @@ class TestMsgrPrompting:
             "Must explain why messaging is important"
 
     def test_initial_task_prompt_includes_first_message(self):
-        """INITIAL_TASK.md (CEO prompt) must require sending first message."""
-        # This verifies the _send_initial_prompt_to_ceo() function in start.py
-        # We'll test the prompt string directly since it's a template
+        """INITIAL_TASK.md (CEO prompt) must require sending first message.
 
-        from cli.commands.org.start import _send_initial_prompt_to_ceo
-        import inspect
-
-        # Get the source code of the function
-        source = inspect.getsource(_send_initial_prompt_to_ceo)
+        After REFACTOR-1 the prompt body lives in a module-level constant
+        _INITIAL_PROMPT_TEMPLATE inside cli.core.org_start_controller, not
+        embedded in _send_initial_prompt_to_ceo's source. Inspect that
+        constant directly.
+        """
+        from cli.core.org_start_controller import _INITIAL_PROMPT_TEMPLATE
+        source = _INITIAL_PROMPT_TEMPLATE
 
         # Verify the prompt includes explicit msgr usage as FIRST step
         assert 'msgr send #general' in source, \
             "Initial prompt must include msgr send command"
         assert 'FIRST:' in source or 'first message' in source.lower(), \
             "msgr usage must be marked as FIRST task"
-        assert 'Introduce yourself' in source, \
+        assert 'Introduce yourself' in source.lower() or 'introduce yourself' in source.lower(), \
             "Must explicitly tell CEO to introduce themselves"
         assert 'msgr channels' in source, \
             "Must show msgr channels command"

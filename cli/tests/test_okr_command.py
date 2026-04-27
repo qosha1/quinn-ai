@@ -552,7 +552,20 @@ class TestOkrDatabaseIntegration:
     """Test OKR database integration features."""
 
     def test_list_from_db_shows_message_when_empty(self, runner, initialized_org):
-        """--from-db should show no OKRs message when database is empty."""
+        """--from-db should show no OKRs message when database is empty.
+
+        Note: org init seeds a bootstrap OKR (quinn-ai-lxp). To exercise
+        the empty-state output we have to clear the okrs table first.
+        """
+        import sqlite3
+        from cli.core.db import get_org_db_path
+        conn = sqlite3.connect(str(get_org_db_path(initialized_org)))
+        try:
+            conn.execute("DELETE FROM okrs")
+            conn.commit()
+        finally:
+            conn.close()
+
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
             "org", "okr", "list", "--from-db"
