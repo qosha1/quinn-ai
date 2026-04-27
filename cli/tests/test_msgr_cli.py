@@ -9,7 +9,7 @@ def test_msgr_help():
     """Test that msgr --help works."""
     # Run msgr --help via Python module
     result = subprocess.run(
-        [sys.executable, "-m", "msgr.main", "--help"],
+        [sys.executable, "-m", "cli.msgr.main", "--help"],
         cwd=Path(__file__).parent.parent,
         capture_output=True,
         text=True,
@@ -24,7 +24,7 @@ def test_msgr_help():
 
 def test_msgr_version():
     """Test that msgr package can be imported."""
-    import msgr
+    import cli.msgr as msgr
 
     assert hasattr(msgr, "__version__")
     assert msgr.__version__ == "0.1.0"

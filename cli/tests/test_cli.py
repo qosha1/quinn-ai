@@ -148,17 +148,35 @@ class TestOrgGroup:
         assert result.exit_code != 0
         assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
 
-    def test_org_start_validates_config(self, runner, temp_org):
-        """qn org start should validate provider configuration."""
-        # Initialize org (creates default config with env var placeholders)
+    def test_org_start_validates_config(self, runner, temp_org, monkeypatch):
+        """qn org start should validate provider configuration.
+
+        Default config (claude_code only, system-auth) validates cleanly,
+        so to verify validation actually runs we have to construct a
+        scenario that fails: enable anthropic in providers.yaml and
+        ensure ANTHROPIC_API_KEY is unset.
+        """
+        import yaml
         runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
-        # Start without skip flag should fail validation (no API key set)
+
+        # Flip anthropic to enabled in the org's providers.yaml — without
+        # an api_key set, validation must fail.
+        providers_path = temp_org / "config" / "providers.yaml"
+        cfg = yaml.safe_load(providers_path.read_text())
+        cfg["providers"]["anthropic"]["enabled"] = True
+        cfg["providers"]["anthropic"]["api_key"] = "${ANTHROPIC_API_KEY}"
+        providers_path.write_text(yaml.safe_dump(cfg))
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
             "org", "start", "--no-spawn-ceo"
         ])
-        assert result.exit_code != 0
-        assert "api_key" in result.output.lower() or "configuration" in result.output.lower()
+        assert result.exit_code != 0, f"Expected validation failure, got:\n{result.output}"
+        out = result.output.lower()
+        assert "api_key" in out or "configuration" in out or "anthropic" in out, (
+            f"Expected validation error mentioning api_key/configuration/anthropic. Got:\n{result.output}"
+        )
 
     def test_org_start_skip_validation_flag(self, runner, temp_org):
         """qn org start --skip-config-validation should skip validation."""
@@ -193,7 +211,8 @@ class TestOrgGroup:
 
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
-            "org", "stop", "--worker", "ceo"
+            "org", "stop", "--worker", "ceo",
+            "--graceful-timeout", "1",  # avoid the default 60s real-sleep
         ])
 
         assert result.exit_code == 0
@@ -245,13 +264,16 @@ class TestWrkrGroup:
     """Test wrkr command group."""
 
     def test_wrkr_help(self, runner):
-        """qn wrkr --help should show subcommands."""
+        """qn wrkr --help should show its subcommands.
+
+        Note: 'inbox' and 'send' are msgr commands, not qn wrkr. Worker
+        messaging goes through the standalone msgr CLI.
+        """
         result = runner.invoke(qn, ["wrkr", "--help"])
         assert result.exit_code == 0
-        assert "get-work" in result.output
-        assert "inbox" in result.output
-        assert "send" in result.output
-        assert "status" in result.output
+        for cmd in ("get-work", "status", "search", "delegate", "report",
+                    "cleanup", "restart"):
+            assert cmd in result.output, f"qn wrkr --help missing {cmd!r}: {result.output}"
 
     def test_wrkr_get_work_requires_worker_id(self, runner, temp_org):
         """qn wrkr get-work should require QUINN_WORKER_ID."""

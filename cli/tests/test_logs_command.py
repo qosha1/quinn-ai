@@ -54,7 +54,12 @@ def get_ceo_worker_id(temp_org: Path) -> str:
 
 
 def set_worker_runtime_status(temp_org: Path, worker_id: str, status: str) -> None:
-    """Helper to set worker runtime status for tests."""
+    """Helper to set worker runtime status for tests.
+
+    Also inserts a sessions row for the worker. session_manager auto-repairs
+    'state shows running but no session exists' by resetting to 'stopped',
+    so without the sessions row these tests fail with the worker reverted.
+    """
     from cli.core.db import open_database, get_org_db_path
     from cli.core.queries import (
         update_worker_runtime_status,
@@ -67,6 +72,20 @@ def set_worker_runtime_status(temp_org: Path, worker_id: str, status: str) -> No
     if get_worker_state(db, worker_id) is None:
         create_worker_state(db, worker_id)
     update_worker_runtime_status(db, worker_id, status)
+
+    # Insert a sessions row matching the runtime status so the auto-repair
+    # in cli/core/worker/session_manager.py (line ~105) doesn't kick in.
+    from cli.core.constants import TMUX_SESSION_PREFIX
+    session_state = status if status in ("starting", "running", "idle", "stopped", "crashed") else "running"
+    db.execute(
+        """INSERT OR REPLACE INTO sessions
+           (id, worker_id, provider, command, tmux_session_name, state,
+            state_version, started_at, last_activity)
+           VALUES (?, ?, 'claude_code', 'claude', ?, ?, 0,
+                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+        (f"sess-{worker_id}", worker_id, f"{TMUX_SESSION_PREFIX}{worker_id}", session_state),
+    )
+    db.connection.commit()
     db.close()
 
 

@@ -15,7 +15,7 @@ def test_msgr_command_available():
     """Test that msgr can be invoked as a Python module."""
     # Test msgr --help works via python -m
     result = subprocess.run(
-        [sys.executable, "-m", "msgr.main", "--help"],
+        [sys.executable, "-m", "cli.msgr.main", "--help"],
         capture_output=True,
         text=True,
     )
@@ -90,7 +90,7 @@ def test_msgr_works_with_worker_environment(tmp_path: Path):
         }
 
         result = subprocess.run(
-            [sys.executable, "-m", "msgr.main", "--help"],
+            [sys.executable, "-m", "cli.msgr.main", "--help"],
             capture_output=True,
             text=True,
             env=env,
