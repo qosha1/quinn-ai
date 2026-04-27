@@ -42,27 +42,24 @@ In repo Settings → Environments:
 
 ## 4. Workflow permissions
 
-`release.yml` follows least-privilege:
+`release.yml` declares both required scopes at the workflow level:
 
-- Workflow-level default: `contents: read` (so unset scopes don't leak the
-  repo's "default workflow permissions" setting).
-- Per-job overrides:
-  - `publish-pypi`: `id-token: write` (mints the OIDC token PyPI verifies)
-    + `contents: read` (download artifacts).
-  - `github-release`: `contents: write` (create the Release + upload assets).
-  - `smoke-test`: `permissions: {}` — strip every scope.
+```yaml
+permissions:
+  contents: write   # github-release job: create Release + upload assets
+  id-token: write   # publish-pypi job: mint OIDC token PyPI verifies
+```
 
-If the repo's *default* workflow permissions are stricter than `contents:
-read` (Settings → Actions → General → Workflow permissions), the explicit
-job-level overrides still apply — GitHub takes the *union* of the workflow
-default and the job override, but per-scope (i.e. `id-token: write` is
-applied even if the default denies it).
+This matches a known-working OIDC trusted-publishing pattern (same shape we
+use for npm OIDC elsewhere). Per-job permission scoping was tried first but
+some edge cases around id-token claim propagation make the workflow-level
+declaration the safer default.
 
 **Repo-level prerequisite:** in *Settings → Actions → General → Workflow
-permissions*, ensure "Allow GitHub Actions to create and approve pull
-requests" is OFF (we don't need it) and that the default is "Read
-repository contents and packages permissions" (the more restrictive
-option). The job-level overrides will still work.
+permissions*, ensure the default is *Read repository contents and packages
+permissions* (the more restrictive option). Workflow-declared `permissions:`
+still grant the named scopes regardless of the repo default — the repo-level
+setting only governs jobs that don't declare permissions explicitly.
 
 ## 5. Verify with a dry run
 
