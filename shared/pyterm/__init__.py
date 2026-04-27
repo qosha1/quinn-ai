@@ -84,16 +84,9 @@ from shared.pyterm.agent_session import (
     AgentSession,
     AgentSessionConfig,
 )
-from shared.pyterm.worker_bridge import (
-    WorkerBridge,
-    WorkerBridgeError,
-    WorkerNotFoundError,
-    PermissionDeniedError,
-    WorkItem,
-    Notification,
-    WorkerStatus,
-    SendResult,
-)
+# WorkerBridge moved to cli.core.pyterm.worker_bridge — it bridges pyterm
+# sessions to cli.core (Worker, bd_wrapper, permissions, queries,
+# notifications) so it lives on the cli side, not in shared.
 
 __all__ = [
     # Configuration
@@ -175,13 +168,4 @@ __all__ = [
     # AgentSession
     "AgentSession",
     "AgentSessionConfig",
-    # WorkerBridge
-    "WorkerBridge",
-    "WorkerBridgeError",
-    "WorkerNotFoundError",
-    "PermissionDeniedError",
-    "WorkItem",
-    "Notification",
-    "WorkerStatus",
-    "SendResult",
 ]

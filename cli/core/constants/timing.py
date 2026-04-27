@@ -52,10 +52,6 @@ SESSION_START_POLL_INTERVAL = 1.0
 GRACEFUL_SHUTDOWN_WAIT = 5.0
 """Wait time after graceful shutdown signal before force termination."""
 
-TMUX_ATTACH_WAIT = 0.5
-"""Wait time after tmux session spawn for attachment."""
-
-
 # ===================
 # STATE MONITORING
 # ===================

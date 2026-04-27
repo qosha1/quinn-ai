@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, Mock, patch
 from datetime import datetime
 from pathlib import Path
 
-from shared.pyterm.worker_bridge import (
+from cli.core.pyterm.worker_bridge import (
     WorkerBridge,
     WorkItem,
     Notification,
@@ -239,7 +239,7 @@ class TestSendResult:
 class TestWorkerBridgeInit:
     """Tests for WorkerBridge initialization."""
 
-    @patch('cli.core.worker.Worker')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
     def test_init_success(self, mock_worker_class):
         """Test successful initialization."""
         mock_db = Mock()
@@ -251,7 +251,7 @@ class TestWorkerBridgeInit:
         assert bridge._org_path == "/tmp/org"
         mock_worker_class.get.assert_called_once_with(mock_db, "worker-1")
 
-    @patch('cli.core.worker.Worker')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
     def test_init_invalid_worker_id_raises(self, mock_worker_class):
         """Test initialization with invalid worker_id raises."""
         mock_db = Mock()
@@ -259,7 +259,7 @@ class TestWorkerBridgeInit:
         with pytest.raises(ValueError, match="Invalid worker_id format"):
             WorkerBridge(mock_db, "worker.invalid", org_path="/tmp")
 
-    @patch('cli.core.worker.Worker')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
     def test_init_nonexistent_worker_raises(self, mock_worker_class):
         """Test initialization with nonexistent worker raises."""
         from shared import WorkerNotFound
@@ -270,7 +270,7 @@ class TestWorkerBridgeInit:
         with pytest.raises(WorkerNotFoundError):
             WorkerBridge(mock_db, "nonexistent", org_path="/tmp")
 
-    @patch('cli.core.worker.Worker')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
     def test_init_without_org_path(self, mock_worker_class):
         """Test initialization without org_path."""
         mock_db = Mock()
@@ -284,9 +284,9 @@ class TestWorkerBridgeInit:
 class TestWorkerBridgeGetWork:
     """Tests for get_work() method."""
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.bd_wrapper.run_bd')
-    @patch('cli.core.permissions.can_worker_access_bead')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.run_bd')
+    @patch('cli.core.pyterm.worker_bridge.can_worker_access_bead')
     def test_get_work_returns_items(self, mock_can_access, mock_run_bd, mock_worker_class):
         """Test get_work() returns work items."""
         mock_db = Mock()
@@ -322,7 +322,7 @@ class TestWorkerBridgeGetWork:
         assert items[0].id == "bead-2"  # Priority 1 comes first
         assert items[1].id == "bead-1"  # Priority 2 comes second
 
-    @patch('cli.core.worker.Worker')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
     def test_get_work_when_cannot_work(self, mock_worker_class):
         """Test get_work() returns empty when worker can't work."""
         mock_db = Mock()
@@ -334,7 +334,7 @@ class TestWorkerBridgeGetWork:
 
         assert items == []
 
-    @patch('cli.core.worker.Worker')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
     def test_get_work_without_org_path(self, mock_worker_class):
         """Test get_work() returns empty without org_path."""
         mock_db = Mock()
@@ -346,8 +346,8 @@ class TestWorkerBridgeGetWork:
 
         assert items == []
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.bd_wrapper.run_bd')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.run_bd')
     def test_get_work_bd_error_returns_empty(self, mock_run_bd, mock_worker_class):
         """Test get_work() returns empty on bd error."""
         mock_db = Mock()
@@ -361,9 +361,9 @@ class TestWorkerBridgeGetWork:
 
         assert items == []
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.bd_wrapper.run_bd')
-    @patch('cli.core.permissions.can_worker_access_bead')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.run_bd')
+    @patch('cli.core.pyterm.worker_bridge.can_worker_access_bead')
     def test_get_work_filters_by_permission(self, mock_can_access, mock_run_bd, mock_worker_class):
         """Test get_work() filters items by permission."""
         mock_db = Mock()
@@ -390,11 +390,11 @@ class TestWorkerBridgeGetWork:
 class TestWorkerBridgeGetInbox:
     """Tests for get_inbox() method."""
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.notifications.get_pending_notifications')
-    @patch('cli.core.permissions.can_worker_access_channel')
-    @patch('cli.core.queries.get_channel')
-    @patch('cli.core.queries.get_message')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.get_pending_notifications')
+    @patch('cli.core.pyterm.worker_bridge.can_worker_access_channel')
+    @patch('cli.core.pyterm.worker_bridge.get_channel')
+    @patch('cli.core.pyterm.worker_bridge.get_message')
     def test_get_inbox_returns_notifications(
         self, mock_get_msg, mock_get_ch, mock_can_access, mock_get_notifs, mock_worker_class
     ):
@@ -434,9 +434,9 @@ class TestWorkerBridgeGetInbox:
         assert notifications[0].content == "Hello there"
         assert notifications[0].channel_name == "team-chat"
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.notifications.get_pending_notifications')
-    @patch('cli.core.permissions.can_worker_access_channel')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.get_pending_notifications')
+    @patch('cli.core.pyterm.worker_bridge.can_worker_access_channel')
     def test_get_inbox_filters_by_permission(
         self, mock_can_access, mock_get_notifs, mock_worker_class
     ):
@@ -459,8 +459,8 @@ class TestWorkerBridgeGetInbox:
 
         assert len(notifications) == 0
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.notifications.get_worker_notifications')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.get_worker_notifications')
     def test_get_inbox_pending_only_false(self, mock_get_notifs, mock_worker_class):
         """Test get_inbox() with pending_only=False."""
         mock_db = Mock()
@@ -477,8 +477,8 @@ class TestWorkerBridgeGetInbox:
 class TestWorkerBridgeMarkNotification:
     """Tests for mark_notification_read()."""
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.notifications.mark_notification_read')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.mark_notification_read')
     def test_mark_notification_read_success(self, mock_mark, mock_worker_class):
         """Test marking notification as read."""
         mock_db = Mock()
@@ -490,8 +490,8 @@ class TestWorkerBridgeMarkNotification:
         assert result is True
         mock_mark.assert_called_once_with(mock_db, "notif-1")
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.notifications.mark_notification_read')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.mark_notification_read')
     def test_mark_notification_read_failure(self, mock_mark, mock_worker_class):
         """Test marking notification handles errors."""
         import sqlite3
@@ -509,8 +509,8 @@ class TestWorkerBridgeMarkNotification:
 class TestWorkerBridgeGetPendingCount:
     """Tests for get_pending_count()."""
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.notifications.count_pending_notifications')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.count_pending_notifications')
     def test_get_pending_count(self, mock_count, mock_worker_class):
         """Test get_pending_count() returns count."""
         mock_db = Mock()
@@ -528,10 +528,10 @@ class TestWorkerBridgeGetPendingCount:
 class TestWorkerBridgeSendMessage:
     """Tests for send_message()."""
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.queries.get_channel')
-    @patch('cli.core.permissions.can_worker_access_channel')
-    @patch('cli.core.queries.create_message_with_notifications')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.get_channel')
+    @patch('cli.core.pyterm.worker_bridge.can_worker_access_channel')
+    @patch('cli.core.pyterm.worker_bridge.create_message_with_notifications')
     def test_send_message_success(
         self, mock_create_msg, mock_can_access, mock_get_ch, mock_worker_class
     ):
@@ -556,8 +556,8 @@ class TestWorkerBridgeSendMessage:
         assert result.channel_name == "team-chat"
         assert result.error is None
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.queries.get_channel')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.get_channel')
     def test_send_message_channel_not_found(self, mock_get_ch, mock_worker_class):
         """Test send_message() when channel doesn't exist."""
         mock_db = Mock()
@@ -571,9 +571,9 @@ class TestWorkerBridgeSendMessage:
         assert result.success is False
         assert "not found" in result.error
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.queries.get_channel')
-    @patch('cli.core.permissions.can_worker_access_channel')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.get_channel')
+    @patch('cli.core.pyterm.worker_bridge.can_worker_access_channel')
     def test_send_message_permission_denied(
         self, mock_can_access, mock_get_ch, mock_worker_class
     ):
@@ -591,9 +591,9 @@ class TestWorkerBridgeSendMessage:
         assert result.success is False
         assert "Permission denied" in result.error
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.queries.get_channel')
-    @patch('cli.core.permissions.can_worker_access_channel')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.get_channel')
+    @patch('cli.core.pyterm.worker_bridge.can_worker_access_channel')
     def test_send_message_invalid_priority(
         self, mock_can_access, mock_get_ch, mock_worker_class
     ):
@@ -614,7 +614,7 @@ class TestWorkerBridgeSendMessage:
 class TestWorkerBridgeGetStatus:
     """Tests for get_status()."""
 
-    @patch('cli.core.worker.Worker')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
     def test_get_status(self, mock_worker_class):
         """Test get_status() returns worker status."""
         mock_db = Mock()
@@ -645,8 +645,8 @@ class TestWorkerBridgeGetStatus:
 class TestWorkerBridgeSerialization:
     """Tests for to_dict() serialization."""
 
-    @patch('cli.core.worker.Worker')
-    @patch('cli.core.notifications.count_pending_notifications')
+    @patch('cli.core.pyterm.worker_bridge.Worker')
+    @patch('cli.core.pyterm.worker_bridge.count_pending_notifications')
     def test_to_dict(self, mock_count, mock_worker_class):
         """Test to_dict() serialization."""
         mock_db = Mock()

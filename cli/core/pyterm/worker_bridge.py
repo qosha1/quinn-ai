@@ -19,6 +19,24 @@ import json
 import logging
 import re
 import sqlite3
+from cli.core.bd_wrapper import run_bd
+from cli.core.notifications import (
+    count_pending_notifications,
+    get_pending_notifications,
+    get_worker_notifications,
+    mark_notification_read,
+)
+from cli.core.permissions import (
+    PermissionLevel,
+    can_worker_access_bead,
+    can_worker_access_channel,
+)
+from cli.core.queries import (
+    create_message_with_notifications,
+    get_channel,
+    get_message,
+)
+from cli.core.worker import Worker
 
 if TYPE_CHECKING:
     from sqlite3 import Connection
@@ -236,7 +254,6 @@ class WorkerBridge:
 
     def _verify_worker(self) -> None:
         """Verify the worker exists in the database."""
-        from cli.core.worker import Worker
         from shared import WorkerNotFound
 
         try:
@@ -263,9 +280,6 @@ class WorkerBridge:
         Returns:
             List of WorkItem objects sorted by priority
         """
-        from cli.core.worker import Worker
-        from cli.core.bd_wrapper import run_bd
-        from cli.core.permissions import PermissionLevel, can_worker_access_bead
 
         # Check if worker can accept work
         worker = Worker.get(self._db, self._worker_id)
@@ -357,12 +371,6 @@ class WorkerBridge:
         Returns:
             List of Notification objects
         """
-        from cli.core.notifications import (
-            get_worker_notifications,
-            get_pending_notifications,
-        )
-        from cli.core.queries import get_message, get_channel
-        from cli.core.permissions import PermissionLevel, can_worker_access_channel
 
         # Get notifications
         if pending_only:
@@ -414,7 +422,6 @@ class WorkerBridge:
         Returns:
             True if marked successfully
         """
-        from cli.core.notifications import mark_notification_read
 
         try:
             mark_notification_read(self._db, notification_id)
@@ -425,7 +432,6 @@ class WorkerBridge:
 
     def get_pending_count(self) -> int:
         """Get count of pending notifications."""
-        from cli.core.notifications import count_pending_notifications
 
         return count_pending_notifications(self._db, self._worker_id)
 
@@ -450,8 +456,6 @@ class WorkerBridge:
         Returns:
             SendResult with success status and message ID
         """
-        from cli.core.queries import get_channel, create_message_with_notifications
-        from cli.core.permissions import PermissionLevel, can_worker_access_channel
 
         # Verify channel exists
         channel = get_channel(self._db, channel_id)
@@ -508,7 +512,6 @@ class WorkerBridge:
         Returns:
             WorkerStatus with current state
         """
-        from cli.core.worker import Worker
 
         worker = Worker.get(self._db, self._worker_id)
 

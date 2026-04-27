@@ -12,7 +12,6 @@ import time
 import uuid
 from typing import Callable
 
-from cli.core.constants import TMUX_ATTACH_WAIT
 from shared.pyterm.protocols import (
     ExtractedOutput,
     Session,
@@ -25,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 # Timeout for tmux subprocess operations (in seconds)
 TMUX_TIMEOUT = 5
+
+# Wait time after tmux session spawn for attachment.
+# Local to this module — was previously imported from cli.core.constants.timing
+# but that created a back-import from shared into cli that nothing else needed.
+TMUX_ATTACH_WAIT = 0.5
 
 
 class TmuxSession:
