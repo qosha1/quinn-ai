@@ -51,7 +51,7 @@ def _make_org_with_beads(tmp_path: Path) -> Path:
     env = os.environ.copy()
     env["BEADS_DIR"] = str(org_path / ".beads")
     subprocess.run(
-        [str(bd_path), "init", "--skip-hooks", "--non-interactive"],
+        [str(bd_path), "init", "--skip-hooks", "--quiet"],
         cwd=org_path,
         env=env,
         check=True,

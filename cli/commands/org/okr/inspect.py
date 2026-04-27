@@ -129,7 +129,9 @@ def register(okr_group):
             capture_output=True,
             skip_permission_check=True,
         )
-        if result.returncode != 0:
+        # bd in sandbox mode prints "no issue found" to stderr but exits 0,
+        # so a missing ID also surfaces as empty stdout. Check both paths.
+        if result.returncode != 0 or not result.stdout.strip():
             raise click.ClickException(
                 f"OKR '{okr_id}' not found.\n"
                 "Run 'qn org okr list' to see available OKRs."
