@@ -71,32 +71,44 @@ def initialized_beads(temp_org):
     env = os.environ.copy()
     env["BEADS_DIR"] = str(beads_dir)
     env["BEADS_DB"] = str(beads_db)
+    env["BD_NON_INTERACTIVE"] = "1"
     # Prevent parent directory detection by running from temp dir
     env["HOME"] = str(temp_org)
 
-    # Initialize beads with explicit db path
-    # Use --sandbox and explicit --db to avoid workspace detection
+    # bd 1.x walks parent dirs looking for .beads workspaces and aborts when it
+    # finds one (a leftover in $TMPDIR is enough). --force overrides that.
+    # --non-interactive only exists on bd 1.x; bd 0.x doesn't recognize it and
+    # silently prints help instead of running, so detect support before passing.
+    init_help = subprocess.run(
+        [str(bd_path), "init", "--help"],
+        capture_output=True, text=True, timeout=10,
+    ).stdout
+    init_args = [str(bd_path), "--sandbox", f"--db={beads_db}", "init",
+                 "--prefix", "test", "--force"]
+    if "--non-interactive" in init_help:
+        init_args.append("--non-interactive")
+
     result = subprocess.run(
-        [str(bd_path), "--sandbox", f"--db={beads_db}", "init", "--prefix", "test"],
+        init_args,
         env=env,
         capture_output=True,
         text=True,
-        cwd=str(temp_org),  # Run from temp directory
+        cwd=str(temp_org),
+        timeout=30,
     )
 
-    # If init fails due to existing workspace, try to check if db is usable
     if result.returncode != 0:
-        if "already initialized" in result.stderr:
-            # Try a simple list command to verify db works
-            list_result = subprocess.run(
-                [str(bd_path), "--sandbox", f"--db={beads_db}", "list"],
-                env=env,
-                capture_output=True,
-                text=True,
-                cwd=str(temp_org),
-            )
-            if list_result.returncode == 0:
-                return temp_org
+        # Last-ditch: maybe init partially set things up; verify with a list.
+        list_result = subprocess.run(
+            [str(bd_path), "--sandbox", f"--db={beads_db}", "list"],
+            env=env,
+            capture_output=True,
+            text=True,
+            cwd=str(temp_org),
+            timeout=30,
+        )
+        if list_result.returncode == 0:
+            return temp_org
         pytest.skip(f"Failed to initialize beads: {result.stderr}")
 
     return temp_org
