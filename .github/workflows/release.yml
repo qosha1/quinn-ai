@@ -130,9 +130,15 @@ jobs:
         # No 'password' input → action uses the OIDC token minted by the
         # id-token:write permission above. See action docs and
         # docs/operations/release-bootstrap.md.
+        # skip-existing: PyPI rejects re-uploads of an existing
+        # name+version. With two packages publishing in one step, a partial
+        # success (one wheel up, the other failing) needs to be re-runnable
+        # without tripping the duplicate-version check on the already-uploaded
+        # one. Safe because version bumps still get a fresh upload.
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          skip-existing: true
 
   github-release:
     name: Create GitHub Release
