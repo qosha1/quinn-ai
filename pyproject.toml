@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quinnai"
+name = "quinn-ai"
 version = "0.2.0"
 description = "QuinnAI - hierarchical AI organization management CLI"
 readme = "README.md"

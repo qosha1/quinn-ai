@@ -5,11 +5,11 @@ credentials, the GitHub repo, or the trusted-publisher configuration change.
 
 ## 1. Reserve the package names on PyPI
 
-`quinnai` and `quinnai-board` must be registered to a PyPI account that the
+`quinn-ai` and `quinn-ai-board` must be registered to a PyPI account that the
 release workflow can publish under.
 
-- Verify availability: <https://pypi.org/project/quinnai/> and
-  <https://pypi.org/project/quinnai-board/>. (Both were unclaimed as of
+- Verify availability: <https://pypi.org/project/quinn-ai/> and
+  <https://pypi.org/project/quinn-ai-board/>. (Both were unclaimed as of
   2026-04-27.)
 - Register a PyPI account (or use an existing org account) and confirm the
   email.
@@ -23,7 +23,7 @@ Trusted publishing avoids storing a long-lived `PYPI_TOKEN` secret and is the
 PyPA-recommended path.
 
 1. Go to <https://pypi.org/manage/account/publishing/>.
-2. Add a pending publisher per project (`quinnai`, then `quinnai-board`):
+2. Add a pending publisher per project (`quinn-ai`, then `quinn-ai-board`):
    - Owner: `qosha1`
    - Repository: `quinn-ai`
    - Workflow: `release.yml`
@@ -69,7 +69,7 @@ Before tagging a real release:
 2. Watch the release workflow.
 3. Confirm the wheel uploads to TestPyPI:
    ```bash
-   pip install --index-url https://test.pypi.org/simple/ quinnai==0.0.0-test
+   pip install --index-url https://test.pypi.org/simple/ quinn-ai==0.0.0-test
    ```
 
 ## 6. Real release

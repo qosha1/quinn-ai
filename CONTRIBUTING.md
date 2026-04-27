@@ -12,8 +12,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/qosha1/quinnai.git
-cd quinnai
+git clone https://github.com/qosha1/quinn-ai.git
+cd quinn-ai
 
 # Run the setup script (creates venv, installs dependencies)
 make setup

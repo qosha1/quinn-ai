@@ -2,7 +2,7 @@
 #
 # QuinnAI Installer
 #
-# Installs the `quinnai` and `quinnai-board` Python packages from PyPI.
+# Installs the `quinn-ai` and `quinn-ai-board` Python packages from PyPI.
 # Prefers pipx (isolated, recommended), then uv tool, falls back to pip --user.
 #
 # Usage:
@@ -17,8 +17,8 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/qosha1/quinn-ai"
-PKG_CLI="quinnai"
-PKG_BOARD="quinnai-board"
+PKG_CLI="quinn-ai"
+PKG_BOARD="quinn-ai-board"
 VERSION="${QUINNAI_VERSION:-}"
 INSTALL_BOARD=1
 [[ "${QUINNAI_NO_BOARD:-0}" == "1" ]] && INSTALL_BOARD=0
@@ -72,7 +72,7 @@ pkg_spec() {
 }
 
 # 4. Install
-# quinnai-board depends on quinnai, so installing it pulls in both packages.
+# quinn-ai-board depends on quinn-ai, so installing it pulls in both packages.
 # When QUINNAI_NO_BOARD=1, install only the CLI package.
 TARGET="$PKG_BOARD"
 (( INSTALL_BOARD )) || TARGET="$PKG_CLI"
