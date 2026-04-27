@@ -1357,7 +1357,7 @@ class TestOkrOrgNotInitialized:
 
 class TestOkrList:
     def test_okr_list_returns_open_by_default(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout='[]', stderr='')
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1369,7 +1369,7 @@ class TestOkrList:
         assert any("status=open" in a or "status" in a for a in call_args)
 
     def test_okr_list_all_includes_closed(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout='[]', stderr='')
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1380,7 +1380,7 @@ class TestOkrList:
         assert "--all" in call_args
 
     def test_okr_list_status_filter(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout='[]', stderr='')
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1389,7 +1389,7 @@ class TestOkrList:
         assert result.exit_code == 0
 
     def test_okr_list_assignee_filter(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout='[]', stderr='')
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1413,7 +1413,7 @@ class TestOkrList:
 
 class TestOkrSet:
     def test_okr_set_creates_okr_with_required_title(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-test-1\n",
@@ -1429,7 +1429,7 @@ class TestOkrSet:
         assert "Q1 Revenue Growth" in call_args
 
     def test_okr_set_with_all_options(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-full-1\n",
@@ -1448,7 +1448,7 @@ class TestOkrSet:
         assert result.exit_code == 0
 
     def test_okr_set_iso_due_date(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-iso-1\n",
@@ -1463,7 +1463,7 @@ class TestOkrSet:
         assert result.exit_code == 0
 
     def test_okr_set_relative_due_date(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-rel-1\n",
@@ -1479,7 +1479,7 @@ class TestOkrSet:
 
     def test_okr_add_alias_works_same_as_set(self, runner, initialized_org):
         """okr add should behave identically to okr set."""
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-add-1\n",
@@ -1495,7 +1495,7 @@ class TestOkrSet:
 
 class TestOkrShow:
     def test_okr_show_not_found(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(returncode=1, stdout="", stderr="not found")
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1505,7 +1505,7 @@ class TestOkrShow:
         assert "not found" in result.output.lower()
 
     def test_okr_show_displays_details_and_linked_work(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.side_effect = [
                 MagicMock(returncode=0, stdout="OKR: Q1 Goal\nStatus: open\n", stderr=""),
                 MagicMock(returncode=0, stdout='[]', stderr=""),
@@ -1649,7 +1649,7 @@ class TestOkrUpdateKr:
 
 class TestOkrCascade:
     def test_okr_cascade_shows_hierarchy_tree(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout=json.dumps([
@@ -1666,7 +1666,7 @@ class TestOkrCascade:
         assert "Parent OKR" in result.output
 
     def test_okr_cascade_root_shows_subtree(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="okr-1: Parent OKR\n  okr-2: Child OKR\n",
@@ -1682,7 +1682,7 @@ class TestOkrCascade:
 
 class TestOkrLink:
     def test_okr_link_work_item_to_okr(self, runner, initialized_org):
-        with patch("cli.commands.org.okr.run_bd") as mock_bd:
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout="Added dependency\n", stderr="")
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
