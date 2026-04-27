@@ -308,6 +308,20 @@ def init_beads(org_path: Path) -> None:
         env=env,
         check=True,
         capture_output=True,
+        timeout=30,
+    )
+
+    # Disable auto-export-on-write. bd's default behaviour is to dump
+    # issues.jsonl after every create/update; under concurrent test load
+    # this produces multi-minute contention hangs (quinn-ai-5d4). The
+    # JSONL is recoverable via 'bd export' on demand.
+    subprocess.run(
+        ["bd", "config", "set", "export.auto", "false"],
+        cwd=org_path,
+        env=env,
+        check=False,  # not fatal if bd doesn't have this config
+        capture_output=True,
+        timeout=10,
     )
 
 
@@ -476,6 +490,10 @@ def _create_okr_bead(
             worker_id=ceo_id,
             skip_permission_check=True,
             capture_output=True,
+            # bootstrap-OKR bead creation is best-effort; bd intermittently
+            # hangs under concurrent test load (quinn-ai-5d4). Fast-fail back
+            # to SQLite-only via the broad except below.
+            timeout=10,
         )
         if result.returncode != 0:
             return None
@@ -613,6 +631,7 @@ def create_initial_tasks(org_path: Path, db, ceo_id: str, okr_ids: list[str]) ->
                 worker_id=ceo_id,
                 skip_permission_check=True,
                 capture_output=True,
+                timeout=15,  # quinn-ai-5d4: best-effort under concurrent load
             )
     except Exception as e:
         # Don't fail org init if task creation fails

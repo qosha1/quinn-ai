@@ -595,6 +595,7 @@ def run_bd(
     skip_permission_check: bool = False,
     skip_lifecycle_check: bool = False,
     skip_okr_check: bool = False,
+    timeout: Optional[float] = None,
 ) -> subprocess.CompletedProcess:
     """Run beads command with org context.
 
@@ -664,17 +665,23 @@ def run_bd(
     # This is necessary for isolated testing and when using custom org paths
     cmd = [str(bd_path), "--sandbox", f"--db={beads_db}"] + args
 
+    # NOTE: timeout is opt-in (default None) so user-facing `qn-bd` long-running
+    # commands aren't killed prematurely. Programmatic write callers (especially
+    # init-time bootstrap-OKR creation) pass a value to dodge bd's intermittent
+    # hang under concurrent test load (quinn-ai-5d4).
     if capture_output:
         result = subprocess.run(
             cmd,
             env=env,
             capture_output=True,
             text=True,
+            timeout=timeout,
         )
     else:
         result = subprocess.run(
             cmd,
             env=env,
+            timeout=timeout,
         )
 
     # Record activity signal if command succeeded and worker_id provided
