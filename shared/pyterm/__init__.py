@@ -13,11 +13,10 @@ Core concepts:
 from shared.pyterm.protocols import (
     ExtractedOutput,
     Provider,
-    ProviderConfig,
+    PytermProviderConfig,
+    PytermSessionConfig,
+    PytermSessionState,
     Session,
-    SessionConfig,
-    SessionState,
-    WorkerState,
 )
 from shared.pyterm.config import (
     PytermConfig,
@@ -27,8 +26,6 @@ from shared.pyterm.config import (
     validate_config,
     validate_timing_config,
 )
-# Backward compatibility alias
-PytermSessionConfig = TerminalSessionConfig
 from shared.pyterm.tmux_session import TmuxSession
 from shared.pyterm.lifecycle import LifecycleHooks, VALID_TRANSITIONS
 from shared.pyterm.patterns import PatternRule, PatternMatcher
@@ -104,17 +101,15 @@ __all__ = [
     "TimingConfig",
     "LoopDetectionConfig",
     "TerminalSessionConfig",
-    "PytermSessionConfig",  # Backward compatibility alias
     "validate_config",
     "validate_timing_config",
     # Protocols
     "Session",
-    "SessionConfig",
-    "SessionState",
+    "PytermSessionConfig",
+    "PytermSessionState",
     "ExtractedOutput",
     "Provider",
-    "ProviderConfig",
-    "WorkerState",
+    "PytermProviderConfig",
     # Implementation
     "TmuxSession",
     # Lifecycle

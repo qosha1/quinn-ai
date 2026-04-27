@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from shared.pyterm.protocols import SessionState
+from shared.pyterm.protocols import PytermSessionState
 
 
 class MonitoringMode(Enum):
@@ -52,7 +52,7 @@ class StateMonitorConfig:
     """Max consecutive errors before stopping background monitor."""
 
 
-StateChangeCallback = Callable[[SessionState, SessionState], None]
+StateChangeCallback = Callable[[PytermSessionState, PytermSessionState], None]
 """Callback signature: (old_state, new_state) -> None"""
 
 
@@ -95,7 +95,7 @@ class StateMonitor(ABC):
         pass
 
     @abstractmethod
-    def poll(self) -> SessionState:
+    def poll(self) -> PytermSessionState:
         """Explicitly check current state and update if changed.
 
         Performs one state detection cycle:
@@ -138,7 +138,7 @@ class StateMonitor(ABC):
 
     @property
     @abstractmethod
-    def current_state(self) -> SessionState:
+    def current_state(self) -> PytermSessionState:
         """Get last known state without polling.
 
         Returns cached state from last poll/detection.

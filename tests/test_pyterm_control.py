@@ -15,9 +15,9 @@ from shared.pyterm.control import (
     CancelledError,
 )
 from shared.pyterm.agent_state import AgentState
-from shared.pyterm.protocols import ExtractedOutput, SessionState
+from shared.pyterm.protocols import ExtractedOutput, PytermSessionState
 from shared.pyterm.conversation import Message, ToolCall, Transcript
-from shared.pyterm.config import PytermConfig, TimingConfig, LoopDetectionConfig, TerminalSessionConfig as PytermSessionConfig
+from shared.pyterm.config import PytermConfig, TimingConfig, LoopDetectionConfig, TerminalSessionConfig
 from shared.pyterm.parsers import get_parser
 
 
@@ -27,14 +27,14 @@ class MockSession:
     def __init__(self):
         self.injected: list[str] = []
         self.output_text = ""
-        self._state = SessionState.RUNNING
+        self._state = PytermSessionState.RUNNING
 
     @property
     def id(self) -> str:
         return "test-session"
 
     @property
-    def state(self) -> SessionState:
+    def state(self) -> PytermSessionState:
         return self._state
 
     def inject(self, text: str) -> None:
@@ -65,7 +65,7 @@ def create_test_config(
             max_triggers_per_window=10,
             window_duration=1.0,
         ),
-        session=PytermSessionConfig(
+        session=TerminalSessionConfig(
             cancel_signal=cancel_signal,
             default_cols=80,
             default_rows=24,

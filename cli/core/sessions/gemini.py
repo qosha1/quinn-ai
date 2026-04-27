@@ -26,7 +26,7 @@ from shared.pyterm import (
     PytermConfig,
 )
 from shared.pyterm.agent_state import AgentState
-from shared.pyterm.protocols import SessionState as PytermSessionState
+from shared.pyterm.protocols import PytermSessionState
 
 
 class GeminiSession(SessionInterface):
@@ -121,7 +121,7 @@ class GeminiSession(SessionInterface):
             self._agent_session = AgentSession(agent_config)
 
             # Start with session config that includes our command and args
-            from shared.pyterm.protocols import SessionConfig as PytermSessionConfig
+            from shared.pyterm.protocols import PytermSessionConfig
             session_config = PytermSessionConfig(
                 shell=self._config.command,
                 args=self._config.args,

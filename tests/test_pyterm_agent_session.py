@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from shared.pyterm.agent_session import AgentSession, AgentSessionConfig
 from shared.pyterm.agent_state import AgentState
-from shared.pyterm.protocols import ExtractedOutput, SessionState, WorkerState
+from shared.pyterm.protocols import ExtractedOutput, PytermSessionState, WorkerState
 from shared.pyterm.conversation import Message, ToolCall
 from shared.pyterm.config import PytermConfig
 
@@ -21,7 +21,7 @@ class MockSession:
         self._name = session_name
         self.injected: list[str] = []
         self.output_text = ""
-        self._state = SessionState.IDLE
+        self._state = PytermSessionState.IDLE
         self.start_called = False
         self.stop_called = False
 
@@ -30,16 +30,16 @@ class MockSession:
         return f"mock-{self._name}"
 
     @property
-    def state(self) -> SessionState:
+    def state(self) -> PytermSessionState:
         return self._state
 
     def start(self, config=None) -> None:
         self.start_called = True
-        self._state = SessionState.RUNNING
+        self._state = PytermSessionState.RUNNING
 
     def stop(self, force: bool = False) -> None:
         self.stop_called = True
-        self._state = SessionState.EXITED
+        self._state = PytermSessionState.EXITED
 
     def inject(self, text: str) -> None:
         self.injected.append(text)
@@ -154,9 +154,9 @@ class TestAgentSessionLifecycle:
         config = AgentSessionConfig.create(worker_id="test", provider="claude_code")
         agent = AgentSession(config, session=mock_session)
 
-        assert agent.session_state == SessionState.IDLE
+        assert agent.session_state == PytermSessionState.IDLE
         agent.start()
-        assert agent.session_state == SessionState.RUNNING
+        assert agent.session_state == PytermSessionState.RUNNING
 
 
 class TestAgentSessionState:

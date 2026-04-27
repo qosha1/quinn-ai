@@ -11,20 +11,20 @@ from typing import Callable
 
 # Import WorkerState and transitions from canonical source
 from shared.core.state import WorkerState, WORKER_STATE_TRANSITIONS
-from shared.pyterm.protocols import SessionState
+from shared.pyterm.protocols import PytermSessionState
 
 
 # Re-export canonical transitions for backward compatibility
 VALID_TRANSITIONS = WORKER_STATE_TRANSITIONS
 
 
-def session_to_worker_state(session_state: SessionState) -> WorkerState:
+def session_to_worker_state(session_state: PytermSessionState) -> WorkerState:
     """Map session state to worker state."""
     mapping = {
-        SessionState.IDLE: WorkerState.PENDING,
-        SessionState.RUNNING: WorkerState.ACTIVE,
-        SessionState.EXITED: WorkerState.TERMINATED,
-        SessionState.ERROR: WorkerState.TERMINATED,
+        PytermSessionState.IDLE: WorkerState.PENDING,
+        PytermSessionState.RUNNING: WorkerState.ACTIVE,
+        PytermSessionState.EXITED: WorkerState.TERMINATED,
+        PytermSessionState.ERROR: WorkerState.TERMINATED,
     }
     return mapping[session_state]
 

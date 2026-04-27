@@ -25,7 +25,7 @@ from shared.pyterm import (
     PytermConfig,
 )
 from shared.pyterm.agent_state import AgentState
-from shared.pyterm.protocols import SessionState as PytermSessionState
+from shared.pyterm.protocols import PytermSessionState
 
 if TYPE_CHECKING:
     from shared.pyterm.state_monitor import StateMonitor
@@ -137,7 +137,7 @@ class ClaudeCodeSession(SessionInterface):
             shell_cmd = self._config.command
 
             # Start with session config that includes our command and args
-            from shared.pyterm.protocols import SessionConfig as PytermSessionConfig
+            from shared.pyterm.protocols import PytermSessionConfig
             session_config = PytermSessionConfig(
                 shell=shell_cmd,
                 args=self._config.args,

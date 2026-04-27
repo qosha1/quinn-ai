@@ -11,7 +11,7 @@ from shared.pyterm.lifecycle import (
     VALID_TRANSITIONS,
 )
 from shared.core.state import WorkerState, WORKER_STATE_TRANSITIONS
-from shared.pyterm.protocols import SessionState
+from shared.pyterm.protocols import PytermSessionState
 
 
 class TestSessionToWorkerState:
@@ -19,22 +19,22 @@ class TestSessionToWorkerState:
 
     def test_idle_maps_to_pending(self):
         """Test IDLE session maps to PENDING worker."""
-        result = session_to_worker_state(SessionState.IDLE)
+        result = session_to_worker_state(PytermSessionState.IDLE)
         assert result == WorkerState.PENDING
 
     def test_running_maps_to_active(self):
         """Test RUNNING session maps to ACTIVE worker."""
-        result = session_to_worker_state(SessionState.RUNNING)
+        result = session_to_worker_state(PytermSessionState.RUNNING)
         assert result == WorkerState.ACTIVE
 
     def test_exited_maps_to_terminated(self):
         """Test EXITED session maps to TERMINATED worker."""
-        result = session_to_worker_state(SessionState.EXITED)
+        result = session_to_worker_state(PytermSessionState.EXITED)
         assert result == WorkerState.TERMINATED
 
     def test_error_maps_to_terminated(self):
         """Test ERROR session maps to TERMINATED worker."""
-        result = session_to_worker_state(SessionState.ERROR)
+        result = session_to_worker_state(PytermSessionState.ERROR)
         assert result == WorkerState.TERMINATED
 
 

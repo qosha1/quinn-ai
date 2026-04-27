@@ -304,7 +304,7 @@ class TestClaudeCodeSessionStateMapping:
 
     def test_map_pyterm_session_state_exited(self, session_config, pyterm_config):
         """Test mapping pyterm EXITED state to STOPPED."""
-        from shared.pyterm.protocols import SessionState as PytermSessionState
+        from shared.pyterm.protocols import PytermSessionState
 
         session = ClaudeCodeSession(session_config, pyterm_config)
         result = session._map_pyterm_state_to_session_state(PytermSessionState.EXITED)
@@ -313,7 +313,7 @@ class TestClaudeCodeSessionStateMapping:
 
     def test_map_pyterm_session_state_idle(self, session_config, pyterm_config):
         """Test mapping pyterm IDLE state."""
-        from shared.pyterm.protocols import SessionState as PytermSessionState
+        from shared.pyterm.protocols import PytermSessionState
 
         session = ClaudeCodeSession(session_config, pyterm_config)
         result = session._map_pyterm_state_to_session_state(PytermSessionState.IDLE)
@@ -322,7 +322,7 @@ class TestClaudeCodeSessionStateMapping:
 
     def test_map_pyterm_session_state_running(self, session_config, pyterm_config):
         """Test mapping pyterm RUNNING state."""
-        from shared.pyterm.protocols import SessionState as PytermSessionState
+        from shared.pyterm.protocols import PytermSessionState
 
         session = ClaudeCodeSession(session_config, pyterm_config)
         result = session._map_pyterm_state_to_session_state(PytermSessionState.RUNNING)
@@ -331,7 +331,7 @@ class TestClaudeCodeSessionStateMapping:
 
     def test_map_pyterm_session_state_error(self, session_config, pyterm_config):
         """Test mapping pyterm ERROR state to CRASHED."""
-        from shared.pyterm.protocols import SessionState as PytermSessionState
+        from shared.pyterm.protocols import PytermSessionState
 
         session = ClaudeCodeSession(session_config, pyterm_config)
         result = session._map_pyterm_state_to_session_state(PytermSessionState.ERROR)

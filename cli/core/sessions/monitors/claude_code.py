@@ -17,7 +17,7 @@ from shared.pyterm.state_monitor import (
     StateChangeCallback,
     StateDetectionError,
 )
-from shared.pyterm.protocols import Session, SessionState
+from shared.pyterm.protocols import Session, PytermSessionState
 from shared.pyterm.parsers.claude_code import ClaudeCodeParser
 from shared.pyterm.agent_state import AgentState
 
@@ -43,7 +43,7 @@ class ClaudeCodeStateMonitor(StateMonitor):
         self._parser = ClaudeCodeParser()
 
         # State tracking
-        self._current_state = SessionState.IDLE
+        self._current_state = PytermSessionState.IDLE
         self._last_activity = time.time()
         self._lock = threading.RLock()
 
@@ -111,7 +111,7 @@ class ClaudeCodeStateMonitor(StateMonitor):
 
         logger.info(f"Stopped monitoring for session")
 
-    def poll(self) -> SessionState:
+    def poll(self) -> PytermSessionState:
         """Poll session and detect current state."""
         with self._lock:
             self._poll_count += 1
@@ -170,7 +170,7 @@ class ClaudeCodeStateMonitor(StateMonitor):
                 logger.debug(f"Removed subscription {subscription_id}")
 
     @property
-    def current_state(self) -> SessionState:
+    def current_state(self) -> PytermSessionState:
         """Get last known state."""
         with self._lock:
             return self._current_state
@@ -226,23 +226,23 @@ class ClaudeCodeStateMonitor(StateMonitor):
 
         logger.info(f"Background monitor stopped")
 
-    def _map_agent_to_session_state(self, agent_state: AgentState) -> SessionState:
-        """Map pyterm AgentState to SessionState."""
+    def _map_agent_to_session_state(self, agent_state: AgentState) -> PytermSessionState:
+        """Map pyterm AgentState to PytermSessionState."""
         mapping = {
-            AgentState.IDLE: SessionState.IDLE,
-            AgentState.THINKING: SessionState.RUNNING,
-            AgentState.EXECUTING_TOOL: SessionState.RUNNING,
-            AgentState.WAITING_INPUT: SessionState.RUNNING,
-            AgentState.ERROR: SessionState.ERROR,
-            AgentState.PAUSED: SessionState.IDLE,
+            AgentState.IDLE: PytermSessionState.IDLE,
+            AgentState.THINKING: PytermSessionState.RUNNING,
+            AgentState.EXECUTING_TOOL: PytermSessionState.RUNNING,
+            AgentState.WAITING_INPUT: PytermSessionState.RUNNING,
+            AgentState.ERROR: PytermSessionState.ERROR,
+            AgentState.PAUSED: PytermSessionState.IDLE,
         }
 
-        return mapping.get(agent_state, SessionState.IDLE)
+        return mapping.get(agent_state, PytermSessionState.IDLE)
 
     def _notify_subscribers(
         self,
-        old_state: SessionState,
-        new_state: SessionState,
+        old_state: PytermSessionState,
+        new_state: PytermSessionState,
         callbacks: list[StateChangeCallback],
     ) -> None:
         """Notify all subscribers of state change."""

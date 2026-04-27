@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import MagicMock, Mock, patch
 
 from shared.pyterm.manager import SessionManager, ManagedSession
-from shared.pyterm.protocols import SessionState, WorkerState, SessionConfig
+from shared.pyterm.protocols import PytermSessionState, WorkerState, PytermSessionConfig
 from shared.pyterm.lifecycle import LifecycleHooks
 from shared.pyterm.patterns import PatternMatcher
 
@@ -16,7 +16,7 @@ class MockSession:
 
     def __init__(self, session_id: str):
         self._id = session_id
-        self._state = SessionState.IDLE
+        self._state = PytermSessionState.IDLE
         self.stopped = False
 
     @property
@@ -24,15 +24,15 @@ class MockSession:
         return self._id
 
     @property
-    def state(self) -> SessionState:
+    def state(self) -> PytermSessionState:
         return self._state
 
     def start(self, config=None) -> None:
-        self._state = SessionState.RUNNING
+        self._state = PytermSessionState.RUNNING
 
     def stop(self, force: bool = False) -> None:
         self.stopped = True
-        self._state = SessionState.EXITED
+        self._state = PytermSessionState.EXITED
 
 
 class TestManagedSession:
@@ -67,10 +67,10 @@ class TestManagedSession:
             lifecycle=lifecycle,
         )
 
-        assert managed.state == SessionState.IDLE
+        assert managed.state == PytermSessionState.IDLE
 
-        session._state = SessionState.RUNNING
-        assert managed.state == SessionState.RUNNING
+        session._state = PytermSessionState.RUNNING
+        assert managed.state == PytermSessionState.RUNNING
 
     def test_worker_state_property(self):
         """Test worker_state property delegates to lifecycle."""
@@ -200,7 +200,7 @@ class TestSessionManagerRemove:
     def test_remove_stops_session(self, mock_pattern_class, mock_tmux_class):
         """Test remove() stops running session."""
         mock_session = MockSession("qn-worker-1")
-        mock_session._state = SessionState.RUNNING
+        mock_session._state = PytermSessionState.RUNNING
         mock_tmux_class.return_value = mock_session
 
         manager = SessionManager()
@@ -260,7 +260,7 @@ class TestSessionManagerRemove:
     def test_remove_with_force(self, mock_pattern_class, mock_tmux_class):
         """Test remove() with force flag."""
         mock_session = Mock()
-        mock_session.state = SessionState.RUNNING
+        mock_session.state = PytermSessionState.RUNNING
         mock_tmux_class.return_value = mock_session
 
         manager = SessionManager()
@@ -284,9 +284,9 @@ class TestSessionManagerListOperations:
             MockSession("qn-worker-2"),
             MockSession("qn-worker-3"),
         ]
-        sessions[0]._state = SessionState.RUNNING
-        sessions[1]._state = SessionState.RUNNING
-        sessions[2]._state = SessionState.IDLE
+        sessions[0]._state = PytermSessionState.RUNNING
+        sessions[1]._state = PytermSessionState.RUNNING
+        sessions[2]._state = PytermSessionState.IDLE
 
         mock_tmux_class.side_effect = sessions
 
@@ -394,10 +394,10 @@ class TestSessionManagerCleanup:
     def test_cleanup_exited(self, mock_pattern_class, mock_tmux_class):
         """Test cleanup_exited() removes exited sessions."""
         sessions = [MockSession(f"qn-worker-{i}") for i in range(4)]
-        sessions[0]._state = SessionState.RUNNING
-        sessions[1]._state = SessionState.EXITED
-        sessions[2]._state = SessionState.ERROR
-        sessions[3]._state = SessionState.IDLE
+        sessions[0]._state = PytermSessionState.RUNNING
+        sessions[1]._state = PytermSessionState.EXITED
+        sessions[2]._state = PytermSessionState.ERROR
+        sessions[3]._state = PytermSessionState.IDLE
 
         mock_tmux_class.side_effect = sessions
 
@@ -421,9 +421,9 @@ class TestSessionManagerCleanup:
     def test_stop_all(self, mock_pattern_class, mock_tmux_class):
         """Test stop_all() stops all running sessions."""
         sessions = [MockSession(f"qn-worker-{i}") for i in range(3)]
-        sessions[0]._state = SessionState.RUNNING
-        sessions[1]._state = SessionState.RUNNING
-        sessions[2]._state = SessionState.IDLE
+        sessions[0]._state = PytermSessionState.RUNNING
+        sessions[1]._state = PytermSessionState.RUNNING
+        sessions[2]._state = PytermSessionState.IDLE
 
         mock_tmux_class.side_effect = sessions
 
@@ -443,7 +443,7 @@ class TestSessionManagerCleanup:
     def test_stop_all_with_force(self, mock_pattern_class, mock_tmux_class):
         """Test stop_all() with force flag."""
         mock_session = Mock()
-        mock_session.state = SessionState.RUNNING
+        mock_session.state = PytermSessionState.RUNNING
         mock_tmux_class.return_value = mock_session
 
         manager = SessionManager()

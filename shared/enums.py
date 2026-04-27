@@ -137,15 +137,6 @@ class MessageType(str, Enum):
     ESCALATION = "escalation"
 
 
-class SessionState(str, Enum):
-    """Session runtime states."""
-    INITIALIZING = "initializing"
-    RUNNING = "running"
-    PAUSED = "paused"
-    STOPPED = "stopped"
-    CRASHED = "crashed"
-
-
 class RuntimeStatus(str, Enum):
     """Worker session runtime status values."""
     STARTING = "starting"

@@ -9,7 +9,7 @@ import threading
 from unittest.mock import MagicMock, Mock, patch
 
 from shared.pyterm.patterns import PatternRule, PatternMatcher, RuleTriggeredCallback
-from shared.pyterm.protocols import ExtractedOutput, SessionState
+from shared.pyterm.protocols import ExtractedOutput, PytermSessionState
 from shared.pyterm.config import PytermConfig, LoopDetectionConfig, TimingConfig, TerminalSessionConfig
 
 
@@ -19,14 +19,14 @@ class MockSession:
     def __init__(self):
         self.injected = []
         self.output_text = "Initial output"
-        self._state = SessionState.RUNNING
+        self._state = PytermSessionState.RUNNING
 
     @property
     def id(self) -> str:
         return "mock-session"
 
     @property
-    def state(self) -> SessionState:
+    def state(self) -> PytermSessionState:
         return self._state
 
     def inject(self, text: str) -> None:

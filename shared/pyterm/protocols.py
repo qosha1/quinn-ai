@@ -13,12 +13,13 @@ from typing import Callable, Protocol, runtime_checkable
 from shared.core.state import WorkerState
 
 
-class SessionState(Enum):
+class PytermSessionState(Enum):
     """Session lifecycle states for pyterm.
 
-    Note: This is pyterm-specific SessionState designed for terminal session
-    management. The canonical SessionState in shared.core.state has different
-    values (STOPPED, STARTING, etc.) designed for the worker state mapping.
+    Distinct from the canonical SessionState in shared.core.state, which uses
+    different values (STOPPED, STARTING, IDLE, RUNNING) designed for the worker
+    state mapping. This pyterm enum tracks the terminal session lifecycle
+    (IDLE, RUNNING, EXITED, ERROR); session adapters map between the two.
     """
 
     IDLE = "idle"
@@ -28,11 +29,13 @@ class SessionState(Enum):
 
 
 @dataclass
-class SessionConfig:
+class PytermSessionConfig:
     """Configuration for spawning a session.
 
-    This is the pyterm-specific SessionConfig for terminal sessions.
-    For the full canonical SessionConfig, see shared.core.session.
+    Distinct from the canonical SessionConfig in shared.core.session: this
+    one carries only the terminal-spawn fields (shell, args, cwd, env, cols,
+    rows). Higher-level session settings (worker_id, provider, timeouts, etc.)
+    live in shared.core.session.SessionConfig.
     """
 
     shell: str = "/bin/bash"
@@ -67,7 +70,7 @@ class Session(Protocol):
         ...
 
     @property
-    def state(self) -> SessionState:
+    def state(self) -> PytermSessionState:
         """Current session state."""
         ...
 
@@ -76,7 +79,7 @@ class Session(Protocol):
         """Process ID of the underlying shell, if running."""
         ...
 
-    def start(self, config: SessionConfig | None = None) -> None:
+    def start(self, config: PytermSessionConfig | None = None) -> None:
         """
         Start the session.
 
@@ -135,14 +138,14 @@ class Session(Protocol):
         ...
 
     def on_state_change(
-        self, callback: Callable[[SessionState, SessionState], None]
+        self, callback: Callable[[PytermSessionState, PytermSessionState], None]
     ) -> None:
         """Register callback for state changes (old_state, new_state)."""
         ...
 
 
 @dataclass
-class ProviderConfig:
+class PytermProviderConfig:
     """Configuration for a CLI provider."""
 
     name: str
@@ -167,15 +170,15 @@ class Provider(Protocol):
         ...
 
     @property
-    def config(self) -> ProviderConfig:
+    def config(self) -> PytermProviderConfig:
         """Provider configuration."""
         ...
 
-    def configure_session(self, session: Session) -> SessionConfig:
+    def configure_session(self, session: Session) -> PytermSessionConfig:
         """
         Configure a session for this provider.
 
-        Returns SessionConfig with provider-specific settings
+        Returns PytermSessionConfig with provider-specific settings
         (command, args, env vars, etc.)
         """
         ...
@@ -195,3 +198,5 @@ class Provider(Protocol):
         Used to know when the CLI has finished responding.
         """
         ...
+
+

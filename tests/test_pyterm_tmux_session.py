@@ -9,7 +9,7 @@ import time
 from unittest.mock import MagicMock, Mock, patch, call
 
 from shared.pyterm.tmux_session import TmuxSession, TMUX_TIMEOUT
-from shared.pyterm.protocols import SessionState, SessionConfig, ExtractedOutput
+from shared.pyterm.protocols import PytermSessionState, PytermSessionConfig, ExtractedOutput
 from shared.pyterm.config import PytermConfig
 
 
@@ -22,7 +22,7 @@ class TestTmuxSessionInit:
 
         assert session.id.startswith("pyterm-")
         assert len(session.id) > len("pyterm-")
-        assert session.state == SessionState.IDLE
+        assert session.state == PytermSessionState.IDLE
         assert session.pid is None
 
     def test_init_with_name(self):
@@ -30,7 +30,7 @@ class TestTmuxSessionInit:
         session = TmuxSession(session_name="test-session")
 
         assert session.id == "test-session"
-        assert session.state == SessionState.IDLE
+        assert session.state == PytermSessionState.IDLE
 
     def test_init_with_config(self):
         """Test initialization with custom config."""
@@ -89,7 +89,7 @@ class TestTmuxSessionClassMethods:
         session = TmuxSession.connect("existing-session")
 
         assert session.id == "existing-session"
-        assert session.state == SessionState.RUNNING
+        assert session.state == PytermSessionState.RUNNING
         assert session.pid == 12345
 
     @patch('subprocess.run')
@@ -110,7 +110,7 @@ class TestTmuxSessionClassMethods:
 
         session = TmuxSession.connect("existing-session")
 
-        assert session.state == SessionState.RUNNING
+        assert session.state == PytermSessionState.RUNNING
         assert session.pid is None
 
     @patch('subprocess.run')
@@ -162,7 +162,7 @@ class TestTmuxSessionLifecycle:
         session = TmuxSession(session_name="test")
         session.start()
 
-        assert session.state == SessionState.RUNNING
+        assert session.state == PytermSessionState.RUNNING
         assert session.pid == 12345
 
         # Verify new-session was called
@@ -176,13 +176,13 @@ class TestTmuxSessionLifecycle:
 
     @patch('subprocess.run')
     def test_start_with_config(self, mock_run):
-        """Test start() with custom SessionConfig."""
+        """Test start() with custom PytermSessionConfig."""
         mock_run.side_effect = [
             Mock(returncode=0, stdout="", stderr=""),  # new-session
             Mock(returncode=0, stdout="999\n", stderr=""),  # display-message
         ]
 
-        config = SessionConfig(
+        config = PytermSessionConfig(
             shell="/bin/zsh",
             cols=120,
             rows=40,
@@ -193,7 +193,7 @@ class TestTmuxSessionLifecycle:
         session = TmuxSession(session_name="test")
         session.start(config)
 
-        assert session.state == SessionState.RUNNING
+        assert session.state == PytermSessionState.RUNNING
 
         # Verify config was used
         new_session_call = mock_run.call_args_list[0]
@@ -238,7 +238,7 @@ class TestTmuxSessionLifecycle:
         with patch('time.sleep'):
             session.stop()
 
-        assert session.state == SessionState.EXITED
+        assert session.state == PytermSessionState.EXITED
         assert session.pid is None
 
     @patch('subprocess.run')
@@ -254,7 +254,7 @@ class TestTmuxSessionLifecycle:
         session.start()
         session.stop(force=True)
 
-        assert session.state == SessionState.EXITED
+        assert session.state == PytermSessionState.EXITED
 
         # Verify kill-session was called (not send-keys)
         kill_call = mock_run.call_args_list[-1]
@@ -430,7 +430,7 @@ class TestTmuxSessionCallbacks:
         session.start()
 
         # Callback should be fired with state transition
-        callback.assert_called_once_with(SessionState.IDLE, SessionState.RUNNING)
+        callback.assert_called_once_with(PytermSessionState.IDLE, PytermSessionState.RUNNING)
 
 
 class TestTmuxSessionPolling:

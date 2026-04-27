@@ -16,8 +16,8 @@ from cli.core.constants import TMUX_ATTACH_WAIT
 from shared.pyterm.protocols import (
     ExtractedOutput,
     Session,
-    SessionConfig,
-    SessionState,
+    PytermSessionConfig,
+    PytermSessionState,
 )
 from shared.pyterm.config import PytermConfig
 
@@ -48,11 +48,11 @@ class TmuxSession:
         """
         self._id = session_name or f"pyterm-{uuid.uuid4().hex[:8]}"
         self._config = config or PytermConfig.standard()
-        self._state = SessionState.IDLE
+        self._state = PytermSessionState.IDLE
         self._pid: int | None = None
-        self._session_config: SessionConfig | None = None
+        self._session_config: PytermSessionConfig | None = None
         self._output_callbacks: list[Callable[[ExtractedOutput], None]] = []
-        self._state_callbacks: list[Callable[[SessionState, SessionState], None]] = []
+        self._state_callbacks: list[Callable[[PytermSessionState, PytermSessionState], None]] = []
         self._polling_thread: threading.Thread | None = None
         self._stop_polling = threading.Event()
 
@@ -100,7 +100,7 @@ class TmuxSession:
             raise ValueError(f"Tmux session '{session_name}' does not exist")
 
         session = cls(session_name=session_name, config=config)
-        session._state = SessionState.RUNNING
+        session._state = PytermSessionState.RUNNING
 
         # Try to get PID of the existing session
         try:
@@ -158,14 +158,14 @@ class TmuxSession:
         return self._id
 
     @property
-    def state(self) -> SessionState:
+    def state(self) -> PytermSessionState:
         return self._state
 
     @property
     def pid(self) -> int | None:
         return self._pid
 
-    def _set_state(self, new_state: SessionState) -> None:
+    def _set_state(self, new_state: PytermSessionState) -> None:
         """Set state and notify callbacks."""
         if new_state != self._state:
             old_state = self._state
@@ -185,21 +185,21 @@ class TmuxSession:
         result = self._run_tmux("has-session", "-t", self._id, check=False)
         return result.returncode == 0
 
-    def start(self, config: SessionConfig | None = None) -> None:
+    def start(self, config: PytermSessionConfig | None = None) -> None:
         """Start the tmux session.
 
         Creates a tmux session with bash as the shell, then sends the command
         (if provided) via send-keys. This ensures commands execute properly
         rather than being interpreted as the shell itself.
         """
-        if self._state == SessionState.RUNNING:
+        if self._state == PytermSessionState.RUNNING:
             raise RuntimeError(f"Session {self._id} already running")
 
         # Use provided config or build from pyterm config
         if config:
             self._session_config = config
         else:
-            self._session_config = SessionConfig(
+            self._session_config = PytermSessionConfig(
                 shell=self._config.session.default_shell,
                 cols=self._config.session.default_cols,
                 rows=self._config.session.default_rows,
@@ -292,11 +292,11 @@ class TmuxSession:
             # Just running bash, use bash PID
             self._pid = bash_pid
 
-        self._set_state(SessionState.RUNNING)
+        self._set_state(PytermSessionState.RUNNING)
 
     def stop(self, force: bool = False) -> None:
         """Stop the tmux session."""
-        if self._state != SessionState.RUNNING:
+        if self._state != PytermSessionState.RUNNING:
             return
 
         self._stop_polling.set()
@@ -314,11 +314,11 @@ class TmuxSession:
                 self._run_tmux("kill-session", "-t", self._id, check=False)
 
         self._pid = None
-        self._set_state(SessionState.EXITED)
+        self._set_state(PytermSessionState.EXITED)
 
     def inject(self, text: str) -> None:
         """Inject text into the session."""
-        if self._state != SessionState.RUNNING:
+        if self._state != PytermSessionState.RUNNING:
             raise RuntimeError(f"Session {self._id} not running")
 
         # Use send-keys with literal flag for exact text
@@ -326,7 +326,7 @@ class TmuxSession:
 
     def inject_keys(self, keys: list[str]) -> None:
         """Inject key sequences."""
-        if self._state != SessionState.RUNNING:
+        if self._state != PytermSessionState.RUNNING:
             raise RuntimeError(f"Session {self._id} not running")
 
         # send-keys without -l interprets key names
@@ -335,7 +335,7 @@ class TmuxSession:
 
     def extract(self) -> ExtractedOutput:
         """Extract current screen content."""
-        if self._state != SessionState.RUNNING:
+        if self._state != PytermSessionState.RUNNING:
             raise RuntimeError(f"Session {self._id} not running")
 
         # capture-pane gets visible content
@@ -351,7 +351,7 @@ class TmuxSession:
 
     def extract_history(self, lines: int | None = None) -> list[str]:
         """Extract scrollback history."""
-        if self._state != SessionState.RUNNING:
+        if self._state != PytermSessionState.RUNNING:
             raise RuntimeError(f"Session {self._id} not running")
 
         args = ["capture-pane", "-t", self._id, "-p", "-S", "-"]  # -S - = start of history
@@ -364,7 +364,7 @@ class TmuxSession:
 
     def resize(self, cols: int, rows: int) -> None:
         """Resize the terminal."""
-        if self._state != SessionState.RUNNING:
+        if self._state != PytermSessionState.RUNNING:
             return
 
         self._run_tmux(
@@ -377,7 +377,7 @@ class TmuxSession:
         self._output_callbacks.append(callback)
 
     def on_state_change(
-        self, callback: Callable[[SessionState, SessionState], None]
+        self, callback: Callable[[PytermSessionState, PytermSessionState], None]
     ) -> None:
         """Register state change callback."""
         self._state_callbacks.append(callback)
@@ -393,7 +393,7 @@ class TmuxSession:
         def poll_loop():
             last_output = ""
             while not self._stop_polling.is_set():
-                if self._state != SessionState.RUNNING:
+                if self._state != PytermSessionState.RUNNING:
                     break
                 try:
                     output = self.extract()

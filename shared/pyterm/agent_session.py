@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from shared.pyterm.protocols import Session, SessionConfig, SessionState, WorkerState
+from shared.pyterm.protocols import Session, PytermSessionConfig, PytermSessionState, WorkerState
 from shared.pyterm.tmux_session import TmuxSession
 from shared.pyterm.agent_state import AgentState, AgentStateMachine
 from shared.pyterm.conversation import Transcript, Turn, Message, ToolCall
@@ -199,7 +199,7 @@ class AgentSession:
     # Session Lifecycle
     # =========================================================================
 
-    def start(self, config: SessionConfig | None = None) -> None:
+    def start(self, config: PytermSessionConfig | None = None) -> None:
         """
         Start the agent session.
 
@@ -221,23 +221,23 @@ class AgentSession:
         self._session.stop(force=force)
         self._worker_state = WorkerState.TERMINATED
 
-    def restart(self, config: SessionConfig | None = None) -> None:
+    def restart(self, config: PytermSessionConfig | None = None) -> None:
         """
         Restart the agent session.
 
         Stops the current session (if running) and starts a new one.
         """
-        if self._session.state == SessionState.RUNNING:
+        if self._session.state == PytermSessionState.RUNNING:
             self.stop()
         self.start(config)
 
     @property
     def is_running(self) -> bool:
         """Check if the session is running."""
-        return self._session.state == SessionState.RUNNING
+        return self._session.state == PytermSessionState.RUNNING
 
     @property
-    def session_state(self) -> SessionState:
+    def session_state(self) -> PytermSessionState:
         """Get the session state."""
         return self._session.state
 

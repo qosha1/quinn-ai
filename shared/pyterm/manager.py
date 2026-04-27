@@ -9,7 +9,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Iterator
 
-from shared.pyterm.protocols import Session, SessionConfig, SessionState, WorkerState
+from shared.pyterm.protocols import Session, PytermSessionConfig, PytermSessionState, WorkerState
 from shared.pyterm.tmux_session import TmuxSession
 from shared.pyterm.lifecycle import LifecycleHooks
 from shared.pyterm.patterns import PatternMatcher
@@ -25,7 +25,7 @@ class ManagedSession:
     patterns: PatternMatcher | None = None
 
     @property
-    def state(self) -> SessionState:
+    def state(self) -> PytermSessionState:
         return self.session.state
 
     @property
@@ -48,7 +48,7 @@ class SessionManager:
     def create(
         self,
         worker_id: str,
-        config: SessionConfig | None = None,
+        config: PytermSessionConfig | None = None,
         session_name: str | None = None,
     ) -> ManagedSession:
         """
@@ -101,7 +101,7 @@ class SessionManager:
                 managed.patterns.stop_watching()
 
             # Stop session
-            if managed.session.state == SessionState.RUNNING:
+            if managed.session.state == PytermSessionState.RUNNING:
                 managed.session.stop(force=force)
 
             # Transition lifecycle to terminated
@@ -114,7 +114,7 @@ class SessionManager:
         """List all sessions in RUNNING state."""
         return [
             m for m in self._sessions.values()
-            if m.session.state == SessionState.RUNNING
+            if m.session.state == PytermSessionState.RUNNING
         ]
 
     def list_by_worker_state(self, state: WorkerState) -> list[ManagedSession]:
@@ -145,7 +145,7 @@ class SessionManager:
         to_remove = [
             worker_id
             for worker_id, managed in self._sessions.items()
-            if managed.session.state in (SessionState.EXITED, SessionState.ERROR)
+            if managed.session.state in (PytermSessionState.EXITED, PytermSessionState.ERROR)
         ]
 
         for worker_id in to_remove:
@@ -156,5 +156,5 @@ class SessionManager:
     def stop_all(self, force: bool = False) -> None:
         """Stop all sessions."""
         for managed in list(self._sessions.values()):
-            if managed.session.state == SessionState.RUNNING:
+            if managed.session.state == PytermSessionState.RUNNING:
                 managed.session.stop(force=force)
