@@ -159,7 +159,6 @@ We are a startup focused on developer tools.
         create_test_org_db(org_path, status="initialized", include_ceo=True, include_board_channel=True, init_beads=True)
         create_briefing_file(org_path, briefing_content)
 
-        # TODO: This will fail until org.start() implementation is complete
         # Start org (should trigger briefing delivery)
         from cli.core.db import Database
         from cli.core.org import Org
@@ -220,7 +219,6 @@ We are a startup focused on developer tools.
         db = Database(db_path)
         org = Org(db)
 
-        # TODO: This will fail if org.start() doesn't handle missing briefing gracefully
         org.start()
 
         # Verify org started successfully
@@ -336,7 +334,6 @@ Test briefing from board interface.
 Test the send_ceo_briefing method.
 """
 
-        # TODO: This will fail until send_ceo_briefing() is implemented
         result = conn.send_ceo_briefing(briefing_content)
         assert result is True, "send_ceo_briefing should return True on success"
 
@@ -385,7 +382,6 @@ Test mission statement.
         # Test get_current_briefing
         conn = QuinnAIOrgConnection(org_path)
 
-        # TODO: This will fail until get_current_briefing() is implemented
         current = conn.get_current_briefing()
         assert current is not None, "Should return briefing content"
         assert current == briefing_content
@@ -428,7 +424,6 @@ Test mission statement.
 
         conn = QuinnAIOrgConnection(org_path)
 
-        # TODO: This will fail until update_briefing() is implemented
         result = conn.update_briefing(updated_content)
         assert result is True, "update_briefing should return True on success"
 
@@ -496,7 +491,6 @@ class TestBoardAppBriefingIntegration:
             await app._connect_to_org(org_path)
             await pilot.pause()
 
-            # TODO: This will fail until BriefingQueued handler is implemented
             # Create and mount briefing widget
             from board_ui.widgets.ceo_briefing import BriefingContent
 
