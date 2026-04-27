@@ -291,7 +291,7 @@ class TestOrgStart:
 
     def test_org_start_worker_flag_triggers_independent_path(self, runner, running_org):
         """--worker should go through the independent worker start path."""
-        with patch("commands.org.session_utils.spawn_worker_session") as mock_spawn:
+        with patch("cli.commands.org.session_utils.spawn_worker_session") as mock_spawn:
             result = runner.invoke(qn, [
                 "--org-path", str(running_org),
                 "org", "start", "--worker", "CEO", "--skip-config-validation",
@@ -314,7 +314,7 @@ class TestOrgStart:
         db.connection.commit()
         db.close()
 
-        with patch("commands.org.session_utils.spawn_worker_session") as mock_spawn:
+        with patch("cli.commands.org.session_utils.spawn_worker_session") as mock_spawn:
             result = runner.invoke(qn, [
                 "--org-path", str(running_org),
                 "org", "start", "--worker", "CEO", "--skip-config-validation",
@@ -337,7 +337,7 @@ class TestOrgStart:
         db.connection.commit()
         db.close()
 
-        with patch("commands.org.session_utils.spawn_worker_session") as mock_spawn:
+        with patch("cli.commands.org.session_utils.spawn_worker_session") as mock_spawn:
             result = runner.invoke(qn, [
                 "--org-path", str(running_org),
                 "org", "start", "--worker", "CEO",
@@ -350,7 +350,7 @@ class TestOrgStart:
 
     def test_org_start_unknown_provider_raises_error(self, runner, initialized_org):
         """Unknown provider should raise SessionSpawnError with available providers listed."""
-        with patch("commands.org.start._cleanup_orphaned_sessions"):
+        with patch("cli.core.org_start_controller._cleanup_orphaned_sessions"):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "org", "start",
@@ -365,7 +365,7 @@ class TestOrgStart:
         from cli.core.db import open_database, get_org_db_path
         from cli.core.org import Org
 
-        with patch("commands.org.start._spawn_ceo_session_if_needed",
+        with patch("cli.core.org_start_controller._spawn_ceo_session_if_needed",
                    side_effect=Exception("spawn failed")):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -384,8 +384,8 @@ class TestOrgStart:
         mock_db = MagicMock()
         mock_db.db_path = str(initialized_org / "live" / "quinn.db")
 
-        with patch("commands.org.start._validate_preflight", return_value=mock_db):
-            with patch("commands.org.start.Org.load", side_effect=RuntimeError("db error")):
+        with patch("cli.core.org_start_controller._validate_preflight", return_value=mock_db):
+            with patch("cli.core.org_start_controller.Org.load", side_effect=RuntimeError("db error")):
                 result = runner.invoke(qn, [
                     "--org-path", str(initialized_org),
                     "org", "start", "--skip-config-validation",
@@ -412,7 +412,7 @@ class TestOrgStart:
     def test_org_start_phase1_orphaned_session_cleanup_is_best_effort(self, runner, initialized_org):
         """Orphaned session cleanup failure should not block start."""
         # Patch the inner run_startup_cleanup (local import in _cleanup_orphaned_sessions)
-        with patch("core.sessions.run_startup_cleanup",
+        with patch("cli.core.sessions.run_startup_cleanup",
                    side_effect=Exception("tmux error")):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -423,9 +423,9 @@ class TestOrgStart:
 
     def test_org_start_phase5_kickstart_failure_does_not_fail_start(self, runner, initialized_org):
         """Kickstart failure should not fail org start."""
-        with patch("commands.org.start._send_initial_prompt_to_ceo",
+        with patch("cli.core.org_start_controller._send_initial_prompt_to_ceo",
                    side_effect=Exception("tmux send failed")):
-            with patch("commands.org.start._spawn_ceo_session_if_needed") as mock_spawn:
+            with patch("cli.core.org_start_controller._spawn_ceo_session_if_needed") as mock_spawn:
                 mock_spawn.return_value = None
                 result = runner.invoke(qn, [
                     "--org-path", str(initialized_org),
@@ -437,7 +437,7 @@ class TestOrgStart:
 
     def test_org_start_force_with_already_running_respawns_ceo(self, runner, running_org):
         """--force on already running org should attempt to respawn CEO session."""
-        with patch("commands.org.start._spawn_ceo_session_if_needed") as mock_spawn:
+        with patch("cli.core.org_start_controller._spawn_ceo_session_if_needed") as mock_spawn:
             result = runner.invoke(qn, [
                 "--org-path", str(running_org),
                 "org", "start", "--force", "--skip-config-validation",
@@ -600,8 +600,8 @@ class TestOrgStop:
         mock_db = MagicMock()
         mock_db.db_path = str(running_org / "live" / "quinn.db")
 
-        with patch("commands.org.stop._validate_org_stoppable", return_value=mock_db):
-            with patch("commands.org.stop.Org.load", side_effect=RuntimeError("boom")):
+        with patch("cli.commands.org.stop._validate_org_stoppable", return_value=mock_db):
+            with patch("cli.commands.org.stop.Org.load", side_effect=RuntimeError("boom")):
                 result = runner.invoke(qn, [
                     "--org-path", str(running_org),
                     "org", "stop", "--yes",
@@ -701,7 +701,7 @@ class TestOrgStop:
 
     def test_org_stop_force_on_already_stopped_cleans_zombie_sessions(self, runner, stopped_org):
         """--force on already stopped org should clean zombie sessions."""
-        with patch("commands.org.stop._cleanup_zombie_sessions") as mock_clean:
+        with patch("cli.commands.org.stop._cleanup_zombie_sessions") as mock_clean:
             result = runner.invoke(qn, [
                 "--org-path", str(stopped_org),
                 "org", "stop", "--yes", "--force",
@@ -722,7 +722,7 @@ class TestOrgStop:
         fake_result.phases = []
         fake_result.errors = [f"error_{i}" for i in range(15)]
 
-        with patch("commands.org.stop.OrgStopController") as mock_ctrl_cls:
+        with patch("cli.commands.org.stop.OrgStopController") as mock_ctrl_cls:
             mock_ctrl = MagicMock()
             mock_ctrl.execute.return_value = fake_result
             mock_ctrl_cls.return_value = mock_ctrl
@@ -742,8 +742,8 @@ class TestOrgStop:
         fake_session = MagicMock()
         fake_session.__getitem__ = lambda self, key: "ceo" if key == "worker_id" else None
 
-        with patch("commands.org.stop.get_active_sessions", return_value=[fake_session]):
-            with patch("commands.org.stop.OrgStopController") as mock_ctrl_cls:
+        with patch("cli.commands.org.stop.get_active_sessions", return_value=[fake_session]):
+            with patch("cli.commands.org.stop.OrgStopController") as mock_ctrl_cls:
                 mock_ctrl = MagicMock()
                 from cli.core.stop_controller import OrgStopResult
                 fake_result = OrgStopResult(success=True)
@@ -770,8 +770,8 @@ class TestOrgStop:
         for s in fake_sessions:
             s.__getitem__ = lambda self, key: "worker-id"
 
-        with patch("commands.org.stop.get_active_sessions", return_value=fake_sessions):
-            with patch("commands.org.stop.Worker.get", side_effect=Exception("skip")):
+        with patch("cli.commands.org.stop.get_active_sessions", return_value=fake_sessions):
+            with patch("cli.commands.org.stop.Worker.get", side_effect=Exception("skip")):
                 result = runner.invoke(qn, [
                     "--org-path", str(running_org),
                     "org", "stop",
@@ -858,7 +858,7 @@ class TestOrgRestart:
 
     def test_org_restart_graceful_timeout_passed_to_stop(self, runner, running_org):
         """--graceful-timeout should be forwarded to stop phase."""
-        with patch("commands.org.stop.OrgStopController") as mock_ctrl_cls:
+        with patch("cli.commands.org.stop.OrgStopController") as mock_ctrl_cls:
             captured = {}
             from cli.core.stop_controller import OrgStopResult
 
@@ -930,7 +930,7 @@ class TestOrgRestart:
         def patched_stop_invoke(cmd, **params):
             stop_invoked[0] = True
 
-        with patch("commands.org.stop.OrgStopController") as mock_ctrl_cls:
+        with patch("cli.commands.org.stop.OrgStopController") as mock_ctrl_cls:
             from cli.core.stop_controller import OrgStopResult
             fake_r = OrgStopResult(success=True)
             fake_r.workers_stopped = 0
@@ -944,7 +944,7 @@ class TestOrgRestart:
             mock_ctrl.execute.return_value = fake_r
             mock_ctrl_cls.return_value = mock_ctrl
 
-            with patch("commands.org.start._spawn_ceo_session_if_needed",
+            with patch("cli.core.org_start_controller._spawn_ceo_session_if_needed",
                        side_effect=Exception("start failed")):
                 result = runner.invoke(qn, [
                     "--org-path", str(running_org),
@@ -1032,8 +1032,8 @@ class TestOrgStatus:
         mock_db = MagicMock()
         mock_db.db_path = str(initialized_org / "live" / "quinn.db")
 
-        with patch("commands.org.status.open_database", return_value=mock_db):
-            with patch("commands.org.status.Org.load", side_effect=RuntimeError("boom")):
+        with patch("cli.commands.org.status.open_database", return_value=mock_db):
+            with patch("cli.commands.org.status.Org.load", side_effect=RuntimeError("boom")):
                 result = runner.invoke(qn, [
                     "--org-path", str(initialized_org),
                     "org", "status",
@@ -1096,8 +1096,8 @@ class TestOrgLogs:
 
     def test_org_logs_worker_found_by_name(self, runner, initialized_org):
         """qn org logs should find worker by name."""
-        with patch("commands.org.logs.session_exists", return_value=True):
-            with patch("commands.org.logs.capture_tmux_scrollback", return_value="output\n"):
+        with patch("cli.commands.org.logs.session_exists", return_value=True):
+            with patch("cli.commands.org.logs.capture_tmux_scrollback", return_value="output\n"):
                 result = runner.invoke(qn, [
                     "--org-path", str(initialized_org),
                     "org", "logs", "CEO",
@@ -1126,19 +1126,19 @@ class TestOrgLogs:
 
     def test_org_logs_tmux_session_not_found_raises_exception(self, runner, initialized_org):
         """When worker active but tmux session absent, should raise ClickException."""
-        with patch("commands.org.logs.Worker.get") as mock_worker_get:
+        with patch("cli.commands.org.logs.Worker.get") as mock_worker_get:
             w = MagicMock()
             w.name = "CEO"
             w.id = "ceo-id"
             w.is_session_active = True
             mock_worker_get.return_value = w
 
-            with patch("commands.org.logs.get_worker_by_name") as mock_by_name:
+            with patch("cli.commands.org.logs.get_worker_by_name") as mock_by_name:
                 d = MagicMock()
                 d.id = "ceo-id"
                 mock_by_name.return_value = d
 
-                with patch("commands.org.logs.session_exists", return_value=False):
+                with patch("cli.commands.org.logs.session_exists", return_value=False):
                     result = runner.invoke(qn, [
                         "--org-path", str(initialized_org),
                         "org", "logs", "CEO",
@@ -1156,15 +1156,15 @@ class TestOrgLogs:
                 return "\n".join(all_lines[-lines:]) + "\n"
             return full_output
 
-        with patch("commands.org.logs.session_exists", return_value=True):
-            with patch("commands.org.logs.capture_tmux_scrollback", side_effect=mock_capture):
-                with patch("commands.org.logs.Worker.get") as mock_worker:
+        with patch("cli.commands.org.logs.session_exists", return_value=True):
+            with patch("cli.commands.org.logs.capture_tmux_scrollback", side_effect=mock_capture):
+                with patch("cli.commands.org.logs.Worker.get") as mock_worker:
                     w = MagicMock()
                     w.name = "CEO"
                     w.id = "ceo-id"
                     w.is_session_active = True
                     mock_worker.return_value = w
-                    with patch("commands.org.logs.get_worker_by_name") as mock_name:
+                    with patch("cli.commands.org.logs.get_worker_by_name") as mock_name:
                         d = MagicMock()
                         d.id = "ceo-id"
                         mock_name.return_value = d
@@ -1180,16 +1180,16 @@ class TestOrgLogs:
 
     def test_org_logs_no_output_shows_placeholder(self, runner, initialized_org):
         """Empty tmux output should show placeholder message."""
-        with patch("commands.org.logs.session_exists", return_value=True):
-            with patch("commands.org.logs.capture_tmux_scrollback", return_value="   "):
-                with patch("commands.org.logs.Worker.get") as mock_worker:
+        with patch("cli.commands.org.logs.session_exists", return_value=True):
+            with patch("cli.commands.org.logs.capture_tmux_scrollback", return_value="   "):
+                with patch("cli.commands.org.logs.Worker.get") as mock_worker:
                     w = MagicMock()
                     w.name = "CEO"
                     w.id = "ceo-id"
                     w.is_session_active = True
                     mock_worker.return_value = w
 
-                    with patch("commands.org.logs.get_worker_by_name") as mock_by_name:
+                    with patch("cli.commands.org.logs.get_worker_by_name") as mock_by_name:
                         d = MagicMock()
                         d.id = "ceo-id"
                         mock_by_name.return_value = d
@@ -1213,16 +1213,16 @@ class TestOrgLogs:
 
     def test_org_logs_follow_exits_cleanly_on_keyboard_interrupt(self, runner, initialized_org):
         """qn org logs -f should exit on KeyboardInterrupt without error."""
-        with patch("commands.org.logs.session_exists", return_value=True):
-            with patch("commands.org.logs.capture_tmux_scrollback",
+        with patch("cli.commands.org.logs.session_exists", return_value=True):
+            with patch("cli.commands.org.logs.capture_tmux_scrollback",
                        side_effect=KeyboardInterrupt):
-                with patch("commands.org.logs.Worker.get") as mock_worker:
+                with patch("cli.commands.org.logs.Worker.get") as mock_worker:
                     w = MagicMock()
                     w.name = "CEO"
                     w.id = "ceo-id"
                     w.is_session_active = True
                     mock_worker.return_value = w
-                    with patch("commands.org.logs.get_worker_by_name") as mock_name:
+                    with patch("cli.commands.org.logs.get_worker_by_name") as mock_name:
                         d = MagicMock()
                         d.id = "ceo-id"
                         mock_name.return_value = d
@@ -1237,7 +1237,7 @@ class TestOrgLogs:
 
     def test_org_logs_n_zero_edge_case(self, runner, initialized_org):
         """qn org logs -n 0 should not crash."""
-        with patch("commands.org.logs.Worker.get") as mock_worker:
+        with patch("cli.commands.org.logs.Worker.get") as mock_worker:
             w = MagicMock()
             w.name = "CEO"
             w.id = "ceo-id"
@@ -1310,7 +1310,7 @@ class TestOrgObserve:
         ceo_id = org.ceo_worker_id
         db.close()
 
-        with patch("commands.org.observe.Worker.get",
+        with patch("cli.commands.org.observe.Worker.get",
                    return_value=self._make_active_worker_mock(ceo_id)):
             with patch("shared.pyterm.tmux_session.TmuxSession.exists", return_value=False):
                 result = runner.invoke(qn, [
@@ -1331,7 +1331,7 @@ class TestOrgObserve:
         ceo_id = org.ceo_worker_id
         db.close()
 
-        with patch("commands.org.observe.Worker.get",
+        with patch("cli.commands.org.observe.Worker.get",
                    return_value=self._make_active_worker_mock(ceo_id)):
             with patch("shared.pyterm.tmux_session.TmuxSession.exists", return_value=True):
                 with patch("shared.pyterm.tmux_session.TmuxSession.attach"):
@@ -1354,7 +1354,7 @@ class TestOrgObserve:
         ceo_id = org.ceo_worker_id
         db.close()
 
-        with patch("commands.org.observe.Worker.get",
+        with patch("cli.commands.org.observe.Worker.get",
                    return_value=self._make_active_worker_mock(ceo_id)):
             with patch("shared.pyterm.tmux_session.TmuxSession.exists", return_value=True):
                 with patch("shared.pyterm.tmux_session.TmuxSession.capture",
@@ -1380,7 +1380,7 @@ class TestOrgObserve:
         # then False in the streaming loop (session ended)
         exists_calls = [True, False]
 
-        with patch("commands.org.observe.Worker.get",
+        with patch("cli.commands.org.observe.Worker.get",
                    return_value=self._make_active_worker_mock(ceo_id)):
             with patch("shared.pyterm.tmux_session.TmuxSession.exists",
                        side_effect=exists_calls):
@@ -1408,9 +1408,9 @@ class TestOrgObserve:
         def capture_stream(session_name, poll_interval=0.5):
             captured["poll_interval"] = poll_interval
 
-        with patch("commands.org.observe.Worker.get",
+        with patch("cli.commands.org.observe.Worker.get",
                    return_value=self._make_active_worker_mock(ceo_id)):
-            with patch("commands.org.observe.stream_session_output", capture_stream):
+            with patch("cli.commands.org.observe.stream_session_output", capture_stream):
                 with patch("shared.pyterm.tmux_session.TmuxSession.exists", return_value=True):
                     result = runner.invoke(qn, [
                         "--org-path", str(initialized_org),
@@ -1526,7 +1526,7 @@ class TestOrgCleanup:
             captured["retention_days"] = retention_days
             return orig_cleanup(db, retention_days)
 
-        with patch("commands.org.cleanup.run_notification_cleanup", capture_cleanup):
+        with patch("cli.commands.org.cleanup.run_notification_cleanup", capture_cleanup):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "org", "cleanup", "--retention-days", "7",
@@ -1552,7 +1552,7 @@ class TestOrgCleanup:
             errors=[],
         )
 
-        with patch("commands.org.cleanup.cleanup_orphaned_sessions",
+        with patch("cli.commands.org.cleanup.cleanup_orphaned_sessions",
                    return_value=fake_result):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1577,7 +1577,7 @@ class TestOrgCleanup:
             errors=[],
         )
 
-        with patch("commands.org.cleanup.cleanup_orphaned_sessions",
+        with patch("cli.commands.org.cleanup.cleanup_orphaned_sessions",
                    return_value=fake_result) as mock_cleanup:
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1604,7 +1604,7 @@ class TestOrgCleanup:
             errors=[],
         )
 
-        with patch("commands.org.cleanup.cleanup_orphaned_sessions",
+        with patch("cli.commands.org.cleanup.cleanup_orphaned_sessions",
                    return_value=fake_result) as mock_cleanup:
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1630,7 +1630,7 @@ class TestOrgCleanup:
             errors=["failed to kill session-xyz: permission denied"],
         )
 
-        with patch("commands.org.cleanup.cleanup_orphaned_sessions",
+        with patch("cli.commands.org.cleanup.cleanup_orphaned_sessions",
                    return_value=fake_result):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
