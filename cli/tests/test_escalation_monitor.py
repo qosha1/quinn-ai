@@ -207,21 +207,31 @@ def test_escalation_state_check_constraint(test_db):
 def test_monitor_initializes_escalation_state(temp_org_dir, test_db):
     """Test that monitor initializes escalation state for workers."""
     monitor = EscalationMonitor(temp_org_dir, poll_interval=0.1)
-    
+
     # Get test worker
     ceo_row = test_db.fetchone("SELECT id FROM workers LIMIT 1")
     worker_id = ceo_row["id"]
-    
-    # Start monitor briefly
+
+    # The monitor's _check_workers() filters to status IN ('onboarding', 'active').
+    # Org.init() creates the CEO at status='pending'; mark it active so the
+    # monitor picks it up.
+    test_db.execute(
+        "UPDATE workers SET status='active' WHERE id=?",
+        (worker_id,),
+    )
+    test_db.connection.commit()
+
+    # Start monitor briefly. 0.1s poll_interval, sleep 0.5s gives multiple
+    # opportunities for _check_workers() to run.
     monitor.start()
-    time.sleep(0.3)  # Give it time to run one check
+    time.sleep(0.5)
     monitor.stop()
-    
+
     # Check that escalation state was initialized
     state_row = test_db.fetchone(
         "SELECT * FROM worker_escalation_state WHERE worker_id = ?",
         (worker_id,)
     )
-    
+
     assert state_row is not None
     assert state_row["current_state"] in ["normal", "idle_warning", "escalated_pending"]
