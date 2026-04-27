@@ -19,13 +19,13 @@ from shared.escalation.hierarchical import (
     WorkerNode,
     create_simple_topology,
 )
-from shared.escalation.manager import (
+from shared.escalation.config import EscalationConfig
+from shared.escalation.manager import EscalationManager
+from shared.escalation.types import (
     AutoEscalationSettings,
     BoardInterventionSettings,
-    EscalationConfig,
     EscalationEntry,
     EscalationHistoryEntry,
-    EscalationManager,
     EscalationPathLevel,
     EscalationState,
     InMemoryNotificationHandler,
