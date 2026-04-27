@@ -384,7 +384,7 @@ def create_initial_okrs(
                     unit=kr.unit,
                 ))
 
-            okr_id = create_okr(
+            okr = create_okr(
                 db=db,
                 title=obj.title,
                 owner_id=ceo_id,
@@ -393,7 +393,7 @@ def create_initial_okrs(
                 key_results=key_results if key_results else None,
                 due_date=None,
             )
-            okr_ids.append(okr_id)
+            okr_ids.append(okr.id)
         return okr_ids
 
     # Priority 2: Check config file
@@ -416,7 +416,7 @@ def create_initial_okrs(
                     ))
 
                 # Create OKR in database
-                okr_id = create_okr(
+                okr = create_okr(
                     db=db,
                     title=okr_config["title"],
                     owner_id=ceo_id,
@@ -425,7 +425,7 @@ def create_initial_okrs(
                     key_results=key_results if key_results else None,
                     due_date=None,
                 )
-                okr_ids.append(okr_id)
+                okr_ids.append(okr.id)
 
             return okr_ids
 
@@ -543,7 +543,7 @@ def _create_bootstrap_okr(org_path: Path, db, ceo_id: str) -> str:
     )
 
     # Step 2: mirror to SQLite using the same id (or generate one if step 1 failed)
-    okr_id = create_okr(
+    okr = create_okr(
         db=db,
         title=DEFAULT_BOOTSTRAP_OKR_TITLE,
         owner_id=ceo_id,
@@ -554,7 +554,7 @@ def _create_bootstrap_okr(org_path: Path, db, ceo_id: str) -> str:
         due_date=None,
     )
 
-    return okr_id
+    return okr.id
 
 
 def create_initial_tasks(org_path: Path, db, ceo_id: str, okr_ids: list[str]) -> None:
