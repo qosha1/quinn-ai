@@ -141,3 +141,54 @@ jobs:
           generate_release_notes: ${{ steps.notes.outputs.notes_path == '' }}
           draft: false
           prerelease: false
+
+  smoke-test:
+    name: Smoke test published wheel (${{ matrix.os }} / py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    needs: publish-pypi
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Resolve version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      # Wait for PyPI to propagate. Trusted publishing is fast but the
+      # CDN-fronted index can lag a few seconds.
+      - name: Wait for PyPI propagation
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if pip index versions quinnai 2>/dev/null | grep -q "${{ steps.ver.outputs.version }}"; then
+              echo "Found quinnai==${{ steps.ver.outputs.version }} on PyPI"
+              exit 0
+            fi
+            echo "Attempt $i: quinnai==${{ steps.ver.outputs.version }} not visible yet, sleeping 15s..."
+            sleep 15
+          done
+          echo "::error::quinnai==${{ steps.ver.outputs.version }} did not appear on PyPI within timeout"
+          exit 1
+
+      - name: Install from PyPI in fresh venv
+        run: |
+          python -m venv /tmp/smoke-env
+          /tmp/smoke-env/bin/pip install --upgrade pip
+          /tmp/smoke-env/bin/pip install \
+            "quinnai==${{ steps.ver.outputs.version }}" \
+            "quinnai-board==${{ steps.ver.outputs.version }}"
+
+      - name: Verify CLI smoke flow
+        run: |
+          set -euxo pipefail
+          /tmp/smoke-env/bin/qn --help > /dev/null
+          /tmp/smoke-env/bin/qn-bd --help > /dev/null || true   # qn-bd needs a system bd; OK if it errors
+          /tmp/smoke-env/bin/msgr --help > /dev/null
+          /tmp/smoke-env/bin/qn --org-path /tmp/smoke-org org init
+          /tmp/smoke-env/bin/qn --org-path /tmp/smoke-org org status

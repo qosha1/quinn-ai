@@ -5,13 +5,17 @@ Get QuinnAI running in 5 minutes.
 ## Prerequisites
 
 - **Python 3.11+**
-- **tmux** - Worker session management
-- **API Key** - At least one provider (Anthropic recommended)
+- **tmux** — worker session management
+- **bd (beads)** — issue tracker that QuinnAI delegates to
+- **API Key** — at least one provider (Anthropic recommended)
 
 ```bash
-# Install tmux (if not installed)
-brew install tmux        # macOS
-apt install tmux         # Ubuntu/Debian
+# macOS
+brew install tmux bd
+
+# Ubuntu/Debian
+apt install tmux
+# bd: see https://github.com/steveyegge/beads for current install methods
 
 # Set your API key
 export ANTHROPIC_API_KEY="sk-ant-..."
@@ -19,16 +23,40 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Installation
 
-**Option 1: pip (recommended)**
+**Recommended — pipx (isolated venv, scripts on PATH):**
 ```bash
-pip install quinnai
+pipx install quinnai-board   # CLI + Board UI (covers most users)
+# or, headless:
+pipx install quinnai
 ```
 
-**Option 2: Development setup**
+**Alternative — uv:**
 ```bash
-git clone https://github.com/your-org/quinnai.git
-cd quinnai
+uv tool install quinnai-board
+```
+
+**One-liner — curl | bash:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/qosha1/quinn-ai/main/scripts/install.sh | bash
+```
+
+**Plain pip:**
+```bash
+pip install --user quinnai-board
+```
+
+**Development setup:**
+```bash
+git clone https://github.com/qosha1/quinn-ai.git
+cd quinn-ai
 pip install -r requirements-dev.txt
+```
+
+After install, verify:
+```bash
+qn --help          # CLI
+qn-board --help    # Board UI (if installed via quinnai-board)
+qn-bd --help       # Beads delegate (requires bd on PATH)
 ```
 
 ## Run Your First Org
