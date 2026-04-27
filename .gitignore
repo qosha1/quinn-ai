@@ -175,3 +175,12 @@ cli/bin/bd
 .dolt/
 *.db
 .beads-credential-key
+
+# Runtime org state created when 'qn org init' is run from the repo root.
+# These directories hold SQLite databases, worker storage, and provider
+# configs that may contain secrets — never commit them.
+/live/
+/storage/
+/org-chart/
+/config/
+/generated-orgs/
