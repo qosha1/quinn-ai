@@ -85,7 +85,7 @@ class CancelledError(Exception):
 
 
 @dataclass
-class PromptResult:
+class PytermPromptResult:
     """Result of sending a prompt to the agent."""
 
     turn: Turn
@@ -199,7 +199,7 @@ class AgentController:
         prompt: str,
         timeout: float | None = None,
         **metadata,
-    ) -> PromptResult:
+    ) -> PytermPromptResult:
         """
         Send a prompt to the agent and wait for response.
 
@@ -209,7 +209,7 @@ class AgentController:
             **metadata: Additional metadata for the turn
 
         Returns:
-            PromptResult with the turn and final state
+            PytermPromptResult with the turn and final state
 
         Raises:
             TimeoutError: If response times out
@@ -245,7 +245,7 @@ class AgentController:
                 if self._cancel_requested.is_set():
                     self._handle_cancel(turn)
                     duration_ms = int((time.time() - start_time) * 1000)
-                    return PromptResult(
+                    return PytermPromptResult(
                         turn=turn,
                         final_state=self.state,
                         duration_ms=duration_ms,
@@ -296,7 +296,7 @@ class AgentController:
                         response = Message.assistant(parsed.assistant_response)
                         turn.complete(response)
                         duration_ms = int((time.time() - start_time) * 1000)
-                        return PromptResult(
+                        return PytermPromptResult(
                             turn=turn,
                             final_state=self.state,
                             duration_ms=duration_ms,

@@ -76,7 +76,7 @@ from shared.pyterm.agent_state import AgentState, AgentStateMachine, VALID_AGENT
 from shared.pyterm.control import (
     AgentController,
     ControlConfig,
-    PromptResult,
+    PytermPromptResult,
     TimeoutError,
     CancelledError,
 )
@@ -169,7 +169,7 @@ __all__ = [
     # Control
     "AgentController",
     "ControlConfig",
-    "PromptResult",
+    "PytermPromptResult",
     "TimeoutError",
     "CancelledError",
     # AgentSession

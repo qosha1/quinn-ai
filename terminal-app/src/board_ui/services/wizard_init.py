@@ -34,7 +34,7 @@ def init_org_from_wizard(config: OrgConfig) -> WizardInitResult:
             KeyResultConfig,
             ObjectiveConfig,
             OrgInitConfig,
-            ProviderConfig,
+            OrgInitProviderConfig,
             init_org,
         )
     except ModuleNotFoundError as e:
@@ -51,7 +51,7 @@ def init_org_from_wizard(config: OrgConfig) -> WizardInitResult:
         ceo_name="CEO",
         ceo_role="CEO",
         providers=[
-            ProviderConfig(id=p.id, enabled=p.enabled, api_key=p.api_key)
+            OrgInitProviderConfig(id=p.id, enabled=p.enabled, api_key=p.api_key)
             for p in config.providers
             if p.enabled
         ],

@@ -19,7 +19,7 @@ from shared.pyterm.conversation import Transcript, Turn, Message, ToolCall
 from shared.pyterm.control import (
     AgentController,
     ControlConfig,
-    PromptResult,
+    PytermPromptResult,
     TimeoutError,
     CancelledError,
 )
@@ -300,7 +300,7 @@ class AgentSession:
         prompt: str,
         timeout: float | None = None,
         **metadata,
-    ) -> PromptResult:
+    ) -> PytermPromptResult:
         """
         Send a prompt to the agent and wait for response.
 
@@ -310,7 +310,7 @@ class AgentSession:
             **metadata: Additional metadata for the turn
 
         Returns:
-            PromptResult with turn details and response
+            PytermPromptResult with turn details and response
 
         Raises:
             TimeoutError: If response times out

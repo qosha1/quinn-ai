@@ -25,13 +25,12 @@ from shared.core.state import (
     SESSION_STATE_TRANSITIONS,
 )
 
-from .constants import (
-    DEFAULT_IDLE_TIMEOUT,
-    DEFAULT_MAX_CONTEXT_TOKENS,
-    DEFAULT_RESPONSE_TIMEOUT,
-    DEFAULT_STARTUP_TIMEOUT,
-    DEFAULT_TERMINAL_COLS,
-    DEFAULT_TERMINAL_ROWS,
+# SessionConfig and PromptResult are canonical in shared/core/session.
+# Re-exported here so existing 'from cli.core.session import SessionConfig'
+# call sites keep working.
+from shared.core.session import (
+    SessionConfig,  # noqa: F401 — re-export
+    PromptResult,  # noqa: F401 — re-export
 )
 
 if TYPE_CHECKING:
@@ -62,44 +61,7 @@ class SessionId:
         return cls(worker_id=worker_id, instance_id=uuid.uuid4().hex[:12])
 
 
-@dataclass
-class SessionConfig:
-    """Configuration for spawning a session.
-
-    All values explicit - no discovery, no defaults from environment.
-    """
-    # Worker binding (immutable after creation)
-    worker_id: str
-
-    # Provider settings
-    provider: str               # e.g., "claude_code", "codex", "gemini"
-    command: str                # Full path to CLI executable
-    args: list[str] = field(default_factory=list)
-
-    # Environment
-    working_directory: Optional[Path] = None
-    env_vars: dict[str, str] = field(default_factory=dict)
-
-    # Terminal settings
-    cols: int = DEFAULT_TERMINAL_COLS
-    rows: int = DEFAULT_TERMINAL_ROWS
-
-    # Timeouts (milliseconds — constants are seconds, scale up here)
-    startup_timeout_ms: int = DEFAULT_STARTUP_TIMEOUT * 1000
-    idle_timeout_ms: int = DEFAULT_IDLE_TIMEOUT * 1000
-    response_timeout_ms: int = DEFAULT_RESPONSE_TIMEOUT * 1000
-
-    # Resource limits
-    max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS
-    memory_limit_mb: Optional[int] = None
-
-    # Session persistence
-    persist_transcript: bool = True
-    transcript_db_path: Optional[Path] = None
-
-    # Optional welcome message to send into the session on spawn
-    # (also assigned post-construction by worker/session_manager.py).
-    welcome_message: Optional[str] = None
+# SessionConfig — re-exported from shared.core.session above.
 
 
 @dataclass
@@ -134,14 +96,7 @@ class SessionOutput:
     metadata: dict = field(default_factory=dict)
 
 
-@dataclass
-class PromptResult:
-    """Result of sending a prompt to a session."""
-    prompt: str
-    response: SessionOutput
-    duration_ms: int
-    tokens_used: int
-    turn_id: str
+# PromptResult — re-exported from shared.core.session above.
 
 
 # =========================================================================

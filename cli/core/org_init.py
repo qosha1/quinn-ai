@@ -29,7 +29,7 @@ from .constants import (
 
 
 @dataclass
-class ProviderConfig:
+class OrgInitProviderConfig:
     """Configuration for an AI provider."""
     id: str
     enabled: bool = True
@@ -80,7 +80,7 @@ class OrgInitConfig:
     name: str = "My Organization"
     ceo_name: str = "CEO"
     ceo_role: str = "CEO"
-    providers: List[ProviderConfig] = field(default_factory=list)
+    providers: List[OrgInitProviderConfig] = field(default_factory=list)
     objectives: List[ObjectiveConfig] = field(default_factory=list)
     ceo_briefing: Optional[CEOBriefingConfig] = None
 
@@ -164,7 +164,7 @@ def copy_default_configs(org_path: Path) -> None:
         shutil.copy(templates_src, config_dir / "worker-templates.yaml")
 
 
-def write_providers_config(org_path: Path, providers: List[ProviderConfig]) -> None:
+def write_providers_config(org_path: Path, providers: List[OrgInitProviderConfig]) -> None:
     """Write providers configuration to org config directory.
 
     Args:

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 from shared.pyterm.control import (
     AgentController,
     ControlConfig,
-    PromptResult,
+    PytermPromptResult,
     TimeoutError,
     CancelledError,
 )
@@ -360,13 +360,13 @@ class TestSerialization:
 
 
 class TestPromptResult:
-    """Tests for PromptResult."""
+    """Tests for PytermPromptResult."""
 
     def test_prompt_result_creation(self):
         turn = Transcript().new_turn("Test")
         turn.complete(Message.assistant("Response"))
 
-        result = PromptResult(
+        result = PytermPromptResult(
             turn=turn,
             final_state=AgentState.IDLE,
             duration_ms=1000,
@@ -381,7 +381,7 @@ class TestPromptResult:
     def test_prompt_result_cancelled(self):
         turn = Transcript().new_turn("Test")
 
-        result = PromptResult(
+        result = PytermPromptResult(
             turn=turn,
             final_state=AgentState.ERROR,
             duration_ms=500,
@@ -394,7 +394,7 @@ class TestPromptResult:
         turn = Transcript().new_turn("Test")
         turn.complete(Message.assistant("Response"))
 
-        result = PromptResult(
+        result = PytermPromptResult(
             turn=turn,
             final_state=AgentState.IDLE,
             duration_ms=1000,
