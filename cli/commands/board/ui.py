@@ -47,7 +47,7 @@ def ui_cmd(ctx, org_path: tuple[Path, ...], terminal: str) -> None:
     except ImportError as e:
         click.echo(
             "Error: Board UI not installed. "
-            "Install with: pip install -e terminal-app",
+            "Install with: pip install quinnai-board",
             err=True,
         )
         raise click.Abort() from e

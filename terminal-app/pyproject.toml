@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quinnai-board"
-version = "0.1.0"
+version = "0.2.0"
 description = "QuinnAI Board Terminal UI - Interactive oversight for AI organizations"
 readme = "README.md"
 requires-python = ">=3.11"

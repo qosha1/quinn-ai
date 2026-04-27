@@ -28,6 +28,7 @@ dev = [
 
 [project.scripts]
 qn = "cli.commands.main:qn"
+qn-bd = "cli.commands.qn_bd:main"
 msgr = "cli.msgr.main:msgr"
 
 [tool.hatch.build.targets.wheel]
