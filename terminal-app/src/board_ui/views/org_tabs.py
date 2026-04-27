@@ -142,8 +142,7 @@ class OrgTabBar(Widget):
         if hasattr(event.button, "_org_path"):
             org_path = event.button._org_path
 
-            # If clicked on the "×" part (button text ends with ×)
-            # TODO: Implement separate close button per tab
-            # For now, clicking the tab switches to it
+            # TODO(quinn-ai-dl3): split the close (×) glyph into its own button
+            # widget per tab. For now, clicking anywhere on a tab switches to it.
             if org_path != self._active_path:
                 self.post_message(self.OrgSelected(org_path))

@@ -259,8 +259,8 @@ class TeamView(VerticalScroll):
 
             # Parse action from cell text
             if "[Chat]" in cell_value:
-                # For now, always open chat on click
-                # TODO: Could parse click position to determine exact action
+                # TODO(quinn-ai-dl3): parse click X position to distinguish
+                # inline [Chat]/[Fire]/[Promote] buttons. For now, [Chat] wins.
                 await self._open_worker_chat(worker)
             elif "[Fire]" in cell_value:
                 # Show menu or directly fire (for now, let's show a confirmation)
@@ -396,8 +396,8 @@ class TeamView(VerticalScroll):
         from textual.screen import ModalScreen
         from textual.widgets import Input
 
-        # For now, show a notification that this needs CLI
-        # TODO: Implement proper modal dialog with form
+        # TODO(quinn-ai-6hn): replace this notify-then-tell-them-to-CLI fallback
+        # with a proper Hire form modal.
         self.app.notify(
             "Worker hiring coming soon. For now, use: qn org hire --name=<name> --role=<role> --manager=<manager>",
             severity="information",
@@ -409,8 +409,8 @@ class TeamView(VerticalScroll):
 
         Displays Fire/Promote/Demote options based on worker type.
         """
-        # For now, show a simple notification
-        # TODO: Implement proper menu/dialog
+        # TODO(quinn-ai-6hn): replace this notification with a proper
+        # Fire/Promote/Demote action menu modal.
 
         actions = []
         if not worker.is_ceo:
@@ -435,7 +435,7 @@ class TeamView(VerticalScroll):
             self.app.notify("Cannot fire the CEO", severity="error")
             return
 
-        # TODO: Show confirmation dialog
+        # TODO(quinn-ai-6hn): show a Fire confirmation dialog before invoking.
         from ..services.qn_cli_client import get_default_qn_cli
 
         conn = get_org_connection(self.app)
