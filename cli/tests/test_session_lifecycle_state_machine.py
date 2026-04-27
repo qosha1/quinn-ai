@@ -352,25 +352,26 @@ class TestSessionTransitionTable:
     """Validate transition table matches STATEMACHINES.md."""
 
     def test_transition_table_matches_spec(self):
-        """RUNTIME_TRANSITIONS must match STATEMACHINES.md.
+        """RUNTIME_TRANSITIONS must match the documented spec.
 
-        Documented transitions per STATEMACHINES.md:
-        - starting → [running, crashed]
+        Transitions (current canonical, see cli/docs/worker-state-design.md
+        and shared/state_machines.py):
+        - starting → [running, crashed, stopped]   # cancel before ready
         - running → [idle, working, stopped, crashed]
         - idle → [running, stopped]
         - working → [blocked, idle, stopped, crashed]
         - blocked → [working, stopped, crashed]
-        - stopped → []
-        - crashed → []
+        - stopped → [starting]                     # allow restart
+        - crashed → [starting]                     # allow restart
         """
         expected = {
-            "starting": ["running", "crashed"],
+            "starting": ["running", "crashed", "stopped"],
             "running": ["idle", "working", "stopped", "crashed"],
             "idle": ["running", "stopped"],
             "working": ["blocked", "idle", "stopped", "crashed"],
             "blocked": ["working", "stopped", "crashed"],
-            "stopped": ["starting"],  # Allow restart - see cli/docs/worker-state-design.md
-            "crashed": ["starting"],  # Allow restart - see cli/docs/worker-state-design.md
+            "stopped": ["starting"],
+            "crashed": ["starting"],
         }
 
         assert RUNTIME_TRANSITIONS == expected, \

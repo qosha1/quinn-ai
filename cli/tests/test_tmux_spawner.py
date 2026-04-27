@@ -69,19 +69,18 @@ class TestTmuxSpawnerSpawn:
 
     @patch("subprocess.run")
     def test_spawn_success(self, mock_run, tmux_spawner, spawner_config):
-        """Should spawn tmux session successfully."""
-        # Mock has-session (session doesn't exist)
+        """Should spawn tmux session successfully.
+
+        Env vars are passed via 'tmux new-session -e KEY=VALUE' (since
+        commit fd0779f), not a separate 'tmux set-environment' call. So
+        the call sequence is: has-session, new-session, list-panes.
+        """
         has_session_result = Mock(returncode=1)
-        # Mock set-environment (for TEST_VAR)
-        set_env_result = Mock(returncode=0)
-        # Mock new-session success
         new_session_result = Mock(returncode=0)
-        # Mock list-panes for PID
         list_panes_result = Mock(returncode=0, stdout="12345\n")
 
         mock_run.side_effect = [
             has_session_result,
-            set_env_result,
             new_session_result,
             list_panes_result,
         ]
@@ -132,11 +131,9 @@ class TestTmuxSpawnerSpawn:
     def test_spawn_new_session_fails(self, mock_run, tmux_spawner, spawner_config):
         """Should handle new-session failure."""
         has_session_result = Mock(returncode=1)
-        # Mock set-environment (for TEST_VAR)
-        set_env_result = Mock(returncode=0)
         new_session_result = Mock(returncode=1, stderr="tmux error")
 
-        mock_run.side_effect = [has_session_result, set_env_result, new_session_result]
+        mock_run.side_effect = [has_session_result, new_session_result]
 
         result = tmux_spawner.spawn(spawner_config)
 
@@ -174,15 +171,17 @@ class TestTmuxSpawnerSpawn:
 
     @patch("subprocess.run")
     def test_spawn_with_env_vars(self, mock_run, tmux_spawner, spawner_config):
-        """Should set environment variables."""
+        """Should set environment variables via 'new-session -e KEY=VALUE'.
+
+        After commit fd0779f, env vars are passed at session-creation time
+        via -e flags on new-session, not a separate set-environment call.
+        """
         has_session_result = Mock(returncode=1)
-        set_env_result = Mock(returncode=0)
         new_session_result = Mock(returncode=0)
         list_panes_result = Mock(returncode=0, stdout="12345\n")
 
         mock_run.side_effect = [
             has_session_result,
-            set_env_result,  # set-environment call
             new_session_result,
             list_panes_result,
         ]
@@ -190,22 +189,24 @@ class TestTmuxSpawnerSpawn:
         result = tmux_spawner.spawn(spawner_config)
 
         assert result.success
-        # Verify set-environment was called
-        env_calls = [c for c in mock_run.call_args_list if "set-environment" in str(c)]
-        assert len(env_calls) > 0
+        # The new-session call (second mock_run) should include -e VAR=val
+        # for each env_var in spawner_config.
+        new_session_args = mock_run.call_args_list[1].args[0]  # cmd list
+        assert "new-session" in new_session_args
+        for key, value in spawner_config.env_vars.items():
+            assert f"{key}={value}" in new_session_args, (
+                f"env {key}={value} should be passed via -e on new-session: {new_session_args}"
+            )
 
     @patch("subprocess.run")
     def test_spawn_pid_extraction_failure(self, mock_run, tmux_spawner, spawner_config):
         """Should handle PID extraction failure gracefully."""
         has_session_result = Mock(returncode=1)
-        # Mock set-environment (for TEST_VAR)
-        set_env_result = Mock(returncode=0)
         new_session_result = Mock(returncode=0)
         list_panes_result = Mock(returncode=1, stdout="")  # PID extraction fails
 
         mock_run.side_effect = [
             has_session_result,
-            set_env_result,
             new_session_result,
             list_panes_result,
         ]

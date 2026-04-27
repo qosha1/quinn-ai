@@ -149,16 +149,23 @@ class TestTmuxSpawner:
         reason="tmux not installed"
     )
     def test_spawn_and_stop(self, spawner):
-        """Should spawn and stop tmux session."""
+        """Should spawn and stop tmux session.
+
+        Session name must start with TMUX_SESSION_PREFIX ('qn-') —
+        TmuxSpawner.stop() refuses to kill sessions outside that prefix
+        as a safety guard against killing unrelated tmux sessions.
+        """
+        from cli.core.constants import TMUX_SESSION_PREFIX
+        session_name = f"{TMUX_SESSION_PREFIX}test-spawn-stop"
         config = SpawnerConfig(
             command="sleep",
             args=["100"],
-            session_name="test-spawn-stop",
+            session_name=session_name,
         )
 
         result = spawner.spawn(config)
         assert result.success
-        assert result.session_id == "test-spawn-stop"
+        assert result.session_id == session_name
 
         # Should be alive
         assert spawner.is_alive(result.session_id)
@@ -176,10 +183,12 @@ class TestTmuxSpawner:
     )
     def test_is_alive(self, spawner):
         """Should correctly report session status."""
+        from cli.core.constants import TMUX_SESSION_PREFIX
+        session_name = f"{TMUX_SESSION_PREFIX}test-is-alive"
         config = SpawnerConfig(
             command="sleep",
             args=["100"],
-            session_name="test-is-alive",
+            session_name=session_name,
         )
 
         result = spawner.spawn(config)
@@ -188,7 +197,7 @@ class TestTmuxSpawner:
         # Should be alive
         assert spawner.is_alive(result.session_id)
 
-        # Stop it
+        # Stop it (TmuxSpawner.stop requires qn- prefix)
         spawner.stop(result.session_id, force=True)
 
         # Should not be alive

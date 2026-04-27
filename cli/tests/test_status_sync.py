@@ -28,7 +28,7 @@ from cli.core.queries import (
     update_worker_runtime_status,
     get_worker_state,
 )
-from cli.core.events import EventType, init_event_bus, get_event_bus
+from cli.core.events import EventType, init_event_bus, get_event_bus, reset_event_bus
 
 
 @pytest.fixture
@@ -46,6 +46,9 @@ def db(db_path):
     init_event_bus(database)
     yield database
     database.close()
+    # Clear the module-level _event_bus so its closed-db reference doesn't
+    # leak into subsequent tests (caused 99 failures in test_worker.py).
+    reset_event_bus()
 
 
 @pytest.fixture

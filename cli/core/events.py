@@ -505,6 +505,17 @@ def init_event_bus(db: Database) -> EventBus:
     return _event_bus
 
 
+def reset_event_bus() -> None:
+    """Clear the global event bus.
+
+    Used by test fixtures so a torn-down db doesn't linger as a stale
+    reference into subsequent tests (caused 99 failures in test_worker.py
+    when test_status_sync ran before it).
+    """
+    global _event_bus
+    _event_bus = None
+
+
 def get_event_bus() -> Optional[EventBus]:
     """Get the global event bus instance.
 
