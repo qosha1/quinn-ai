@@ -38,24 +38,14 @@ def temp_org_path():
 @pytest.fixture(autouse=True)
 def reset_logging():
     """Reset logging state between tests."""
-    # Clear the quinn logger's handlers
-    root_logger = logging.getLogger("quinn")
-    root_logger.handlers.clear()
-    root_logger.setLevel(logging.DEBUG)
+    from cli.core.logging import reset_for_tests
 
-    # Clear module-level state
-    import cli.core.logging as logging_module
-    logging_module._loggers.clear()
-    logging_module._configured = False
-    logging_module._org_path = None
+    reset_for_tests()
+    logging.getLogger("quinn").setLevel(logging.DEBUG)
 
     yield
 
-    # Clean up after test
-    root_logger.handlers.clear()
-    logging_module._loggers.clear()
-    logging_module._configured = False
-    logging_module._org_path = None
+    reset_for_tests()
 
 
 class TestGetLogger:

@@ -55,12 +55,51 @@ BACKUP_COUNT = 5
 
 
 # ===================
-# LOGGER CACHE
+# LOGGER STATE (encapsulated to avoid module-level mutable globals)
 # ===================
 
-_loggers: dict[str, logging.Logger] = {}
-_configured = False
-_org_path: Optional[Path] = None
+
+class _LoggingState:
+    """All mutable logging state in one place.
+
+    The 'configured' flags that previously lived as module globals
+    (_configured, _enhanced_configured) are gone — 'configured' is now
+    derived from whether the root 'quinn' logger has handlers attached.
+    That avoids the 'first call wins' anti-pattern from CLAUDE.md and
+    means tests can reset state by clearing handlers.
+    """
+
+    def __init__(self) -> None:
+        self.loggers: dict[str, logging.Logger] = {}
+        self.org_path: Optional[Path] = None
+        self.component_loggers: dict[str, logging.Logger] = {}
+
+    def reset(self) -> None:
+        """Reset all state. Used by tests between cases."""
+        self.loggers.clear()
+        self.component_loggers.clear()
+        self.org_path = None
+        logging.getLogger("quinn").handlers.clear()
+
+
+_state = _LoggingState()
+
+
+def reset_for_tests() -> None:
+    """Reset all logging state. Tests should call this between cases.
+
+    Replaces the previous pattern of test fixtures poking
+    cli.core.logging._configured = False and friends directly.
+    """
+    _state.reset()
+
+
+def _is_configured() -> bool:
+    """True iff configure_logging or configure_enhanced_logging has run.
+
+    Derived from the root logger's handler list, not a stored flag.
+    """
+    return bool(logging.getLogger("quinn").handlers)
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -76,17 +115,17 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         Logger instance.
     """
-    if name in _loggers:
-        return _loggers[name]
+    if name in _state.loggers:
+        return _state.loggers[name]
 
     logger = logging.getLogger(f"quinn.{name}")
 
     # If not configured yet, set a NullHandler to avoid "No handler" warnings
-    if not _configured:
+    if not _is_configured():
         if not logger.handlers:
             logger.addHandler(logging.NullHandler())
 
-    _loggers[name] = logger
+    _state.loggers[name] = logger
     return logger
 
 
@@ -108,9 +147,7 @@ def configure_logging(
         debug: If True, show DEBUG level on console. Overrides verbose.
         log_to_file: If True, write logs to file (requires org_path).
     """
-    global _configured, _org_path
-
-    _org_path = org_path
+    _state.org_path = org_path
 
     # Get root quinn logger
     root_logger = logging.getLogger("quinn")
@@ -158,11 +195,9 @@ def configure_logging(
             # Can't set up file logging - log a warning to console
             root_logger.warning(f"Could not set up file logging: {e}")
 
-    _configured = True
-
-    # Update all cached loggers to use the new configuration
-    for name, logger in _loggers.items():
-        # Remove NullHandler if present
+    # Now that we have real handlers attached, _is_configured() returns True.
+    # Strip NullHandler from any cached loggers so they don't suppress output.
+    for logger in _state.loggers.values():
         logger.handlers = [h for h in logger.handlers if not isinstance(h, logging.NullHandler)]
 
 
@@ -172,8 +207,8 @@ def get_log_file_path() -> Optional[Path]:
     Returns:
         Path to log file if configured, None otherwise.
     """
-    if _org_path:
-        return _org_path / LIVE_DIR / LOGS_DIR / LOG_FILE_NAME
+    if _state.org_path:
+        return _state.org_path / LIVE_DIR / LOGS_DIR / LOG_FILE_NAME
     return None
 
 
@@ -181,9 +216,10 @@ def is_configured() -> bool:
     """Check if logging has been configured.
 
     Returns:
-        True if configure_logging() has been called.
+        True if configure_logging() or configure_enhanced_logging() has run
+        (i.e. the root quinn logger has at least one handler attached).
     """
-    return _configured
+    return _is_configured()
 
 
 # ===================
@@ -337,10 +373,6 @@ def log_org_state_change(
 # ENHANCED LOGGING (JSON + Per-Component)
 # ===================
 
-_component_loggers: dict[str, logging.Logger] = {}
-_enhanced_configured = False
-
-
 def configure_enhanced_logging(
     org_path: Path,
     component: str,
@@ -387,8 +419,6 @@ def configure_enhanced_logging(
             legacy_logging=True
         )
     """
-    global _enhanced_configured
-
     # Get root logger
     root_logger = logging.getLogger("quinn")
     root_logger.setLevel(logging.DEBUG)
@@ -461,8 +491,6 @@ def configure_enhanced_logging(
         legacy_handler.setFormatter(legacy_formatter)
         root_logger.addHandler(legacy_handler)
 
-    _enhanced_configured = True
-
 
 def get_component_logger(
     component: str,
@@ -491,11 +519,11 @@ def get_component_logger(
     """
     key = f"{component}.{subcomponent}" if subcomponent else component
 
-    if key in _component_loggers:
-        return _component_loggers[key]
+    if key in _state.component_loggers:
+        return _state.component_loggers[key]
 
     logger = logging.getLogger(f"quinn.{key}")
-    _component_loggers[key] = logger
+    _state.component_loggers[key] = logger
 
     return logger
 
