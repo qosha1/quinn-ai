@@ -1,37 +1,31 @@
-"""
-Session abstraction interface for QuinnAI.
+"""SessionInterface — abstract base class for CLI session management.
 
-Session = Worker's Brain. One session, one worker. Unbreakable 1:1.
-
-This module provides the abstract base class for CLI session management,
-allowing QuinnAI to connect to ANY CLI-based AI agent (Claude Code, Codex CLI,
-Gemini CLI, etc.) through a unified interface.
+The 25+-method ABC that every session adapter (claude_code, codex,
+gemini, openai) implements. Errors live in .exceptions, value-object
+types in .types, SessionConfig + PromptResult re-exported from
+shared.core.session via .__init__.
 """
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Callable, Optional, TYPE_CHECKING
-from pathlib import Path
 import logging
 import threading
-import uuid
+from abc import ABC, abstractmethod
+from datetime import datetime
+from pathlib import Path
+from typing import Callable, Optional, TYPE_CHECKING
 
-from shared.exceptions import SessionSpawnError  # noqa: F401 - canonical definition, re-exported here
+from shared.core.session import SessionConfig, PromptResult
+from shared.core.state import SessionState, SESSION_STATE_TRANSITIONS
 
-# Import canonical SessionState and transitions from shared/core/state
-from shared.core.state import (
-    SessionState,
-    SESSION_STATE_TRANSITIONS,
+from .exceptions import (
+    InvalidSessionStateTransition,
+    SessionAlreadyBoundError,
+    SessionAlreadyRunningError,
+    SessionError,
+    SessionNotReadyError,
+    SessionNotRunningError,
+    SessionTimeoutError,
 )
-
-# SessionConfig and PromptResult are canonical in shared/core/session.
-# Re-exported here so existing 'from cli.core.session import SessionConfig'
-# call sites keep working.
-from shared.core.session import (
-    SessionConfig,  # noqa: F401 — re-export
-    PromptResult,  # noqa: F401 — re-export
-)
+from .types import SessionId, SessionMetrics, SessionOutput
 
 if TYPE_CHECKING:
     from shared.pyterm.state_monitor import StateMonitor
@@ -39,132 +33,6 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
-class SessionId:
-    """Unique session identifier.
-
-    Combines worker_id with session instance for traceability.
-    """
-    worker_id: str
-    instance_id: str  # UUID or timestamp-based
-
-    def __str__(self) -> str:
-        return f"{self.worker_id}:{self.instance_id}"
-
-    def __hash__(self) -> int:
-        return hash((self.worker_id, self.instance_id))
-
-    @classmethod
-    def create(cls, worker_id: str) -> "SessionId":
-        """Create new session ID for a worker."""
-        return cls(worker_id=worker_id, instance_id=uuid.uuid4().hex[:12])
-
-
-# SessionConfig — re-exported from shared.core.session above.
-
-
-@dataclass
-class SessionMetrics:
-    """Runtime metrics for a session."""
-    created_at: datetime
-    started_at: Optional[datetime] = None
-    stopped_at: Optional[datetime] = None
-
-    # Activity tracking
-    last_activity: Optional[datetime] = None
-    prompts_sent: int = 0
-    responses_received: int = 0
-    tokens_consumed: int = 0
-
-    # Error tracking
-    errors_count: int = 0
-    last_error: Optional[str] = None
-
-    # Resource usage
-    peak_memory_mb: float = 0.0
-    context_tokens_used: int = 0
-
-
-@dataclass
-class SessionOutput:
-    """Output from a session."""
-    content: str
-    timestamp: datetime
-    is_complete: bool = False
-    tool_calls: list[dict] = field(default_factory=list)
-    metadata: dict = field(default_factory=dict)
-
-
-# PromptResult — re-exported from shared.core.session above.
-
-
-# =========================================================================
-# Exceptions
-# =========================================================================
-
-class SessionError(Exception):
-    """Base exception for session errors."""
-    def __init__(self, session_id: SessionId, message: str):
-        super().__init__(f"Session {session_id}: {message}")
-        self.session_id = session_id
-
-
-class SessionAlreadyRunningError(SessionError):
-    """Session is already running."""
-    def __init__(self, session_id: SessionId):
-        super().__init__(session_id, "Already running")
-
-
-class SessionNotRunningError(SessionError):
-    """Session is not running."""
-    def __init__(self, session_id: SessionId, state: SessionState):
-        super().__init__(session_id, f"Not running (state={state.value})")
-        self.state = state
-
-
-class SessionNotReadyError(SessionError):
-    """Session is not ready for input."""
-    def __init__(self, session_id: SessionId, state: SessionState):
-        super().__init__(session_id, f"Not ready (state={state.value})")
-        self.state = state
-
-
-class SessionTimeoutError(SessionError):
-    """Session operation timed out."""
-    def __init__(self, session_id: SessionId, operation: str, timeout_ms: int):
-        super().__init__(session_id, f"{operation} timed out after {timeout_ms}ms")
-        self.operation = operation
-        self.timeout_ms = timeout_ms
-
-
-class SessionAlreadyBoundError(SessionError):
-    """Session is already bound to a different worker."""
-    def __init__(self, session_id: SessionId, current_worker: str, requested_worker: str):
-        super().__init__(
-            session_id,
-            f"Already bound to worker '{current_worker}', cannot bind to '{requested_worker}'"
-        )
-        self.current_worker = current_worker
-        self.requested_worker = requested_worker
-
-
-class InvalidSessionStateTransition(Exception):
-    """Invalid state transition attempted."""
-    def __init__(self, current: SessionState, attempted: SessionState, valid: list[SessionState]):
-        valid_names = [s.value for s in valid]
-        super().__init__(
-            f"Cannot transition from '{current.value}' to '{attempted.value}'. "
-            f"Valid transitions: {valid_names}"
-        )
-        self.current = current
-        self.attempted = attempted
-        self.valid = valid
-
-
-# =========================================================================
-# SessionInterface - Abstract Base Class
-# =========================================================================
 
 class SessionInterface(ABC):
     """
