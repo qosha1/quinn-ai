@@ -1,12 +1,12 @@
 """Read provider configuration (default + capabilities from `qn org provider list`)."""
 
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from ...logging_config import get_board_logger
+from ..qn_cli_client import get_default_qn_cli
 
 logger = get_board_logger(__name__)
 
@@ -29,16 +29,8 @@ class ProviderReader:
 
             default_provider = config.get("default", "claude_code")
 
-            result = subprocess.run(
-                ["qn", "--org-path", str(self._org_path), "org", "provider", "list"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-
-            providers = {}
-            if result.returncode == 0:
-                providers = self._parse_provider_list(result.stdout)
+            result = get_default_qn_cli().org_provider_list(self._org_path)
+            providers = self._parse_provider_list(result.stdout) if result.success else {}
 
             return {"default": default_provider, "providers": providers}
 

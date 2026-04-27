@@ -28,10 +28,17 @@ from board_ui.services.org_discovery import (
 
 @pytest.fixture(autouse=True)
 def reset_cli_cache():
-    """Reset the CLI command cache before each test."""
-    org_discovery._qn_command_cache = None
+    """Reset the QnCliClient default singleton before each test.
+
+    Tests in this file mock subprocess.run to control resolution; without
+    a reset, the first test's resolution gets cached on the singleton and
+    subsequent tests would skip subprocess entirely.
+    """
+    from board_ui.services import qn_cli_client
+
+    qn_cli_client.reset_default_qn_cli_for_tests()
     yield
-    org_discovery._qn_command_cache = None
+    qn_cli_client.reset_default_qn_cli_for_tests()
 
 
 @pytest.fixture
@@ -178,7 +185,7 @@ class TestOrgDiscovery:
         # 1. check_cli_available() calls --help
         # 2. _get_qn_command() calls --help (cached after first call)
         # 3. The actual org start command
-        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+        with patch("board_ui.services.qn_cli_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
                 stdout="Organization started successfully",
@@ -200,7 +207,7 @@ class TestOrgDiscovery:
         """Board should be able to stop an org."""
         # Mock subprocess.run to avoid actually running the CLI
         # Note: subprocess.run is called multiple times for CLI availability check
-        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+        with patch("board_ui.services.qn_cli_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
                 stdout="Organization stopped successfully",
@@ -251,7 +258,7 @@ class TestOrgDiscovery:
         """Should handle subprocess timeout gracefully."""
         import subprocess
 
-        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+        with patch("board_ui.services.qn_cli_client.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="qn", timeout=30)
 
             result = start_org(temp_stopped_org_dir)
@@ -261,7 +268,7 @@ class TestOrgDiscovery:
 
     def test_stop_org_handles_cli_error(self, temp_org_dir):
         """Should handle CLI errors gracefully."""
-        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+        with patch("board_ui.services.qn_cli_client.subprocess.run") as mock_run:
             # First call(s) for CLI availability check should succeed
             # Last call (actual stop) should fail
             def side_effect(*args, **kwargs):
@@ -378,7 +385,7 @@ class TestValidateOrgPath:
         active sessions. In a TUI background thread, there's no interactive
         stdin, so the subprocess hangs until timeout or fails.
         """
-        with patch("board_ui.services.org_discovery.subprocess.run") as mock_run:
+        with patch("board_ui.services.qn_cli_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
                 stdout="Organization stopped successfully",

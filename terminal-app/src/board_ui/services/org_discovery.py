@@ -6,20 +6,15 @@ to the existing CLI. The board is independent of org lifecycle - it can run
 without any org, and starting/stopping orgs is done through the qn CLI.
 """
 
-import shutil
 import sqlite3
-import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 from ..logging_config import get_board_logger
+from .qn_cli_client import get_default_qn_cli
 
 logger = get_board_logger(__name__)
-
-# Module-level cache for the qn command
-_qn_command_cache: Optional[list[str]] = None
 
 
 @dataclass
@@ -74,106 +69,9 @@ class StopResult:
     returncode: int = 0
 
 
-def _get_qn_command() -> list[str]:
-    """Get the qn CLI command.
-
-    Uses sys.executable to ensure we use the same Python environment.
-    Falls back to 'qn' if installed in PATH. Caches the result for performance.
-
-    Returns:
-        Command list to invoke qn CLI
-    """
-    global _qn_command_cache
-
-    if _qn_command_cache is not None:
-        return _qn_command_cache
-
-    # First try: qn in the same venv as sys.executable
-    # This is the most reliable approach when running from a venv
-    venv_bin_dir = Path(sys.executable).parent
-    venv_qn = venv_bin_dir / "qn"
-    if venv_qn.exists():
-        try:
-            result = subprocess.run(
-                [str(venv_qn), "--help"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                _qn_command_cache = [str(venv_qn)]
-                return _qn_command_cache
-        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-            pass
-
-    # Second try: qn in PATH (globally installed)
-    if shutil.which("qn"):
-        try:
-            result = subprocess.run(
-                ["qn", "--help"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                _qn_command_cache = ["qn"]
-                return _qn_command_cache
-        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-            pass
-
-    # Third try: sys.executable -m cli.commands.main (if cli is installed as module)
-    module_cmd = [sys.executable, "-m", "cli.commands.main"]
-    try:
-        result = subprocess.run(
-            module_cmd + ["--help"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            _qn_command_cache = module_cmd
-            return _qn_command_cache
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        pass
-
-    # Default fallback: assume qn in venv (will likely fail but provides consistent behavior)
-    _qn_command_cache = [str(venv_qn)]
-    return _qn_command_cache
-
-
 def check_cli_available() -> tuple[bool, str]:
-    """Check if the qn CLI is available.
-
-    Uses _get_qn_command() to find the CLI and verifies it's working.
-
-    Returns:
-        Tuple of (is_available, error_message).
-        If available: (True, "")
-        If not available: (False, "helpful error message")
-    """
-    qn_cmd = _get_qn_command()
-
-    try:
-        result = subprocess.run(
-            qn_cmd + ["--help"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            return True, ""
-        else:
-            return False, f"qn CLI returned error (exit {result.returncode}): {result.stderr}"
-    except subprocess.TimeoutExpired:
-        return False, "CLI check timed out. The CLI may be hanging."
-    except FileNotFoundError:
-        return False, (
-            f"qn CLI not found at: {qn_cmd[0]}\n"
-            "Install with: pip install -e .\n"
-            "Or ensure you're running from the quinnai virtual environment."
-        )
-    except Exception as e:
-        return False, f"Error checking CLI availability: {e}"
+    """Check if the qn CLI is available. Thin wrapper over QnCliClient."""
+    return get_default_qn_cli().available()
 
 
 def _get_db_path(org_path: Path) -> Path:
@@ -549,65 +447,25 @@ def start_org(
     # Check CLI availability
     cli_available, cli_error = check_cli_available()
     if not cli_available:
+        return StartResult(success=False, message=cli_error, returncode=-1)
+
+    result = get_default_qn_cli().org_start(
+        org_path,
+        spawn_ceo=spawn_ceo,
+        provider=provider,
+        skip_config_validation=skip_config_validation,
+    )
+    if result.success:
         return StartResult(
-            success=False,
-            message=cli_error,
-            returncode=-1,
+            success=True,
+            message=result.output or "Organization started successfully",
+            returncode=0,
         )
-
-    cmd = _get_qn_command() + ["--org-path", str(org_path), "org", "start"]
-
-    if not spawn_ceo:
-        cmd.append("--no-spawn-ceo")
-    else:
-        cmd.extend(["--provider", provider])
-
-    # claude_code provider uses local Claude CLI auth, doesn't need API keys
-    # from providers.yaml - skip validation to avoid false "API key required" errors
-    if skip_config_validation or provider == "claude_code":
-        cmd.append("--skip-config-validation")
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(org_path),
-        )
-
-        if result.returncode == 0:
-            return StartResult(
-                success=True,
-                message=result.stdout.strip() or "Organization started successfully",
-                returncode=0,
-            )
-        else:
-            error_msg = result.stderr.strip() or result.stdout.strip()
-            return StartResult(
-                success=False,
-                message=error_msg or "Failed to start organization",
-                returncode=result.returncode,
-            )
-
-    except subprocess.TimeoutExpired:
-        return StartResult(
-            success=False,
-            message="Start command timed out after 30 seconds",
-            returncode=-1,
-        )
-    except FileNotFoundError:
-        return StartResult(
-            success=False,
-            message="qn CLI not found. Ensure quinnai-cli is installed.",
-            returncode=-1,
-        )
-    except Exception as e:
-        return StartResult(
-            success=False,
-            message=f"Error starting org: {e}",
-            returncode=-1,
-        )
+    return StartResult(
+        success=False,
+        message=result.error_message or "Failed to start organization",
+        returncode=result.returncode,
+    )
 
 
 def stop_org(
@@ -637,61 +495,20 @@ def stop_org(
     # Check CLI availability
     cli_available, cli_error = check_cli_available()
     if not cli_available:
+        return StopResult(success=False, message=cli_error, returncode=-1)
+
+    result = get_default_qn_cli().org_stop(org_path, force=force, cleanup=cleanup)
+    if result.success:
         return StopResult(
-            success=False,
-            message=cli_error,
-            returncode=-1,
+            success=True,
+            message=result.output or "Organization stopped successfully",
+            returncode=0,
         )
-
-    cmd = _get_qn_command() + ["--org-path", str(org_path), "org", "stop", "--yes"]
-
-    if force:
-        cmd.append("--force")
-
-    if not cleanup:
-        cmd.append("--no-cleanup")
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=str(org_path),
-        )
-
-        if result.returncode == 0:
-            return StopResult(
-                success=True,
-                message=result.stdout.strip() or "Organization stopped successfully",
-                returncode=0,
-            )
-        else:
-            error_msg = result.stderr.strip() or result.stdout.strip()
-            return StopResult(
-                success=False,
-                message=error_msg or "Failed to stop organization",
-                returncode=result.returncode,
-            )
-
-    except subprocess.TimeoutExpired:
-        return StopResult(
-            success=False,
-            message="Stop command timed out after 30 seconds",
-            returncode=-1,
-        )
-    except FileNotFoundError:
-        return StopResult(
-            success=False,
-            message="qn CLI not found. Ensure quinnai-cli is installed.",
-            returncode=-1,
-        )
-    except Exception as e:
-        return StopResult(
-            success=False,
-            message=f"Error stopping org: {e}",
-            returncode=-1,
-        )
+    return StopResult(
+        success=False,
+        message=result.error_message or "Failed to stop organization",
+        returncode=result.returncode,
+    )
 
 
 def restart_org(

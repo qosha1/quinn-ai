@@ -165,14 +165,13 @@ class SettingsView(VerticalScroll):
 
     async def _fetch_provider_config(self, org_connection) -> Optional[dict]:
         """Fetch provider configuration from org."""
-        import subprocess
         import yaml
-        from pathlib import Path
+
+        from ..services.qn_cli_client import get_default_qn_cli
 
         try:
             org_path = org_connection.org_path
 
-            # Read providers.yaml
             config_path = org_path / "config" / "providers.yaml"
             if not config_path.exists():
                 return None
@@ -182,24 +181,12 @@ class SettingsView(VerticalScroll):
 
             default_provider = config.get("default", "claude_code")
 
-            # Get available providers from CLI registry
-            result = subprocess.run(
-                ["qn", "--org-path", str(org_path), "org", "provider", "list"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-
-            if result.returncode != 0:
+            result = get_default_qn_cli().org_provider_list(org_path)
+            if not result.success:
                 return None
 
-            # Parse provider list output
             providers = self._parse_provider_list(result.stdout)
-
-            return {
-                "default": default_provider,
-                "providers": providers,
-            }
+            return {"default": default_provider, "providers": providers}
 
         except Exception as e:
             self.log(f"Error fetching provider config: {e}")
@@ -308,26 +295,23 @@ class SettingsView(VerticalScroll):
             org_connection = app.org_connection
             org_path = org_connection.org_path
 
-            # Call CLI command to set default
-            import subprocess
-            result = subprocess.run(
-                ["qn", "--org-path", str(org_path), "org", "provider", "default", provider_name],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
+            from ..services.qn_cli_client import get_default_qn_cli
 
-            if result.returncode == 0:
+            result = get_default_qn_cli().org_provider_default(org_path, provider_name)
+            if result.success:
                 self._current_default = provider_name
-                self.notify(f"Default provider set to {provider_name}", severity="information")
-
-                # Hide select and refresh UI
+                self.notify(
+                    f"Default provider set to {provider_name}",
+                    severity="information",
+                )
                 select = self.query_one("#provider-select", Select)
                 select.add_class("hidden")
                 self._update_ui()
             else:
-                error_msg = result.stderr.strip() or "Unknown error"
-                self.notify(f"Failed to set provider: {error_msg}", severity="error")
+                self.notify(
+                    f"Failed to set provider: {result.error_message}",
+                    severity="error",
+                )
 
         except Exception as e:
             self.notify(f"Error changing provider: {e}", severity="error")

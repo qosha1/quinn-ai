@@ -437,27 +437,20 @@ class TeamView(VerticalScroll):
             return
 
         # TODO: Show confirmation dialog
-        # For now, use subprocess directly
-        import subprocess
+        from ..services.qn_cli_client import get_default_qn_cli
 
         self.app.notify(f"Firing {worker.name}...", severity="information")
-
-        try:
-            result = subprocess.run(
-                ["qn", "org", "fire", worker.id, "--force", "--org-path", str(self.app.org_connection.org_path)],
-                capture_output=True,
-                text=True,
-                timeout=10,
+        result = get_default_qn_cli().org_fire(
+            self.app.org_connection.org_path, worker.id, force=True
+        )
+        if result.success:
+            self.app.notify(f"Fired {worker.name} successfully", severity="success")
+            await self.refresh_workers()
+        else:
+            self.app.notify(
+                f"Failed to fire {worker.name}: {result.error_message}",
+                severity="error",
             )
-
-            if result.returncode == 0:
-                self.app.notify(f"Fired {worker.name} successfully", severity="success")
-                await self.refresh_workers()
-            else:
-                error = result.stderr or result.stdout or "Unknown error"
-                self.app.notify(f"Failed to fire {worker.name}: {error}", severity="error")
-        except Exception as e:
-            self.app.notify(f"Error firing worker: {e}", severity="error")
 
     async def _promote_worker(self, worker: WorkerInfo) -> None:
         """Promote a worker to manager.
