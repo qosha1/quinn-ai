@@ -13,8 +13,6 @@ Key UX principles:
 
 from pathlib import Path
 from typing import Optional
-import subprocess
-from datetime import datetime
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -47,7 +45,10 @@ from .services import (
     discover_available_orgs,
     start_org,
 )
+from .services.clipboard_exporter import ClipboardExporter
 from .services.org_connection import DatabaseLocked
+from .services.org_connection_registry import OrgConnectionRegistry, connect_with_retry
+from .services.wizard_init import CliCoreUnavailable, init_org_from_wizard
 
 
 class BoardApp(App):
@@ -66,94 +67,7 @@ class BoardApp(App):
     TITLE = "QuinnAI Board"
     SUB_TITLE = "Organization Oversight"
 
-    CSS = """
-    Screen {
-        background: $surface;
-    }
-
-    TabbedContent {
-        height: 100%;
-    }
-
-    TabPane {
-        padding: 1 2;
-        height: 1fr;
-    }
-
-    .panel {
-        border: solid $primary;
-        padding: 1 2;
-        margin: 1 0;
-    }
-
-    .panel-title {
-        text-style: bold;
-        color: $text;
-        margin-bottom: 1;
-    }
-
-    .metric-value {
-        text-style: bold;
-        color: $success;
-    }
-
-    .metric-label {
-        color: $text-muted;
-    }
-
-    .status-running {
-        color: $success;
-    }
-
-    .status-stopped {
-        color: $warning;
-    }
-
-    .status-error {
-        color: $error;
-    }
-
-    .worker-ceo {
-        text-style: bold;
-        color: $primary;
-    }
-
-    .worker-active {
-        color: $success;
-    }
-
-    .worker-idle {
-        color: $text-muted;
-    }
-
-    .message-unread {
-        text-style: bold;
-    }
-
-    .message-priority-high {
-        color: $error;
-    }
-
-    .action-button {
-        margin: 0 1;
-    }
-
-    #no-org-panel {
-        align: center middle;
-        height: 100%;
-    }
-
-    #no-org-content {
-        width: 60;
-        height: auto;
-        border: solid $primary;
-        padding: 2 4;
-    }
-
-    .hidden {
-        display: none;
-    }
-    """
+    CSS_PATH = "app.tcss"
 
     BINDINGS = [
         Binding("d", "switch_tab('dashboard')", "Dashboard", show=True),
@@ -175,21 +89,44 @@ class BoardApp(App):
         """
         super().__init__()
         self.config = config
-        # Multi-org support: store connections by path
-        self._org_connections: dict[Path, QuinnAIOrgConnection] = {}
-        self._active_org_path: Optional[Path] = None
+        self._org_registry = OrgConnectionRegistry()
 
     @property
     def org_connection(self) -> Optional[QuinnAIOrgConnection]:
-        """Get the current org connection for backward compatibility."""
-        if self._active_org_path:
-            return self._org_connections.get(self._active_org_path)
-        return None
+        """Active org connection (backward-compat property used by views)."""
+        return self._org_registry.active
 
     @property
     def _is_connected(self) -> bool:
         """Check if connected to any org."""
-        return self._active_org_path is not None
+        return self._org_registry.active_path is not None
+
+    # Backward-compat: tests reach into these directly. They're proxies to the
+    # registry's internals so the single source of truth stays the registry.
+    @property
+    def _active_org_path(self) -> Optional[Path]:
+        return self._org_registry.active_path
+
+    @_active_org_path.setter
+    def _active_org_path(self, value: Optional[Path]) -> None:
+        self._org_registry._active_path = value
+
+    @_active_org_path.deleter
+    def _active_org_path(self) -> None:
+        # patch.object cleanup calls delattr; reset rather than truly delete.
+        self._org_registry._active_path = None
+
+    @property
+    def _org_connections(self) -> dict[Path, QuinnAIOrgConnection]:
+        return self._org_registry._connections
+
+    @_org_connections.setter
+    def _org_connections(self, value: dict[Path, QuinnAIOrgConnection]) -> None:
+        self._org_registry._connections = value
+
+    @_org_connections.deleter
+    def _org_connections(self) -> None:
+        self._org_registry._connections = {}
 
     def compose(self) -> ComposeResult:
         """Compose the UI."""
@@ -280,61 +217,36 @@ class BoardApp(App):
             await self._connect_to_org(running_orgs[0].path)
 
     async def _connect_to_org(self, org_path: Path) -> None:
-        """Connect to an organization.
-
-        Retries up to 3 times with exponential backoff if the database is locked.
-
-        Args:
-            org_path: Path to the org folder
-        """
-        import asyncio
-
+        """Connect to an organization, retrying with backoff if DB is locked."""
         max_retries = 3
-        connection = None
-
-        # Retry loop for DatabaseLocked
-        for attempt in range(max_retries):
-            try:
-                connection = QuinnAIOrgConnection(org_path)
-                break  # success
-            except DatabaseLocked:
-                if attempt < max_retries - 1:
-                    delay = 0.5 * (2 ** attempt)  # 0.5, 1.0, 2.0
-                    self.notify(
-                        f"Database locked, retrying in {delay:.1f}s... ({attempt + 1}/{max_retries})"
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    error_msg = f"Database locked after {max_retries} retries"
-                    self.notify(error_msg, severity="error")
-                    no_org_view = self.query_one("#no-org-view", NoOrgView)
-                    no_org_view.show_error(error_msg)
-                    return
-            except OrgNotFound:
-                error_msg = f"Org not found at {org_path}"
-                self.notify(error_msg, severity="error")
-                no_org_view = self.query_one("#no-org-view", NoOrgView)
-                no_org_view.show_error(error_msg)
-                return
-            except DatabaseNotFound:
-                error_msg = f"Org not initialized at {org_path}"
-                self.notify(error_msg, severity="warning")
-                no_org_view = self.query_one("#no-org-view", NoOrgView)
-                no_org_view.show_error(error_msg)
-                return
-            except OrgConnectionError as e:
-                error_msg = f"Connection failed: {e}"
-                self.notify(error_msg, severity="error")
-                no_org_view = self.query_one("#no-org-view", NoOrgView)
-                no_org_view.show_error(error_msg)
-                return
-
-        if connection is None:
+        try:
+            connection = await connect_with_retry(
+                org_path,
+                max_retries=max_retries,
+                on_locked_retry=lambda attempt, total, delay: self.notify(
+                    f"Database locked, retrying in {delay:.1f}s... ({attempt}/{total})"
+                ),
+            )
+        except DatabaseLocked:
+            self._show_connect_error(
+                f"Database locked after {max_retries} retries", severity="error"
+            )
+            return
+        except OrgNotFound:
+            self._show_connect_error(f"Org not found at {org_path}", severity="error")
+            return
+        except DatabaseNotFound:
+            self._show_connect_error(
+                f"Org not initialized at {org_path}", severity="warning"
+            )
+            return
+        except OrgConnectionError as e:
+            self._show_connect_error(f"Connection failed: {e}", severity="error")
             return
 
         try:
-            self._org_connections[org_path] = connection
-            self._active_org_path = org_path
+            self._org_registry.add(org_path, connection)
+            self._org_registry.activate(org_path)
 
             # Hide no-org view, show tabs and org tab bar
             self.query_one("#no-org-view").add_class("hidden")
@@ -345,40 +257,27 @@ class BoardApp(App):
             self.notify(f"Connected to {org_info.name}")
             self.sub_title = f"Connected: {org_info.name}"
 
-            # Update org tab bar
             self._update_org_tab_bar()
-
-            # Configure enhanced logging for this org
             configure_board_logging(org_path=org_path, verbose=False)
 
-            # Set org_path for views that need it
             logs_view = self.query_one("#logs-view", LogsView)
             logs_view.set_org_path(org_path)
 
-            # Refresh all views with new connection data
             await self._refresh_all_views()
 
         except Exception as e:
-            error_msg = f"Connection failed: {e}"
-            self.notify(error_msg, severity="error")
-            no_org_view = self.query_one("#no-org-view", NoOrgView)
-            no_org_view.show_error(error_msg)
+            self._show_connect_error(f"Connection failed: {e}", severity="error")
+
+    def _show_connect_error(self, error_msg: str, severity: str) -> None:
+        self.notify(error_msg, severity=severity)
+        no_org_view = self.query_one("#no-org-view", NoOrgView)
+        no_org_view.show_error(error_msg)
 
     def _poll_for_updates(self) -> None:
-        """Poll all org connections for database changes.
-
-        Called periodically (300ms) by set_interval timer.
-        Refreshes views when changes are detected.
-        """
-        if not self._is_connected:
-            return
-
-        # Check active org for changes
-        if self._active_org_path:
-            conn = self._org_connections.get(self._active_org_path)
-            if conn and conn.check_for_updates():
-                # Changes detected - schedule refresh
-                self.call_later(self._refresh_all_views)
+        """Poll the active org connection for database changes (300ms tick)."""
+        conn = self._org_registry.active
+        if conn and conn.check_for_updates():
+            self.call_later(self._refresh_all_views)
 
     async def _refresh_all_views(self) -> None:
         """Refresh all org views after connection or org switch."""
@@ -404,50 +303,34 @@ class BoardApp(App):
         await settings.refresh_settings()
 
     def _update_org_tab_bar(self) -> None:
-        """Update the org tab bar with current connections."""
+        """Sync the OrgTabBar with the current registry state."""
         tab_bar = self.query_one("#org-tab-bar", OrgTabBar)
 
-        # Build org dict: path -> name
         orgs: dict[Path, str] = {}
-        for path, conn in self._org_connections.items():
+        for path, conn in self._org_registry.items().items():
             try:
-                info = conn.get_org_info()
-                orgs[path] = info.name
+                orgs[path] = conn.get_org_info().name
             except Exception:
-                orgs[path] = path.name  # Fallback to folder name
+                orgs[path] = path.name  # fallback to folder name
 
-        tab_bar.update_orgs(orgs, self._active_org_path)
+        tab_bar.update_orgs(orgs, self._org_registry.active_path)
 
     def _disconnect_from_org(self, org_path: Optional[Path] = None) -> None:
-        """Disconnect from an org (or current org if not specified).
-
-        Args:
-            org_path: Path to disconnect. If None, disconnects active org.
-        """
-        path_to_disconnect = org_path or self._active_org_path
-        if not path_to_disconnect:
+        """Disconnect from an org (active org if `org_path` is None)."""
+        if not self._org_registry.active_path and not org_path:
             return
 
-        # Close and remove connection
-        if path_to_disconnect in self._org_connections:
-            self._org_connections[path_to_disconnect].close()
-            del self._org_connections[path_to_disconnect]
+        new_active = self._org_registry.disconnect(org_path)
 
-        # If disconnecting active org, switch to another or go to no-org view
-        if path_to_disconnect == self._active_org_path:
-            if self._org_connections:
-                # Switch to another connected org
-                self._active_org_path = next(iter(self._org_connections.keys()))
-                org_info = self.org_connection.get_org_info()
-                self.sub_title = f"Connected: {org_info.name}"
-                self._update_org_tab_bar()
-            else:
-                # No more orgs connected
-                self._active_org_path = None
-                self.query_one("#no-org-view").remove_class("hidden")
-                self.query_one("#org-tabs").add_class("hidden")
-                self.query_one("#org-tab-bar").add_class("hidden")
-                self.sub_title = "Organization Oversight"
+        if new_active is not None:
+            org_info = self._org_registry.active.get_org_info()
+            self.sub_title = f"Connected: {org_info.name}"
+            self._update_org_tab_bar()
+        else:
+            self.query_one("#no-org-view").remove_class("hidden")
+            self.query_one("#org-tabs").add_class("hidden")
+            self.query_one("#org-tab-bar").add_class("hidden")
+            self.sub_title = "Organization Oversight"
 
         self.notify("Disconnected from org")
 
@@ -511,106 +394,37 @@ class BoardApp(App):
         no_org_view.remove_class("hidden")
 
     async def _create_org_from_config(self, config: OrgConfig) -> None:
-        """Create an org from wizard configuration.
-
-        Uses the shared org_init module to ensure CLI and wizard
-        create orgs identically.
-        """
-        # Lazy import: cli module may not be available when terminal-app
-        # is installed as a standalone package
+        """Create an org from wizard configuration via the shared init flow."""
         try:
-            from cli.core.org_init import (
-                OrgInitConfig,
-                ProviderConfig,
-                ObjectiveConfig,
-                KeyResultConfig,
-                CEOBriefingConfig,
-                init_org,
-            )
-        except ModuleNotFoundError:
-            self.notify(
-                "CLI module not available. Install quinnai-cli or run from monorepo.",
-                severity="error",
-            )
-            # Go back to no-org view
-            wizard = self.query_one("#org-wizard", OrgInitWizard)
-            no_org_view = self.query_one("#no-org-view", NoOrgView)
-            wizard.add_class("hidden")
-            no_org_view.remove_class("hidden")
-            return
-
-        try:
-            if not config.path:
-                raise ValueError("Org path is required")
-
-            # Convert wizard config to shared OrgInitConfig
-            init_config = OrgInitConfig(
-                path=config.path,
-                name=config.name,
-                ceo_name="CEO",
-                ceo_role="CEO",
-                providers=[
-                    ProviderConfig(
-                        id=p.id,
-                        enabled=p.enabled,
-                        api_key=p.api_key,
-                    )
-                    for p in config.providers
-                    if p.enabled
-                ],
-                objectives=[
-                    ObjectiveConfig(
-                        title=obj.title,
-                        key_results=[
-                            KeyResultConfig(
-                                metric=kr.metric,
-                                target=kr.target,
-                                unit=kr.unit,
-                            )
-                            for kr in obj.key_results
-                        ],
-                    )
-                    for obj in config.objectives
-                ],
-                ceo_briefing=CEOBriefingConfig(
-                    context=config.ceo_briefing.context,
-                    goals=config.ceo_briefing.requirements,  # Map requirements to goals
-                    constraints=config.ceo_briefing.constraints,
-                    initial_action=config.ceo_briefing.success_criteria,  # Map success_criteria to initial_action
-                ) if config.ceo_briefing else None,
-            )
-
-            # Initialize the org using shared module
-            result = init_org(init_config)
-
+            result = init_org_from_wizard(config)
             if not result.success:
                 raise ValueError(result.error or "Failed to initialize organization")
 
             self.notify(
                 f"Org '{config.name}' initialized at {config.path}",
-                severity="information"
+                severity="information",
             )
-
-            # Hide wizard and show no-org view with new org
-            wizard = self.query_one("#org-wizard", OrgInitWizard)
-            wizard.add_class("hidden")
-
-            # Refresh to show the new org, then auto-connect
+            self._return_to_no_org_view()
             self._refresh_org_list()
-
-            # Don't auto-start - user can click "Start" when ready
-            no_org_view = self.query_one("#no-org-view", NoOrgView)
-            no_org_view.remove_class("hidden")
-
+        except CliCoreUnavailable:
+            self.notify(
+                "CLI module not available. Install quinnai-cli or run from monorepo.",
+                severity="error",
+            )
+            self._return_to_no_org_view()
         except Exception as e:
             error_msg = f"Failed to create org: {e}"
             self.notify(error_msg, severity="error")
-            # Go back to no-org view
-            wizard = self.query_one("#org-wizard", OrgInitWizard)
-            no_org_view = self.query_one("#no-org-view", NoOrgView)
-            wizard.add_class("hidden")
-            no_org_view.remove_class("hidden")
+            no_org_view = self._return_to_no_org_view()
             no_org_view.show_error(error_msg)
+
+    def _return_to_no_org_view(self) -> NoOrgView:
+        """Hide the wizard and show the no-org picker. Returns the no-org view."""
+        wizard = self.query_one("#org-wizard", OrgInitWizard)
+        no_org_view = self.query_one("#no-org-view", NoOrgView)
+        wizard.add_class("hidden")
+        no_org_view.remove_class("hidden")
+        return no_org_view
 
     async def on_refresh_org_list(self, message: RefreshOrgList) -> None:
         """Handle request to refresh the org list."""
@@ -619,18 +433,16 @@ class BoardApp(App):
     # Message handlers for OrgTabBar
     async def on_org_tab_bar_org_selected(self, message: OrgTabBar.OrgSelected) -> None:
         """Handle org tab selection - switch to that org."""
-        if message.org_path == self._active_org_path:
-            return  # Already active
+        if message.org_path == self._org_registry.active_path:
+            return  # already active
 
-        self._active_org_path = message.org_path
+        self._org_registry.activate(message.org_path)
         self._update_org_tab_bar()
 
-        # Update subtitle
         if self.org_connection:
             org_info = self.org_connection.get_org_info()
             self.sub_title = f"Connected: {org_info.name}"
 
-        # Refresh views with new org's data
         await self._refresh_all_views()
         self.notify(f"Switched to {self.sub_title.replace('Connected: ', '')}")
 
@@ -729,66 +541,11 @@ class BoardApp(App):
             self.notify("View has no content to copy", severity="warning")
             return
 
-        # Try clipboard first, fallback to file
-        if self._copy_to_clipboard(content):
-            self.notify(f"Copied {len(content)} chars to clipboard", severity="information")
-        else:
-            filepath = self._write_to_scratchpad(content, active_tab_id)
-            self.notify(f"Saved to {filepath.name}", severity="information")
-
-    def _copy_to_clipboard(self, text: str) -> bool:
-        """Copy text to system clipboard.
-
-        Returns:
-            True if copy succeeded, False otherwise
-        """
-        try:
-            # Try macOS pbcopy
-            subprocess.run(
-                ["pbcopy"],
-                input=text.encode("utf-8"),
-                check=True,
-                capture_output=True,
-                timeout=2,
+        exporter = ClipboardExporter(self._org_registry.active_path)
+        if exporter.copy(content):
+            self.notify(
+                f"Copied {len(content)} chars to clipboard", severity="information"
             )
-            return True
-        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-            # Try Linux xclip
-            try:
-                subprocess.run(
-                    ["xclip", "-selection", "clipboard"],
-                    input=text.encode("utf-8"),
-                    check=True,
-                    timeout=2,
-                )
-                return True
-            except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                # Clipboard not available
-                return False
-
-    def _write_to_scratchpad(self, content: str, view_name: str) -> Path:
-        """Write content to scratchpad file.
-
-        Args:
-            content: Text content to write
-            view_name: Name of the view (used in filename)
-
-        Returns:
-            Path to the created file
-        """
-        # Use org-specific export directory if available
-        if self._active_org_path:
-            export_dir = self._active_org_path / "exports"
-            export_dir.mkdir(parents=True, exist_ok=True)
         else:
-            # Fallback to temp directory
-            import tempfile
-            export_dir = Path(tempfile.gettempdir()) / "quinnai_exports"
-            export_dir.mkdir(parents=True, exist_ok=True)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"board_{view_name}_{timestamp}.txt"
-        filepath = export_dir / filename
-
-        filepath.write_text(content, encoding="utf-8")
-        return filepath
+            filepath = exporter.write_to_scratchpad(content, active_tab_id)
+            self.notify(f"Saved to {filepath.name}", severity="information")

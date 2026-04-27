@@ -324,7 +324,7 @@ class TestDatabaseLockRetry:
             async with app.run_test() as pilot:
                 await pilot.pause()
 
-                with patch('board_ui.app.QuinnAIOrgConnection', side_effect=mock_connection_factory):
+                with patch('board_ui.services.org_connection_registry.QuinnAIOrgConnection', side_effect=mock_connection_factory):
                     with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
                         await app._connect_to_org(org_path)
 
@@ -357,7 +357,7 @@ class TestDatabaseLockRetry:
             async with app.run_test() as pilot:
                 await pilot.pause()
 
-                with patch('board_ui.app.QuinnAIOrgConnection', side_effect=always_locked):
+                with patch('board_ui.services.org_connection_registry.QuinnAIOrgConnection', side_effect=always_locked):
                     with patch('asyncio.sleep', new_callable=AsyncMock):
                         await app._connect_to_org(org_path)
 
