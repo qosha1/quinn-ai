@@ -14,6 +14,7 @@ Workers use this via `qn-bd` or programmatically via run_bd().
 import json
 import logging
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -370,35 +371,47 @@ def check_bd_permission(
 
 
 def get_bundled_bd_path() -> Path:
-    """Get path to bundled bd binary.
+    """Locate the bd binary.
 
-    Returns:
-        Path to bd binary in cli/bin/
+    Resolution order:
+        1. cli/bin/bd (or cli/bin/bd.exe on Windows) — explicit bundle
+        2. cli/bin/{platform}-{arch}/bd — repo dev builds
+        3. system PATH via shutil.which("bd")
 
     Raises:
-        FileNotFoundError: If binary not found
+        FileNotFoundError: If no bd binary can be located.
     """
-    # Binary is in cli/bin/ relative to this file
     cli_dir = Path(__file__).parent.parent
     bin_dir = cli_dir / "bin"
+    bd_name = "bd.exe" if sys.platform == "win32" else "bd"
 
-    # Check for platform-specific binary
-    if sys.platform == "win32":
-        bd_path = bin_dir / "bd.exe"
-    else:
-        bd_path = bin_dir / "bd"
+    candidates = [bin_dir / bd_name]
 
-    if bd_path.exists():
-        return bd_path
+    # Repo-dev layout: cli/bin/{platform}-{arch}/bd
+    arch = platform.machine().lower()
+    if arch == "x86_64":
+        arch = "amd64"
+    elif arch == "aarch64":
+        arch = "arm64"
+    os_name = "darwin" if sys.platform == "darwin" else (
+        "linux" if sys.platform.startswith("linux") else
+        "windows" if sys.platform == "win32" else sys.platform
+    )
+    candidates.append(bin_dir / f"{os_name}-{arch}" / bd_name)
 
-    # Fall back to system bd if bundled not found
+    for c in candidates:
+        if c.exists():
+            return c
+
     import shutil
     system_bd = shutil.which("bd")
     if system_bd:
         return Path(system_bd)
 
     raise FileNotFoundError(
-        "Beads binary not found. Run 'scripts/build-beads.sh' to bundle it."
+        "Beads binary 'bd' not found on PATH. Install it from "
+        "https://github.com/steveyegge/beads (e.g. 'brew install bd' on macOS) "
+        "and ensure it is on your shell's PATH."
     )
 
 

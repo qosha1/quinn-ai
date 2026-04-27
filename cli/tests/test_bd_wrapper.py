@@ -55,7 +55,7 @@ class TestGetBundledBdPath:
             with patch.object(Path, "exists", return_value=False):
                 get_bundled_bd_path()
 
-        assert "Beads binary not found" in str(exc.value)
+        assert "not found on PATH" in str(exc.value)
 
 
 class TestGetOrgBeadsDir:

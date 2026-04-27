@@ -33,10 +33,12 @@ msgr = "cli.msgr.main:msgr"
 
 [tool.hatch.build.targets.wheel]
 packages = ["cli", "shared"]
-
-# Include beads binary in wheel
-# [tool.hatch.build.targets.wheel.force-include]
-# "cli/bin/bd" = "cli/bin/bd"
+exclude = [
+  # The bd binary is treated as a system dependency (install via Homebrew /
+  # apt / etc); see bd_wrapper.get_bundled_bd_path. Excluding cli/bin/* keeps
+  # the wheel small and platform-neutral.
+  "cli/bin/**",
+]
 
 # NOTE: Pytest configuration lives in pytest.ini (single source of truth)
 # pyproject.toml [tool.pytest.ini_options] is intentionally omitted to avoid conflicts.
