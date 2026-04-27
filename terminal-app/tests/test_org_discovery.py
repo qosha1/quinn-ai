@@ -11,8 +11,8 @@ from unittest.mock import patch, MagicMock
 
 from board_ui.services import org_discovery
 from board_ui.services.org_discovery import (
-    OrgInfo,
-    OrgConfig,
+    DiscoveredOrg,
+    DiscoveredOrgConfig,
     StartResult,
     StopResult,
     discover_running_orgs,

@@ -4,8 +4,8 @@ Services for connecting to and interacting with orgs.
 
 # Org discovery (finding and listing orgs)
 from .org_discovery import (
-    OrgInfo as DiscoveryOrgInfo,
-    OrgConfig,
+    DiscoveredOrg,
+    DiscoveredOrgConfig,
     StartResult,
     StopResult,
     discover_running_orgs,
@@ -27,8 +27,8 @@ from .org_connection import (
 
 __all__ = [
     # Org discovery
-    "DiscoveryOrgInfo",
-    "OrgConfig",
+    "DiscoveredOrg",
+    "DiscoveredOrgConfig",
     "StartResult",
     "StopResult",
     "discover_running_orgs",

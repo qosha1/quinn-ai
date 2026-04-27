@@ -15,7 +15,7 @@ from textual.widgets import TabbedContent
 from board_ui.app import BoardApp
 from board_ui.config import BoardConfig
 from board_ui.services.org_discovery import (
-    OrgInfo,
+    DiscoveredOrg,
     StartResult,
     StopResult,
 )

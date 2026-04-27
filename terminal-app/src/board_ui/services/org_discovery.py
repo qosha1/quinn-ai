@@ -23,8 +23,14 @@ _qn_command_cache: Optional[list[str]] = None
 
 
 @dataclass
-class OrgInfo:
-    """Information about a discovered org."""
+class DiscoveredOrg:
+    """An org found on disk by discovery (status as raw string from quinn.db).
+
+    Distinct from interfaces.org_connection.OrgInfo, which is the canonical
+    type used by views and the connection facade (status as OrgStatus enum,
+    plus started_at/stopped_at). This shape is what discovery walks the
+    filesystem to produce; the connection facade then re-reads richer state.
+    """
 
     path: Path
     name: str
@@ -37,8 +43,11 @@ class OrgInfo:
 
 
 @dataclass
-class OrgConfig:
-    """Configuration for an org (from config directory)."""
+class DiscoveredOrgConfig:
+    """Config files an org has on disk, surfaced by discovery.
+
+    Distinct from views.org_wizard.OrgConfig (new-org wizard form data).
+    """
 
     path: Path
     name: str
@@ -261,7 +270,7 @@ def _read_org_status(db_path: Path) -> tuple[str, Optional[str], int, int]:
         return "error", None, 0, 0
 
 
-def discover_running_orgs(search_paths: list[Path]) -> list[OrgInfo]:
+def discover_running_orgs(search_paths: list[Path]) -> list[DiscoveredOrg]:
     """Find all orgs currently running.
 
     Checks for quinn.db with status='running' in each search path.
@@ -270,9 +279,9 @@ def discover_running_orgs(search_paths: list[Path]) -> list[OrgInfo]:
         search_paths: List of paths to search for orgs
 
     Returns:
-        List of OrgInfo for running orgs
+        List of DiscoveredOrg for running orgs
     """
-    running_orgs: list[OrgInfo] = []
+    running_orgs: list[DiscoveredOrg] = []
 
     for search_path in search_paths:
         if not search_path.exists():
@@ -284,7 +293,7 @@ def discover_running_orgs(search_paths: list[Path]) -> list[OrgInfo]:
             status, ceo_id, worker_count, session_count = _read_org_status(db_path)
             if status == "running":
                 running_orgs.append(
-                    OrgInfo(
+                    DiscoveredOrg(
                         path=search_path,
                         name=search_path.name,
                         status=status,
@@ -310,7 +319,7 @@ def discover_running_orgs(search_paths: list[Path]) -> list[OrgInfo]:
                     )
                     if status == "running":
                         running_orgs.append(
-                            OrgInfo(
+                            DiscoveredOrg(
                                 path=child,
                                 name=child.name,
                                 status=status,
@@ -325,7 +334,7 @@ def discover_running_orgs(search_paths: list[Path]) -> list[OrgInfo]:
     return running_orgs
 
 
-def discover_available_orgs(search_paths: list[Path]) -> list[OrgInfo]:
+def discover_available_orgs(search_paths: list[Path]) -> list[DiscoveredOrg]:
     """Find org folders that can be started.
 
     Looks for folders with a live/quinn.db or config/ directory.
@@ -334,10 +343,10 @@ def discover_available_orgs(search_paths: list[Path]) -> list[OrgInfo]:
         search_paths: List of paths to search for orgs
 
     Returns:
-        List of OrgInfo for all discoverable orgs (running and stopped)
+        List of DiscoveredOrg for all discoverable orgs (running and stopped)
     """
     logger.debug(f"Starting org discovery with search paths: {search_paths}")
-    orgs: list[OrgInfo] = []
+    orgs: list[DiscoveredOrg] = []
     seen_paths: set[Path] = set()
 
     for search_path in search_paths:
@@ -400,14 +409,14 @@ def _is_org_folder(path: Path) -> bool:
         return False
 
 
-def _build_org_info(org_path: Path) -> OrgInfo:
-    """Build OrgInfo for a discovered org folder.
+def _build_org_info(org_path: Path) -> DiscoveredOrg:
+    """Build DiscoveredOrg for a discovered org folder.
 
     Args:
         org_path: Path to org folder
 
     Returns:
-        OrgInfo with current status
+        DiscoveredOrg with current status
     """
     db_path = _get_db_path(org_path)
     has_db = db_path.exists()
@@ -420,7 +429,7 @@ def _build_org_info(org_path: Path) -> OrgInfo:
         worker_count = 0
         session_count = 0
 
-    return OrgInfo(
+    return DiscoveredOrg(
         path=org_path,
         name=org_path.name,
         status=status,
@@ -432,7 +441,7 @@ def _build_org_info(org_path: Path) -> OrgInfo:
     )
 
 
-def get_org_configs(search_paths: list[Path]) -> list[OrgConfig]:
+def get_org_configs(search_paths: list[Path]) -> list[DiscoveredOrgConfig]:
     """List available org configurations.
 
     Returns information about config directories found in search paths.
@@ -441,9 +450,9 @@ def get_org_configs(search_paths: list[Path]) -> list[OrgConfig]:
         search_paths: List of paths to search for org configs
 
     Returns:
-        List of OrgConfig for discovered configs
+        List of DiscoveredOrgConfig for discovered configs
     """
-    configs: list[OrgConfig] = []
+    configs: list[DiscoveredOrgConfig] = []
     seen_paths: set[Path] = set()
 
     for search_path in search_paths:
@@ -473,14 +482,14 @@ def get_org_configs(search_paths: list[Path]) -> list[OrgConfig]:
     return configs
 
 
-def _build_org_config(org_path: Path) -> OrgConfig:
-    """Build OrgConfig for a discovered org folder.
+def _build_org_config(org_path: Path) -> DiscoveredOrgConfig:
+    """Build DiscoveredOrgConfig for a discovered org folder.
 
     Args:
         org_path: Path to org folder
 
     Returns:
-        OrgConfig with config information
+        DiscoveredOrgConfig with config information
     """
     config_dir = org_path / "config"
     providers_path = config_dir / "providers.yaml"
@@ -502,7 +511,7 @@ def _build_org_config(org_path: Path) -> OrgConfig:
         except Exception:
             pass
 
-    return OrgConfig(
+    return DiscoveredOrgConfig(
         path=org_path,
         name=org_path.name,
         has_providers=has_providers,
@@ -741,25 +750,25 @@ def restart_org(
         )
 
 
-def get_org_status(org_path: Path) -> OrgInfo:
+def get_org_status(org_path: Path) -> DiscoveredOrg:
     """Get current status of a specific org.
 
     Args:
         org_path: Path to org folder
 
     Returns:
-        OrgInfo with current status
+        DiscoveredOrg with current status
     """
     return _build_org_info(org_path)
 
 
-def refresh_org_info(org_info: OrgInfo) -> OrgInfo:
-    """Refresh OrgInfo by re-reading from database.
+def refresh_org_info(org_info: DiscoveredOrg) -> DiscoveredOrg:
+    """Refresh DiscoveredOrg by re-reading from database.
 
     Args:
-        org_info: Existing OrgInfo to refresh
+        org_info: Existing DiscoveredOrg to refresh
 
     Returns:
-        Updated OrgInfo with fresh data
+        Updated DiscoveredOrg with fresh data
     """
     return _build_org_info(org_info.path)
