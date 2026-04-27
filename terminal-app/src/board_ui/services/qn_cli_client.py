@@ -18,6 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from ..constants import (
+    QN_DEFAULT_TIMEOUT_SECONDS,
+    QN_HELP_TIMEOUT_SECONDS,
+    QN_RESTART_TIMEOUT_SECONDS,
+)
+
 
 @dataclass
 class CommandResult:
@@ -69,7 +75,7 @@ class QnCliClient:
         self,
         args: list[str],
         *,
-        timeout: float = 30,
+        timeout: float = QN_DEFAULT_TIMEOUT_SECONDS,
         cwd: Optional[Path] = None,
     ) -> CommandResult:
         """Run `qn <args>` with a timeout. Always returns a CommandResult."""
@@ -131,7 +137,7 @@ class QnCliClient:
 
     def available(self) -> tuple[bool, str]:
         """Verify the resolved qn command actually responds (`qn --help`)."""
-        result = self.run(["--help"], timeout=5)
+        result = self.run(["--help"], timeout=QN_HELP_TIMEOUT_SECONDS)
         return result.success, result.error_message
 
     # ---- convenience helpers for common operations ----
@@ -143,7 +149,7 @@ class QnCliClient:
         spawn_ceo: bool = True,
         provider: str = "claude_code",
         skip_config_validation: bool = False,
-        timeout: float = 30,
+        timeout: float = QN_DEFAULT_TIMEOUT_SECONDS,
     ) -> CommandResult:
         args = ["--org-path", str(org_path), "org", "start"]
         if not spawn_ceo:
@@ -161,7 +167,7 @@ class QnCliClient:
         *,
         force: bool = False,
         cleanup: bool = True,
-        timeout: float = 30,
+        timeout: float = QN_DEFAULT_TIMEOUT_SECONDS,
     ) -> CommandResult:
         args = ["--org-path", str(org_path), "org", "stop", "--yes"]
         if force:
@@ -175,7 +181,7 @@ class QnCliClient:
         org_path: Path,
         *,
         skip_config_validation: bool = True,
-        timeout: float = 60,
+        timeout: float = QN_RESTART_TIMEOUT_SECONDS,
     ) -> CommandResult:
         args = ["--org-path", str(org_path), "org", "restart"]
         if skip_config_validation:
@@ -188,7 +194,7 @@ class QnCliClient:
         worker_id: str,
         *,
         force: bool = True,
-        timeout: float = 30,
+        timeout: float = QN_DEFAULT_TIMEOUT_SECONDS,
     ) -> CommandResult:
         args = ["--org-path", str(org_path), "wrkr", "restart", worker_id]
         if force:

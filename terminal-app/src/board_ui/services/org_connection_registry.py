@@ -9,6 +9,7 @@ import asyncio
 from pathlib import Path
 from typing import Callable, Optional
 
+from ..constants import DB_LOCKED_BACKOFF_BASE_SECONDS, DB_LOCKED_MAX_RETRIES
 from .org_connection import (
     DatabaseLocked,
     DatabaseNotFound,
@@ -85,7 +86,7 @@ class OrgConnectionRegistry:
 
 async def connect_with_retry(
     org_path: Path,
-    max_retries: int = 3,
+    max_retries: int = DB_LOCKED_MAX_RETRIES,
     on_locked_retry: Optional[Callable[[int, int, float], None]] = None,
     sleep: Optional[Callable] = None,
     connection_factory: Optional[Callable[[Path], QuinnAIOrgConnection]] = None,
@@ -118,7 +119,7 @@ async def connect_with_retry(
             last_locked = e
             if attempt >= max_retries - 1:
                 break
-            delay = 0.5 * (2**attempt)
+            delay = DB_LOCKED_BACKOFF_BASE_SECONDS * (2**attempt)
             if on_locked_retry:
                 on_locked_retry(attempt + 1, max_retries, delay)
             await sleep_fn(delay)

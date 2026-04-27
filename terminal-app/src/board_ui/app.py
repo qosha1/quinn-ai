@@ -19,6 +19,7 @@ from textual.binding import Binding
 from textual.widgets import Header, Footer, TabbedContent, TabPane
 
 from .config import BoardConfig
+from .constants import DB_LOCKED_MAX_RETRIES, WAL_POLL_INTERVAL_SECONDS
 from .views.dashboard import DashboardView
 from .views.okrs import OKRsView
 from .views.team import TeamView
@@ -193,7 +194,7 @@ class BoardApp(App):
     async def on_mount(self) -> None:
         """Handle app mount."""
         # Set up real-time update polling (300ms interval)
-        self.set_interval(0.3, self._poll_for_updates)
+        self.set_interval(WAL_POLL_INTERVAL_SECONDS, self._poll_for_updates)
 
         # Discover available orgs
         await self._discover_and_show_orgs()
@@ -218,18 +219,18 @@ class BoardApp(App):
 
     async def _connect_to_org(self, org_path: Path) -> None:
         """Connect to an organization, retrying with backoff if DB is locked."""
-        max_retries = 3
         try:
             connection = await connect_with_retry(
                 org_path,
-                max_retries=max_retries,
+                max_retries=DB_LOCKED_MAX_RETRIES,
                 on_locked_retry=lambda attempt, total, delay: self.notify(
                     f"Database locked, retrying in {delay:.1f}s... ({attempt}/{total})"
                 ),
             )
         except DatabaseLocked:
             self._show_connect_error(
-                f"Database locked after {max_retries} retries", severity="error"
+                f"Database locked after {DB_LOCKED_MAX_RETRIES} retries",
+                severity="error",
             )
             return
         except OrgNotFound:

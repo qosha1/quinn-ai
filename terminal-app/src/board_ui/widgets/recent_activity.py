@@ -10,6 +10,7 @@ from textual.reactive import reactive
 from datetime import datetime
 from typing import List, Optional
 
+from board_ui.constants import ACTIVITY_REFRESH_INTERVAL_SECONDS
 from board_ui.interfaces.org_connection import OrgConnection
 
 
@@ -147,5 +148,4 @@ class RecentActivityWidget(VerticalScroll):
         """Handle mount event."""
         self.refresh_activities()
 
-        # Auto-refresh every 30 seconds
-        self.set_interval(30, self.refresh_activities)
+        self.set_interval(ACTIVITY_REFRESH_INTERVAL_SECONDS, self.refresh_activities)

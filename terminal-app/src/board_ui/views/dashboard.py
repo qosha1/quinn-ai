@@ -16,6 +16,7 @@ from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Label, Static
 from textual.widget import Widget
 
+from ..constants import VIEW_REFRESH_INTERVAL_SECONDS
 from ..interfaces.org_connection import OrgInfo, WorkerInfo, BudgetSummary, OrgStatus
 from ..widgets.recent_activity import RecentActivityWidget
 from ..widgets.health_status import HealthStatusWidget
@@ -105,7 +106,7 @@ class DashboardView(VerticalScroll):
         self._org_info: Optional[OrgInfo] = None
         self._budget: Optional[BudgetSummary] = None
         self._spawning_session: bool = False  # Guard against double-spawn
-        self._refresh_interval_seconds = 2  # Auto-refresh every 2 seconds
+        self._refresh_interval_seconds = VIEW_REFRESH_INTERVAL_SECONDS
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="top-row"):
