@@ -5,18 +5,39 @@ build-backend = "hatchling.build"
 [project]
 name = "quinnai"
 version = "0.2.0"
-description = "QuinnAI - RollerCoaster Tycoon for AI Organizations"
+description = "QuinnAI - hierarchical AI organization management CLI"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [
     { name = "QuinnAI Team" }
 ]
+keywords = ["ai", "agents", "orchestration", "cli", "organization", "claude", "openai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
 dependencies = [
     "click>=8.1.0",
     "pyyaml>=6.0",
     "jinja2>=3.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/qosha1/quinn-ai"
+Repository = "https://github.com/qosha1/quinn-ai"
+Issues = "https://github.com/qosha1/quinn-ai/issues"
+Changelog = "https://github.com/qosha1/quinn-ai/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [

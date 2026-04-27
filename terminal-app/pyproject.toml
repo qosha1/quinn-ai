@@ -12,12 +12,32 @@ license = "MIT"
 authors = [
     { name = "QuinnAI Team" }
 ]
+keywords = ["ai", "agents", "orchestration", "tui", "textual", "quinnai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console :: Curses",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
 dependencies = [
     "textual>=0.47.0",
     "click>=8.1.0",
     "pyyaml>=6.0",
     "quinnai",
 ]
+
+[project.urls]
+Homepage = "https://github.com/qosha1/quinn-ai"
+Repository = "https://github.com/qosha1/quinn-ai"
+Issues = "https://github.com/qosha1/quinn-ai/issues"
 
 [project.optional-dependencies]
 dev = [
