@@ -408,7 +408,7 @@ class BoardApp(App):
             self._refresh_org_list()
         except CliCoreUnavailable:
             self.notify(
-                "CLI module not available. Install quinnai-cli or run from monorepo.",
+                "CLI module not available. Install quinnai or run from monorepo.",
                 severity="error",
             )
             self._return_to_no_org_view()

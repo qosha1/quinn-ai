@@ -37,16 +37,16 @@ PLATFORM=darwin ARCH=arm64 ./scripts/build-beads.sh
 
 ### Build Python Wheel Locally
 ```bash
-cd cli
 pip install build
-python -m build --wheel
+python -m build --wheel        # builds quinnai wheel from repo root
+python -m build --wheel terminal-app  # builds quinnai-board wheel
 ```
 
 ### Create a Release
 ```bash
-# 1. Update version in cli/pyproject.toml
+# 1. Update VERSION (single source of truth) and root pyproject.toml
 # 2. Commit changes
-git add cli/pyproject.toml
+git add VERSION pyproject.toml
 git commit -m "Bump version to 0.2.0"
 
 # 3. Create and push tag

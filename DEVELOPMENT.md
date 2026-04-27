@@ -2,7 +2,8 @@
 
 ## Installing Development Dependencies
 
-QuinnAI is a Python CLI tool. The `shared/` package contains business logic consumed by `cli/` and `terminal-app/`.
+QuinnAI ships as a single `quinnai` package (containing both `cli/` and
+`shared/` modules) plus a separate `quinnai-board` package for the terminal UI.
 
 ### Quick Setup
 
@@ -19,38 +20,40 @@ source .venv/bin/activate  # On macOS/Linux
 pip install -r requirements-dev.txt
 ```
 
-This will install:
-- `quinnai-shared` - Business logic and state machines
-- `quinnai-cli` - Command-line interface with dev dependencies
+This installs:
+- `quinnai` (editable) - CLI + shared business logic, dev extras
+- `quinnai-board` (editable) - Terminal UI, dev extras
 
 ### Manual Installation
 
 If you need to install packages individually:
 
 ```bash
-# Install shared package in editable mode
-pip install -e ./shared
+# Install root package (cli + shared) with dev extras
+pip install -e .[dev]
 
-# Install CLI package in editable mode with dev dependencies
-pip install -e ./cli[dev]
+# Install terminal-app with dev extras
+pip install -e ./terminal-app[dev]
 ```
 
 ### Package Structure
 
 ```
 quinnai/
-├── shared/              # Business logic package (quinnai-shared)
-│   ├── __init__.py
-│   ├── state_machines.py
-│   ├── exceptions.py
-│   ├── provider_types.py
-│   └── pyproject.toml
-├── cli/                 # CLI package (quinnai-cli)
+├── cli/                 # CLI module (shipped inside `quinnai` wheel)
 │   ├── commands/
 │   ├── core/
 │   ├── providers/
-│   ├── tests/
+│   └── tests/
+├── shared/              # Business logic (shipped inside `quinnai` wheel)
+│   ├── __init__.py
+│   ├── state_machines.py
+│   ├── exceptions.py
+│   └── provider_types.py
+├── terminal-app/        # quinnai-board package (separate wheel)
+│   ├── src/board_ui/
 │   └── pyproject.toml
+├── pyproject.toml       # quinnai package definition
 └── requirements-dev.txt # Development installation
 ```
 
@@ -68,32 +71,26 @@ python -m pytest tests/ -v
 ## Verifying Installation
 
 ```bash
-# Test that shared package is importable
-python -c "from shared import ORG_STATES; print('Success!')"
+# Test that the cli + shared modules are importable
+python -c "from shared import ORG_STATES; import cli.commands.main; print('Success!')"
 
 # Check installed packages
 pip list | grep quinnai
 ```
 
-You should see:
+You should see something like:
 ```
-quinnai-cli     0.1.0
-quinnai-shared  0.1.0
+quinnai         0.2.0
+quinnai-board   0.1.0
 ```
-
-## How It Works
-
-The `shared` package is installed as an editable package using pip's `-e` flag. This creates a `.pth` file in the virtual environment's `site-packages` directory that points to the `shared/` directory, making it importable from anywhere.
-
-The `cli` package is also installed in editable mode, allowing you to make changes to the code without reinstalling.
 
 ## Troubleshooting
 
-### ImportError: No module named 'shared'
+### ImportError: No module named 'shared' or 'cli'
 
-Make sure you've installed the shared package:
+Make sure you've installed the root package:
 ```bash
-pip install -e ./shared
+pip install -e .[dev]
 ```
 
 ### Tests failing

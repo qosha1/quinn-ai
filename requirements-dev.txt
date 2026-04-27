@@ -1,8 +1,8 @@
-# Install shared package in editable mode
--e ./shared
+# Install root package (cli + shared) in editable mode with dev extras
+-e .[dev]
 
-# Install CLI package in editable mode
--e ./cli[dev]
+# Install terminal-app in editable mode with dev extras
+-e ./terminal-app[dev]
 
 # Test framework
 systemeval>=0.3.0
