@@ -22,6 +22,7 @@ from textual.widget import Widget
 
 from ..interfaces.org_connection import Message
 from ..logging_config import get_board_logger
+from ._org_access import get_org_connection
 
 logger = get_board_logger(__name__)
 
@@ -201,15 +202,14 @@ class MessagesView(Widget):
 
     async def _load_channel_messages(self) -> None:
         """Load messages for the currently selected channel."""
-        if not self._current_channel_id or not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if not self._current_channel_id or conn is None:
             return
 
         table = self.query_one("#messages-table", DataTable)
         table.clear()
 
-        self._messages = self.app.org_connection.get_channel_messages(
-            self._current_channel_id
-        )
+        self._messages = conn.get_channel_messages(self._current_channel_id)
         self._populate_table_from_connection()
 
         # Update unread count
@@ -222,10 +222,11 @@ class MessagesView(Widget):
 
     async def refresh_messages(self) -> None:
         """Refresh channels and messages from org connection."""
-        if hasattr(self.app, 'org_connection') and self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if conn is not None:
             try:
                 # Load channels
-                self._channels = self.app.org_connection.get_all_channels()
+                self._channels = conn.get_all_channels()
                 self._update_channel_selector()
 
                 # Load messages from current channel (or first channel if none selected)
@@ -233,7 +234,7 @@ class MessagesView(Widget):
                     self._current_channel_id = self._channels[0]["id"]
 
                 if self._current_channel_id:
-                    self._messages = self.app.org_connection.get_channel_messages(
+                    self._messages = conn.get_channel_messages(
                         self._current_channel_id
                     )
                     # Clear table before repopulating (fixes placeholder row persistence bug)
@@ -385,8 +386,9 @@ class MessagesView(Widget):
         self.query_one("#resolve-btn", Button).disabled = False
 
         # Mark as read if connected
-        if hasattr(self.app, 'org_connection') and self.app.org_connection:
-            self.app.org_connection.mark_message_read(self._selected_message.id)
+        conn = get_org_connection(self.app)
+        if conn is not None:
+            conn.mark_message_read(self._selected_message.id)
 
     async def _execute_intervention(self, intervention: dict) -> tuple[bool, str]:
         """Execute board intervention.
@@ -397,7 +399,8 @@ class MessagesView(Widget):
         Returns:
             (success, message)
         """
-        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if conn is None:
             return False, "Not connected to org"
 
         action = intervention['action']
@@ -405,7 +408,6 @@ class MessagesView(Widget):
         reason = intervention.get('reason', '')
 
         # Validate worker exists before attempting intervention
-        conn = self.app.org_connection
         worker = conn.get_worker(worker_id)
         if not worker:
             return False, f"Worker '{worker_id}' not found"
@@ -463,8 +465,9 @@ class MessagesView(Widget):
                 return
 
         # Send reply (existing logic continues)
-        if hasattr(self.app, 'org_connection') and self.app.org_connection:
-            success = self.app.org_connection.send_board_response(
+        conn = get_org_connection(self.app)
+        if conn is not None:
+            success = conn.send_board_response(
                 self._selected_message.id,
                 reply_text,
             )
@@ -474,7 +477,7 @@ class MessagesView(Widget):
                 await self.refresh_messages()
             else:
                 # Check if CEO exists to give specific feedback
-                ceo = self.app.org_connection.get_ceo()
+                ceo = conn.get_ceo()
                 if not ceo:
                     self.app.notify("Cannot send reply: CEO worker not found", severity="error")
                 else:
@@ -488,8 +491,9 @@ class MessagesView(Widget):
             return
 
         # Mark via org connection (same as marking read)
-        if hasattr(self.app, 'org_connection') and self.app.org_connection:
-            self.app.org_connection.mark_message_read(self._selected_message.id)
+        conn = get_org_connection(self.app)
+        if conn is not None:
+            conn.mark_message_read(self._selected_message.id)
             self.app.notify("Message marked as resolved")
             await self.refresh_messages()
         else:

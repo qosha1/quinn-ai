@@ -16,6 +16,7 @@ from textual.widgets import Label, Static, Tree
 from textual.widget import Widget
 
 from ..logging_config import get_board_logger
+from ._org_access import get_org_connection
 
 if TYPE_CHECKING:
     from ..interfaces.org_connection import OKRInfo
@@ -87,12 +88,12 @@ class OKRsView(VerticalScroll):
         """Refresh OKRs from org connection."""
         logger.info("refresh_okrs called")
 
-        if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+        conn = get_org_connection(self.app)
+        if conn is None:
             logger.warning("No org connection - keeping placeholder data")
             return  # Keep placeholder data
 
         try:
-            conn = self.app.org_connection
             logger.info(f"Fetching OKRs from org connection: {conn.org_path}")
             okrs = conn.get_okrs()
             logger.info(f"Found {len(okrs)} OKRs")
@@ -252,13 +253,13 @@ class OKRsView(VerticalScroll):
         lines.append("=" * 80)
         lines.append("")
 
-        if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+        conn = get_org_connection(self.app)
+        if conn is None:
             lines.append("No org connected")
             lines.append("=" * 80)
             return "\n".join(lines)
 
         try:
-            conn = self.app.org_connection
             okrs = conn.get_okrs()
 
             if not okrs:

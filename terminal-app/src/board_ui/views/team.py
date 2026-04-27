@@ -18,6 +18,7 @@ from textual.widget import Widget
 
 from ..interfaces.org_connection import WorkerInfo, SessionState
 from ..logging_config import get_board_logger
+from ._org_access import get_org_connection
 
 logger = get_board_logger(__name__)
 
@@ -85,13 +86,12 @@ class TeamView(VerticalScroll):
 
     async def refresh_workers(self) -> None:
         """Refresh worker list from org connection."""
-        # Check if org connected
-        if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+        conn = get_org_connection(self.app)
+        if conn is None:
             self._populate_no_org_state()
             return
 
         try:
-            conn = self.app.org_connection
             workers = conn.get_workers()
 
             if not workers:
@@ -279,12 +279,11 @@ class TeamView(VerticalScroll):
         Returns:
             True if cleanup succeeded, False otherwise
         """
-        if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+        conn = get_org_connection(self.app)
+        if conn is None:
             return False
 
         try:
-            conn = self.app.org_connection
-            # Delegate to org connection's cleanup method
             return conn.cleanup_stale_session(worker.id, worker.tmux_session_name)
         except Exception as e:
             logger.error(f"Failed to cleanup stale session for {worker.name}: {e}")
@@ -361,11 +360,11 @@ class TeamView(VerticalScroll):
         Returns:
             tmux_session_name if session is running, None on failure
         """
-        if not hasattr(self.app, 'org_connection') or self.app.org_connection is None:
+        conn = get_org_connection(self.app)
+        if conn is None:
             self.app.notify("No org connected", severity="error")
             return None
 
-        conn = self.app.org_connection
         self.app.notify(f"Starting session for {worker.name}...", severity="information")
 
         try:
@@ -439,10 +438,13 @@ class TeamView(VerticalScroll):
         # TODO: Show confirmation dialog
         from ..services.qn_cli_client import get_default_qn_cli
 
+        conn = get_org_connection(self.app)
+        if conn is None:
+            self.app.notify("No org connected", severity="error")
+            return
+
         self.app.notify(f"Firing {worker.name}...", severity="information")
-        result = get_default_qn_cli().org_fire(
-            self.app.org_connection.org_path, worker.id, force=True
-        )
+        result = get_default_qn_cli().org_fire(conn.org_path, worker.id, force=True)
         if result.success:
             self.app.notify(f"Fired {worker.name} successfully", severity="success")
             await self.refresh_workers()

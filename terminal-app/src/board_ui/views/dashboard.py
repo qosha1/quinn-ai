@@ -20,6 +20,7 @@ from ..interfaces.org_connection import OrgInfo, WorkerInfo, BudgetSummary, OrgS
 from ..widgets.recent_activity import RecentActivityWidget
 from ..widgets.health_status import HealthStatusWidget
 from ..logging_config import get_board_logger
+from ._org_access import get_org_connection
 
 logger = get_board_logger(__name__)
 
@@ -151,10 +152,10 @@ class DashboardView(VerticalScroll):
 
     async def on_mount(self) -> None:
         """Load data when view mounts."""
-        # Set org_connection on activity widget if available
-        if hasattr(self.app, 'org_connection') and self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if conn is not None:
             activity_widget = self.query_one("#activity-widget", RecentActivityWidget)
-            activity_widget.org_connection = self.app.org_connection
+            activity_widget.org_connection = conn
             activity_widget.refresh_activities()
 
         await self.refresh_data()
@@ -167,10 +168,9 @@ class DashboardView(VerticalScroll):
 
     async def refresh_data(self) -> None:
         """Refresh dashboard data from org connection."""
-        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if conn is None:
             return
-
-        conn = self.app.org_connection
 
         try:
             # Get org info
@@ -341,11 +341,11 @@ class DashboardView(VerticalScroll):
         Returns:
             tmux_session_name if session is running, None on failure
         """
-        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if conn is None:
             self.app.notify("No org connected", severity="error")
             return None
 
-        conn = self.app.org_connection
         self.app.notify(f"Starting session for {worker.name}...", severity="information")
 
         try:
@@ -390,13 +390,13 @@ class DashboardView(VerticalScroll):
 
     async def _start_org(self) -> None:
         """Start the organization."""
-        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if conn is None:
             self.app.notify("No org connected", severity="error")
             return
 
         self.app.notify("Starting organization...", severity="information")
 
-        conn = self.app.org_connection
         try:
             worker = self.app.run_worker(conn.start_org, thread=True)
             success = await worker.wait()
@@ -410,13 +410,13 @@ class DashboardView(VerticalScroll):
 
     async def _stop_org(self) -> None:
         """Stop the organization."""
-        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if conn is None:
             self.app.notify("No org connected", severity="error")
             return
 
         self.app.notify("Stopping organization...", severity="information")
 
-        conn = self.app.org_connection
         try:
             worker = self.app.run_worker(conn.stop_org, thread=True)
             success = await worker.wait()
@@ -430,20 +430,13 @@ class DashboardView(VerticalScroll):
 
     async def _restart_org(self) -> None:
         """Restart the organization."""
-        if not hasattr(self.app, 'org_connection') or not self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if conn is None:
             self.app.notify("No org connected", severity="error")
             return
 
-        # Confirm with user
-        from textual.app import ComposeResult
-        from textual.containers import Container
-        from textual.widgets import Static
-
-        # Show notification that restart is happening
         self.app.notify("Restarting organization...", severity="information")
 
-        # Perform restart in background
-        conn = self.app.org_connection
         try:
             worker = self.app.run_worker(conn.restart_org, thread=True)
             success, message = await worker.wait()
@@ -497,9 +490,10 @@ class DashboardView(VerticalScroll):
             lines.append("")
 
         # Health status (if available)
-        if hasattr(self.app, 'org_connection') and self.app.org_connection:
+        conn = get_org_connection(self.app)
+        if conn is not None:
             try:
-                health = self.app.org_connection.get_health_status()
+                health = conn.get_health_status()
                 lines.append("Health Status:")
                 lines.append(f"  Overall Score: {health.overall_score}/100")
                 lines.append(f"  Total Workers: {health.total_workers}")

@@ -17,6 +17,8 @@ from textual.widgets import Button, Label, Static, Select
 from textual.widget import Widget
 from textual.message import Message
 
+from ._org_access import get_org_connection
+
 
 class ProviderChangeRequested(Message):
     """Posted when user wants to change the default provider."""
@@ -146,15 +148,11 @@ class SettingsView(VerticalScroll):
     async def refresh_settings(self) -> None:
         """Refresh provider settings from the org connection."""
         try:
-            # Get org connection from app
-            app = self.app
-            if not hasattr(app, 'org_connection') or not app.org_connection:
+            org_connection = get_org_connection(self.app)
+            if org_connection is None:
                 self.notify("Not connected to org", severity="error")
                 return
 
-            org_connection = app.org_connection
-
-            # Fetch provider configuration
             result = await self._fetch_provider_config(org_connection)
             if result:
                 self._current_default = result["default"]
@@ -286,13 +284,11 @@ class SettingsView(VerticalScroll):
     async def _change_default_provider(self, provider_name: str) -> None:
         """Change the default provider."""
         try:
-            # Get org connection
-            app = self.app
-            if not hasattr(app, 'org_connection') or not app.org_connection:
+            org_connection = get_org_connection(self.app)
+            if org_connection is None:
                 self.notify("Not connected to org", severity="error")
                 return
 
-            org_connection = app.org_connection
             org_path = org_connection.org_path
 
             from ..services.qn_cli_client import get_default_qn_cli
