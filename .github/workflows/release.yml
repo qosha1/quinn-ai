@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
 
+# Workflow-level least-privilege default. Jobs that need more (id-token for
+# OIDC trusted publishing, contents:write for GH releases) override below.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Tests
@@ -86,11 +91,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 10
+    # The 'pypi' environment must exist on the repo (Settings → Environments)
+    # AND the PyPI trusted-publisher entry for both quinnai and quinnai-board
+    # must list Environment: pypi — otherwise the OIDC token is rejected.
     environment:
       name: pypi
       url: https://pypi.org/project/quinnai/
+    # id-token: write is the only permission OIDC trusted publishing needs.
+    # Setting it explicitly drops every other scope (contents/etc.) to none.
     permissions:
-      id-token: write  # required for OIDC trusted publishing
+      id-token: write
+      contents: read  # for downloading the build artifacts via the API
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -98,11 +109,11 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
+        # No 'password' input → action uses the OIDC token minted by the
+        # id-token:write permission above. See action docs and
+        # docs/operations/release-bootstrap.md.
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # Trusted publishing — no API token needed once configured at
-          # https://pypi.org/manage/account/publishing/
-          # See docs/operations/release-bootstrap.md for setup.
           packages-dir: dist/
 
   github-release:
@@ -110,6 +121,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: publish-pypi
     timeout-minutes: 5
+    # contents:write is required by softprops/action-gh-release to create
+    # the release and upload assets. All other scopes default to none.
     permissions:
       contents: write
     steps:
@@ -147,6 +160,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: publish-pypi
     timeout-minutes: 10
+    # No checkout, no GH API writes — strip every scope.
+    permissions: {}
     strategy:
       fail-fast: false
       matrix:
