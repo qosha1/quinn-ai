@@ -174,7 +174,7 @@ class TestHireValidation:
 
     def test_hire_cost_boundary_zero(self, runner, initialized_org):
         """Cost 0 is valid."""
-        with patch("commands.org.hire._start_workday_for_hire"):
+        with patch("cli.commands.org.hire._start_workday_for_hire"):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "org", "hire",
@@ -186,7 +186,7 @@ class TestHireValidation:
 
     def test_hire_cost_boundary_hundred(self, runner, initialized_org):
         """Cost 100 is valid."""
-        with patch("commands.org.hire._start_workday_for_hire"):
+        with patch("cli.commands.org.hire._start_workday_for_hire"):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "org", "hire",
@@ -198,7 +198,7 @@ class TestHireValidation:
 
     def test_hire_default_cost_is_50(self, runner, initialized_org):
         """Default cost should be 50 when --cost not specified."""
-        with patch("commands.org.hire._start_workday_for_hire"):
+        with patch("cli.commands.org.hire._start_workday_for_hire"):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "org", "hire",
@@ -222,7 +222,7 @@ class TestHireManagerLookup:
     def test_hire_manager_found_by_id(self, runner, initialized_org):
         """Manager can be specified by worker ID."""
         ceo_id = get_ceo_worker_id(initialized_org)
-        with patch("commands.org.hire._start_workday_for_hire"):
+        with patch("cli.commands.org.hire._start_workday_for_hire"):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "org", "hire",
@@ -314,7 +314,7 @@ class TestHireManagerLookup:
         director_id = create_worker(initialized_org, "Director", ceo_id)
         grant_authority(initialized_org, director_id, allowed_roles=["developer"], max_cost=80)
 
-        with patch("commands.org.hire._start_workday_for_hire"):
+        with patch("cli.commands.org.hire._start_workday_for_hire"):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "org", "hire",
@@ -526,7 +526,7 @@ class TestFireReassignment:
         assert result.exit_code != 0
         assert "not in active status" in result.output.lower() or "active" in result.output.lower()
 
-    @patch("commands.org.fire._reassign_pending_work")
+    @patch("cli.commands.org.fire._reassign_pending_work")
     def test_fire_reassign_to_valid_worker(self, mock_reassign, runner, initialized_org):
         ceo_id = get_ceo_worker_id(initialized_org)
         create_worker(initialized_org, "Departed", ceo_id)
@@ -721,7 +721,7 @@ class TestPromoteHappyPath:
         ceo_id = get_ceo_worker_id(initialized_org)
         worker_id = create_worker(initialized_org, "CircWorker", ceo_id)
 
-        with patch("commands.org.promote.Worker.delegate_authority") as mock_delegate:
+        with patch("cli.commands.org.promote.Worker.delegate_authority") as mock_delegate:
             from shared.exceptions import CircularDelegationError
             mock_delegate.side_effect = CircularDelegationError("worker-a", "worker-b")
 
@@ -1164,7 +1164,7 @@ class TestBudgetOrgNotInitialized:
 class TestBudgetStatus:
     def test_budget_status_no_pools_message(self, runner, initialized_org):
         """When no budget pools configured, show appropriate message."""
-        with patch("commands.org.budget.get_all_budget_pools") as mock_pools:
+        with patch("cli.commands.org.budget.get_all_budget_pools") as mock_pools:
             mock_pools.return_value = []
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1238,9 +1238,9 @@ class TestBudgetAllocate:
         ceo_id = get_ceo_worker_id(initialized_org)
         create_worker(initialized_org, "AllocReceiver", ceo_id)
 
-        with patch("commands.org.budget.BudgetService.delegate_budget") as mock_delegate:
+        with patch("cli.commands.org.budget.BudgetService.delegate_budget") as mock_delegate:
             mock_delegate.return_value = "alloc-test-id"
-            with patch("commands.org.budget.get_worker_balance") as mock_balance:
+            with patch("cli.commands.org.budget.get_worker_balance") as mock_balance:
                 mock_bal = MagicMock()
                 mock_bal.available = 200.0
                 mock_balance.return_value = mock_bal
@@ -1256,7 +1256,7 @@ class TestBudgetAllocate:
         ceo_id = get_ceo_worker_id(initialized_org)
         create_worker(initialized_org, "BrokeReceiver", ceo_id)
 
-        with patch("commands.org.budget.BudgetService.delegate_budget") as mock_delegate:
+        with patch("cli.commands.org.budget.BudgetService.delegate_budget") as mock_delegate:
             from cli.commands.org.budget import BudgetAllocationError
             mock_delegate.side_effect = BudgetAllocationError("insufficient funds")
 
@@ -1272,9 +1272,9 @@ class TestBudgetAllocate:
         create_worker(initialized_org, "CustomSource", ceo_id)
         create_worker(initialized_org, "CustomTarget", ceo_id)
 
-        with patch("commands.org.budget.BudgetService.delegate_budget") as mock_delegate:
+        with patch("cli.commands.org.budget.BudgetService.delegate_budget") as mock_delegate:
             mock_delegate.return_value = "alloc-custom-id"
-            with patch("commands.org.budget.get_worker_balance") as mock_balance:
+            with patch("cli.commands.org.budget.get_worker_balance") as mock_balance:
                 mock_bal = MagicMock()
                 mock_bal.available = 100.0
                 mock_balance.return_value = mock_bal
@@ -1297,7 +1297,7 @@ class TestBudgetTransactions:
         assert "not found" in result.output.lower()
 
     def test_budget_transactions_shows_ceo_by_default(self, runner, initialized_org):
-        with patch("commands.org.budget.get_transactions_by_worker") as mock_txns:
+        with patch("cli.commands.org.budget.get_transactions_by_worker") as mock_txns:
             mock_txns.return_value = []
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1307,7 +1307,7 @@ class TestBudgetTransactions:
         assert "TestCEO" in result.output
 
     def test_budget_transactions_no_transactions_found(self, runner, initialized_org):
-        with patch("commands.org.budget.get_transactions_by_worker") as mock_txns:
+        with patch("cli.commands.org.budget.get_transactions_by_worker") as mock_txns:
             mock_txns.return_value = []
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1317,7 +1317,7 @@ class TestBudgetTransactions:
         assert "no transactions" in result.output.lower()
 
     def test_budget_transactions_limit_controls_count(self, runner, initialized_org):
-        with patch("commands.org.budget.get_transactions_by_worker") as mock_txns:
+        with patch("cli.commands.org.budget.get_transactions_by_worker") as mock_txns:
             mock_txns.return_value = []
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1328,7 +1328,7 @@ class TestBudgetTransactions:
         assert call_kwargs.get("limit") == 5 or (mock_txns.call_args and 5 in mock_txns.call_args[0])
 
     def test_budget_transactions_type_filter(self, runner, initialized_org):
-        with patch("commands.org.budget.get_transactions_by_worker") as mock_txns:
+        with patch("cli.commands.org.budget.get_transactions_by_worker") as mock_txns:
             mock_txns.return_value = []
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1357,7 +1357,7 @@ class TestOkrOrgNotInitialized:
 
 class TestOkrList:
     def test_okr_list_returns_open_by_default(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout='[]', stderr='')
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1369,7 +1369,7 @@ class TestOkrList:
         assert any("status=open" in a or "status" in a for a in call_args)
 
     def test_okr_list_all_includes_closed(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout='[]', stderr='')
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1380,7 +1380,7 @@ class TestOkrList:
         assert "--all" in call_args
 
     def test_okr_list_status_filter(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout='[]', stderr='')
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1389,7 +1389,7 @@ class TestOkrList:
         assert result.exit_code == 0
 
     def test_okr_list_assignee_filter(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout='[]', stderr='')
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1401,7 +1401,7 @@ class TestOkrList:
 
     def test_okr_list_from_db_shows_key_results_progress(self, runner, initialized_org):
         """--from-db should query the database directly."""
-        with patch("core.queries.list_okrs") as mock_list:
+        with patch("cli.core.queries.list_okrs") as mock_list:
             mock_list.return_value = []
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1413,7 +1413,7 @@ class TestOkrList:
 
 class TestOkrSet:
     def test_okr_set_creates_okr_with_required_title(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-test-1\n",
@@ -1429,7 +1429,7 @@ class TestOkrSet:
         assert "Q1 Revenue Growth" in call_args
 
     def test_okr_set_with_all_options(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-full-1\n",
@@ -1448,7 +1448,7 @@ class TestOkrSet:
         assert result.exit_code == 0
 
     def test_okr_set_iso_due_date(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-iso-1\n",
@@ -1463,7 +1463,7 @@ class TestOkrSet:
         assert result.exit_code == 0
 
     def test_okr_set_relative_due_date(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-rel-1\n",
@@ -1479,7 +1479,7 @@ class TestOkrSet:
 
     def test_okr_add_alias_works_same_as_set(self, runner, initialized_org):
         """okr add should behave identically to okr set."""
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="Created issue: okr-add-1\n",
@@ -1495,7 +1495,7 @@ class TestOkrSet:
 
 class TestOkrShow:
     def test_okr_show_not_found(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(returncode=1, stdout="", stderr="not found")
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1505,7 +1505,7 @@ class TestOkrShow:
         assert "not found" in result.output.lower()
 
     def test_okr_show_displays_details_and_linked_work(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.side_effect = [
                 MagicMock(returncode=0, stdout="OKR: Q1 Goal\nStatus: open\n", stderr=""),
                 MagicMock(returncode=0, stdout='[]', stderr=""),
@@ -1531,7 +1531,7 @@ class TestOkrProgress:
         mock_okr.key_results = []
         mock_okr.progress.return_value = 0.0
 
-        with patch("core.queries.get_okr") as mock_get:
+        with patch("cli.core.queries.get_okr") as mock_get:
             mock_get.return_value = mock_okr
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1559,7 +1559,7 @@ class TestOkrProgress:
         mock_okr.progress.return_value = 90.0
         mock_okr.all_key_results_met.return_value = False
 
-        with patch("core.queries.get_okr") as mock_get:
+        with patch("cli.core.queries.get_okr") as mock_get:
             mock_get.return_value = mock_okr
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1579,9 +1579,9 @@ class TestOkrUpdateKr:
         mock_okr.key_results = []
         mock_okr.progress.return_value = 0.0
 
-        with patch("core.queries.get_okr") as mock_get:
+        with patch("cli.core.queries.get_okr") as mock_get:
             mock_get.return_value = mock_okr
-            with patch("core.queries.add_okr_key_result") as mock_add:
+            with patch("cli.core.queries.add_okr_key_result") as mock_add:
                 result = runner.invoke(qn, [
                     "--org-path", str(initialized_org),
                     "org", "okr", "update-kr", "okr-1",
@@ -1595,7 +1595,7 @@ class TestOkrUpdateKr:
         mock_okr = MagicMock()
         mock_okr.key_results = []
 
-        with patch("core.queries.get_okr") as mock_get:
+        with patch("cli.core.queries.get_okr") as mock_get:
             mock_get.return_value = mock_okr
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1615,9 +1615,9 @@ class TestOkrUpdateKr:
         mock_okr.key_results = [mock_kr]
         mock_okr.progress.return_value = 72.0
 
-        with patch("core.queries.get_okr") as mock_get:
+        with patch("cli.core.queries.get_okr") as mock_get:
             mock_get.side_effect = [mock_okr, mock_okr]
-            with patch("core.queries.update_okr_key_result") as mock_update:
+            with patch("cli.core.queries.update_okr_key_result") as mock_update:
                 result = runner.invoke(qn, [
                     "--org-path", str(initialized_org),
                     "org", "okr", "update-kr", "okr-1",
@@ -1636,7 +1636,7 @@ class TestOkrUpdateKr:
         mock_okr = MagicMock()
         mock_okr.key_results = [mock_kr]
 
-        with patch("core.queries.get_okr") as mock_get:
+        with patch("cli.core.queries.get_okr") as mock_get:
             mock_get.return_value = mock_okr
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
@@ -1649,7 +1649,7 @@ class TestOkrUpdateKr:
 
 class TestOkrCascade:
     def test_okr_cascade_shows_hierarchy_tree(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout=json.dumps([
@@ -1666,7 +1666,7 @@ class TestOkrCascade:
         assert "Parent OKR" in result.output
 
     def test_okr_cascade_root_shows_subtree(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(
                 returncode=0,
                 stdout="okr-1: Parent OKR\n  okr-2: Child OKR\n",
@@ -1682,7 +1682,7 @@ class TestOkrCascade:
 
 class TestOkrLink:
     def test_okr_link_work_item_to_okr(self, runner, initialized_org):
-        with patch("commands.org.okr.run_bd") as mock_bd:
+        with patch("cli.commands.org.okr.run_bd") as mock_bd:
             mock_bd.return_value = MagicMock(returncode=0, stdout="Added dependency\n", stderr="")
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),

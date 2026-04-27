@@ -230,7 +230,7 @@ class TestWrkrStatus:
 
     def test_db_closed_in_finally_block(self, runner, org_dir, db, active_ceo):
         """status closes DB even if worker lookup fails."""
-        with patch("commands.wrkr.status.Worker.get", side_effect=Exception("db error")):
+        with patch("cli.commands.wrkr.status.Worker.get", side_effect=Exception("db error")):
             result = invoke_wrkr(runner, org_dir, ["wrkr", "status"], worker_id=active_ceo)
         assert result.exit_code != 0
 
@@ -284,7 +284,7 @@ class TestWrkrGetWork:
         mock_result.returncode = 0
         mock_result.stdout = "[]"
         mock_result.stderr = ""
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
             result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work"], worker_id=active_ceo_with_session)
         assert result.exit_code == 0
         assert "no work" in result.output.lower()
@@ -295,7 +295,7 @@ class TestWrkrGetWork:
         mock_result.returncode = 0
         mock_result.stdout = "[]"
         mock_result.stderr = ""
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
             result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work", "--json"], worker_id=active_ceo_with_session)
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -308,7 +308,7 @@ class TestWrkrGetWork:
         mock_result.returncode = 1
         mock_result.stdout = ""
         mock_result.stderr = "bd error"
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
             result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work"], worker_id=active_ceo_with_session)
         assert result.exit_code == 0
         assert "no work" in result.output.lower()
@@ -319,7 +319,7 @@ class TestWrkrGetWork:
         mock_result.returncode = 1
         mock_result.stdout = ""
         mock_result.stderr = "bd error"
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
             result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work", "--json"], worker_id=active_ceo_with_session)
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -331,14 +331,14 @@ class TestWrkrGetWork:
         mock_result.returncode = 0
         mock_result.stdout = "not valid json"
         mock_result.stderr = ""
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
             result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work"], worker_id=active_ceo_with_session)
         assert result.exit_code == 0
         assert "no work" in result.output.lower()
 
     def test_bd_not_found_shows_fallback(self, runner, org_dir, db, active_ceo_with_session):
         """get-work shows note when bd binary not found."""
-        with patch("commands.wrkr.get_work.run_bd", side_effect=FileNotFoundError()):
+        with patch("cli.commands.wrkr.get_work.run_bd", side_effect=FileNotFoundError()):
             result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work"], worker_id=active_ceo_with_session)
         assert result.exit_code == 0
         assert "no work" in result.output.lower()
@@ -350,8 +350,8 @@ class TestWrkrGetWork:
         mock_result.returncode = 0
         mock_result.stdout = json.dumps(items)
         mock_result.stderr = ""
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
-            with patch("commands.wrkr.get_work.can_worker_access_bead", return_value=True):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
+            with patch("cli.commands.wrkr.get_work.can_worker_access_bead", return_value=True):
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work"], worker_id=active_ceo_with_session)
         assert result.exit_code == 0
         assert "Fix bug" in result.output
@@ -363,8 +363,8 @@ class TestWrkrGetWork:
         mock_result.returncode = 0
         mock_result.stdout = json.dumps(items)
         mock_result.stderr = ""
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
-            with patch("commands.wrkr.get_work.can_worker_access_bead", return_value=True):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
+            with patch("cli.commands.wrkr.get_work.can_worker_access_bead", return_value=True):
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work", "--json"], worker_id=active_ceo_with_session)
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -381,8 +381,8 @@ class TestWrkrGetWork:
         mock_result.returncode = 0
         mock_result.stdout = json.dumps(items)
         mock_result.stderr = ""
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
-            with patch("commands.wrkr.get_work.can_worker_access_bead", return_value=True):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
+            with patch("cli.commands.wrkr.get_work.can_worker_access_bead", return_value=True):
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work", "--json"], worker_id=active_ceo_with_session)
         data = json.loads(result.output)
         priorities = [i["priority"] for i in data["items"]]
@@ -402,8 +402,8 @@ class TestWrkrGetWork:
         def perm_check(db, worker_id, bead_id, level):
             return bead_id == "beads-allowed"
 
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
-            with patch("commands.wrkr.get_work.can_worker_access_bead", side_effect=perm_check):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
+            with patch("cli.commands.wrkr.get_work.can_worker_access_bead", side_effect=perm_check):
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work", "--json"], worker_id=active_ceo_with_session)
         data = json.loads(result.output)
         assert data["count"] == 1
@@ -416,8 +416,8 @@ class TestWrkrGetWork:
         mock_result.returncode = 0
         mock_result.stdout = json.dumps(items)
         mock_result.stderr = ""
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
-            with patch("commands.wrkr.get_work.can_worker_access_bead", return_value=True):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
+            with patch("cli.commands.wrkr.get_work.can_worker_access_bead", return_value=True):
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work", "--limit", "2", "--json"], worker_id=active_ceo_with_session)
         data = json.loads(result.output)
         assert data["count"] == 2
@@ -429,8 +429,8 @@ class TestWrkrGetWork:
         mock_result.returncode = 0
         mock_result.stdout = json.dumps(items)
         mock_result.stderr = ""
-        with patch("commands.wrkr.get_work.run_bd", return_value=mock_result):
-            with patch("commands.wrkr.get_work.can_worker_access_bead", return_value=True):
+        with patch("cli.commands.wrkr.get_work.run_bd", return_value=mock_result):
+            with patch("cli.commands.wrkr.get_work.can_worker_access_bead", return_value=True):
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "get-work", "--json"], worker_id=active_ceo_with_session)
         data = json.loads(result.output)
         assert data["count"] == 10
@@ -484,7 +484,7 @@ class TestWrkrReport:
         mock_result.returncode = 0
         mock_result.stdout = "beads-rpt001"
         mock_result.stderr = ""
-        with patch("commands.wrkr.report.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.report.run_bd", return_value=mock_result):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo_with_session],
@@ -499,7 +499,7 @@ class TestWrkrReport:
         mock_result.returncode = 0
         mock_result.stdout = "beads-rpt001"
         mock_result.stderr = ""
-        with patch("commands.wrkr.report.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.report.run_bd", return_value=mock_result):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo],
@@ -515,7 +515,7 @@ class TestWrkrReport:
         mock_result.returncode = 0
         mock_result.stdout = "beads-rpt001"
         mock_result.stderr = ""
-        with patch("commands.wrkr.report.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.report.run_bd", return_value=mock_result):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", worker_data.name],
@@ -529,7 +529,7 @@ class TestWrkrReport:
         mock_result.returncode = 1
         mock_result.stdout = ""
         mock_result.stderr = "bd create error"
-        with patch("commands.wrkr.report.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.report.run_bd", return_value=mock_result):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo],
@@ -540,7 +540,7 @@ class TestWrkrReport:
 
     def test_bd_binary_not_found(self, runner, org_dir, db, active_ceo):
         """report fails gracefully when bd binary not found."""
-        with patch("commands.wrkr.report.run_bd", side_effect=FileNotFoundError()):
+        with patch("cli.commands.wrkr.report.run_bd", side_effect=FileNotFoundError()):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo],
@@ -551,7 +551,7 @@ class TestWrkrReport:
 
     def test_bd_binary_not_found_with_json(self, runner, org_dir, db, active_ceo):
         """report --json returns JSON error when bd not found."""
-        with patch("commands.wrkr.report.run_bd", side_effect=FileNotFoundError()):
+        with patch("cli.commands.wrkr.report.run_bd", side_effect=FileNotFoundError()):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo, "--json"],
@@ -567,7 +567,7 @@ class TestWrkrReport:
         mock_result.returncode = 0
         mock_result.stdout = "beads-rpt001"
         mock_result.stderr = ""
-        with patch("commands.wrkr.report.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.report.run_bd", return_value=mock_result):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo, "--json"],
@@ -589,7 +589,7 @@ class TestWrkrReport:
         def capture_run_bd(args, **kwargs):
             captured_args.extend(args)
             return mock_result
-        with patch("commands.wrkr.report.run_bd", side_effect=capture_run_bd):
+        with patch("cli.commands.wrkr.report.run_bd", side_effect=capture_run_bd):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", long_summary, "--to", active_ceo],
@@ -615,7 +615,7 @@ class TestWrkrReport:
         def capture_run_bd(args, **kwargs):
             captured_args.extend(args)
             return mock_result
-        with patch("commands.wrkr.report.run_bd", side_effect=capture_run_bd):
+        with patch("cli.commands.wrkr.report.run_bd", side_effect=capture_run_bd):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", short_summary, "--to", active_ceo],
@@ -643,7 +643,7 @@ class TestWrkrReport:
             if args[0] == "create":
                 return mock_create
             return mock_dep
-        with patch("commands.wrkr.report.run_bd", side_effect=run_bd_side_effect):
+        with patch("cli.commands.wrkr.report.run_bd", side_effect=run_bd_side_effect):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo, "--link", "beads-task1"],
@@ -662,7 +662,7 @@ class TestWrkrReport:
         def run_bd_side_effect(args, **kwargs):
             call_count[0] += 1
             return mock_result
-        with patch("commands.wrkr.report.run_bd", side_effect=run_bd_side_effect):
+        with patch("cli.commands.wrkr.report.run_bd", side_effect=run_bd_side_effect):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo,
@@ -678,7 +678,7 @@ class TestWrkrReport:
         mock_result.returncode = 0
         mock_result.stdout = "beads-rpt001"
         mock_result.stderr = ""
-        with patch("commands.wrkr.report.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.report.run_bd", return_value=mock_result):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo],
@@ -693,7 +693,7 @@ class TestWrkrReport:
         mock_result.returncode = 0
         mock_result.stdout = "Created report beads-rpt002 successfully"
         mock_result.stderr = ""
-        with patch("commands.wrkr.report.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.report.run_bd", return_value=mock_result):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "report", "--summary", "Done", "--to", active_ceo],
@@ -734,7 +734,7 @@ class TestWrkrSearch:
 
     def test_no_messages_found(self, runner, org_dir, db, active_ceo):
         """search shows no messages when nothing matches."""
-        with patch("commands.wrkr.search.search_messages", return_value=[]):
+        with patch("cli.commands.wrkr.search.search_messages", return_value=[]):
             result = invoke_wrkr(runner, org_dir, ["wrkr", "search", "nonexistent-term"], worker_id=active_ceo)
         assert result.exit_code == 0
         assert "no messages" in result.output.lower()
@@ -754,9 +754,9 @@ class TestWrkrSearch:
         mock_msg.content = "deployment failed with error"
         mock_msg.created_at = "2026-01-01 10:00"
 
-        with patch("commands.wrkr.search.search_messages", return_value=[mock_msg]):
-            with patch("commands.wrkr.search.can_worker_access_channel", return_value=True):
-                with patch("commands.wrkr.search.get_channel") as mock_get_chan:
+        with patch("cli.commands.wrkr.search.search_messages", return_value=[mock_msg]):
+            with patch("cli.commands.wrkr.search.can_worker_access_channel", return_value=True):
+                with patch("cli.commands.wrkr.search.get_channel") as mock_get_chan:
                     mock_get_chan.return_value = chan
                     result = invoke_wrkr(runner, org_dir, ["wrkr", "search", "error"], worker_id=active_ceo)
         assert result.exit_code == 0
@@ -777,9 +777,9 @@ class TestWrkrSearch:
         mock_msg.content = "error occurred"
         mock_msg.created_at = "2026-01-01 10:00"
 
-        with patch("commands.wrkr.search.search_messages", return_value=[mock_msg]):
-            with patch("commands.wrkr.search.can_worker_access_channel", return_value=True):
-                with patch("commands.wrkr.search.get_channel") as mock_get_chan:
+        with patch("cli.commands.wrkr.search.search_messages", return_value=[mock_msg]):
+            with patch("cli.commands.wrkr.search.can_worker_access_channel", return_value=True):
+                with patch("cli.commands.wrkr.search.get_channel") as mock_get_chan:
                     mock_get_chan.return_value = chan
                     result = invoke_wrkr(runner, org_dir, ["wrkr", "search", "error"], worker_id=active_ceo)
         assert result.exit_code == 0
@@ -795,8 +795,8 @@ class TestWrkrSearch:
         mock_msg.content = "secret message"
         mock_msg.created_at = "2026-01-01 10:00"
 
-        with patch("commands.wrkr.search.search_messages", return_value=[mock_msg]):
-            with patch("commands.wrkr.search.can_worker_access_channel", return_value=False):
+        with patch("cli.commands.wrkr.search.search_messages", return_value=[mock_msg]):
+            with patch("cli.commands.wrkr.search.can_worker_access_channel", return_value=False):
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "search", "secret"], worker_id=active_ceo)
         assert result.exit_code == 0
         assert "secret message" not in result.output
@@ -810,8 +810,8 @@ class TestWrkrSearch:
         mock_msg.content = "secret"
         mock_msg.created_at = "2026-01-01 10:00"
 
-        with patch("commands.wrkr.search.search_messages", return_value=[mock_msg]):
-            with patch("commands.wrkr.search.can_worker_access_channel", return_value=False):
+        with patch("cli.commands.wrkr.search.search_messages", return_value=[mock_msg]):
+            with patch("cli.commands.wrkr.search.can_worker_access_channel", return_value=False):
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "search", "secret"], worker_id=active_ceo)
         assert result.exit_code == 0
         assert "permission" in result.output.lower() or "hidden" in result.output.lower()
@@ -825,9 +825,9 @@ class TestWrkrSearch:
         mock_msg.content = "some message"
         mock_msg.created_at = "2026-01-01 10:00"
 
-        with patch("commands.wrkr.search.search_messages", return_value=[mock_msg]):
-            with patch("commands.wrkr.search.can_worker_access_channel", return_value=True):
-                with patch("commands.wrkr.search.get_channel", return_value=None):
+        with patch("cli.commands.wrkr.search.search_messages", return_value=[mock_msg]):
+            with patch("cli.commands.wrkr.search.can_worker_access_channel", return_value=True):
+                with patch("cli.commands.wrkr.search.get_channel", return_value=None):
                     result = invoke_wrkr(runner, org_dir, ["wrkr", "search", "some"], worker_id=active_ceo)
         assert result.exit_code == 0
         assert "orphan-channel-id" in result.output
@@ -849,7 +849,7 @@ class TestWrkrSearch:
             captured_kwargs["limit"] = limit
             return mock_msgs[:limit]
 
-        with patch("commands.wrkr.search.search_messages", side_effect=search_side):
+        with patch("cli.commands.wrkr.search.search_messages", side_effect=search_side):
             result = invoke_wrkr(runner, org_dir, ["wrkr", "search", "error", "--limit", "2"], worker_id=active_ceo)
         assert captured_kwargs.get("limit") == 2
 
@@ -859,7 +859,7 @@ class TestWrkrSearch:
         def search_side(db, query, channel_id, limit, offset):
             captured_kwargs["limit"] = limit
             return []
-        with patch("commands.wrkr.search.search_messages", side_effect=search_side):
+        with patch("cli.commands.wrkr.search.search_messages", side_effect=search_side):
             invoke_wrkr(runner, org_dir, ["wrkr", "search", "error"], worker_id=active_ceo)
         assert captured_kwargs.get("limit") == 20
 
@@ -869,7 +869,7 @@ class TestWrkrSearch:
         def search_side(db, query, channel_id, limit, offset):
             captured_kwargs["offset"] = offset
             return []
-        with patch("commands.wrkr.search.search_messages", side_effect=search_side):
+        with patch("cli.commands.wrkr.search.search_messages", side_effect=search_side):
             invoke_wrkr(runner, org_dir, ["wrkr", "search", "error", "--offset", "20"], worker_id=active_ceo)
         assert captured_kwargs.get("offset") == 20
 
@@ -885,11 +885,11 @@ class TestWrkrSearch:
             m.created_at = "2026-01-01 10:00"
             mock_msgs.append(m)
 
-        with patch("commands.wrkr.search.search_messages", return_value=mock_msgs):
-            with patch("commands.wrkr.search.can_worker_access_channel", return_value=True):
+        with patch("cli.commands.wrkr.search.search_messages", return_value=mock_msgs):
+            with patch("cli.commands.wrkr.search.can_worker_access_channel", return_value=True):
                 chan_mock = MagicMock()
                 chan_mock.name = "general"
-                with patch("commands.wrkr.search.get_channel", return_value=chan_mock):
+                with patch("cli.commands.wrkr.search.get_channel", return_value=chan_mock):
                     result = invoke_wrkr(runner, org_dir, ["wrkr", "search", "error"], worker_id=active_ceo)
         assert result.exit_code == 0
         assert "--offset" in result.output
@@ -900,7 +900,7 @@ class TestWrkrSearch:
         def search_side(db, query, channel_id, limit, offset):
             captured_kwargs["channel_id"] = channel_id
             return []
-        with patch("commands.wrkr.search.search_messages", side_effect=search_side):
+        with patch("cli.commands.wrkr.search.search_messages", side_effect=search_side):
             invoke_wrkr(runner, org_dir, ["wrkr", "search", "error", "--channel", "chan-abc"], worker_id=active_ceo)
         assert captured_kwargs.get("channel_id") == "chan-abc"
 
@@ -910,7 +910,7 @@ class TestWrkrSearch:
         def search_side(db, query, channel_id, limit, offset):
             captured_kwargs["query"] = query
             return []
-        with patch("commands.wrkr.search.search_messages", side_effect=search_side):
+        with patch("cli.commands.wrkr.search.search_messages", side_effect=search_side):
             invoke_wrkr(runner, org_dir, ["wrkr", "search", "error"], worker_id=active_ceo)
         assert captured_kwargs.get("query") == "error"
 
@@ -920,7 +920,7 @@ class TestWrkrSearch:
         def search_side(db, query, channel_id, limit, offset):
             captured_kwargs["query"] = query
             return []
-        with patch("commands.wrkr.search.search_messages", side_effect=search_side):
+        with patch("cli.commands.wrkr.search.search_messages", side_effect=search_side):
             invoke_wrkr(runner, org_dir, ["wrkr", "search", "connection refused"], worker_id=active_ceo)
         assert captured_kwargs.get("query") == "connection refused"
 
@@ -1040,7 +1040,7 @@ class TestWrkrDelegate:
         """delegate fails when worker lacks permission on task."""
         from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=False):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=False):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "delegate", "beads-abc", "--to", report_data.name],
@@ -1053,7 +1053,7 @@ class TestWrkrDelegate:
         """delegate --json returns JSON error when no permission."""
         from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=False):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=False):
             result = invoke_wrkr(
                 runner, org_dir,
                 ["wrkr", "delegate", "beads-abc", "--to", report_data.name, "--json"],
@@ -1071,8 +1071,8 @@ class TestWrkrDelegate:
         mock_result.returncode = 0
         mock_result.stdout = ""
         mock_result.stderr = ""
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=True):
-            with patch("commands.wrkr.delegate.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=True):
+            with patch("cli.commands.wrkr.delegate.run_bd", return_value=mock_result):
                 result = invoke_wrkr(
                     runner, org_dir,
                     ["wrkr", "delegate", "beads-abc", "--to", report_data.name],
@@ -1087,8 +1087,8 @@ class TestWrkrDelegate:
         mock_result.returncode = 0
         mock_result.stdout = ""
         mock_result.stderr = ""
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=True):
-            with patch("commands.wrkr.delegate.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=True):
+            with patch("cli.commands.wrkr.delegate.run_bd", return_value=mock_result):
                 result = invoke_wrkr(
                     runner, org_dir,
                     ["wrkr", "delegate", "beads-abc", "--to", worker_with_report],
@@ -1104,8 +1104,8 @@ class TestWrkrDelegate:
         mock_result.returncode = 0
         mock_result.stdout = ""
         mock_result.stderr = ""
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=True):
-            with patch("commands.wrkr.delegate.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=True):
+            with patch("cli.commands.wrkr.delegate.run_bd", return_value=mock_result):
                 result = invoke_wrkr(
                     runner, org_dir,
                     ["wrkr", "delegate", "beads-abc", "--to", report_data.name.upper()],
@@ -1125,8 +1125,8 @@ class TestWrkrDelegate:
         def run_bd_side(args, **kwargs):
             captured_calls.append(args[:])
             return mock_result
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=True):
-            with patch("commands.wrkr.delegate.run_bd", side_effect=run_bd_side):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=True):
+            with patch("cli.commands.wrkr.delegate.run_bd", side_effect=run_bd_side):
                 result = invoke_wrkr(
                     runner, org_dir,
                     ["wrkr", "delegate", "beads-abc", "--to", report_data.name, "--reason", "Better fit"],
@@ -1146,8 +1146,8 @@ class TestWrkrDelegate:
         mock_result.returncode = 1
         mock_result.stdout = ""
         mock_result.stderr = "update failed"
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=True):
-            with patch("commands.wrkr.delegate.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=True):
+            with patch("cli.commands.wrkr.delegate.run_bd", return_value=mock_result):
                 result = invoke_wrkr(
                     runner, org_dir,
                     ["wrkr", "delegate", "beads-abc", "--to", report_data.name],
@@ -1168,8 +1168,8 @@ class TestWrkrDelegate:
             if call_num[0] == 1:
                 return mock_update
             return mock_comment
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=True):
-            with patch("commands.wrkr.delegate.run_bd", side_effect=run_bd_side):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=True):
+            with patch("cli.commands.wrkr.delegate.run_bd", side_effect=run_bd_side):
                 result = invoke_wrkr(
                     runner, org_dir,
                     ["wrkr", "delegate", "beads-abc", "--to", report_data.name],
@@ -1181,8 +1181,8 @@ class TestWrkrDelegate:
         """delegate fails gracefully when bd binary not found."""
         from cli.core.queries import get_worker
         report_data = get_worker(db, worker_with_report)
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=True):
-            with patch("commands.wrkr.delegate.run_bd", side_effect=FileNotFoundError()):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=True):
+            with patch("cli.commands.wrkr.delegate.run_bd", side_effect=FileNotFoundError()):
                 result = invoke_wrkr(
                     runner, org_dir,
                     ["wrkr", "delegate", "beads-abc", "--to", report_data.name],
@@ -1198,8 +1198,8 @@ class TestWrkrDelegate:
         mock_result.returncode = 0
         mock_result.stdout = ""
         mock_result.stderr = ""
-        with patch("commands.wrkr.delegate.can_worker_access_bead", return_value=True):
-            with patch("commands.wrkr.delegate.run_bd", return_value=mock_result):
+        with patch("cli.commands.wrkr.delegate.can_worker_access_bead", return_value=True):
+            with patch("cli.commands.wrkr.delegate.run_bd", return_value=mock_result):
                 result = invoke_wrkr(
                     runner, org_dir,
                     ["wrkr", "delegate", "beads-abc", "--to", report_data.name, "--json"],
@@ -1239,7 +1239,7 @@ class TestWrkrCleanup:
 
     def test_happy_path_cleans_stale_session(self, runner, org_dir, db, active_ceo_with_session):
         """cleanup succeeds and shows completion message."""
-        with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+        with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
             mock_mgr = MagicMock()
             mock_mgr.unbind.return_value = MagicMock()
             mock_mgr_factory.return_value = mock_mgr
@@ -1249,9 +1249,9 @@ class TestWrkrCleanup:
 
     def test_session_state_updated_to_stopped(self, runner, org_dir, db, active_ceo_with_session):
         """cleanup updates session state to stopped."""
-        with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+        with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
             mock_mgr_factory.return_value = MagicMock()
-            with patch("commands.wrkr.cleanup.update_session_state") as mock_update:
+            with patch("cli.commands.wrkr.cleanup.update_session_state") as mock_update:
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "cleanup", active_ceo_with_session])
         assert result.exit_code == 0
         mock_update.assert_called_once()
@@ -1260,7 +1260,7 @@ class TestWrkrCleanup:
 
     def test_worker_runtime_set_to_stopped(self, runner, org_dir, db, active_ceo_with_session):
         """cleanup sets worker runtime_status to stopped."""
-        with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+        with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
             mock_mgr_factory.return_value = MagicMock()
             invoke_wrkr(runner, org_dir, ["wrkr", "cleanup", active_ceo_with_session])
         row = db.fetchone(
@@ -1272,7 +1272,7 @@ class TestWrkrCleanup:
 
     def test_tmux_session_name_cleared_in_db(self, runner, org_dir, db, active_ceo_with_session):
         """cleanup clears tmux_session_name from sessions table."""
-        with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+        with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
             mock_mgr_factory.return_value = MagicMock()
             invoke_wrkr(runner, org_dir, ["wrkr", "cleanup", active_ceo_with_session])
         row = db.fetchone(
@@ -1284,7 +1284,7 @@ class TestWrkrCleanup:
 
     def test_binding_unbound_via_binding_manager(self, runner, org_dir, db, active_ceo_with_session):
         """cleanup calls binding manager unbind."""
-        with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+        with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
             mock_mgr = MagicMock()
             mock_mgr_factory.return_value = mock_mgr
             invoke_wrkr(runner, org_dir, ["wrkr", "cleanup", active_ceo_with_session])
@@ -1292,7 +1292,7 @@ class TestWrkrCleanup:
 
     def test_unbind_failure_shows_warning_not_exception(self, runner, org_dir, db, active_ceo_with_session):
         """cleanup shows warning (not error) when unbind fails."""
-        with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+        with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
             mock_mgr = MagicMock()
             mock_mgr.unbind.side_effect = Exception("unbind error")
             mock_mgr_factory.return_value = mock_mgr
@@ -1302,7 +1302,7 @@ class TestWrkrCleanup:
 
     def test_displays_session_info_in_output(self, runner, org_dir, db, active_ceo_with_session):
         """cleanup displays tmux session name and session ID."""
-        with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+        with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
             mock_mgr_factory.return_value = MagicMock()
             result = invoke_wrkr(runner, org_dir, ["wrkr", "cleanup", active_ceo_with_session])
         assert result.exit_code == 0
@@ -1324,23 +1324,23 @@ class TestWrkrCleanup:
             (active_ceo,)
         )
         db.connection.commit()
-        with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+        with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
             mock_mgr_factory.return_value = MagicMock()
             result = invoke_wrkr(runner, org_dir, ["wrkr", "cleanup", active_ceo])
         assert result.exit_code == 0
 
     def test_session_with_no_session_id_still_updates_worker(self, runner, org_dir, db, active_ceo):
         """cleanup still updates worker runtime even if session record lacks ID."""
-        with patch("commands.wrkr.cleanup.get_session_for_worker") as mock_sess:
+        with patch("cli.commands.wrkr.cleanup.get_session_for_worker") as mock_sess:
             mock_sess.return_value = {"id": None, "tmux_session_name": None, "state": "stopped"}
-            with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+            with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
                 mock_mgr_factory.return_value = MagicMock()
                 result = invoke_wrkr(runner, org_dir, ["wrkr", "cleanup", active_ceo])
         assert result.exit_code == 0
 
     def test_output_shows_restart_hint(self, runner, org_dir, db, active_ceo_with_session):
         """cleanup shows hint to use 'qn wrkr restart'."""
-        with patch("commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
+        with patch("cli.commands.wrkr.cleanup.get_binding_manager") as mock_mgr_factory:
             mock_mgr_factory.return_value = MagicMock()
             result = invoke_wrkr(runner, org_dir, ["wrkr", "cleanup", active_ceo_with_session])
         assert result.exit_code == 0
@@ -1414,15 +1414,15 @@ class TestWrkrRestart:
 
     def test_happy_path_with_no_existing_session(self, runner, org_dir, db, running_org):
         """restart spawns new session when no existing session."""
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_registry = MagicMock()
                         mock_reg.return_value = mock_registry
-                        with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                        with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                             mock_worker = MagicMock()
                             mock_worker.name = "TestCEO"
                             mock_worker.is_session_active = False
@@ -1439,14 +1439,14 @@ class TestWrkrRestart:
             provider="claude_code", command="claude",
             tmux_session_name="qn-stopped", state="stopped",
         )
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                        with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                             mock_worker = MagicMock()
                             mock_worker.name = "TestCEO"
                             mock_worker.is_session_active = False
@@ -1467,14 +1467,14 @@ class TestWrkrRestart:
             (active_ceo,)
         )
         db.connection.commit()
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                        with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                             mock_worker = MagicMock()
                             mock_worker.name = "TestCEO"
                             mock_worker.is_session_active = False
@@ -1486,14 +1486,14 @@ class TestWrkrRestart:
         """restart --force ignores running state."""
         update_org_status(db, "running", ceo_worker_id=active_ceo_with_session)
         with patch("subprocess.run"):
-            with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+            with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
                 mock_ctx.return_value = MagicMock()
-                with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                    with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+                with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                    with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                         mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                        with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                        with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                             mock_reg.return_value = MagicMock()
-                            with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                            with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                 mock_worker = MagicMock()
                                 mock_worker.name = "TestCEO"
                                 mock_worker.is_session_active = False
@@ -1505,14 +1505,14 @@ class TestWrkrRestart:
         """restart calls tmux kill-session for existing session."""
         update_org_status(db, "running", ceo_worker_id=active_ceo_with_session)
         with patch("subprocess.run") as mock_run:
-            with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+            with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
                 mock_ctx.return_value = MagicMock()
-                with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                    with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+                with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                    with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                         mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                        with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                        with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                             mock_reg.return_value = MagicMock()
-                            with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                            with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                 mock_worker = MagicMock()
                                 mock_worker.name = "TestCEO"
                                 mock_worker.is_session_active = False
@@ -1527,14 +1527,14 @@ class TestWrkrRestart:
         """restart continues when tmux kill-session fails."""
         update_org_status(db, "running", ceo_worker_id=active_ceo_with_session)
         with patch("subprocess.run", side_effect=Exception("tmux not found")):
-            with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+            with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
                 mock_ctx.return_value = MagicMock()
-                with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                    with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+                with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                    with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                         mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                        with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                        with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                             mock_reg.return_value = MagicMock()
-                            with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                            with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                 mock_worker = MagicMock()
                                 mock_worker.name = "TestCEO"
                                 mock_worker.is_session_active = False
@@ -1546,17 +1546,17 @@ class TestWrkrRestart:
         """restart updates session state to stopped before unbind."""
         update_org_status(db, "running", ceo_worker_id=active_ceo_with_session)
         with patch("subprocess.run"):
-            with patch("commands.wrkr.restart.update_session_state") as mock_update:
-                with patch("commands.wrkr.restart.get_binding_manager") as mock_mgr_factory:
+            with patch("cli.commands.wrkr.restart.update_session_state") as mock_update:
+                with patch("cli.commands.wrkr.restart.get_binding_manager") as mock_mgr_factory:
                     mock_mgr_factory.return_value = MagicMock()
-                    with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+                    with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
                         mock_ctx.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                            with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+                        with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                            with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                                 mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                                with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                                with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                                     mock_reg.return_value = MagicMock()
-                                    with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                                    with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                         mock_worker = MagicMock()
                                         mock_worker.name = "TestCEO"
                                         mock_worker.is_session_active = False
@@ -1570,14 +1570,14 @@ class TestWrkrRestart:
         """restart updates worker runtime_status to stopped."""
         update_org_status(db, "running", ceo_worker_id=active_ceo_with_session)
         with patch("subprocess.run"):
-            with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+            with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
                 mock_ctx.return_value = MagicMock()
-                with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                    with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+                with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                    with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                         mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                        with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                        with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                             mock_reg.return_value = MagicMock()
-                            with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                            with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                 mock_worker = MagicMock()
                                 mock_worker.name = "TestCEO"
                                 mock_worker.is_session_active = False
@@ -1594,15 +1594,15 @@ class TestWrkrRestart:
         """restart deletes old session record before spawning new one."""
         update_org_status(db, "running", ceo_worker_id=active_ceo_with_session)
         with patch("subprocess.run"):
-            with patch("commands.wrkr.restart.delete_session_record") as mock_delete:
-                with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+            with patch("cli.commands.wrkr.restart.delete_session_record") as mock_delete:
+                with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
                     mock_ctx.return_value = MagicMock()
-                    with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                        with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+                    with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                        with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                             mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                            with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                            with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                                 mock_reg.return_value = MagicMock()
-                                with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                                with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                     mock_worker = MagicMock()
                                     mock_worker.name = "TestCEO"
                                     mock_worker.is_session_active = False
@@ -1615,18 +1615,18 @@ class TestWrkrRestart:
         """restart shows warning when unbind fails but continues."""
         update_org_status(db, "running", ceo_worker_id=active_ceo_with_session)
         with patch("subprocess.run"):
-            with patch("commands.wrkr.restart.get_binding_manager") as mock_mgr_factory:
+            with patch("cli.commands.wrkr.restart.get_binding_manager") as mock_mgr_factory:
                 mock_mgr = MagicMock()
                 mock_mgr.unbind.side_effect = Exception("unbind error")
                 mock_mgr_factory.return_value = mock_mgr
-                with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+                with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
                     mock_ctx.return_value = MagicMock()
-                    with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                        with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+                    with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                        with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                             mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                            with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                            with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                                 mock_reg.return_value = MagicMock()
-                                with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                                with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                     mock_worker = MagicMock()
                                     mock_worker.name = "TestCEO"
                                     mock_worker.is_session_active = False
@@ -1639,16 +1639,16 @@ class TestWrkrRestart:
         """restart shows warning when terminate_session fails but continues."""
         update_org_status(db, "running", ceo_worker_id=active_ceo_with_session)
         with patch("subprocess.run"):
-            with patch("commands.wrkr.restart.get_binding_manager") as mock_mgr_factory:
+            with patch("cli.commands.wrkr.restart.get_binding_manager") as mock_mgr_factory:
                 mock_mgr_factory.return_value = MagicMock()
-                with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+                with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
                     mock_ctx.return_value = MagicMock()
-                    with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                        with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+                    with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                        with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                             mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                            with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                            with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                                 mock_reg.return_value = MagicMock()
-                                with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                                with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                     mock_worker = MagicMock()
                                     mock_worker.name = "TestCEO"
                                     mock_worker.is_session_active = True
@@ -1660,14 +1660,14 @@ class TestWrkrRestart:
 
     def test_session_spawn_failure(self, runner, org_dir, db, running_org):
         """restart fails when spawn raises exception."""
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                        with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                             mock_worker = MagicMock()
                             mock_worker.name = "TestCEO"
                             mock_worker.is_session_active = False
@@ -1680,16 +1680,16 @@ class TestWrkrRestart:
     def test_custom_provider_flag(self, runner, org_dir, db, running_org):
         """restart passes --provider to session config."""
         captured = {}
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.SessionConfig") as mock_sc:
+                        with patch("cli.commands.wrkr.restart.SessionConfig") as mock_sc:
                             mock_sc.side_effect = lambda **kw: captured.update(kw) or MagicMock()
-                            with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                            with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                 mock_worker = MagicMock()
                                 mock_worker.name = "TestCEO"
                                 mock_worker.is_session_active = False
@@ -1700,16 +1700,16 @@ class TestWrkrRestart:
     def test_custom_command_flag(self, runner, org_dir, db, running_org):
         """restart passes --command to session config."""
         captured = {}
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.SessionConfig") as mock_sc:
+                        with patch("cli.commands.wrkr.restart.SessionConfig") as mock_sc:
                             mock_sc.side_effect = lambda **kw: captured.update(kw) or MagicMock()
-                            with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                            with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                 mock_worker = MagicMock()
                                 mock_worker.name = "TestCEO"
                                 mock_worker.is_session_active = False
@@ -1720,16 +1720,16 @@ class TestWrkrRestart:
     def test_custom_args_flag(self, runner, org_dir, db, running_org):
         """restart passes --args to session config."""
         captured = {}
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.SessionConfig") as mock_sc:
+                        with patch("cli.commands.wrkr.restart.SessionConfig") as mock_sc:
                             mock_sc.side_effect = lambda **kw: captured.update(kw) or MagicMock()
-                            with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                            with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                                 mock_worker = MagicMock()
                                 mock_worker.name = "TestCEO"
                                 mock_worker.is_session_active = False
@@ -1739,14 +1739,14 @@ class TestWrkrRestart:
 
     def test_onboarding_context_loaded_for_new_session(self, runner, org_dir, db, running_org):
         """restart loads onboarding context for new session."""
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                        with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                             mock_worker = MagicMock()
                             mock_worker.name = "TestCEO"
                             mock_worker.is_session_active = False
@@ -1756,14 +1756,14 @@ class TestWrkrRestart:
 
     def test_shows_tmux_attach_command_in_output(self, runner, org_dir, db, running_org):
         """restart shows tmux attach command after successful spawn."""
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                        with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                             mock_worker = MagicMock()
                             mock_worker.name = "TestCEO"
                             mock_worker.is_session_active = False
@@ -1788,19 +1788,19 @@ class TestWrkrRestart:
 
     def test_no_tmux_name_shown_when_session_has_no_tmux(self, runner, org_dir, db, running_org):
         """restart does not show tmux attach when session has no tmux name."""
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                        with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                             mock_worker = MagicMock()
                             mock_worker.name = "TestCEO"
                             mock_worker.is_session_active = False
                             mock_worker_cls.get.return_value = mock_worker
-                            with patch("commands.wrkr.restart.get_session_for_worker") as mock_sess:
+                            with patch("cli.commands.wrkr.restart.get_session_for_worker") as mock_sess:
                                 mock_sess.return_value = {"tmux_session_name": None}
                                 result = invoke_wrkr(runner, org_dir, ["wrkr", "restart", running_org])
         assert result.exit_code == 0
@@ -1808,14 +1808,14 @@ class TestWrkrRestart:
 
     def test_db_closed_in_finally_block_on_error(self, runner, org_dir, db, running_org):
         """restart closes DB even when spawn fails."""
-        with patch("commands.wrkr.restart.load_onboarding_context") as mock_ctx:
+        with patch("cli.commands.wrkr.restart.load_onboarding_context") as mock_ctx:
             mock_ctx.return_value = MagicMock()
-            with patch("commands.wrkr.restart.get_worker_env_vars", return_value={}):
-                with patch("commands.wrkr.restart.StorageManager") as mock_sm:
+            with patch("cli.commands.wrkr.restart.get_worker_env_vars", return_value={}):
+                with patch("cli.commands.wrkr.restart.StorageManager") as mock_sm:
                     mock_sm.return_value.get_worker_path.return_value = Path("/tmp/worker")
-                    with patch("core.sessions.registry.get_default_registry") as mock_reg:
+                    with patch("cli.core.sessions.registry.get_default_registry") as mock_reg:
                         mock_reg.return_value = MagicMock()
-                        with patch("commands.wrkr.restart.Worker") as mock_worker_cls:
+                        with patch("cli.commands.wrkr.restart.Worker") as mock_worker_cls:
                             mock_worker = MagicMock()
                             mock_worker.name = "TestCEO"
                             mock_worker.is_session_active = False

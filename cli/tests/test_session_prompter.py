@@ -41,7 +41,7 @@ class TestSessionPrompterInit:
 class TestGetSessionTmuxName:
     """Tests for _get_session_tmux_name."""
 
-    @patch("core.session_prompter.get_active_session_tmux_name")
+    @patch("cli.core.session_prompter.get_active_session_tmux_name")
     def test_returns_tmux_name_when_found(
         self, mock_get_tmux, session_prompter, mock_db
     ):
@@ -53,7 +53,7 @@ class TestGetSessionTmuxName:
         assert result == "qn-worker-123"
         mock_get_tmux.assert_called_once_with(mock_db, "worker-123")
 
-    @patch("core.session_prompter.get_active_session_tmux_name")
+    @patch("cli.core.session_prompter.get_active_session_tmux_name")
     def test_returns_none_when_no_session(
         self, mock_get_tmux, session_prompter, mock_db
     ):
@@ -64,7 +64,7 @@ class TestGetSessionTmuxName:
 
         assert result is None
 
-    @patch("core.session_prompter.get_active_session_tmux_name")
+    @patch("cli.core.session_prompter.get_active_session_tmux_name")
     def test_handles_exception(self, mock_get_tmux, session_prompter):
         """Test handles exception from query gracefully."""
         mock_get_tmux.side_effect = Exception("DB error")
@@ -77,7 +77,7 @@ class TestGetSessionTmuxName:
 class TestGetWorkerContext:
     """Tests for _get_worker_context."""
 
-    @patch("core.session_prompter.get_worker_continuation_context")
+    @patch("cli.core.session_prompter.get_worker_continuation_context")
     def test_returns_context_from_query(
         self, mock_get_context, session_prompter, mock_db
     ):
@@ -96,7 +96,7 @@ class TestGetWorkerContext:
         assert result == expected_context
         mock_get_context.assert_called_once_with(mock_db, "worker-123")
 
-    @patch("core.session_prompter.get_worker_continuation_context")
+    @patch("cli.core.session_prompter.get_worker_continuation_context")
     def test_returns_fallback_on_exception(
         self, mock_get_context, session_prompter
     ):
@@ -164,8 +164,8 @@ class TestSendPromptToTmux:
 class TestSendSoftCheck:
     """Tests for send_soft_check."""
 
-    @patch("core.session_prompter.get_active_session_tmux_name")
-    @patch("core.session_prompter.get_worker_continuation_context")
+    @patch("cli.core.session_prompter.get_active_session_tmux_name")
+    @patch("cli.core.session_prompter.get_worker_continuation_context")
     @patch("subprocess.run")
     def test_sends_soft_check_successfully(
         self, mock_run, mock_get_context, mock_get_tmux, session_prompter
@@ -189,7 +189,7 @@ class TestSendSoftCheck:
         call_args = mock_run.call_args[0][0]
         assert "ACTIVITY CHECK" in call_args[4]
 
-    @patch("core.session_prompter.get_active_session_tmux_name")
+    @patch("cli.core.session_prompter.get_active_session_tmux_name")
     def test_fails_when_no_tmux_session(
         self, mock_get_tmux, session_prompter
     ):
@@ -204,8 +204,8 @@ class TestSendSoftCheck:
 class TestSendStatusRequest:
     """Tests for send_status_request."""
 
-    @patch("core.session_prompter.get_active_session_tmux_name")
-    @patch("core.session_prompter.get_worker_continuation_context")
+    @patch("cli.core.session_prompter.get_active_session_tmux_name")
+    @patch("cli.core.session_prompter.get_worker_continuation_context")
     @patch("subprocess.run")
     def test_sends_status_request_successfully(
         self, mock_run, mock_get_context, mock_get_tmux, session_prompter
@@ -233,8 +233,8 @@ class TestSendStatusRequest:
 class TestSendFinalWarning:
     """Tests for send_final_warning."""
 
-    @patch("core.session_prompter.get_active_session_tmux_name")
-    @patch("core.session_prompter.get_worker_continuation_context")
+    @patch("cli.core.session_prompter.get_active_session_tmux_name")
+    @patch("cli.core.session_prompter.get_worker_continuation_context")
     @patch("subprocess.run")
     def test_sends_final_warning_successfully(
         self, mock_run, mock_get_context, mock_get_tmux, session_prompter
@@ -262,8 +262,8 @@ class TestSendFinalWarning:
 class TestPromptRendering:
     """Tests for prompt template rendering."""
 
-    @patch("core.session_prompter.get_active_session_tmux_name")
-    @patch("core.session_prompter.get_worker_continuation_context")
+    @patch("cli.core.session_prompter.get_active_session_tmux_name")
+    @patch("cli.core.session_prompter.get_worker_continuation_context")
     @patch("subprocess.run")
     def test_renders_all_placeholders(
         self, mock_run, mock_get_context, mock_get_tmux, session_prompter

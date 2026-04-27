@@ -626,7 +626,7 @@ class TestBoardHealthCommand:
         mock_health.total_workers = 1
         mock_health.issues = []
 
-        with patch("commands.board.health._get_health_status", return_value=mock_health):
+        with patch("cli.commands.board.health._get_health_status", return_value=mock_health):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "board", "health"
@@ -642,7 +642,7 @@ class TestBoardHealthCommand:
         mock_health.total_workers = 2
         mock_health.issues = []
 
-        with patch("commands.board.health._get_health_status", return_value=mock_health):
+        with patch("cli.commands.board.health._get_health_status", return_value=mock_health):
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "board", "health", "--json"

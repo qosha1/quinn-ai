@@ -264,7 +264,7 @@ class TestConfigValidateTestConnection:
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         # Mock the connection check to return failure
-        with patch("commands.config.check_provider_connection", return_value=(False, "Authentication failed")):
+        with patch("cli.commands.config.check_provider_connection", return_value=(False, "Authentication failed")):
             result = runner.invoke(qn, ["config", "validate", "--test-connection"])
 
         assert "FAILED" in result.output or "failed" in result.output.lower()
@@ -275,7 +275,7 @@ class TestConfigValidateTestConnection:
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         # Mock the connection check to return success
-        with patch("commands.config.check_provider_connection", return_value=(True, "Connected successfully (model: claude-3-opus)")):
+        with patch("cli.commands.config.check_provider_connection", return_value=(True, "Connected successfully (model: claude-3-opus)")):
             result = runner.invoke(qn, ["config", "validate", "--test-connection"])
 
         assert "OK" in result.output

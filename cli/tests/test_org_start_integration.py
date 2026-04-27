@@ -117,7 +117,7 @@ class TestOrgStartDoesNotStartMonitors:
     Only Board UI should manage monitors since it has persistent lifecycle.
     """
 
-    @patch('core.escalation_monitor.EscalationMonitor')
+    @patch('cli.core.escalation_monitor.EscalationMonitor')
     def test_start_does_not_create_escalation_monitor(self, mock_monitor_class, initialized_org):
         """org.start() should NOT create escalation monitor."""
         initialized_org.start()
@@ -125,7 +125,7 @@ class TestOrgStartDoesNotStartMonitors:
         # Monitor class should NOT be instantiated
         mock_monitor_class.assert_not_called()
 
-    @patch('core.session_capture.SessionCaptureService')
+    @patch('cli.core.session_capture.SessionCaptureService')
     def test_start_does_not_create_session_capture(self, mock_capture_class, initialized_org):
         """org.start() should NOT create session capture service."""
         initialized_org.start()
@@ -133,7 +133,7 @@ class TestOrgStartDoesNotStartMonitors:
         # Capture service should NOT be instantiated
         mock_capture_class.assert_not_called()
 
-    @patch('core.activity_reporter.ActivityReporter')
+    @patch('cli.core.activity_reporter.ActivityReporter')
     def test_start_does_not_create_activity_reporter(self, mock_reporter_class, initialized_org):
         """org.start() should NOT create activity reporter."""
         initialized_org.start()
@@ -182,7 +182,7 @@ class TestOrgPathDerivation:
 class TestOrgStopWithMonitors:
     """Test that org.stop() cleans up any active monitors."""
 
-    @patch('core.escalation_monitor.EscalationMonitor')
+    @patch('cli.core.escalation_monitor.EscalationMonitor')
     def test_stop_handles_monitor_cleanup_gracefully(self, mock_monitor_class, initialized_org):
         """stop() should attempt to clean up monitors even if not started by CLI."""
         initialized_org.start()

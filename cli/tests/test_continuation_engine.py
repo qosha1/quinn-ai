@@ -142,7 +142,7 @@ def test_engine_checks_workers_on_schedule(temp_org_dir, db):
     )
     db.connection.commit()
 
-    with patch('core.continuation_engine.SessionPrompter') as MockPrompter:
+    with patch('cli.core.continuation_engine.SessionPrompter') as MockPrompter:
         mock_prompter = Mock()
         MockPrompter.return_value = mock_prompter
 
@@ -175,8 +175,8 @@ def test_graduated_prompts_sent_at_correct_intervals(temp_org_dir, db):
     )
     db.connection.commit()
 
-    with patch('core.continuation_engine.SessionPrompter') as MockPrompter, \
-         patch('core.continuation_engine.ActivitySensor') as MockSensor:
+    with patch('cli.core.continuation_engine.SessionPrompter') as MockPrompter, \
+         patch('cli.core.continuation_engine.ActivitySensor') as MockSensor:
 
         mock_prompter = Mock()
         MockPrompter.return_value = mock_prompter
@@ -215,9 +215,9 @@ def test_escalation_triggered_after_final_timeout(temp_org_dir, db):
     )
     db.connection.commit()
 
-    with patch('core.continuation_engine.SessionPrompter') as MockPrompter, \
-         patch('core.continuation_engine.ActivitySensor') as MockSensor, \
-         patch('core.continuation_engine.run_bd') as mock_run_bd:
+    with patch('cli.core.continuation_engine.SessionPrompter') as MockPrompter, \
+         patch('cli.core.continuation_engine.ActivitySensor') as MockSensor, \
+         patch('cli.core.continuation_engine.run_bd') as mock_run_bd:
 
         mock_prompter = Mock()
         MockPrompter.return_value = mock_prompter
@@ -256,9 +256,9 @@ def test_ceo_gets_longer_timeout(temp_org_dir, db):
     )
     db.connection.commit()
 
-    with patch('core.continuation_engine.SessionPrompter') as MockPrompter, \
-         patch('core.continuation_engine.ActivitySensor') as MockSensor, \
-         patch('core.continuation_engine.run_bd') as mock_run_bd:
+    with patch('cli.core.continuation_engine.SessionPrompter') as MockPrompter, \
+         patch('cli.core.continuation_engine.ActivitySensor') as MockSensor, \
+         patch('cli.core.continuation_engine.run_bd') as mock_run_bd:
 
         mock_prompter = Mock()
         MockPrompter.return_value = mock_prompter
@@ -308,8 +308,8 @@ def test_no_spam_duplicate_prompts(temp_org_dir, db):
     )
     db.connection.commit()
 
-    with patch('core.continuation_engine.SessionPrompter') as MockPrompter, \
-         patch('core.continuation_engine.ActivitySensor') as MockSensor:
+    with patch('cli.core.continuation_engine.SessionPrompter') as MockPrompter, \
+         patch('cli.core.continuation_engine.ActivitySensor') as MockSensor:
 
         mock_prompter = Mock()
         MockPrompter.return_value = mock_prompter
@@ -375,9 +375,9 @@ def test_handles_missing_worker_gracefully(temp_org_dir, db):
     )
     db.connection.commit()
 
-    with patch('core.continuation_engine.SessionPrompter') as MockPrompter, \
-         patch('core.continuation_engine.ActivitySensor') as MockSensor, \
-         patch('core.continuation_engine.get_worker') as mock_get_worker:
+    with patch('cli.core.continuation_engine.SessionPrompter') as MockPrompter, \
+         patch('cli.core.continuation_engine.ActivitySensor') as MockSensor, \
+         patch('cli.core.continuation_engine.get_worker') as mock_get_worker:
 
         mock_prompter = Mock()
         MockPrompter.return_value = mock_prompter
