@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - 'v*'
+  # workflow_dispatch lets you manually fire the workflow from the Actions UI
+  # against any branch/tag — useful for testing without cutting a real release.
+  # When run via dispatch the tag-version sanity check is skipped (no tag ref).
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Version to publish (leave blank to use VERSION file)'
+        required: false
+        type: string
 
 # Workflow-level permissions. Both are needed across the pipeline:
 #   contents: write  → github-release job creates the Release + uploads assets
@@ -57,13 +66,19 @@ jobs:
 
       - name: Verify tag matches VERSION
         run: |
-          tag_version="${GITHUB_REF#refs/tags/v}"
           file_version="$(cat VERSION | tr -d '[:space:]')"
-          if [[ "$tag_version" != "$file_version" ]]; then
-            echo "::error::Tag $tag_version does not match VERSION file $file_version"
-            exit 1
+          # On tag push: ensure tag === VERSION. On workflow_dispatch: skip
+          # (no tag ref) but still verify pyprojects are in sync with VERSION.
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag_version="${GITHUB_REF#refs/tags/v}"
+            if [[ "$tag_version" != "$file_version" ]]; then
+              echo "::error::Tag $tag_version does not match VERSION file $file_version"
+              exit 1
+            fi
+          else
+            echo "Manual dispatch — tag check skipped, using VERSION=$file_version"
           fi
-          # Also confirm pyprojects are in sync
+          # Confirm pyprojects are in sync regardless of trigger type
           for f in pyproject.toml terminal-app/pyproject.toml; do
             pp_version=$(grep -E '^version = ' "$f" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
             if [[ "$pp_version" != "$file_version" ]]; then
@@ -132,7 +147,11 @@ jobs:
       - name: Resolve release notes
         id: notes
         run: |
-          version="${GITHUB_REF#refs/tags/v}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            version="$(cat VERSION | tr -d '[:space:]')"
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           notes_file="release-notes/v${version}.md"
           if [[ -f "$notes_file" ]]; then
@@ -162,13 +181,21 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         python: ['3.11', '3.12']
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Resolve version from tag
+      - name: Resolve version
         id: ver
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            version="$(cat VERSION | tr -d '[:space:]')"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # Wait for PyPI to propagate. Trusted publishing is fast but the
       # CDN-fronted index can lag a few seconds.
