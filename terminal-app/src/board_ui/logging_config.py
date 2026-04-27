@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from cli.core.logging import configure_enhanced_logging
+
 _configured = False
 _current_org: Optional[Path] = None
 
@@ -46,26 +48,14 @@ def configure_board_logging(
 
     # If connected to org, use enhanced logging
     if org_path:
-        try:
-            # Import here to avoid circular dependency
-            # This requires cli package to be in PYTHONPATH
-            from cli.core.logging import configure_enhanced_logging
-
-            # Configure enhanced logging for board component
-            configure_enhanced_logging(
-                org_path=org_path,
-                component="board",
-                json_format=True,
-                legacy_logging=False,  # Board logs only to board/
-                verbose=verbose,
-            )
-
-            _current_org = org_path
-        except ImportError:
-            # CLI package not available - log to console only
-            root_logger.warning(
-                "Enhanced logging not available - logging to console only"
-            )
+        configure_enhanced_logging(
+            org_path=org_path,
+            component="board",
+            json_format=True,
+            legacy_logging=False,  # Board logs only to board/
+            verbose=verbose,
+        )
+        _current_org = org_path
 
     _configured = True
 

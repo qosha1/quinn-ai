@@ -816,37 +816,8 @@ class TestSQLiteThreadSafety:
 
         conn.close()
 
-    def test_sqlite_wrapper_allows_cross_thread_access(self, temp_org_with_db):
-        """_Sqlite3Wrapper connection must be opened with check_same_thread=False.
-
-        Without this, any method that accesses the DB from a background thread
-        raises: ProgrammingError: SQLite objects created in a thread can only
-        be used in that same thread.
-        """
-        import threading
-
-        org_path, db_path = temp_org_with_db
-
-        # Use the real _Sqlite3Wrapper (no MockDatabase factory)
-        from board_ui.services.org_connection import QuinnAIOrgConnection, _Sqlite3Wrapper
-
-        wrapper = _Sqlite3Wrapper(db_path)
-
-        errors = []
-
-        def read_from_thread():
-            try:
-                wrapper.fetchone("SELECT 1")
-            except Exception as e:
-                errors.append(e)
-
-        t = threading.Thread(target=read_from_thread)
-        t.start()
-        t.join(timeout=5)
-
-        assert not errors, (
-            f"_Sqlite3Wrapper raised exception from background thread: {errors[0]}\n"
-            "Fix: open SQLite with check_same_thread=False"
-        )
-
-        wrapper.close()
+    # _Sqlite3Wrapper test removed in qms.4: the fallback wrapper class no
+    # longer exists since cli.core.db.Database is now a hard dep (it owns its
+    # own thread-safety contract). Cross-thread access for the connection as
+    # a whole is still covered by test_start_org_accessible_from_background_thread
+    # above.

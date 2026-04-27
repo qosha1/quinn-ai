@@ -2,6 +2,8 @@
 
 import yaml
 
+from cli.core.sessions.registry import get_default_registry
+
 from ...logging_config import get_board_logger
 from ._context import OrgContext
 
@@ -17,8 +19,6 @@ class ProvidersCommander:
     def set_default_provider(self, provider_name: str) -> tuple[bool, str]:
         """Set the default provider for the org."""
         try:
-            from cli.core.sessions.registry import get_default_registry
-
             config_path = self._ctx.org_path / "config" / "providers.yaml"
             if not config_path.exists():
                 return False, f"Provider config not found: {config_path}"
@@ -47,8 +47,6 @@ class ProvidersCommander:
     def validate_provider_config(self) -> tuple[bool, list[str]]:
         """Validate that providers.yaml only references registered providers."""
         try:
-            from cli.core.sessions.registry import get_default_registry
-
             config_path = self._ctx.org_path / "config" / "providers.yaml"
             if not config_path.exists():
                 return False, [f"Provider config not found: {config_path}"]

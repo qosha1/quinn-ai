@@ -2,6 +2,8 @@
 
 from typing import Optional
 
+from cli.core.sessions.binding_manager import get_binding_manager
+
 from ...logging_config import get_board_logger
 from ..qn_cli_client import get_default_qn_cli
 from ._context import OrgContext
@@ -61,11 +63,8 @@ class SessionsCommander:
             self._ctx.db.connection.commit()
 
             try:
-                from cli.core.sessions.binding_manager import get_binding_manager
-
-                manager = get_binding_manager(self._ctx.db)
-                manager.unbind(worker_id)
-            except (ImportError, Exception) as e:
+                get_binding_manager(self._ctx.db).unbind(worker_id)
+            except Exception as e:
                 logger.debug(f"Could not unbind session for {worker_id}: {e}")
 
             logger.info(f"Cleaned up stale session for worker {worker_id}")

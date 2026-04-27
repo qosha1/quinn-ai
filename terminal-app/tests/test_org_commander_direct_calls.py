@@ -68,7 +68,7 @@ class TestPauseWorkerDirectCall:
 
         with (
             patch("subprocess.run") as mock_run,
-            patch("cli.core.worker.Worker.get", return_value=mock_worker),
+            patch("board_ui.services.commanders.interventions.Worker.get", return_value=mock_worker),
         ):
             commander.pause_worker("worker-abc", reason="testing")
 
@@ -82,7 +82,7 @@ class TestPauseWorkerDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.worker.Worker.get", return_value=mock_worker),
+            patch("board_ui.services.commanders.interventions.Worker.get", return_value=mock_worker),
         ):
             result = commander.pause_worker("worker-abc", reason="testing")
 
@@ -95,7 +95,7 @@ class TestPauseWorkerDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.worker.Worker.get", return_value=mock_worker),
+            patch("board_ui.services.commanders.interventions.Worker.get", return_value=mock_worker),
         ):
             result = commander.pause_worker("worker-abc")
 
@@ -109,7 +109,7 @@ class TestPauseWorkerDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.worker.Worker.get", side_effect=WorkerNotFound("worker-abc")),
+            patch("board_ui.services.commanders.interventions.Worker.get", side_effect=WorkerNotFound("worker-abc")),
         ):
             result = commander.pause_worker("worker-abc")
 
@@ -130,7 +130,7 @@ class TestResumeWorkerDirectCall:
 
         with (
             patch("subprocess.run") as mock_run,
-            patch("cli.core.queries.update_worker_runtime_status"),
+            patch("board_ui.services.commanders.interventions.update_worker_runtime_status"),
         ):
             commander.resume_worker("worker-abc")
 
@@ -142,7 +142,7 @@ class TestResumeWorkerDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.queries.update_worker_runtime_status") as mock_update,
+            patch("board_ui.services.commanders.interventions.update_worker_runtime_status") as mock_update,
         ):
             result = commander.resume_worker("worker-abc")
 
@@ -154,7 +154,7 @@ class TestResumeWorkerDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.queries.update_worker_runtime_status"),
+            patch("board_ui.services.commanders.interventions.update_worker_runtime_status"),
         ):
             result = commander.resume_worker("worker-abc")
 
@@ -177,7 +177,7 @@ class TestFireWorkerDirectCall:
 
         with (
             patch("subprocess.run") as mock_run,
-            patch("cli.core.worker.Worker", return_value=mock_worker),
+            patch("board_ui.services.commanders.interventions.Worker", return_value=mock_worker),
         ):
             commander.fire_worker("worker-abc", reason="testing")
 
@@ -191,7 +191,7 @@ class TestFireWorkerDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.worker.Worker", return_value=mock_worker),
+            patch("board_ui.services.commanders.interventions.Worker", return_value=mock_worker),
         ):
             result = commander.fire_worker("worker-abc", reason="testing")
 
@@ -206,7 +206,7 @@ class TestFireWorkerDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.worker.Worker", return_value=mock_worker),
+            patch("board_ui.services.commanders.interventions.Worker", return_value=mock_worker),
         ):
             result = commander.fire_worker("worker-abc", reason="testing")
 
@@ -221,7 +221,7 @@ class TestFireWorkerDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.worker.Worker", return_value=mock_worker),
+            patch("board_ui.services.commanders.interventions.Worker", return_value=mock_worker),
         ):
             result = commander.fire_worker("worker-abc", reason="testing")
 
@@ -250,7 +250,7 @@ class TestSetDefaultProviderDirectCall:
 
         with (
             patch("subprocess.run") as mock_run,
-            patch("cli.core.sessions.registry.get_default_registry", return_value=mock_registry),
+            patch("board_ui.services.commanders.providers.get_default_registry", return_value=mock_registry),
         ):
             commander.set_default_provider("cursor")
 
@@ -270,7 +270,7 @@ class TestSetDefaultProviderDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.sessions.registry.get_default_registry", return_value=mock_registry),
+            patch("board_ui.services.commanders.providers.get_default_registry", return_value=mock_registry),
         ):
             ok, msg = commander.set_default_provider("cursor")
 
@@ -293,7 +293,7 @@ class TestSetDefaultProviderDirectCall:
 
         with (
             patch("subprocess.run"),
-            patch("cli.core.sessions.registry.get_default_registry", return_value=mock_registry),
+            patch("board_ui.services.commanders.providers.get_default_registry", return_value=mock_registry),
         ):
             ok, msg = commander.set_default_provider("unknown_provider")
 

@@ -27,12 +27,7 @@ class RenderableStatic(Static):
         """Return the content as renderable for test compatibility."""
         return self.content
 
-# Import will use from cli.core when running in the board context
-try:
-    from cli.core.log_reader import LogReader
-except ImportError:
-    # Fallback for testing
-    LogReader = None
+from cli.core.log_reader import LogReader
 
 
 class LogsView(VerticalScroll):

@@ -12,6 +12,8 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from cli.core.db import Database
+
 from ..logging_config import get_board_logger
 
 logger = get_board_logger(__name__)
@@ -71,69 +73,6 @@ class DatabaseLocked(OrgConnectionError):
         super().__init__(
             f"Database is locked at {db_path}. Another process may be using it: {original_error}"
         )
-
-
-class _Sqlite3Wrapper:
-    """Minimal wrapper around sqlite3 to match CLI Database interface.
-
-    Used as a fallback when cli.core.db.Database is not available.
-    Provides the same interface for fetchone, fetchall, execute, and close.
-
-    Raises:
-        DatabaseCorrupt: If database file is corrupt or malformed
-        DatabaseLocked: If database is locked by another process
-        OrgConnectionError: For other database connection errors
-    """
-
-    def __init__(self, db_path: Path):
-        import sqlite3
-
-        self._db_path = db_path
-        try:
-            self._conn = sqlite3.connect(str(db_path), timeout=10.0, check_same_thread=False)
-            self._conn.row_factory = sqlite3.Row
-            self._conn.execute("SELECT 1")
-        except sqlite3.DatabaseError as e:
-            error_msg = str(e).lower()
-            if "corrupt" in error_msg or "malformed" in error_msg:
-                raise DatabaseCorrupt(db_path, e)
-            raise OrgConnectionError(f"Database error at {db_path}: {e}")
-        except sqlite3.OperationalError as e:
-            error_msg = str(e).lower()
-            if "locked" in error_msg:
-                raise DatabaseLocked(db_path, e)
-            raise OrgConnectionError(f"Cannot open database at {db_path}: {e}")
-        except PermissionError as e:
-            raise OrgConnectionError(
-                f"Permission denied accessing database at {db_path}: {e}"
-            )
-        except Exception as e:
-            raise OrgConnectionError(f"Failed to connect to database at {db_path}: {e}")
-
-    @property
-    def connection(self):
-        """Return the underlying sqlite3 connection."""
-        return self._conn
-
-    def fetchone(self, sql: str, params: tuple = ()) -> Optional[Any]:
-        """Execute SQL and fetch one row."""
-        cursor = self._conn.execute(sql, params)
-        return cursor.fetchone()
-
-    def fetchall(self, sql: str, params: tuple = ()) -> list:
-        """Execute SQL and fetch all rows."""
-        cursor = self._conn.execute(sql, params)
-        return cursor.fetchall()
-
-    def execute(self, sql: str, params: tuple = ()) -> None:
-        """Execute SQL statement."""
-        self._conn.execute(sql, params)
-
-    def close(self) -> None:
-        """Close the connection."""
-        if self._conn:
-            self._conn.close()
-            self._conn = None
 
 
 class QuinnAIOrgConnection(OrgConnection):
@@ -210,12 +149,7 @@ class QuinnAIOrgConnection(OrgConnection):
             if self._database_factory:
                 self._db = self._database_factory(db_path)
             else:
-                try:
-                    from cli.core.db import Database
-
-                    self._db = Database(db_path)
-                except ImportError:
-                    self._db = _Sqlite3Wrapper(db_path)
+                self._db = Database(db_path)
         except (DatabaseCorrupt, DatabaseLocked, OrgConnectionError):
             raise
         except sqlite3.DatabaseError as e:

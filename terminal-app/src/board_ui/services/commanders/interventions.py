@@ -4,6 +4,11 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from cli.core.queries import update_worker_runtime_status
+from cli.core.worker import Worker
+from shared.enums import WorkerLifecycleStatus
+from shared.exceptions import InvalidStateTransition, WorkerNotFound
+
 from ...logging_config import get_board_logger
 from ._context import OrgContext
 
@@ -19,9 +24,6 @@ class InterventionsCommander:
     def pause_worker(self, worker_id: str, reason: Optional[str] = None) -> bool:
         """Pause a worker by stopping its session."""
         try:
-            from cli.core.worker import Worker
-            from shared.exceptions import InvalidStateTransition, WorkerNotFound
-
             worker = Worker.get(self._ctx.db, worker_id)
             worker.stop_session()
 
@@ -41,8 +43,6 @@ class InterventionsCommander:
     def resume_worker(self, worker_id: str) -> bool:
         """Resume a paused worker by setting its runtime status to 'starting'."""
         try:
-            from cli.core.queries import update_worker_runtime_status
-
             update_worker_runtime_status(self._ctx.db, worker_id, "starting")
 
             self._log_intervention("resume", worker_id, "Board resumed worker")
@@ -55,10 +55,6 @@ class InterventionsCommander:
     def fire_worker(self, worker_id: str, reason: Optional[str] = None) -> bool:
         """Terminate a worker via direct lifecycle transitions."""
         try:
-            from cli.core.worker import Worker
-            from shared.enums import WorkerLifecycleStatus
-            from shared.exceptions import InvalidStateTransition, WorkerNotFound
-
             worker = Worker(self._ctx.db, worker_id, org_path=self._ctx.org_path)
             _ = worker.name  # raises WorkerNotFound if missing
 
