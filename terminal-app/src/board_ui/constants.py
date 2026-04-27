@@ -14,10 +14,6 @@ to the specific tool being probed, not a board-wide concern.
 # reactive view refreshes when the board detects a database write.
 WAL_POLL_INTERVAL_SECONDS = 0.3
 
-# Per-view auto-refresh tick used by Dashboard and Team while a view is
-# mounted. Independent of WAL polling and intentionally slower.
-VIEW_REFRESH_INTERVAL_SECONDS = 2
-
 # Recent-activity widget tail-rescan interval. Activity is jsonl on disk,
 # not in the db, so it isn't covered by WAL polling.
 ACTIVITY_REFRESH_INTERVAL_SECONDS = 30

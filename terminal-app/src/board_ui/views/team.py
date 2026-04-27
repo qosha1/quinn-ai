@@ -16,7 +16,6 @@ from textual.containers import Container, Horizontal, VerticalScroll
 from textual.widgets import Button, DataTable, Label, Static
 from textual.widget import Widget
 
-from ..constants import VIEW_REFRESH_INTERVAL_SECONDS
 from ..interfaces.org_connection import WorkerInfo, SessionState
 from ..logging_config import get_board_logger
 from ._org_access import get_org_connection
@@ -58,7 +57,6 @@ class TeamView(VerticalScroll):
         self._open_windows: dict[str, any] = {}  # worker_id -> WindowHandle
         self._workers: list[WorkerInfo] = []
         self._current_filter = "all"
-        self._refresh_interval_seconds = VIEW_REFRESH_INTERVAL_SECONDS
         self._spawning_session: set[str] = set()  # worker IDs currently spawning
 
     def compose(self) -> ComposeResult:
@@ -76,13 +74,13 @@ class TeamView(VerticalScroll):
             yield table
 
     async def on_mount(self) -> None:
-        """Load workers when view mounts."""
-        await self.refresh_workers()
-        # Start auto-refresh timer
-        self.set_interval(self._refresh_interval_seconds, self._auto_refresh)
+        """Load workers when view mounts.
 
-    async def _auto_refresh(self) -> None:
-        """Auto-refresh callback for timer."""
+        No per-view refresh timer: BoardApp polls the active org's WAL on a
+        WAL_POLL_INTERVAL_SECONDS tick and dispatches _refresh_all_views()
+        when changes are detected. That's the single source of refresh
+        triggers for db-backed views.
+        """
         await self.refresh_workers()
 
     async def refresh_workers(self) -> None:

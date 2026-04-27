@@ -16,7 +16,6 @@ from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Label, Static
 from textual.widget import Widget
 
-from ..constants import VIEW_REFRESH_INTERVAL_SECONDS
 from ..interfaces.org_connection import OrgInfo, WorkerInfo, BudgetSummary, OrgStatus
 from ..widgets.recent_activity import RecentActivityWidget
 from ..widgets.health_status import HealthStatusWidget
@@ -106,7 +105,6 @@ class DashboardView(VerticalScroll):
         self._org_info: Optional[OrgInfo] = None
         self._budget: Optional[BudgetSummary] = None
         self._spawning_session: bool = False  # Guard against double-spawn
-        self._refresh_interval_seconds = VIEW_REFRESH_INTERVAL_SECONDS
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="top-row"):
@@ -152,19 +150,19 @@ class DashboardView(VerticalScroll):
                 yield Button("Restart Org", id="restart-org-btn", variant="warning")
 
     async def on_mount(self) -> None:
-        """Load data when view mounts."""
+        """Load data when view mounts.
+
+        No per-view refresh timer: BoardApp polls the active org's WAL on a
+        WAL_POLL_INTERVAL_SECONDS tick and dispatches _refresh_all_views()
+        when changes are detected. The activity widget is the exception —
+        activity is jsonl on disk, not in the db, so it keeps its own timer.
+        """
         conn = get_org_connection(self.app)
         if conn is not None:
             activity_widget = self.query_one("#activity-widget", RecentActivityWidget)
             activity_widget.org_connection = conn
             activity_widget.refresh_activities()
 
-        await self.refresh_data()
-        # Start auto-refresh timer
-        self.set_interval(self._refresh_interval_seconds, self._auto_refresh)
-
-    async def _auto_refresh(self) -> None:
-        """Auto-refresh callback for timer."""
         await self.refresh_data()
 
     async def refresh_data(self) -> None:
