@@ -648,4 +648,4 @@ Start sequence is complete when:
 - org-start-audit-2026-01-25.md (current behavior analysis)
 - org-stop-sequence-design.md (companion design)
 - worker-onboarding-design.md (onboarding system)
-- architecture-decisions/003-onboarding-session-modification.md (onboarding principles)
+- architecture-decisions/ADR-003-onboarding-session-modification.md (onboarding principles)
