@@ -20,6 +20,7 @@ from .queries import (
     create_worker,
     create_budget_pool,
     create_budget_allocation,
+    create_budget_balance,
     create_channel,
     subscribe_to_channel,
     get_team_channel,
@@ -199,7 +200,7 @@ class Org:
             period_start=now,
             period_end=period_end,
         )
-        create_budget_allocation(
+        ceo_allocation = create_budget_allocation(
             self.db,
             worker_id=ceo_data.id,
             allocated_credits=initial_budget,
@@ -208,6 +209,17 @@ class Org:
             pool_id=pool.id,
             can_delegate=True,  # CEO can delegate budget to reports
             delegation_limit=initial_budget * DEFAULT_DELEGATION_LIMIT_PERCENT,
+        )
+        # Without this balance row, BudgetService.delegate_budget can't
+        # check available funds and rejects every CEO->report allocation
+        # with 'No balance found' (quinn-ai-bsed).
+        create_budget_balance(
+            self.db,
+            allocation_id=ceo_allocation.id,
+            worker_id=ceo_data.id,
+            allocated=initial_budget,
+            period_start=now,
+            period_end=period_end,
         )
 
         # Subscribe CEO to their team channel (created automatically by create_team)

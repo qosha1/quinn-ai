@@ -12,7 +12,7 @@ import click
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker, InsufficientHiringAuthority, MaxReportsExceeded
-from cli.core.queries import get_worker_by_name
+from cli.core.queries import get_worker_by_name, resolve_worker
 from shared.exceptions import WorkerNotFound
 
 
@@ -95,18 +95,14 @@ def hire_cmd(
     db = open_database(db_path)
 
     try:
-        # Find manager worker — try name first, fall back to ID lookup.
-        manager_data = get_worker_by_name(db, manager)
+        # Resolve selector (id, name, or unique role).
+        manager_data = resolve_worker(db, manager)
         if not manager_data:
-            try:
-                manager_worker = Worker.get(db, manager)
-            except (ValueError, KeyError, WorkerNotFound):
-                raise click.ClickException(
-                    f"Manager '{manager}' not found.\n"
-                    "Use 'qn org status' to see available workers."
-                )
-        else:
-            manager_worker = Worker.get(db, manager_data.id)
+            raise click.ClickException(
+                f"Manager '{manager}' not found.\n"
+                "Use 'qn org status' to see available workers."
+            )
+        manager_worker = Worker.get(db, manager_data.id)
 
         # Check manager's hiring authority
         can_hire, reason = manager_worker.can_hire(role, cost)
