@@ -132,6 +132,22 @@ def hire_cmd(
                 "Consider promoting an existing worker to manager to distribute leadership."
             )
 
+        # Grant baseline write permission so the worker can use bd-backed
+        # commands like 'qn wrkr report' (which create bead records).
+        # Without this, every non-CEO command that writes a bead fails
+        # with BeadPermissionError (quinn-ai-ad95). The CEO bypasses the
+        # check by running bd commands without a worker_id; reports run
+        # *as* the worker so they need an actual permission row.
+        from cli.core.queries import grant_permission
+        from cli.core.constants.permissions import PERM_LEVEL_WRITE
+        grant_permission(
+            db,
+            grantee_type="worker",
+            grantee_id=new_worker.id,
+            level=PERM_LEVEL_WRITE,
+            granted_by=manager_worker.id,
+        )
+
         click.echo(f"Hired '{new_worker.name}' ({new_worker.role})")
         click.echo(f"  ID: {new_worker.id}")
         click.echo(f"  Manager: {manager_worker.name}")

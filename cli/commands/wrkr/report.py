@@ -152,12 +152,17 @@ def report_cmd(
 
         # Create report bead using bd
         try:
-            # Create the report as a bead of type 'report'
+            # Create the report as a bead. The bundled bd binary's valid
+            # types are bug|feature|task|epic|chore|merge-request|molecule|
+            # gate|agent|role|convoy|event — no 'report' type. Use 'chore'
+            # (low-cost informational work) and add a 'report' label for
+            # filtering. Closes quinn-ai-ad95.
             bd_args = [
                 "create",
                 "--title", f"Report: {summary[:50]}{'...' if len(summary) > 50 else ''}",
-                "--type", "report",
+                "--type", "chore",
                 "--priority", "3",  # Low priority - informational
+                "--labels", "report",
                 f"--assignee={recipient_id}",
             ]
 
