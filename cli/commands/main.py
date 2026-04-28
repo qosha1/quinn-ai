@@ -48,31 +48,88 @@ def qn(ctx, org_path: Optional[Path], verbose: bool, debug: bool):
     """
     # Set up global exception handler for logging
     def handle_exception(exc_type, exc_value, exc_traceback):
-        """Log uncaught exceptions before exiting."""
+        """Log uncaught exceptions before exiting.
+
+        Distinguishes three cases:
+        - KeyboardInterrupt: pass to default handler (clean ^C exit)
+        - Known business exception: print a clean one-line error, no
+          stack trace, exit with status 1 (quinn-ai-qm1h)
+        - Truly unexpected: log full traceback if log file exists, print
+          a short FATAL ERROR + suggested next step
+
+        The logger.critical(exc_info=...) call previously dumped a
+        30-line traceback to stderr even for routine business errors,
+        which buried the actionable message.
+        """
         if issubclass(exc_type, KeyboardInterrupt):
-            # Don't log keyboard interrupts
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
 
-        logger = get_logger("cli.main")
-        logger.critical(
-            "Uncaught exception",
-            exc_info=(exc_type, exc_value, exc_traceback)
+        # Lazy imports — keep top-of-module light + avoid import-cycle risk
+        from cli.core.bd_wrapper import BeadPermissionError, OKRLinkRequiredError
+        from cli.core.logging import get_log_file_path
+        from shared.exceptions import (
+            ActiveSessionExistsError,
+            BudgetAllocationError,
+            BudgetExhaustedError,
+            CircularDelegationError,
+            ConfigurationError,
+            DelegationNotFoundError,
+            InvalidOrgTransition,
+            InvalidStateTransition,
+            NoBudgetAllocationError,
+            OrgNotFoundError,
+            OrgStartError,
+            StorageError,
+            WorkerNotFound,
         )
 
-        # Also print to stderr for immediate visibility
+        # Known business exceptions: print the message, no stack trace.
+        known_business_excs = (
+            ActiveSessionExistsError,
+            BeadPermissionError,
+            BudgetAllocationError,
+            BudgetExhaustedError,
+            CircularDelegationError,
+            ConfigurationError,
+            DelegationNotFoundError,
+            InvalidOrgTransition,
+            InvalidStateTransition,
+            NoBudgetAllocationError,
+            OKRLinkRequiredError,
+            OrgNotFoundError,
+            OrgStartError,
+            StorageError,
+            WorkerNotFound,
+        )
+        if issubclass(exc_type, known_business_excs):
+            click.echo(f"Error: {exc_value}", err=True)
+            if debug:
+                click.echo("\nFull traceback:", err=True)
+                traceback.print_exception(exc_type, exc_value, exc_traceback)
+            sys.exit(1)
+
+        # Truly unexpected: log to file if available, summarize to stderr.
+        log_path = get_log_file_path()
+        if log_path:
+            logger = get_logger("cli.main")
+            logger.critical(
+                "Uncaught exception",
+                exc_info=(exc_type, exc_value, exc_traceback)
+            )
+
         click.echo(f"\nFATAL ERROR: {exc_type.__name__}: {exc_value}", err=True)
         if debug:
             click.echo("\nFull traceback:", err=True)
             traceback.print_exception(exc_type, exc_value, exc_traceback)
 
-        # Show log location if available
-        from cli.core.logging import get_log_file_path
-        log_path = get_log_file_path()
         if log_path:
             click.echo(f"\nFull error logged to: {log_path}", err=True)
         else:
-            click.echo("\nNo log file configured (org_path not set)", err=True)
+            click.echo(
+                "\nRe-run with --debug to see the full traceback.",
+                err=True,
+            )
 
     sys.excepthook = handle_exception
 
