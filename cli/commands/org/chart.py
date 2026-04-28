@@ -17,9 +17,11 @@ import click
 import yaml
 
 from cli.commands.context import pass_context, Context
+from cli.core.db import open_database, get_org_db_path
 from cli.core.org_chart import (
     ORG_CHART_DIR,
     ORG_CHART_CURRENT,
+    update_org_chart,
 )
 
 
@@ -56,6 +58,17 @@ def chart_show(ctx: Context):
             f"Org-chart not found at {chart_path}\n"
             "Run 'qn org init' to initialize the organization."
         )
+
+    # Regenerate from db before display so the yaml's lifecycle status
+    # doesn't lag behind onboarding/firing/etc. transitions that don't
+    # currently call update_org_chart (quinn-ai-lfgg).
+    db_path = get_org_db_path(org_path)
+    if db_path.exists():
+        db = open_database(db_path)
+        try:
+            update_org_chart(db, org_path)
+        finally:
+            db.close()
 
     with open(chart_path) as f:
         org_chart = yaml.safe_load(f)
