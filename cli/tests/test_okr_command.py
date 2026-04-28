@@ -90,7 +90,7 @@ class TestOkrListCommand:
         assert result.exit_code != 0
         assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_list_shows_no_okrs(self, mock_run_bd, runner, initialized_org):
         """Should show message when no OKRs found."""
         mock_run_bd.return_value = MagicMock(
@@ -107,7 +107,7 @@ class TestOkrListCommand:
         assert result.exit_code == 0
         assert "No OKRs found" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_list_shows_okrs(self, mock_run_bd, runner, initialized_org):
         """Should display OKRs when found."""
         mock_run_bd.return_value = MagicMock(
@@ -137,7 +137,7 @@ class TestOkrListCommand:
         assert "okr-abc123" in result.output
         assert "open" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_list_with_status_filter(self, mock_run_bd, runner, initialized_org):
         """Should pass status filter to bd."""
         mock_run_bd.return_value = MagicMock(
@@ -156,7 +156,7 @@ class TestOkrListCommand:
         call_args = mock_run_bd.call_args[0][0]
         assert "--status=in_progress" in call_args
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_list_with_assignee_filter(self, mock_run_bd, runner, initialized_org):
         """Should pass assignee filter to bd."""
         mock_run_bd.return_value = MagicMock(
@@ -174,7 +174,7 @@ class TestOkrListCommand:
         call_args = mock_run_bd.call_args[0][0]
         assert "--assignee=ceo" in call_args
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_list_with_all_flag(self, mock_run_bd, runner, initialized_org):
         """Should pass --all flag to include closed OKRs."""
         mock_run_bd.return_value = MagicMock(
@@ -214,7 +214,7 @@ class TestOkrSetCommand:
         assert result.exit_code != 0
         assert "title" in result.output.lower() or "--title" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_set_creates_okr(self, mock_run_bd, runner, initialized_org):
         """Should create OKR via bd."""
         mock_run_bd.return_value = MagicMock(
@@ -238,7 +238,7 @@ class TestOkrSetCommand:
         assert f"--type={BEAD_TYPE_EPIC}" in call_args
         assert "--label=okr" in call_args
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_set_with_all_options(self, mock_run_bd, runner, initialized_org):
         """Should pass all options to bd."""
         mock_run_bd.return_value = MagicMock(
@@ -273,7 +273,7 @@ class TestOkrSetCommand:
 class TestOkrAddCommand:
     """Test qn org okr add command (alias for set)."""
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_add_creates_okr(self, mock_run_bd, runner, initialized_org):
         """Should create OKR via bd (same as set)."""
         mock_run_bd.return_value = MagicMock(
@@ -303,7 +303,7 @@ class TestOkrCascadeCommand:
         assert result.exit_code != 0
         assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_cascade_shows_no_okrs(self, mock_run_bd, runner, initialized_org):
         """Should show message when no OKRs found."""
         mock_run_bd.return_value = MagicMock(
@@ -320,7 +320,7 @@ class TestOkrCascadeCommand:
         assert result.exit_code == 0
         assert "No OKRs found" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_cascade_shows_hierarchy(self, mock_run_bd, runner, initialized_org):
         """Should display OKR hierarchy."""
         mock_run_bd.return_value = MagicMock(
@@ -342,7 +342,7 @@ class TestOkrCascadeCommand:
         assert "Company Goal" in result.output
         assert "Team Goal" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_cascade_with_root(self, mock_run_bd, runner, initialized_org):
         """Should show cascade from specific root."""
         mock_run_bd.return_value = MagicMock(
@@ -375,7 +375,7 @@ class TestOkrShowCommand:
         assert result.exit_code != 0
         assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_show_displays_okr(self, mock_run_bd, runner, initialized_org):
         """Should display OKR details."""
         # First call: bd show
@@ -393,7 +393,7 @@ class TestOkrShowCommand:
         assert result.exit_code == 0
         assert "OKR Details" in result.output or "Work items" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_show_okr_not_found(self, mock_run_bd, runner, initialized_org):
         """Should error when OKR not found."""
         mock_run_bd.return_value = MagicMock(
@@ -468,7 +468,7 @@ class TestOkrLinkCommand:
         assert result.exit_code != 0
         assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_link_creates_dependency(self, mock_run_bd, runner, initialized_org):
         """Should create serves dependency via bd."""
         mock_run_bd.return_value = MagicMock(
@@ -491,7 +491,7 @@ class TestOkrLinkCommand:
         assert "add" in call_args
         assert "serves" in call_args
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_link_handles_error(self, mock_run_bd, runner, initialized_org):
         """Should error when link fails."""
         mock_run_bd.return_value = MagicMock(
@@ -512,7 +512,7 @@ class TestOkrLinkCommand:
 class TestOkrErrorHandling:
     """Test error handling in OKR commands."""
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_handles_bd_error(self, mock_run_bd, runner, initialized_org):
         """Should handle bd errors gracefully."""
         mock_run_bd.return_value = MagicMock(
@@ -529,7 +529,7 @@ class TestOkrErrorHandling:
         assert result.exit_code != 0
         assert "Failed" in result.output or "error" in result.output.lower()
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_handles_invalid_json(self, mock_run_bd, runner, initialized_org):
         """Should handle invalid JSON from bd."""
         mock_run_bd.return_value = MagicMock(
@@ -612,7 +612,7 @@ class TestOkrDatabaseIntegration:
         assert "25" in result.output  # Current value
         assert "100" in result.output  # Target value
 
-    @patch('cli.commands.org.okr.run_bd')
+    @patch('cli.commands.org.okr._helpers.run_bd')
     def test_set_stores_in_database(self, mock_run_bd, runner, initialized_org):
         """OKR set should also store OKR in database."""
         from cli.core.db import open_database, get_org_db_path
