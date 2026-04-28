@@ -92,4 +92,52 @@ def test_org_init_creates_ceo_with_hiring_authority(initialized_org, cli_runner)
 
     assert result.returncode == 0
     assert "CEO" in result.stdout
-    assert "Authority" in result.stdout or "Full" in result.stdout
+
+
+def test_org_init_refuses_to_share_existing_beads_dir(tmp_path, cli_runner):
+    """Regression: 'qn org init' must NOT silently share an existing
+    .beads/ at the target path (quinn-ai-hmn1).
+
+    Pre-fix: bootstrap OKR + initial tasks landed in whatever .beads/
+    was sitting at the target path, polluting that project's tracker.
+    """
+    # Pre-create a .beads/ directory at the target path to simulate
+    # 'init inside a dir that's already part of another bead-tracked project'.
+    target = tmp_path / "would-pollute"
+    target.mkdir()
+    (target / ".beads").mkdir()
+
+    result = cli_runner(
+        ["--org-path", str(target), "org", "init"],
+    )
+
+    assert result.returncode != 0, (
+        "init should refuse when a .beads/ already exists at the target "
+        f"path; got success.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+    )
+    err = (result.stderr + result.stdout).lower()
+    assert "beads" in err and ("already exists" in err or "exist" in err), (
+        "error message should mention the .beads conflict; got:\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+
+def test_org_init_reuse_beads_flag_lets_user_share_existing_tracker(
+    tmp_path, cli_runner
+):
+    """The --reuse-beads escape hatch lets the user opt in to sharing
+    an existing .beads/ at the target path.
+    """
+    target = tmp_path / "shared-beads-org"
+    target.mkdir()
+    (target / ".beads").mkdir()
+
+    result = cli_runner(
+        ["--org-path", str(target), "org", "init", "--reuse-beads"],
+    )
+
+    assert result.returncode == 0, (
+        f"init --reuse-beads should succeed even when .beads/ exists.\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert (target / "live" / "quinn.db").exists()

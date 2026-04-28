@@ -52,7 +52,7 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
         create_folder_structure(org_path)
 
         # 3. Initialize beads
-        init_beads(org_path)
+        init_beads(org_path, reuse_beads=config.reuse_beads)
 
         # 4. Write config files
         if config.providers:

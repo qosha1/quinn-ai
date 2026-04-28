@@ -75,6 +75,10 @@ class OrgInitConfig:
     providers: List[OrgInitProviderConfig] = field(default_factory=list)
     objectives: List[ObjectiveConfig] = field(default_factory=list)
     ceo_briefing: Optional[CEOBriefingConfig] = None
+    # Deliberately share an existing <path>/.beads/ tracker instead of
+    # erroring (quinn-ai-hmn1). Default False — fail-fast is the right
+    # default to prevent accidental cross-project bead pollution.
+    reuse_beads: bool = False
 
 
 @dataclass

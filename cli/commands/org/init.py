@@ -128,12 +128,26 @@ def _prompt_for_okrs() -> List[ObjectiveConfig]:
     default=False,
     help="Skip OKR prompting and use bootstrap OKR.",
 )
+@click.option(
+    "--reuse-beads",
+    is_flag=True,
+    default=False,
+    help=(
+        "Deliberately share an existing .beads/ tracker at the target path "
+        "instead of erroring. Default is to refuse — most cases of "
+        "'.beads/ already exists' mean the target dir belongs to another "
+        "project (e.g. you're inside a git repo whose root has its own "
+        "tracker), and sharing pollutes that project's beads. Pass this "
+        "flag only if you know the existing .beads/ is yours to extend."
+    ),
+)
 @pass_context
 def init_cmd(
     ctx: Context,
     ceo_name: str,
     okrs_file: Optional[str],
     skip_okrs: bool,
+    reuse_beads: bool,
 ):
     """Initialize a new organization.
 
@@ -195,6 +209,7 @@ def init_cmd(
         ceo_name=ceo_name,
         ceo_role="CEO",  # Always CEO
         objectives=objectives,
+        reuse_beads=reuse_beads,
     )
 
     # Initialize the org

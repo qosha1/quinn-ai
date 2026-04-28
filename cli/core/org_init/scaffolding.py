@@ -154,11 +154,41 @@ def init_git_repo(org_path: Path) -> None:
     )
 
 
-def init_beads(org_path: Path) -> None:
-    """Initialize the .beads/ tracking dir + disable bd auto-export-on-write."""
+def init_beads(org_path: Path, reuse_beads: bool = False) -> None:
+    """Initialize the .beads/ tracking dir + disable bd auto-export-on-write.
+
+    If <org_path>/.beads/ already exists, refuse with a clear error
+    rather than silently sharing the existing tracker. Sharing was the
+    cause of quinn-ai-hmn1: running 'qn org init' inside a directory
+    that was already part of another bead-tracked project (e.g., the
+    QuinnAI repo itself) caused the bootstrap OKR + initial tasks to
+    land in the surrounding tracker. To deliberately share, pass
+    reuse_beads=True.
+
+    Args:
+        org_path: Path where the org will live.
+        reuse_beads: If True, share an existing <org_path>/.beads/.
+            If False (default) and one exists, raise OrgStructureError.
+
+    Raises:
+        OrgStructureError: If .beads/ exists at org_path and
+            reuse_beads is False.
+    """
+    from shared.exceptions import OrgStructureError
+
     beads_dir = org_path / BEADS_DIR
     if beads_dir.exists():
-        return
+        if reuse_beads:
+            return
+        raise OrgStructureError(
+            f"{beads_dir} already exists. The org would share that bead "
+            "tracker, mixing this org's bootstrap OKR + tasks with whatever "
+            "project already owns the .beads/ directory.\n\n"
+            "Pick one of:\n"
+            "  - Init in a clean directory (rmdir/move existing .beads first)\n"
+            "  - Pass --reuse-beads to deliberately share the existing tracker\n"
+            "    (only do this if you know the parent project owns it)"
+        )
 
     env = os.environ.copy()
     env["BEADS_DIR"] = str(beads_dir)
