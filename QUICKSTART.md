@@ -95,10 +95,10 @@ cd example_orgs/org-scripts/hello-world
 
 ```bash
 # Organization management (humans run these)
-qn org init <path>     # Initialize a new org
-qn org start           # Start the org
-qn org stop            # Stop the org
-qn org status          # Check org state
+qn --org-path <path> org init   # Initialize a new org (or cd into <path> first)
+qn org start                    # Start the org
+qn org stop                     # Stop the org
+qn org status                   # Check org state
 
 # Worker operations (workers run these from sessions)
 qn wrkr get-work       # Get assigned work
