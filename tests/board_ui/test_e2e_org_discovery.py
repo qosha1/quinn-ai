@@ -137,7 +137,7 @@ class TestE2EOrgDiscovery:
 
             # Mock the stop_org function at both import locations
             with patch("board_ui.services.org_discovery.stop_org") as mock_stop, \
-                 patch("tests.test_e2e_org_discovery.stop_org", mock_stop):
+                 patch("tests.board_ui.test_e2e_org_discovery.stop_org", mock_stop):
                 mock_stop.return_value = StopResult(
                     success=True,
                     message="Organization stopped",

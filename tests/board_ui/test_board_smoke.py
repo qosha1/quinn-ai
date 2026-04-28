@@ -14,6 +14,7 @@ from board_ui.config import BoardConfig
 class TestBoardSmoke:
     """Smoke tests for board launch."""
 
+    @pytest.mark.asyncio
     async def test_board_launches_without_crash(self):
         """Verify board app launches without crashing."""
         config = BoardConfig(
@@ -33,6 +34,7 @@ class TestBoardSmoke:
             # App should be running
             assert app.is_running
 
+    @pytest.mark.asyncio
     async def test_board_shows_no_org_view_initially(self):
         """Verify board shows no-org view when no orgs are available."""
         config = BoardConfig(
@@ -53,6 +55,7 @@ class TestBoardSmoke:
             org_tabs = app.query_one("#org-tabs")
             assert org_tabs.has_class("hidden")
 
+    @pytest.mark.asyncio
     async def test_board_keyboard_shortcuts_work(self):
         """Verify basic keyboard shortcuts don't crash."""
         config = BoardConfig(
