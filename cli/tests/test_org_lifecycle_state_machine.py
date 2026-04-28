@@ -198,17 +198,18 @@ class TestOrgT2InitializedToRunning:
 
         assert len(messages) == 1, "Briefing should only be delivered once"
 
-    @pytest.mark.xfail(reason="quinn-ai-tage: Org.start() has no rollback on CEO activation failure")
     def test_t2_rollback_on_ceo_activation_failure(self, initialized_org, monkeypatch):
-        """T2 should rollback org state if CEO activation fails.
+        """T2 rolls CEO lifecycle back if CEO activation fails partway.
 
-        EXPECTED TO FAIL: Documented violation in state-machine-validation.md
-        T2 has no rollback mechanism on CEO activation failure.
+        Pinned by quinn-ai-tage: Org.start() wraps CEO onboarding in
+        try/except and reverts the CEO's lifecycle status to its prior
+        value when complete_onboarding raises. Org status is only updated
+        after all CEO + briefing steps succeed, so it never moved.
         """
         def fail_complete_onboarding(self):
             raise Exception("CEO activation failed")
 
-        from core import worker
+        from cli.core import worker
         monkeypatch.setattr(worker.Worker, "complete_onboarding", fail_complete_onboarding)
 
         with pytest.raises(Exception):

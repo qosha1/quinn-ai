@@ -293,7 +293,6 @@ class TestInvariantI5RuntimeStatusReflectsSession:
 class TestDependencyD1OrgStartRequiresCEOActivation:
     """Test D1: Org start requires CEO activation."""
 
-    @pytest.mark.xfail(reason="quinn-ai-tage: Org.start() has no rollback on CEO activation failure")
     def test_d1_org_running_implies_ceo_active(self, org, monkeypatch):
         """After Org T2 (initialized → running), CEO must be active.
 
@@ -309,7 +308,7 @@ class TestDependencyD1OrgStartRequiresCEOActivation:
         def fail_complete(self):
             raise Exception("Activation failed")
 
-        from core import worker
+        from cli.core import worker
         monkeypatch.setattr(worker.Worker, "complete_onboarding", fail_complete)
 
         try:

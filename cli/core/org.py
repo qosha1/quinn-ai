@@ -16,6 +16,7 @@ from .logging import get_logger, log_org_state_change
 from .queries import (
     get_org_state,
     update_org_status,
+    update_worker_status,
     create_team,
     create_worker,
     create_budget_pool,
@@ -275,11 +276,28 @@ class Org:
         if old_status == OrgStatus.INITIALIZED.value:
             self._validate_transition(OrgStatus.RUNNING.value)
 
-            # Activate CEO
+            # Activate CEO. If onboarding partially advances and then
+            # raises, we need to roll the CEO back to its prior lifecycle
+            # status so the org isn't left in a half-activated state
+            # (CEO 'onboarding', org 'initialized'). org_status is only
+            # updated after all CEO + briefing steps succeed, so we don't
+            # need to roll that back. (quinn-ai-tage)
             ceo = self.ceo
             if ceo:
-                ceo.start_onboarding()
-                ceo.complete_onboarding()
+                ceo_pre_status = ceo.lifecycle_status
+                try:
+                    ceo.start_onboarding()
+                    ceo.complete_onboarding()
+                except Exception:
+                    if ceo.lifecycle_status != ceo_pre_status:
+                        update_worker_status(self.db, ceo.id, ceo_pre_status)
+                        _logger.info(
+                            "Rolled back CEO lifecycle after start failure: "
+                            "%s -> %s",
+                            ceo.lifecycle_status,
+                            ceo_pre_status,
+                        )
+                    raise
 
             # Deliver CEO briefing if it exists
             briefing_path = self._get_briefing_path()
