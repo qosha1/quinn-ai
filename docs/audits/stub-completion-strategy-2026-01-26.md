@@ -1,4 +1,14 @@
-# Stub Completion Strategy - 2026-01-26
+# Stub Completion Strategy - 2026-01-26 (HISTORICAL)
+
+> **⚠️ HISTORICAL PLANNING DOC — DO NOT TREAT AS CURRENT.**
+>
+> This is the strategy/plan written in response to the Jan 2026 stub
+> audit (`stub-audit-2026-01-25.md`). The work it proposed has either
+> been completed or superseded by later refactors (board merge,
+> package splits across session/, org_init/, okr/, escalation/,
+> plus the Q1-Q2 sweeps). Phase plans and prioritizations below
+> reflect Jan-2026 priorities, not current ones. Use as historical
+> context only.
 
 **Task:** quinnai-iqxt
 **Author:** Claude (automated)
@@ -6,7 +16,7 @@
 
 ---
 
-## Executive Summary
+## Executive Summary (at the time)
 
 After reviewing the stub audit from 2026-01-25 and re-scanning the current codebase, most identified issues have been resolved. Only **2 active TODO markers** remain in production code, plus **1 in documentation**.
 

@@ -1,12 +1,22 @@
-# Code Completeness Audit - 2026-01-25
+# Code Completeness Audit - 2026-01-25 (HISTORICAL)
+
+> **⚠️ HISTORICAL SNAPSHOT — DO NOT TREAT AS CURRENT TODO LIST.**
+>
+> This audit is a point-in-time scan of stubs and incomplete code as of
+> 2026-01-25. The codebase has gone through major refactors since
+> (board merge into main package in v0.2.1, package splits of
+> session/, org_init/, okr/, escalation/, plus the Q1-Q2 sweeps
+> closing dozens of beads). File paths and stub locations called out
+> below are likely stale. Do not use this as a worklist without
+> re-running a fresh audit against current code.
 
 **Task:** quinnai-uk90
 **Auditor:** Claude (automated)
-**Scope:** Identify all stub implementations, incomplete code, and unfinished functionality
+**Scope (at the time):** Identify all stub implementations, incomplete code, and unfinished functionality
 
 ---
 
-## Executive Summary
+## Executive Summary (at the time of audit)
 
 Audited codebase for stub implementations and incomplete code. Found **14 files** with TODO/FIXME markers indicating incomplete work. Analysis categorized issues by severity and impact.
 

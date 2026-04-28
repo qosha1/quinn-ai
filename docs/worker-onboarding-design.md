@@ -1,4 +1,20 @@
-# Worker Onboarding System Design
+# Worker Onboarding System Design (HISTORICAL — JAN 2026 PRE-IMPL)
+
+> **⚠️ HISTORICAL DESIGN DOC — PRE-IMPLEMENTATION.**
+>
+> This is the original design proposal that drove the worker onboarding
+> system. The system was subsequently built and lives in:
+> - `cli/core/onboarding.py` — onboarding context loader
+> - `cli/config/templates/welcome.md.jinja2` — WELCOME.md template
+> - `cli/config/templates/briefing.md.jinja2` — BRIEFING.md template
+> - `cli/config/templates/storage-guide.md` — STORAGE.md
+> - `cli/core/org_start_controller.py` — INITIAL_TASK.md prompt
+>   delivery (Phase 5)
+> - ADR-003-onboarding-session-modification — design rationale
+>
+> Sections like "Proposed", "Goals", and "Implementation Plan" describe
+> design intent at proposal time. Refer to the actual code for current
+> behavior; the docstrings and ADR-003 are authoritative.
 
 **Date:** 2026-01-23
 **Task:** quinnai-2ync - Design ideal worker onboarding and briefing system

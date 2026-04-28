@@ -1,7 +1,18 @@
-# Org Initialization Audit
+# Org Initialization Audit (HISTORICAL — JAN 2026)
+
+> **⚠️ HISTORICAL — DO NOT TREAT AS CURRENT.**
+>
+> This audit drove the design and build of the worker-onboarding system
+> (welcome.md.jinja2, briefing.md.jinja2, INITIAL_TASK.md prompt,
+> `cli/core/onboarding.py`, ADR-003-onboarding-session-modification).
+> The "Problem" sections below describe the state of the world *before*
+> that work landed. As of 2026-04-28 the CEO spawn flow includes full
+> onboarding context — see `cli/core/org_start_controller.py` and
+> ADR-003. Kept for context on the design decisions that shaped the
+> current onboarding system; not a current bug list.
 
 **Date:** 2026-01-23
-**Issue:** CEO workers spawn with no context about mission, architecture, or tools
+**Issue (at the time):** CEO workers spawn with no context about mission, architecture, or tools
 
 ## Current Flow
 
