@@ -25,14 +25,14 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 **Recommended — pipx (isolated venv, scripts on PATH):**
 ```bash
-pipx install quinn-ai-board   # CLI + Board UI (covers most users)
+pipx install "quinn-ai[board]"  # CLI + Board UI (most users)
 # or, headless:
 pipx install quinn-ai
 ```
 
 **Alternative — uv:**
 ```bash
-uv tool install quinn-ai-board
+uv tool install "quinn-ai[board]"
 ```
 
 **One-liner — curl | bash:**
@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/qosha1/quinn-ai/main/scripts/instal
 
 **Plain pip:**
 ```bash
-pip install --user quinn-ai-board
+pip install --user "quinn-ai[board]"
 ```
 
 **Development setup:**
@@ -55,7 +55,7 @@ pip install -r requirements-dev.txt
 After install, verify:
 ```bash
 qn --help          # CLI
-qn-board --help    # Board UI (if installed via quinn-ai-board)
+qn-board --help    # Board UI (if installed with [board] extra)
 qn-bd --help       # Beads delegate (requires bd on PATH)
 ```
 

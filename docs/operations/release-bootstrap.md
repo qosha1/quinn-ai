@@ -3,19 +3,14 @@
 One-time setup needed before the first PyPI publish. Re-run only if PyPI
 credentials, the GitHub repo, or the trusted-publisher configuration change.
 
-## 1. Reserve the package names on PyPI
+## 1. Reserve the package name on PyPI
 
-`quinn-ai` and `quinn-ai-board` must be registered to a PyPI account that the
-release workflow can publish under.
+`quinn-ai` is the single PyPI distribution (the board UI ships inside the
+same wheel and is gated behind a `[board]` install extra).
 
-- Verify availability: <https://pypi.org/project/quinn-ai/> and
-  <https://pypi.org/project/quinn-ai-board/>. (Both were unclaimed as of
-  2026-04-27.)
+- Verify availability: <https://pypi.org/project/quinn-ai/>.
 - Register a PyPI account (or use an existing org account) and confirm the
   email.
-- Reserve each name by uploading an initial 0.0.1 placeholder via `twine
-  upload` from a workstation, OR by running the release workflow once as
-  the first publish — trusted-publisher upload also reserves the name.
 
 ## 2. Configure trusted publishing (preferred over an API token)
 
@@ -23,13 +18,14 @@ Trusted publishing avoids storing a long-lived `PYPI_TOKEN` secret and is the
 PyPA-recommended path.
 
 1. Go to <https://pypi.org/manage/account/publishing/>.
-2. Add a pending publisher per project (`quinn-ai`, then `quinn-ai-board`):
+2. Add a pending publisher for `quinn-ai`:
    - Owner: `qosha1`
    - Repository: `quinn-ai`
    - Workflow: `release.yml`
    - Environment: `pypi` (recommended — allows per-environment review gates)
-3. Repeat against TestPyPI (<https://test.pypi.org/manage/account/publishing/>)
-   if you want a dry-run target. Use environment name `testpypi` there.
+3. Optionally repeat against TestPyPI
+   (<https://test.pypi.org/manage/account/publishing/>) if you want a dry-run
+   target. Use environment name `testpypi` there.
 
 ## 3. Configure GitHub environments
 
@@ -80,8 +76,8 @@ git push origin main
 git push origin v$(cat VERSION)
 ```
 
-The tag push triggers `release.yml`, which runs tests, builds both wheels,
-publishes to PyPI, and creates the GitHub Release.
+The tag push triggers `release.yml`, which runs tests, builds the wheel
+and sdist, publishes to PyPI, and creates the GitHub Release.
 
 ## When to revisit this doc
 

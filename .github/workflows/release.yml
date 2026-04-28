@@ -82,31 +82,21 @@ jobs:
             echo "Manual dispatch — tag check skipped, using VERSION=$file_version"
           fi
           # Confirm pyprojects are in sync regardless of trigger type
-          for f in pyproject.toml terminal-app/pyproject.toml; do
-            pp_version=$(grep -E '^version = ' "$f" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-            if [[ "$pp_version" != "$file_version" ]]; then
-              echo "::error::$f version $pp_version does not match VERSION $file_version"
-              exit 1
-            fi
-          done
+          pp_version=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [[ "$pp_version" != "$file_version" ]]; then
+            echo "::error::pyproject.toml version $pp_version does not match VERSION $file_version"
+            exit 1
+          fi
 
-      - name: Build wheels and sdists
+      - name: Build wheel and sdist
         run: |
           pip install build
           python -m build --wheel --sdist .
-          python -m build --wheel --sdist terminal-app
-
-      - name: Collect distributions
-        run: |
-          mkdir -p all-dist
-          cp dist/* all-dist/
-          cp terminal-app/dist/* all-dist/
-          ls -la all-dist/
 
       - uses: actions/upload-artifact@v4
         with:
           name: distributions
-          path: all-dist/
+          path: dist/
           retention-days: 14
 
   publish-pypi:
@@ -115,8 +105,8 @@ jobs:
     needs: build
     timeout-minutes: 10
     # The 'pypi' environment must exist on the repo (Settings → Environments)
-    # AND the PyPI trusted-publisher entry for both quinn-ai and quinn-ai-board
-    # must list Environment: pypi — otherwise the OIDC token is rejected.
+    # AND the PyPI trusted-publisher entry for quinn-ai must list
+    # Environment: pypi — otherwise the OIDC token is rejected.
     environment:
       name: pypi
       url: https://pypi.org/project/quinn-ai/
@@ -221,13 +211,12 @@ jobs:
           echo "::error::quinn-ai==${{ steps.ver.outputs.version }} did not appear on PyPI within timeout"
           exit 1
 
-      - name: Install from PyPI in fresh venv
+      - name: Install from PyPI in fresh venv (with [board] extra)
         run: |
           python -m venv /tmp/smoke-env
           /tmp/smoke-env/bin/pip install --upgrade pip
           /tmp/smoke-env/bin/pip install \
-            "quinn-ai==${{ steps.ver.outputs.version }}" \
-            "quinn-ai-board==${{ steps.ver.outputs.version }}"
+            "quinn-ai[board]==${{ steps.ver.outputs.version }}"
 
       - name: Verify CLI smoke flow
         run: |

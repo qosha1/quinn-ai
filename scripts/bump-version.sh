@@ -205,16 +205,13 @@ fi
 echo "$NEW_VERSION" > "$VERSION_FILE"
 log_success "Updated VERSION file"
 
-# Keep pyproject.toml versions in sync with VERSION (single source of truth)
+# Keep pyproject.toml version in sync with VERSION (single source of truth)
 ROOT_PYPROJECT="$PROJECT_ROOT/pyproject.toml"
-BOARD_PYPROJECT="$PROJECT_ROOT/terminal-app/pyproject.toml"
-for pp in "$ROOT_PYPROJECT" "$BOARD_PYPROJECT"; do
-    if [[ -f "$pp" ]]; then
-        sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$NEW_VERSION\"/" "$pp"
-        rm -f "$pp.bak"
-        log_success "Updated version in $(basename "$(dirname "$pp")")/pyproject.toml"
-    fi
-done
+if [[ -f "$ROOT_PYPROJECT" ]]; then
+    sed -i.bak -E "s/^version = \"[^\"]+\"/version = \"$NEW_VERSION\"/" "$ROOT_PYPROJECT"
+    rm -f "$ROOT_PYPROJECT.bak"
+    log_success "Updated version in pyproject.toml"
+fi
 
 # Update CHANGELOG.md - move [Unreleased] to new version
 if [[ "$BUMP_TYPE" == "major" ]] || [[ "$BUMP_TYPE" == "minor" ]]; then
@@ -243,7 +240,7 @@ else
 fi
 
 # Stage changes
-git add VERSION CHANGELOG.md pyproject.toml terminal-app/pyproject.toml
+git add VERSION CHANGELOG.md pyproject.toml
 if [[ -d "$RELEASE_NOTES_DIR" ]]; then
     git add "$RELEASE_NOTES_DIR/"
 fi

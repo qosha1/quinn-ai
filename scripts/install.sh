@@ -2,7 +2,8 @@
 #
 # QuinnAI Installer
 #
-# Installs the `quinn-ai` and `quinn-ai-board` Python packages from PyPI.
+# Installs the `quinn-ai` Python package from PyPI (with the [board] extra
+# unless QUINNAI_NO_BOARD=1).
 # Prefers pipx (isolated, recommended), then uv tool, falls back to pip --user.
 #
 # Usage:
@@ -17,8 +18,7 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/qosha1/quinn-ai"
-PKG_CLI="quinn-ai"
-PKG_BOARD="quinn-ai-board"
+PKG_NAME="quinn-ai"
 VERSION="${QUINNAI_VERSION:-}"
 INSTALL_BOARD=1
 [[ "${QUINNAI_NO_BOARD:-0}" == "1" ]] && INSTALL_BOARD=0
@@ -62,21 +62,12 @@ else
 fi
 info "Using installer: ${INSTALLER}"
 
-pkg_spec() {
-    local pkg="$1"
-    if [[ -n "$VERSION" ]]; then
-        echo "${pkg}==${VERSION}"
-    else
-        echo "${pkg}"
-    fi
-}
-
 # 4. Install
-# quinn-ai-board depends on quinn-ai, so installing it pulls in both packages.
-# When QUINNAI_NO_BOARD=1, install only the CLI package.
-TARGET="$PKG_BOARD"
-(( INSTALL_BOARD )) || TARGET="$PKG_CLI"
-SPEC="$(pkg_spec "$TARGET")"
+# Single PyPI package with a 'board' extra that pulls in textual for the
+# terminal UI. QUINNAI_NO_BOARD=1 skips the extra (CLI-only).
+SPEC="$PKG_NAME"
+(( INSTALL_BOARD )) && SPEC="${PKG_NAME}[board]"
+[[ -n "$VERSION" ]] && SPEC="${SPEC}==${VERSION}"
 info "Installing ${SPEC}..."
 
 case "$INSTALLER" in

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quinn-ai"
-version = "0.2.0"
+version = "0.2.1"
 description = "QuinnAI - hierarchical AI organization management CLI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -40,20 +40,30 @@ Issues = "https://github.com/qosha1/quinn-ai/issues"
 Changelog = "https://github.com/qosha1/quinn-ai/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
+# Board terminal UI — install with `pip install "quinn-ai[board]"`.
+# board_ui code ships in the wheel regardless; this extra just pulls in
+# the textual runtime dependency it needs.
+board = [
+    "textual>=0.47.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
     "pytest-timeout>=2.3.0",
+    "pytest-asyncio>=0.23.0",
+    "textual>=0.47.0",
+    "textual-dev>=1.0.0",
     "systemeval[pytest]>=0.3.0",
 ]
 
 [project.scripts]
 qn = "cli.commands.main:qn"
 qn-bd = "cli.commands.qn_bd:main"
+qn-board = "board_ui.main:main"
 msgr = "cli.msgr.main:msgr"
 
 [tool.hatch.build.targets.wheel]
-packages = ["cli", "shared"]
+packages = ["cli", "shared", "board_ui"]
 exclude = [
   # The bd binary is treated as a system dependency (install via Homebrew /
   # apt / etc); see bd_wrapper.get_bundled_bd_path. Excluding cli/bin/* keeps

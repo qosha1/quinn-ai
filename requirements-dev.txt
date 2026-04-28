@@ -1,8 +1,5 @@
-# Install root package (cli + shared) in editable mode with dev extras
+# Install root package (cli + shared + board_ui) in editable mode with dev extras
 -e .[dev]
-
-# Install terminal-app in editable mode with dev extras
--e ./terminal-app[dev]
 
 # Test framework
 systemeval>=0.3.0
