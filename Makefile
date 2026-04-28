@@ -1,4 +1,4 @@
-.PHONY: help setup test test-terminal-app test-e2e test-all board lint clean
+.PHONY: help setup test test-board test-e2e test-all board lint clean
 
 # QuinnAI Project Makefile
 # RollerCoaster Tycoon for AI Organizations
@@ -9,9 +9,9 @@ help:
 	@echo "Setup & Development:"
 	@echo "  make setup              - Run development environment setup"
 	@echo "  make test               - Run CLI test suite"
-	@echo "  make test-terminal-app  - Run terminal-app test suite"
+	@echo "  make test-board         - Run board UI test suite (tests/board_ui/)"
 	@echo "  make test-e2e           - Run end-to-end CLI tests (real qn + bd, ~3 min)"
-	@echo "  make test-all           - Run ALL test suites (CLI + terminal-app + e2e)"
+	@echo "  make test-all           - Run ALL test suites (CLI + board + e2e)"
 	@echo "  make lint               - Run ruff and black linters"
 	@echo ""
 	@echo "Running QuinnAI:"
@@ -30,31 +30,31 @@ setup:
 test:
 	.venv/bin/pytest
 
-# Run terminal-app tests (separate due to sys.path requirements)
-test-terminal-app:
-	cd terminal-app && ../.venv/bin/pytest
+# Run board UI tests (Textual TUI — lives under tests/board_ui/ post-merge)
+test-board:
+	.venv/bin/pytest tests/board_ui/
 
 # Run end-to-end tests (real qn binary + real bd binary against tmp_path orgs)
 # Requires bd on PATH or in cli/bin/{platform}/bd. Skips entire suite if missing.
 test-e2e:
 	.venv/bin/pytest tests/e2e/ -v --timeout=180
 
-# Run all tests (CLI + terminal-app + e2e)
+# Run all tests (CLI + board UI + e2e)
 test-all:
 	@echo "Running CLI tests..."
-	@.venv/bin/pytest; CLI_EXIT=$$?; \
+	@.venv/bin/pytest --ignore=tests/e2e --ignore=tests/board_ui; CLI_EXIT=$$?; \
 	echo ""; \
-	echo "Running terminal-app tests..."; \
-	cd terminal-app && ../.venv/bin/pytest; TERM_EXIT=$$?; \
+	echo "Running board UI tests..."; \
+	.venv/bin/pytest tests/board_ui/; BOARD_EXIT=$$?; \
 	echo ""; \
 	echo "Running e2e tests..."; \
-	cd $(CURDIR) && .venv/bin/pytest tests/e2e/ --timeout=180; E2E_EXIT=$$?; \
+	.venv/bin/pytest tests/e2e/ --timeout=180; E2E_EXIT=$$?; \
 	echo ""; \
-	if [ $$CLI_EXIT -eq 0 ] && [ $$TERM_EXIT -eq 0 ] && [ $$E2E_EXIT -eq 0 ]; then \
-		echo "✓ All test suites passed (CLI + terminal-app + e2e)"; \
+	if [ $$CLI_EXIT -eq 0 ] && [ $$BOARD_EXIT -eq 0 ] && [ $$E2E_EXIT -eq 0 ]; then \
+		echo "✓ All test suites passed (CLI + board + e2e)"; \
 		exit 0; \
 	else \
-		echo "✗ Some tests failed (CLI: $$CLI_EXIT, terminal-app: $$TERM_EXIT, e2e: $$E2E_EXIT)"; \
+		echo "✗ Some tests failed (CLI: $$CLI_EXIT, board: $$BOARD_EXIT, e2e: $$E2E_EXIT)"; \
 		exit 1; \
 	fi
 
