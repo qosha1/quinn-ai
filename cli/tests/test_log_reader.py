@@ -12,14 +12,7 @@ from pathlib import Path
 import pytest
 
 
-# These imports will FAIL until we implement the module
-try:
-    from cli.core.log_reader import LogReader
-except ImportError:
-    # Expected to fail initially - that's the point of TDD
-    LogReader = None
-
-
+from cli.core.log_reader import LogReader
 from cli.core.constants import LIVE_DIR
 
 
@@ -115,13 +108,11 @@ def _write_json_log(file_path: Path, entries: list[dict]):
 class TestLogReaderInitialization:
     """Test LogReader initialization."""
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_init_with_org_path(self, temp_org_path):
         """Should initialize with org path."""
         reader = LogReader(temp_org_path)
         assert reader.logs_dir == temp_org_path / LIVE_DIR / "logs"
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_init_creates_logs_dir_if_missing(self):
         """Should handle missing logs directory gracefully."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -133,7 +124,6 @@ class TestLogReaderInitialization:
 class TestListComponents:
     """Test listing components that have logs."""
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_list_components(self, temp_org_path):
         """Should list all components with log directories."""
         reader = LogReader(temp_org_path)
@@ -143,7 +133,6 @@ class TestListComponents:
         assert "workers" in components or "worker" in components
         assert "sessions" in components or "session" in components
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_list_components_empty_dir(self):
         """Should return empty list for org with no logs."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -157,7 +146,6 @@ class TestListComponents:
 class TestListDates:
     """Test listing dates for which logs exist."""
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_list_dates_all_components(self, temp_org_path):
         """Should list all dates across all components."""
         reader = LogReader(temp_org_path)
@@ -169,7 +157,6 @@ class TestListDates:
         assert today in dates
         assert yesterday in dates
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_list_dates_specific_component(self, temp_org_path):
         """Should list dates for specific component."""
         reader = LogReader(temp_org_path)
@@ -181,7 +168,6 @@ class TestListDates:
         assert today in dates
         assert yesterday in dates
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_list_dates_sorted_descending(self, temp_org_path):
         """Should return dates in descending order (newest first)."""
         reader = LogReader(temp_org_path)
@@ -195,7 +181,6 @@ class TestListDates:
 class TestReadLogs:
     """Test reading log entries with filters."""
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_read_logs_all(self, temp_org_path):
         """Should read all logs without filters."""
         reader = LogReader(temp_org_path)
@@ -206,7 +191,6 @@ class TestReadLogs:
         components = {log["component"] for log in logs}
         assert len(components) > 1
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_read_logs_filter_by_component(self, temp_org_path):
         """Should filter logs by component."""
         reader = LogReader(temp_org_path)
@@ -217,7 +201,6 @@ class TestReadLogs:
         for log in logs:
             assert log["component"] == "worker"
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_read_logs_filter_by_level(self, temp_org_path):
         """Should filter logs by level."""
         reader = LogReader(temp_org_path)
@@ -228,7 +211,6 @@ class TestReadLogs:
         for log in logs:
             assert log["level"] == "ERROR"
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_read_logs_filter_by_date_range(self, temp_org_path):
         """Should filter logs by date range."""
         reader = LogReader(temp_org_path)
@@ -242,7 +224,6 @@ class TestReadLogs:
             log_date = datetime.fromisoformat(log["timestamp"].replace('Z', '+00:00')).date()
             assert log_date == today
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_read_logs_with_limit(self, temp_org_path):
         """Should limit number of results."""
         reader = LogReader(temp_org_path)
@@ -250,7 +231,6 @@ class TestReadLogs:
 
         assert len(logs) == 2
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_read_logs_with_offset(self, temp_org_path):
         """Should skip entries with offset."""
         reader = LogReader(temp_org_path)
@@ -267,7 +247,6 @@ class TestReadLogs:
 class TestSearchLogs:
     """Test full-text search."""
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_search_logs_by_keyword(self, temp_org_path):
         """Should search logs by keyword in message."""
         reader = LogReader(temp_org_path)
@@ -283,7 +262,6 @@ class TestSearchLogs:
             )
             assert found
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_search_logs_with_component_filter(self, temp_org_path):
         """Should search within specific component."""
         reader = LogReader(temp_org_path)
@@ -293,7 +271,6 @@ class TestSearchLogs:
         for log in logs:
             assert log["component"] == "worker"
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_search_logs_case_insensitive(self, temp_org_path):
         """Should perform case-insensitive search."""
         reader = LogReader(temp_org_path)
@@ -307,7 +284,6 @@ class TestSearchLogs:
 class TestTailLogs:
     """Test getting most recent log entries."""
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_tail_logs_default(self, temp_org_path):
         """Should get last 50 log entries by default."""
         reader = LogReader(temp_org_path)
@@ -321,7 +297,6 @@ class TestTailLogs:
                 time2 = datetime.fromisoformat(logs[i + 1]["timestamp"].replace('Z', '+00:00'))
                 assert time1 >= time2
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_tail_logs_custom_count(self, temp_org_path):
         """Should get specified number of entries."""
         reader = LogReader(temp_org_path)
@@ -329,7 +304,6 @@ class TestTailLogs:
 
         assert len(logs) <= 2
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_tail_logs_specific_component(self, temp_org_path):
         """Should tail logs from specific component."""
         reader = LogReader(temp_org_path)
@@ -343,7 +317,6 @@ class TestTailLogs:
 class TestLargeFilePerformance:
     """Test reading 10,000+ entries efficiently."""
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_large_file_performance(self):
         """Should handle 10,000+ log entries efficiently."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -373,7 +346,6 @@ class TestLargeFilePerformance:
 
             assert len(logs) == 100
 
-    @pytest.mark.skipif(LogReader is None, reason="Not implemented yet")
     def test_streaming_read_memory_efficient(self):
         """Should read large files without loading all into memory."""
         # This test verifies the implementation uses streaming/iterative reads
