@@ -3,6 +3,7 @@ qn org init command.
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import List, Optional
 
@@ -14,6 +15,11 @@ from cli.core.org_init import OrgInitConfig, ObjectiveConfig, init_org
 
 # Maximum number of OKRs to collect during interactive prompting
 MAX_INTERACTIVE_OKRS = 3
+
+# Sentinel: --ceo-name not provided. We use this instead of literal "CEO"
+# so we can detect the unset case and either prompt or fail with a clear
+# message. (See quinn-ai-i78p.)
+_CEO_NAME_UNSET = "__CEO_NAME_UNSET__"
 
 
 def _load_okrs_from_file(file_path: Path) -> List[ObjectiveConfig]:
@@ -69,19 +75,25 @@ def _prompt_for_okrs() -> List[ObjectiveConfig]:
     Returns:
         List of ObjectiveConfig objects (empty if user skips)
     """
-    click.echo("")
-    click.echo("Define your organization's objectives (OKRs).")
-    click.echo("Press Enter without text to skip and use default bootstrap OKR.")
-    click.echo("")
+    # Header goes to stderr so it doesn't interleave with stdout success
+    # output when stdin is non-TTY and the prompt EOFs immediately
+    # (quinn-ai-udlo). The prompt itself is also on stderr (click default).
+    click.echo("", err=True)
+    click.echo("Define your organization's objectives (OKRs).", err=True)
+    click.echo("Press Enter without text to skip and use default bootstrap OKR.", err=True)
+    click.echo("", err=True)
 
     objectives = []
 
     for i in range(MAX_INTERACTIVE_OKRS):
         prompt_text = f"Objective {i + 1}" if i == 0 else f"Objective {i + 1} (optional)"
+        # err=True keeps the prompt off stdout so scripts that capture
+        # stdout don't see "Objective 1:" interleaved with success output.
         title = click.prompt(
             prompt_text,
             default="",
             show_default=False,
+            err=True,
         ).strip()
 
         if not title:
@@ -92,7 +104,7 @@ def _prompt_for_okrs() -> List[ObjectiveConfig]:
 
         # Ask for more if we haven't reached the max
         if i < MAX_INTERACTIVE_OKRS - 1:
-            if not click.confirm("Add another objective?", default=False):
+            if not click.confirm("Add another objective?", default=False, err=True):
                 break
 
     return objectives
@@ -101,8 +113,8 @@ def _prompt_for_okrs() -> List[ObjectiveConfig]:
 @click.command()
 @click.option(
     "--ceo-name",
-    default="CEO",
-    help="Name for the CEO worker.",
+    default=_CEO_NAME_UNSET,
+    help="Name for the CEO worker. Required in non-interactive contexts.",
 )
 @click.option(
     "--okrs-file",
@@ -144,6 +156,22 @@ def init_cmd(
     # mirrors `git init` semantics.
     org_path = ctx.org_path or Path.cwd()
 
+    is_tty = sys.stdin.isatty()
+
+    # Resolve --ceo-name. If unset and we have a TTY, prompt. If unset and
+    # no TTY, fall back to "CEO" but warn loudly so the placeholder isn't
+    # silent (quinn-ai-i78p).
+    if ceo_name == _CEO_NAME_UNSET:
+        if is_tty:
+            ceo_name = click.prompt("CEO name", default="CEO", err=True)
+        else:
+            click.echo(
+                "Warning: --ceo-name not provided; using placeholder 'CEO'. "
+                "Set explicitly with --ceo-name=\"<name>\" or rename later.",
+                err=True,
+            )
+            ceo_name = "CEO"
+
     # Determine objectives
     objectives: List[ObjectiveConfig] = []
 
@@ -152,13 +180,12 @@ def init_cmd(
         objectives = _load_okrs_from_file(Path(okrs_file))
         click.echo(f"Loaded {len(objectives)} objective(s) from {okrs_file}")
     elif not skip_okrs:
-        # Try interactive prompting - falls back gracefully if no input available
         try:
             objectives = _prompt_for_okrs()
             if objectives:
                 click.echo(f"Collected {len(objectives)} objective(s)")
         except click.exceptions.Abort:
-            # User aborted or no input available - use bootstrap OKR
+            # Non-TTY EOF or user-aborted: fall through to bootstrap OKR
             objectives = []
 
     # Create config for initialization
