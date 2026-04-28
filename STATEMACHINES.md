@@ -71,9 +71,24 @@ graph TD
 
 ## Org Lifecycle State Machine
 
-**Implementation:** `cli/core/org.py`
+**Implementation:** `cli/core/org.py` (Python API: state transitions)
+**Orchestration:** `cli/core/org_start_controller.py`, `cli/core/stop_controller.py` (CLI: state transitions + session/process management)
 **Commands:** `qn org init`, `qn org start`, `qn org stop`
-**Status:** ⚠️ Partial (no rollback, inconsistent resume)
+
+### Layering (Org Start)
+
+The org start path is split across two layers, deliberately:
+
+| Layer | Responsibility | Tmux/Subprocess? |
+|-------|----------------|------------------|
+| `Org.start()` (Python API) | State transitions only — set org_status, activate CEO lifecycle, deliver briefing. Roll back CEO lifecycle if onboarding raises (quinn-ai-tage). | No |
+| `org_start_controller.py` (CLI orchestrator) | Calls `Org.start()`, then runs `_spawn_ceo_session_if_needed` for both FIRST_START and RESUME modes. Owns session/process lifecycle. | Yes |
+
+This means a direct `Org.start()` call from Python NEVER spawns a CEO
+session, in either first-start or resume mode. Spawning is the
+orchestrator's job. Tests that need session-bearing orgs should call
+through the orchestrator (`start_org_full`) or spawn explicitly.
+(See quinn-ai-wbwy.)
 
 ### State Diagram
 

@@ -373,25 +373,27 @@ class TestDependencyD3SessionSpawnRequiresBudget:
 class TestConsistencyC1OrgResumeBehavior:
     """Test C1: Org state consistency after resume."""
 
-    @pytest.mark.xfail(reason="quinn-ai-wbwy: T4 (resume) doesn't spawn CEO session like T2")
-    def test_c1_resume_spawns_ceo_session_like_first_start(self, org):
-        """T4 (stopped → running) should behave like T2 (first start).
+    def test_c1_python_api_consistency_first_start_and_resume(self, org):
+        """T2 (first start) and T4 (resume) are consistent at the Python API
+        layer: both transition org_status to RUNNING and neither spawns a
+        CEO session.
 
-        CONSISTENCY C1: Org state consistency after resume
-        Violated by: T4 doesn't spawn CEO session
-        Status: ❌ Broken
-
-        EXPECTED TO FAIL: T4 only updates status, doesn't spawn session.
+        Per quinn-ai-wbwy resolution: session spawning is the CLI
+        orchestrator's responsibility, not Org.start()'s. The orchestrator
+        calls _spawn_ceo_session_if_needed in both FIRST_START and RESUME
+        modes, so end-to-end the user sees consistent behavior. This test
+        pins the Python-API contract.
         """
         org.init(ceo_name="CEO", initial_budget=1000.0)
-        org.start()  # First start
-        org.stop()
-        org.start()  # Resume
 
-        # If consistent with T2, CEO should have active session
-        ceo = org.ceo
-        assert ceo.session is not None, \
-            "Resume should spawn CEO session like first start"
+        org.start()  # T2: first start
+        assert org.status == "running"
+        assert org.ceo.session is None, "Python API never spawns sessions"
+
+        org.stop()
+        org.start()  # T4: resume
+        assert org.status == "running"
+        assert org.ceo.session is None, "Python API never spawns sessions on resume either"
 
 
 class TestConsistencyC2WorkerSuspendResume:

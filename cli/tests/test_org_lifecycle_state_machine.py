@@ -263,25 +263,31 @@ class TestOrgT4StoppedToRunning:
 
         assert stopped_org.status == OrgStatus.RUNNING.value
 
-    @pytest.mark.xfail(reason="quinn-ai-wbwy: T4 (resume) doesn't spawn CEO session like T2")
-    def test_t4_consistent_with_t2(self, stopped_org):
-        """T4 (resume) should behave like T2 (first start).
+    def test_t4_python_api_does_not_spawn_session_by_design(self, stopped_org):
+        """Python API Org.start() is a state transition only — it does NOT
+        spawn sessions in either mode (first-start or resume).
 
-        EXPECTED TO FAIL: Documented violation in state-machine-validation.md
-        T4 only updates status, doesn't spawn CEO session like T2.
+        Per quinn-ai-wbwy resolution: session spawning lives at the CLI
+        orchestrator layer (cli/core/org_start_controller.py) which calls
+        Org.start() and then runs _spawn_ceo_session_if_needed for both
+        FIRST_START and RESUME modes. Keeping the Python API
+        infrastructure-free (no tmux/subprocess dependencies) is a
+        deliberate layering choice — see STATEMACHINES.md 'Org Start
+        Layering' note.
 
-        This is a design decision that needs clarification:
-        - Should resume spawn CEO session?
-        - Or is manual spawn required?
+        This test pins the Python-API contract: no session spawn from
+        a direct Org.start() call.
         """
         ceo = stopped_org.ceo
 
         stopped_org.start()
 
-        # If consistent with T2, CEO should have active session
-        # Currently this will FAIL because T4 doesn't spawn session
-        assert ceo.session is not None, \
-            "Resume should spawn CEO session like first start"
+        # Python API: state transitioned, but no session spawn.
+        assert stopped_org.status == OrgStatus.RUNNING.value
+        assert ceo.session is None, (
+            "Org.start() Python API should NOT spawn a CEO session — "
+            "spawning is the CLI orchestrator's responsibility."
+        )
 
 
 class TestOrgInvalidTransitions:
