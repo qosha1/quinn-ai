@@ -252,6 +252,46 @@ def get_thread_messages(db: Database, thread_id: str) -> list[Message]:
     ]
 
 
+# Tokens that, when present as standalone uppercase words, indicate the
+# user is using FTS5 advanced syntax — pass through unchanged.
+_FTS_OPERATORS = {"AND", "OR", "NOT", "NEAR"}
+
+# Characters that FTS5 treats as operators or syntax. If any appear
+# in the query AND the query isn't already using advanced syntax, we
+# fall back to a phrase search (closes quinn-ai-tthc).
+_FTS_SPECIAL_CHARS = set('-+*"():^@#$%&!?/\\<>={};,~')
+
+
+def _sanitize_fts_query(query: str) -> str:
+    """Make a user-supplied query safe to pass to FTS5 MATCH.
+
+    FTS5 raises sqlite3.OperationalError for queries that look like
+    invalid syntax (e.g. hyphens are subtraction operators, quotes
+    must be balanced, etc.). Common case: 'no-such-string' parses
+    as 'no - such - string' and 'such' / 'string' get treated as
+    column names.
+
+    Strategy: if the query already contains an FTS5 advanced operator
+    token (AND, OR, NOT, NEAR), assume the caller knows what they're
+    doing and pass through. Otherwise, if the query contains any
+    special character, wrap it as a quoted phrase; double quotes inside
+    are doubled to escape.
+    """
+    stripped = query.strip()
+    if not stripped:
+        return stripped
+
+    tokens = stripped.split()
+    if any(tok in _FTS_OPERATORS for tok in tokens):
+        return stripped
+
+    if any(ch in _FTS_SPECIAL_CHARS for ch in stripped):
+        escaped = stripped.replace('"', '""')
+        return f'"{escaped}"'
+
+    return stripped
+
+
 def search_messages(
     db: Database,
     query: str,
@@ -263,7 +303,10 @@ def search_messages(
 
     Args:
         db: Database instance
-        query: Search query (supports FTS5 syntax: AND, OR, NOT, phrases "like this")
+        query: Search query. Plain text by default; hyphens, quotes,
+            parens and other FTS5-special chars are quoted as a phrase.
+            Advanced FTS5 operators (AND, OR, NOT) are supported only
+            when the query already contains them as separate tokens.
         channel_id: Optional filter to specific channel
         limit: Max messages to return
         offset: Offset for pagination
@@ -271,6 +314,7 @@ def search_messages(
     Returns:
         List of matching messages, ranked by relevance
     """
+    query = _sanitize_fts_query(query)
     if channel_id:
         rows = db.fetchall(
             """SELECT m.* FROM messages m
