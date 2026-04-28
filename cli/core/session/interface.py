@@ -302,16 +302,36 @@ class SessionInterface(ABC):
                 _logger.warning(f"State callback error (ignored): {e}")
                 pass
 
-    def _on_monitored_state_change(self, old: SessionState, new: SessionState) -> None:
+    def _on_monitored_state_change(self, old, new) -> None:
         """Callback from state monitor - update our state.
 
         This bridges the state monitor to the session's state management,
         ensuring database updates happen when monitor detects changes.
 
+        State monitors emit PytermSessionState (terminal-lifecycle:
+        IDLE/RUNNING/EXITED/ERROR), which we translate to SessionState
+        (worker-lifecycle: STOPPED/STARTING/IDLE/RUNNING/CRASHED). Without
+        this translation, _set_state stores a PytermSessionState into
+        self._state, after which SESSION_STATE_TRANSITIONS.get(self._state)
+        returns [] (the dict is keyed on SessionState) and the next
+        validate_state_transition crashes with 'Valid transitions: []'.
+        Closes quinn-ai-mcef.
+
         Args:
-            old: Previous state from monitor
-            new: New state detected by monitor
+            old: Previous state from monitor (PytermSessionState or SessionState)
+            new: New state detected by monitor (PytermSessionState or SessionState)
         """
+        from shared.pyterm.protocols import PytermSessionState
+
+        if isinstance(new, PytermSessionState):
+            mapping = {
+                PytermSessionState.IDLE: SessionState.IDLE,
+                PytermSessionState.RUNNING: SessionState.RUNNING,
+                PytermSessionState.EXITED: SessionState.STOPPED,
+                PytermSessionState.ERROR: SessionState.CRASHED,
+            }
+            new = mapping.get(new, SessionState.CRASHED)
+
         if new != self._state:
             self._set_state(new)
 
