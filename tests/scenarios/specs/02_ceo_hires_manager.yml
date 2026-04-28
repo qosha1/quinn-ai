@@ -1,0 +1,10 @@
+name: ceo_hires_manager
+setup:
+  init:
+    ceo_name: Alice
+    ceo_role: CEO
+ops:
+  - { op: hire, name: Bob, role: Manager, manager: ceo, cost: 100 }
+assertions:
+  - { kind: worker_count, value: 2 }
+  - { kind: manager_subordinates, manager: ceo, expected: [bob] }

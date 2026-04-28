@@ -1,0 +1,10 @@
+name: minimal_init
+setup:
+  init:
+    ceo_name: Alice
+    ceo_role: CEO
+ops: []
+assertions:
+  - { kind: org_status, value: initialized }
+  - { kind: worker_count, value: 1 }
+  - { kind: worker_lifecycle_is, name: ceo, value: pending }

@@ -1,0 +1,14 @@
+name: escalation_recovery
+setup:
+  init:
+    ceo_name: Alice
+    ceo_role: CEO
+ops:
+  - { op: hire, name: Bob, role: Engineer, manager: ceo, cost: 50 }
+  - { op: transition_lifecycle, worker: bob, to: onboarding }
+  - { op: transition_lifecycle, worker: bob, to: active }
+  - { op: induce_escalation, worker: bob, kind: idle_warning }
+  - { op: induce_escalation, worker: bob, kind: escalated_pending }
+  - { op: resolve_escalation, worker: bob }
+assertions:
+  - { kind: escalation_state_is, worker: bob, value: normal }

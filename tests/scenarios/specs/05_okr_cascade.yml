@@ -1,0 +1,12 @@
+name: okr_cascade
+setup:
+  init:
+    ceo_name: Alice
+    ceo_role: CEO
+ops:
+  - { op: hire, name: Bob, role: Manager, manager: ceo, cost: 100 }
+  - { op: create_okr, objective: "Ship feature X", owner: ceo, id: ship-feature-x }
+  - { op: assign_kr, okr: ship-feature-x, kr: implement-x, owner: bob }
+assertions:
+  - { kind: okr_owner, okr: ship-feature-x, expected: ceo }
+  - { kind: kr_owner, okr: ship-feature-x, kr: implement-x, expected: bob }

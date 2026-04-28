@@ -1,0 +1,12 @@
+name: fire_active_worker
+setup:
+  init:
+    ceo_name: Alice
+    ceo_role: CEO
+ops:
+  - { op: hire, name: Bob, role: Engineer, manager: ceo, cost: 50 }
+  - { op: transition_lifecycle, worker: bob, to: onboarding }
+  - { op: transition_lifecycle, worker: bob, to: active }
+  - { op: fire, worker: bob, reason: "test fire" }
+assertions:
+  - { kind: worker_lifecycle_is, name: bob, value: terminated }

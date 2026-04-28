@@ -1,0 +1,13 @@
+name: chain_3_levels
+setup:
+  init:
+    ceo_name: Alice
+    ceo_role: CEO
+ops:
+  - { op: hire, name: Bob, role: Manager, manager: ceo, cost: 100 }
+  - { op: promote, worker: bob, to: team-lead, reason: "scenario test" }
+  - { op: hire, name: Carol, role: Engineer, manager: bob, cost: 50 }
+assertions:
+  - { kind: worker_count, value: 3 }
+  - { kind: org_chart_depth, value: 3 }
+  - { kind: manager_subordinates, manager: bob, expected: [carol] }

@@ -1,0 +1,14 @@
+name: work_distribution
+setup:
+  init:
+    ceo_name: Alice
+    ceo_role: CEO
+ops:
+  - { op: hire, name: Bob, role: Engineer, manager: ceo, cost: 50 }
+  - { op: transition_lifecycle, worker: bob, to: onboarding }
+  - { op: transition_lifecycle, worker: bob, to: active }
+  - { op: create_bead, title: "Implement feature X", type: feature, priority: 2, id_var: feat_id }
+  - { op: claim_bead, bead: feat_id, worker: bob }
+assertions:
+  - { kind: bead_status_is, bead_var: feat_id, value: in_progress }
+  - { kind: bead_assignee, bead_var: feat_id, expected: bob }
