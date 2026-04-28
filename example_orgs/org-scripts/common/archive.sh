@@ -167,10 +167,25 @@ org_status=$(sqlite3 "$DB" "SELECT status FROM org_state WHERE id='default';" 2>
 started_at=$(sqlite3 "$DB" "SELECT started_at FROM org_state WHERE id='default';" 2>/dev/null || echo "")
 stopped_at=$(sqlite3 "$DB" "SELECT stopped_at FROM org_state WHERE id='default';" 2>/dev/null || echo "")
 
-# Calculate duration (-1 if can't compute)
+# Calculate duration (-1 if can't compute).
+# qn writes timestamps as ISO 8601 ('2026-04-28T14:57:02.377754'); SQLite's
+# CURRENT_TIMESTAMP writes '2026-04-28 14:57:02'. Normalize both shapes by
+# stripping microseconds and replacing 'T' with a space before parsing.
+_normalize_ts() {
+    local ts="$1"
+    # T -> space, then strip everything from '.' onward (microseconds + tz).
+    ts="${ts/T/ }"
+    ts="${ts%%.*}"
+    # Also strip a trailing timezone offset like '+00:00' if present.
+    ts="${ts%%+*}"
+    echo "$ts"
+}
+
 if [[ -n "$started_at" && -n "$stopped_at" ]]; then
-    start_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$started_at" "+%s" 2>/dev/null || echo "")
-    stop_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$stopped_at" "+%s" 2>/dev/null || echo "")
+    started_norm=$(_normalize_ts "$started_at")
+    stopped_norm=$(_normalize_ts "$stopped_at")
+    start_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$started_norm" "+%s" 2>/dev/null || echo "")
+    stop_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$stopped_norm" "+%s" 2>/dev/null || echo "")
     if [[ -n "$start_epoch" && -n "$stop_epoch" ]]; then
         duration_seconds=$((stop_epoch - start_epoch))
     else
