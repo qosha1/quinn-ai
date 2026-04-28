@@ -1,0 +1,36 @@
+# Per-model pricing table for canary cost estimation.
+# Keep in sync with each provider's published pricing — operator updates
+# this file when prices change.
+#
+# Format:
+#   provider:
+#     model_id:
+#       input_per_1k: <USD per 1k input tokens>
+#       output_per_1k: <USD per 1k output tokens>
+
+claude_code:
+  claude-sonnet-4-5:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+  claude-opus-4:
+    input_per_1k: 0.015
+    output_per_1k: 0.075
+  claude-haiku-4-5:
+    input_per_1k: 0.001
+    output_per_1k: 0.005
+
+anthropic:
+  claude-sonnet-4-5:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+  claude-opus-4:
+    input_per_1k: 0.015
+    output_per_1k: 0.075
+
+openai:
+  gpt-5:
+    input_per_1k: 0.010
+    output_per_1k: 0.030
+  gpt-4o:
+    input_per_1k: 0.005
+    output_per_1k: 0.015

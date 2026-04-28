@@ -84,3 +84,51 @@ and sdist, publishes to PyPI, and creates the GitHub Release.
 - Repo moved or renamed (update Repository/Workflow fields in trusted publisher).
 - Maintainer changes (rotate PyPI account, update environment reviewers).
 - Workflow filename changes (re-pin trusted publisher to new `<name>.yml`).
+
+---
+
+## 7. Live LLM canary (optional, post-publish)
+
+Tier 3 of the validation strategy runs one scenario against a real Anthropic
+model after each publish to catch prompt/onboarding regressions that the
+deterministic test layers can't. The canary job in `release.yml` only fires
+on tag pushes and is gated on a separate GitHub environment.
+
+### One-time setup
+
+1. Create a PyPI-style GitHub environment named `canary` (Settings →
+   Environments → New environment).
+2. **Required reviewers:** add your maintainer list — every canary run will
+   wait for human approval before the API key is released to the runner.
+3. Add `ANTHROPIC_API_KEY` as an environment secret (NOT a repo secret) so
+   it's only readable when the `canary` environment is approved.
+4. Optional: add `QUINNAI_CANARY_BUDGET_USD` and `QUINNAI_CANARY_BUDGET_SECONDS`
+   as environment vars to override the per-run defaults (`$0.50`, `300s`).
+
+### Local trial run
+
+Before relying on the CI canary, run it once locally:
+
+```bash
+export QUINNAI_RUN_CANARY=1
+export ANTHROPIC_API_KEY=sk-ant-...
+export QUINNAI_CANARY_BUDGET_USD=0.10  # tighten for first run
+pytest -m canary tests/canary/ -v
+```
+
+A pass produces no output other than the test summary. A budget-kill is
+treated as a `pytest.skip` (not a failure) so a tight budget doesn't false-
+fire the suite. A real assertion failure (e.g. CEO didn't hire anyone) is a
+hard test failure with the transcript captured.
+
+### Failure modes
+
+- **`budget exceeded (spend)`** — usage outpaced the per-run USD cap. Either
+  raise the cap or investigate why the canary is making more calls than
+  expected.
+- **`budget exceeded (wall_clock)`** — model didn't finish within
+  `budget_seconds`. Often a sign the org never reached `running`; check
+  `qn org status` first.
+- **assertion violation** — the model ran but the canary's expected end
+  state wasn't reached. Read the transcript artifact to triage prompt vs
+  onboarding-doc regressions.

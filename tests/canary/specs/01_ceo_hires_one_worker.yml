@@ -1,0 +1,18 @@
+# Canonical canary scenario: prove that a real LLM-driven CEO can hire one worker.
+# Runs against a live Anthropic API key when QUINNAI_RUN_CANARY=1.
+# Reuses the same YAML schema as Tier 2 — only the session driver swaps.
+name: ceo_hires_one_worker
+setup:
+  init:
+    ceo_name: Alice
+ops:
+  # Start the org so the CEO session boots.
+  - { op: start_org }
+  # Inject the directive that drives the CEO to act.
+  - { op: send_to_worker, worker: ceo, message: "Please hire one engineer named Bob using qn org hire." }
+  # Wait until either Bob exists OR the budget runs out.
+  - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 240 }
+assertions:
+  - { kind: worker_count, value: 2 }
+  - { kind: worker_lifecycle_is, name: bob, value: pending }
+  - { kind: manager_subordinates, manager: ceo, expected: [bob] }
