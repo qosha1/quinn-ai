@@ -28,7 +28,7 @@ from board_ui.interfaces.org_connection import (
     SessionState,
     OrgStatus,
 )
-from tests.conftest import create_test_org_db
+from .conftest import create_test_org_db
 
 
 # ======================

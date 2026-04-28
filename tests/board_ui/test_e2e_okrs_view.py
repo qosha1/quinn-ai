@@ -20,7 +20,7 @@ from textual.widgets import Tree
 from board_ui.app import BoardApp
 from board_ui.config import BoardConfig
 from board_ui.views.okrs import OKRsView
-from tests.conftest import create_test_org_db
+from .conftest import create_test_org_db
 
 
 def create_org_db_with_okrs(org_path: Path, okr_setup: str = "hierarchy") -> Path:

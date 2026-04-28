@@ -15,7 +15,7 @@ from textual.widgets import TabbedContent
 
 from board_ui.app import BoardApp
 from board_ui.config import BoardConfig
-from tests.conftest import create_test_org_db
+from .conftest import create_test_org_db
 
 
 class TestDuplicateIDsRegression:
