@@ -61,7 +61,7 @@ def active_worker(onboarding_worker):
 class TestWorkerStates:
     """Validate worker states match STATEMACHINES.md."""
 
-    @pytest.mark.xfail(reason="State mismatch: code has 'offboarding', spec has 'suspended'")
+    @pytest.mark.xfail(reason="quinn-ai-l6uh: spec/code state name drift ('offboarding' in code, not in spec)")
     def test_states_match_specification(self):
         """States in code must match STATEMACHINES.md.
 

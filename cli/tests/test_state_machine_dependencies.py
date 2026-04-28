@@ -237,7 +237,6 @@ class TestInvariantI3OneActiveSession:
 class TestInvariantI4BudgetMatchesSession:
     """Test I4: Budget deduction matches session spawn."""
 
-    @pytest.mark.xfail(reason="Budget deducted even if spawn fails - no transaction")
     def test_i4_budget_deducted_iff_session_spawned(self, running_org, worker_with_budget):
         """Budget is deducted if and only if session spawned.
 
@@ -277,7 +276,6 @@ class TestInvariantI4BudgetMatchesSession:
 class TestInvariantI5RuntimeStatusReflectsSession:
     """Test I5: worker_state.runtime_status reflects session state."""
 
-    @pytest.mark.xfail(reason="Session state changes don't propagate - no callbacks")
     def test_i5_runtime_status_matches_session_state(self):
         """Database status must match actual session state.
 
@@ -295,7 +293,7 @@ class TestInvariantI5RuntimeStatusReflectsSession:
 class TestDependencyD1OrgStartRequiresCEOActivation:
     """Test D1: Org start requires CEO activation."""
 
-    @pytest.mark.xfail(reason="No rollback on CEO activation failure")
+    @pytest.mark.xfail(reason="quinn-ai-tage: Org.start() has no rollback on CEO activation failure")
     def test_d1_org_running_implies_ceo_active(self, org, monkeypatch):
         """After Org T2 (initialized → running), CEO must be active.
 
@@ -376,7 +374,7 @@ class TestDependencyD3SessionSpawnRequiresBudget:
 class TestConsistencyC1OrgResumeBehavior:
     """Test C1: Org state consistency after resume."""
 
-    @pytest.mark.xfail(reason="T4 (resume) doesn't spawn CEO session - inconsistent with T2")
+    @pytest.mark.xfail(reason="quinn-ai-wbwy: T4 (resume) doesn't spawn CEO session like T2")
     def test_c1_resume_spawns_ceo_session_like_first_start(self, org):
         """T4 (stopped → running) should behave like T2 (first start).
 
@@ -400,7 +398,6 @@ class TestConsistencyC1OrgResumeBehavior:
 class TestConsistencyC2WorkerSuspendResume:
     """Test C2: Worker state consistency after suspend/unsuspend."""
 
-    @pytest.mark.xfail(reason="suspend/unsuspend not implemented")
     def test_c2_suspend_stops_sessions(self):
         """T3 (active → suspended) must stop sessions.
 
@@ -416,7 +413,6 @@ class TestConsistencyC2WorkerSuspendResume:
 class TestConsistencyC3StatusSyncPropagation:
     """Test C3: Session state propagation consistency."""
 
-    @pytest.mark.xfail(reason="No automatic callbacks from session adapters")
     def test_c3_all_state_changes_propagate(self):
         """All session state changes propagate to worker_state.
 

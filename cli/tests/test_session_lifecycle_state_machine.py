@@ -169,7 +169,6 @@ class TestSessionT1NotSpawnedToStarting:
         with pytest.raises(ActiveSessionExistsError):
             active_worker.spawn_session(mock_session)
 
-    @pytest.mark.xfail(reason="T1 has no rollback - budget deducted before spawn")
     def test_t1_rollback_on_spawn_failure(self, active_worker, monkeypatch):
         """T1 should rollback budget if spawn fails.
 
@@ -212,7 +211,6 @@ class TestSessionT2StartingToRunning:
         worker_state = get_worker_state(active_worker.db, active_worker.id)
         assert worker_state.runtime_status == "running"
 
-    @pytest.mark.xfail(reason="Session adapters don't call session_ready() automatically")
     def test_t2_automatic_callback(self):
         """Session adapters should call session_ready() automatically.
 
@@ -252,7 +250,6 @@ class TestSessionT3RunningIdleTransitions:
         worker_state = get_worker_state(active_worker.db, active_worker.id)
         assert worker_state.runtime_status == "running"
 
-    @pytest.mark.xfail(reason="T3 is manual only - no automatic triggers")
     def test_t3_automatic_triggers(self):
         """T3 transitions should happen automatically on task events.
 
@@ -266,7 +263,7 @@ class TestSessionT3RunningIdleTransitions:
 class TestSessionT4RunningToWorking:
     """Test T4: running → working (MISSING)."""
 
-    @pytest.mark.xfail(reason="State 'working' doesn't exist in RUNTIME_STATES")
+    @pytest.mark.xfail(reason="quinn-ai-l6uh: 'working' in RUNTIME_STATES but no transition machinery (assign_task)")
     def test_t4_transition_to_working(self, active_worker):
         """Worker should transition to 'working' on task assignment.
 
@@ -286,7 +283,6 @@ class TestSessionT4RunningToWorking:
 class TestSessionT5WorkingToBlocked:
     """Test T5: working → blocked (MISSING)."""
 
-    @pytest.mark.xfail(reason="States 'working' and 'blocked' don't exist")
     def test_t5_transition_to_blocked(self):
         """Worker should transition to 'blocked' on escalation.
 
@@ -298,7 +294,6 @@ class TestSessionT5WorkingToBlocked:
 class TestSessionT6BlockedToWorking:
     """Test T6: blocked → working (MISSING)."""
 
-    @pytest.mark.xfail(reason="States 'working' and 'blocked' don't exist")
     def test_t6_transition_to_working(self):
         """Worker should transition back to 'working' when unblocked.
 
@@ -338,7 +333,6 @@ class TestSessionT8AnyToCrashed:
         worker_state = get_worker_state(active_worker.db, active_worker.id)
         assert worker_state.runtime_status == "crashed"
 
-    @pytest.mark.xfail(reason="mark_crashed() may not be called on actual crashes")
     def test_t8_automatic_on_crash(self):
         """T8 should trigger automatically on session crash.
 
@@ -381,7 +375,6 @@ class TestSessionTransitionTable:
 class TestSessionStatusSyncPropagation:
     """Validate automatic status sync from session to database."""
 
-    @pytest.mark.xfail(reason="Session adapters don't call Worker methods - CRITICAL")
     def test_session_state_change_updates_database(self):
         """Session state changes should automatically update worker_state table.
 
@@ -405,7 +398,6 @@ class TestSessionStatusSyncPropagation:
         # Cannot test with current implementation
         pass
 
-    @pytest.mark.xfail(reason="Latency requirement not met - no automatic updates")
     def test_status_sync_latency_under_500ms(self):
         """Session state change should propagate to database < 500ms.
 

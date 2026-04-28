@@ -198,7 +198,7 @@ class TestOrgT2InitializedToRunning:
 
         assert len(messages) == 1, "Briefing should only be delivered once"
 
-    @pytest.mark.xfail(reason="T2 has no rollback - VIOLATION from validation report")
+    @pytest.mark.xfail(reason="quinn-ai-tage: Org.start() has no rollback on CEO activation failure")
     def test_t2_rollback_on_ceo_activation_failure(self, initialized_org, monkeypatch):
         """T2 should rollback org state if CEO activation fails.
 
@@ -235,7 +235,6 @@ class TestOrgT3RunningToStopped:
 
         assert running_org.status == OrgStatus.STOPPED.value
 
-    @pytest.mark.xfail(reason="T3 has no session stop verification - VIOLATION")
     def test_t3_verifies_sessions_stopped(self, running_org):
         """T3 should verify all sessions stopped before transitioning.
 
@@ -263,7 +262,7 @@ class TestOrgT4StoppedToRunning:
 
         assert stopped_org.status == OrgStatus.RUNNING.value
 
-    @pytest.mark.xfail(reason="T4 behavior inconsistent with T2 - VIOLATION")
+    @pytest.mark.xfail(reason="quinn-ai-wbwy: T4 (resume) doesn't spawn CEO session like T2")
     def test_t4_consistent_with_t2(self, stopped_org):
         """T4 (resume) should behave like T2 (first start).
 
