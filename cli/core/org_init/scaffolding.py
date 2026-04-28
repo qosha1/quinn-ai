@@ -166,9 +166,13 @@ def init_beads(org_path: Path) -> None:
     # --skip-hooks: bd's pre-commit hook calls `bd hooks run pre-commit` which
     # deadlocks on the db lock held by the parent `bd init` (and the hook's
     # `timeout` fallback isn't available on macOS by default).
-    # --non-interactive: we're not on a TTY during programmatic init.
+    # --quiet: suppress output for programmatic init. Note: we previously
+    # used --non-interactive, but the bundled bd (0.43.x) doesn't accept
+    # that flag — only newer system bds (1.x+) do. --quiet works on both;
+    # bd already auto-detects non-interactive mode from the lack of TTY.
+    # (quinn-ai-gudo)
     subprocess.run(
-        ["bd", "init", "--skip-hooks", "--non-interactive"],
+        ["bd", "init", "--skip-hooks", "--quiet"],
         cwd=org_path,
         env=env,
         check=True,
