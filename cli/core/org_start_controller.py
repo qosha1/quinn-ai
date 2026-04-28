@@ -424,6 +424,64 @@ def _capture_pane(tmux_session: str) -> str:
         return ""
 
 
+def _wait_for_pane_ready(
+    tmux_session: str,
+    timeout: float = 15.0,
+    poll_interval: float = 0.5,
+) -> bool:
+    """Poll capture-pane until the spawned TUI is ready to receive input.
+
+    The fix for quinn-ai-k2cy: the previous code fired tmux send-keys within
+    ~100ms of new-session, before claude had finished booting. Result: the
+    'cat INITIAL_TASK.md' keystrokes vanished into a not-yet-ready TUI and
+    the CEO sat idle forever.
+
+    'Ready' is heuristic — we look for either:
+      1. claude's prompt cursor character ('❯' or '>'), OR
+      2. any non-trivial pane content (>20 chars and not just shell banner).
+
+    Returns True if ready before timeout, False otherwise. Caller can still
+    proceed if False — the existing best-effort send-keys will at least try.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        pane = _capture_pane(tmux_session)
+        if pane:
+            # Heuristic: prompt cursor present, OR enough content to suggest
+            # claude (or whatever TUI) has rendered something past its banner.
+            if "❯" in pane or len(pane.strip()) > 200:
+                return True
+        time.sleep(poll_interval)
+    return False
+
+
+def _tmux_send_keys_with_retry(
+    tmux_session: str,
+    keys: str,
+    *,
+    attempts: int = 3,
+    backoff: float = 0.3,
+) -> bool:
+    """Send keystrokes to tmux with retry-on-failure.
+
+    Returns True on success, False if all attempts fail. Doesn't raise —
+    the caller handles failure (best-effort delivery).
+    """
+    for i in range(attempts):
+        try:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_session, keys],
+                check=True,
+                capture_output=True,
+                timeout=2,
+            )
+            return True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            if i < attempts - 1:
+                time.sleep(backoff * (i + 1))
+    return False
+
+
 def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
     """Phase 5 (Kickstart): Send initial prompt to CEO.
 
@@ -458,19 +516,28 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
         cmd = "cat INITIAL_TASK.md"
 
         try:
+            # quinn-ai-k2cy: wait for the CEO TUI to be ready before sending
+            # keystrokes. Without this, claude is still booting and the
+            # 'cat INITIAL_TASK.md' input vanishes into a not-yet-rendered
+            # interactive prompt. The CEO then sits idle forever with no
+            # directive.
+            ready = _wait_for_pane_ready(tmux_session)
+            if not ready:
+                click.echo(
+                    "  ⚠ CEO TUI did not appear ready within the wait window; "
+                    "delivering prompt anyway (best-effort).",
+                    err=True,
+                )
             pane_before = _capture_pane(tmux_session)
 
-            subprocess.run(
-                ["tmux", "send-keys", "-t", tmux_session, cmd],
-                check=True,
-                capture_output=True,
-            )
+            cmd_sent = _tmux_send_keys_with_retry(tmux_session, cmd)
             time.sleep(TMUX_SEND_KEYS_INTERSTITIAL)
-            subprocess.run(
-                ["tmux", "send-keys", "-t", tmux_session, "Enter"],
-                check=True,
-                capture_output=True,
-            )
+            enter_sent = _tmux_send_keys_with_retry(tmux_session, "Enter")
+            if not (cmd_sent and enter_sent):
+                raise subprocess.CalledProcessError(
+                    1, ["tmux", "send-keys"],
+                    output=b"send-keys retries exhausted",
+                )
 
             # Poll briefly for pane content change as evidence the prompt
             # actually landed and is being processed. Without this check
