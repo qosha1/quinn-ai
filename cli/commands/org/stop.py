@@ -257,6 +257,32 @@ def _report_result(result: OrgStopResult, org_path: Path, verbose: bool) -> None
         if result.states_saved > 0:
             click.echo(f"  States saved for resume: {result.states_saved}")
         click.echo(f"  Total duration: {result.total_duration_seconds:.2f}s")
+
+        # Surface unacked workers as a clear warning to stderr — these are
+        # workers that didn't respond to the graceful-shutdown signal,
+        # usually because the worker was idle/stuck and never processed
+        # the wrap-up request. Without this, users only saw a buried log
+        # line and no signal that the stop finished in degraded state.
+        # (quinn-ai-ef4z)
+        if result.unacked_workers:
+            click.echo("", err=True)
+            click.echo(
+                f"  ⚠ {len(result.unacked_workers)} worker(s) did not acknowledge "
+                f"graceful stop before timeout:",
+                err=True,
+            )
+            for name in result.unacked_workers:
+                click.echo(f"      - {name}", err=True)
+            click.echo(
+                "    These workers may have been idle, stuck, or never "
+                "processed their initial prompt.",
+                err=True,
+            )
+            click.echo(
+                "    Stop completed via timeout fallback; sessions were "
+                "force-terminated.",
+                err=True,
+            )
     else:
         click.echo("\nOrganization stop FAILED", err=True)
 

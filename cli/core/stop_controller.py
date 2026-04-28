@@ -140,6 +140,9 @@ class OrgStopController:
                 phase3 = self._wait_for_acknowledgements()
                 self._result.phases.append(phase3)
                 self._result.workers_acked = phase3.details.get("acks_received", 0)
+                self._result.unacked_workers = list(
+                    phase3.details.get("unacked_workers") or []
+                )
 
             # Stop sessions
             phase4 = self._stop_sessions(force)

@@ -50,6 +50,10 @@ class OrgStopResult:
     phases: list[StopPhaseResult] = field(default_factory=list)
     workers_stopped: int = 0
     workers_acked: int = 0
+    # Names of workers that didn't acknowledge the graceful-stop signal
+    # before the timeout expired. Empty on a clean stop. Populated from
+    # phase 3 details so the CLI summary can surface it as a warning.
+    unacked_workers: list[str] = field(default_factory=list)
     sessions_terminated: int = 0
     states_saved: int = 0
     errors: list[str] = field(default_factory=list)
