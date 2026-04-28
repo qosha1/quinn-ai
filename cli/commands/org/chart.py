@@ -25,13 +25,17 @@ from cli.core.org_chart import (
 )
 
 
-@click.group()
-def chart_cmd():
+@click.group(invoke_without_command=True)
+@click.pass_context
+def chart_cmd(ctx):
     """View organization chart.
 
     Display org structure, track changes, and export org-chart data.
+
+    With no subcommand, defaults to 'show'.
     """
-    pass
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(chart_show)
 
 
 @chart_cmd.command("show")

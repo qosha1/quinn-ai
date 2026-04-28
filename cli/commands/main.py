@@ -39,12 +39,13 @@ from cli.core.org_discovery import find_org_root
 def qn(ctx, org_path: Optional[Path], verbose: bool, debug: bool):
     """QuinnAI organization management CLI.
 
-    Three command groups for three actors:
+    Four command groups:
 
     \b
-    qn org   - Organization management (human operator)
-    qn wrkr  - Worker operations (AI worker in session)
-    qn board - Board oversight (human intervention when off-track)
+    qn org    - Organization management (human operator)
+    qn wrkr   - Worker operations (AI worker in session)
+    qn board  - Board oversight (human intervention when off-track)
+    qn config - Top-level configuration (providers, environment validation)
     """
     # Set up global exception handler for logging
     def handle_exception(exc_type, exc_value, exc_traceback):

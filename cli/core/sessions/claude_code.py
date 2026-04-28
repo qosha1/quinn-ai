@@ -149,9 +149,12 @@ class ClaudeCodeSession(SessionInterface):
             # Register callback to monitor agent state changes and update session state
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"[ClaudeCodeSession] Registering state change callback for worker {self._config.worker_id}")
+            logger.debug(
+                f"[ClaudeCodeSession] Registering state change callback for worker "
+                f"{self._config.worker_id}"
+            )
             self._agent_session._controller.on_state_change(self._on_agent_state_change)
-            logger.warning(f"[ClaudeCodeSession] Callback registered successfully")
+            logger.debug("[ClaudeCodeSession] Callback registered successfully")
 
             # Build shell command
             shell_cmd = self._config.command
