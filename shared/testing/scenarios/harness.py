@@ -66,10 +66,17 @@ class ScenarioRun:
 
 
 class ScenarioHarness:
-    """Context manager that prepares an isolated org dir + FakeSpawner registry."""
+    """Context manager that prepares an isolated org dir + (optionally) FakeSpawner.
 
-    def __init__(self, spec: ScenarioSpec) -> None:
+    By default swaps the spawner registry to FakeSpawner for deterministic
+    Tier-2 scenarios. Pass use_fake_spawner=False (e.g. from the live canary
+    in Tier 3) to keep the real registry so spawned sessions hit a real
+    provider like claude_code.
+    """
+
+    def __init__(self, spec: ScenarioSpec, *, use_fake_spawner: bool = True) -> None:
         self.spec = spec
+        self.use_fake_spawner = use_fake_spawner
         self._stack: ExitStack | None = None
         self._tmpdir: str | None = None
 
@@ -85,10 +92,10 @@ class ScenarioHarness:
             org_path = Path(self._tmpdir) / "org"
             org_path.mkdir()
 
-            # Swap spawner registry — this returns a context manager
-            from cli.tests.harness.fake_spawner import with_fake_spawner
-
-            spawner = self._stack.enter_context(with_fake_spawner())
+            spawner = None
+            if self.use_fake_spawner:
+                from cli.tests.harness.fake_spawner import with_fake_spawner
+                spawner = self._stack.enter_context(with_fake_spawner())
 
             # Register cleanup of tmp dir
             self._stack.callback(self._cleanup_tmpdir)

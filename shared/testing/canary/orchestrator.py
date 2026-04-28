@@ -43,7 +43,10 @@ def run_canary(spec: ScenarioSpec, config: ProviderConfig) -> CanaryResult:
 
     try:
         with redirect_stdout(transcript_buf):
-            with ScenarioHarness(spec) as run:
+            # use_fake_spawner=False so 'qn org start' inside the scenario hits
+            # the real claude_code provider instead of the FakeSpawner used in
+            # Tier 2 scenarios.
+            with ScenarioHarness(spec, use_fake_spawner=False) as run:
                 for op in spec.ops:
                     guard.check_time()
                     run.run_op(op)
