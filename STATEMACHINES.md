@@ -275,6 +275,8 @@ stateDiagram-v2
     onboarding --> active : complete_onboarding()
     active --> suspended : suspend()
     suspended --> active : unsuspend()
+    active --> offboarding : begin_offboarding()
+    offboarding --> terminated : finalize_termination()
     pending --> terminated : terminate()
     onboarding --> terminated : terminate()
     active --> terminated : terminate()
@@ -290,6 +292,7 @@ stateDiagram-v2
 | onboarding | Activation in progress | False | No |
 | active | Fully operational | True | Yes |
 | suspended | Temporarily inactive | False | No |
+| offboarding | Mid-termination cleanup (storage freeze, channel unsubscribe, manager handoff) | False | No |
 | terminated | Permanently removed | False | No |
 
 ### Transitions
@@ -432,7 +435,6 @@ stateDiagram-v2
 ## Session Lifecycle State Machine
 
 **Implementation:** `cli/core/worker.py`, `cli/core/sessions/*.py`
-**Status:** ❌ Broken (manual transitions, no auto-propagation)
 
 ### State Diagram
 
@@ -443,18 +445,11 @@ stateDiagram-v2
     starting --> running : session_ready()
     running --> idle : finish_work()
     idle --> running : begin_work()
-    running --> working : assign_task()
-    working --> blocked : escalate()
-    blocked --> working : resolve()
-    working --> idle : task_complete()
     starting --> crashed : error
     running --> crashed : error
-    working --> crashed : error
     starting --> stopped : stop_session()
     running --> stopped : stop_session()
     idle --> stopped : stop_session()
-    working --> stopped : stop_session()
-    blocked --> stopped : stop_session()
     crashed --> [*]
     stopped --> [*]
 ```
@@ -467,10 +462,16 @@ stateDiagram-v2
 | starting | Session spawn in progress | 'starting' |
 | running | Session ready, can accept work | 'running' |
 | idle | Session ready, no current task | 'idle' |
-| working | Actively executing task | 'working' |
-| blocked | Waiting on external dependency | 'blocked' |
 | stopped | Cleanly terminated | 'stopped' |
 | crashed | Abnormally terminated | 'crashed' |
+
+> **Note:** earlier drafts of this spec listed `working` and `blocked` as
+> additional runtime states with `assign_task()` / `escalate()` /
+> `resolve()` transitions. No production code ever wrote those values
+> and no transition machinery existed for them, so they were removed
+> from `RUNTIME_STATES` in shared/state_machines.py. If task-level
+> state tracking is needed in the future, it should be added back as
+> a deliberate feature with the supporting transition methods.
 
 ### Transitions
 
@@ -552,41 +553,13 @@ stateDiagram-v2
 
 ---
 
-#### T4: running → working
+#### T4–T6 (removed)
 
-**Trigger:** Task assignment
-**Implementation:** Manual update
-
-**Actions:**
-1. **Update worker_state.runtime_status = 'working'**
-2. Set worker_state.current_task_id
-
-**Status:** ❌ Broken (manual, not called by task system)
-
----
-
-#### T5: working → blocked
-
-**Trigger:** Escalation or wait for resource
-**Implementation:** Manual update
-
-**Actions:**
-1. **Update worker_state.runtime_status = 'blocked'**
-2. Record blocking reason
-
-**Status:** ❌ Broken (manual)
-
----
-
-#### T6: blocked → working
-
-**Trigger:** Issue resolved
-**Implementation:** Manual update
-
-**Actions:**
-1. **Update worker_state.runtime_status = 'working'**
-
-**Status:** ❌ Broken (manual)
+The earlier `running → working → blocked → working` transitions have been
+removed along with the `working` and `blocked` runtime states. They were
+never wired up — no production code ever wrote those values. Task-level
+status tracking happens at the bead/issue layer (see Beads), not at the
+session-runtime-status layer.
 
 ---
 

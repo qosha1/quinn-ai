@@ -36,18 +36,14 @@ RUNTIME_STATES = frozenset([
     "starting",
     "running",
     "idle",
-    "working",
-    "blocked",
     "stopped",
     "crashed",
 ])
 
 RUNTIME_TRANSITIONS: dict[str, list[str]] = {
     "starting": ["running", "crashed", "stopped"],
-    "running": ["idle", "working", "stopped", "crashed"],
+    "running": ["idle", "stopped", "crashed"],
     "idle": ["running", "stopped"],
-    "working": ["blocked", "idle", "stopped", "crashed"],
-    "blocked": ["working", "stopped", "crashed"],
     "stopped": ["starting"],  # Allow restart from stopped
     "crashed": ["starting"],  # Allow restart from crashed
 }

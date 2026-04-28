@@ -74,10 +74,11 @@ class TestWorkerLifecycleSequences:
 
 class TestRuntimeSequences:
     def test_crash_recovery(self):
+        # 'working' was removed from RUNTIME_STATES (quinn-ai-l6uh).
+        # running → crashed → starting → running covers the recovery path.
         drivers = _drivers()
         steps = [
             Step("runtime", "running"),
-            Step("runtime", "working"),
             Step("runtime", "crashed"),
             Step("runtime", "starting"),
             Step("runtime", "running"),
@@ -85,16 +86,9 @@ class TestRuntimeSequences:
         results = run_sequence(drivers, steps)
         assert all(r.ok for r in results)
 
-    def test_blocked_unblocked(self):
-        drivers = _drivers()
-        steps = [
-            Step("runtime", "running"),
-            Step("runtime", "working"),
-            Step("runtime", "blocked"),
-            Step("runtime", "working"),
-        ]
-        results = run_sequence(drivers, steps)
-        assert all(r.ok for r in results)
+    # test_blocked_unblocked removed — 'blocked' and 'working' are no
+    # longer in RUNTIME_STATES (quinn-ai-l6uh). Task-level status
+    # tracking lives at the bead/issue layer, not session runtime.
 
 
 class TestOrgSequences:
@@ -173,7 +167,7 @@ class TestCrossMachineInvariants:
         drivers["lifecycle"].apply("onboarding")
         drivers["lifecycle"].apply("active")
         drivers["runtime"].apply("running")
-        drivers["runtime"].apply("working")
+        drivers["runtime"].apply("idle")
 
         rule = cross_machine_invariant(
             name="session_requires_session_allowed_lifecycle",

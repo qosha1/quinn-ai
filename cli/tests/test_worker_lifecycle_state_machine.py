@@ -61,19 +61,14 @@ def active_worker(onboarding_worker):
 class TestWorkerStates:
     """Validate worker states match STATEMACHINES.md."""
 
-    @pytest.mark.xfail(reason="quinn-ai-l6uh: spec/code state name drift ('offboarding' in code, not in spec)")
     def test_states_match_specification(self):
         """States in code must match STATEMACHINES.md.
 
-        EXPECTED TO FAIL: Critical violation from validation report.
-
-        Documented: pending, onboarding, active, suspended, terminated
-        Code has: pending, onboarding, active, offboarding, terminated
-
-        MISSING: suspended
-        EXTRA: offboarding
+        Per quinn-ai-l6uh resolution: spec was updated to document
+        'offboarding' (real intermediate state used during termination
+        cleanup — see worker/lifecycle_manager.py:begin_offboarding).
         """
-        expected = {"pending", "onboarding", "active", "suspended", "terminated"}
+        expected = {"pending", "onboarding", "active", "suspended", "offboarding", "terminated"}
         assert LIFECYCLE_STATES == expected, \
             f"LIFECYCLE_STATES {LIFECYCLE_STATES} doesn't match spec {expected}"
 

@@ -117,10 +117,14 @@ class TestSessionStates:
     def test_states_match_specification(self):
         """States in code must match STATEMACHINES.md.
 
-        Documented: starting, running, idle, working, blocked, stopped, crashed
-        (plus implicit not_spawned = NULL)
+        Documented: starting, running, idle, stopped, crashed
+        (plus implicit not_spawned = NULL).
+
+        'working' and 'blocked' were removed from RUNTIME_STATES in
+        quinn-ai-l6uh — task-level status lives at the bead layer, not
+        the session-runtime layer.
         """
-        expected = {"starting", "running", "idle", "working", "blocked", "stopped", "crashed"}
+        expected = {"starting", "running", "idle", "stopped", "crashed"}
         assert RUNTIME_STATES == expected, \
             f"RUNTIME_STATES {RUNTIME_STATES} doesn't match spec {expected}"
 
@@ -263,43 +267,10 @@ class TestSessionT3RunningIdleTransitions:
 class TestSessionT4RunningToWorking:
     """Test T4: running → working (MISSING)."""
 
-    @pytest.mark.xfail(reason="quinn-ai-l6uh: 'working' in RUNTIME_STATES but no transition machinery (assign_task)")
-    def test_t4_transition_to_working(self, active_worker):
-        """Worker should transition to 'working' on task assignment.
-
-        EXPECTED TO FAIL: State 'working' not in RUNTIME_STATES.
-        """
-        from cli.core.queries import update_worker_runtime_status
-
-        update_worker_runtime_status(active_worker.db, active_worker.id, "running")
-
-        # This method doesn't exist
-        active_worker.assign_task(task_id="task-123")
-
-        worker_state = get_worker_state(active_worker.db, active_worker.id)
-        assert worker_state.runtime_status == "working"
-
-
-class TestSessionT5WorkingToBlocked:
-    """Test T5: working → blocked (MISSING)."""
-
-    def test_t5_transition_to_blocked(self):
-        """Worker should transition to 'blocked' on escalation.
-
-        EXPECTED TO FAIL: States 'working' and 'blocked' not in RUNTIME_STATES.
-        """
-        pass
-
-
-class TestSessionT6BlockedToWorking:
-    """Test T6: blocked → working (MISSING)."""
-
-    def test_t6_transition_to_working(self):
-        """Worker should transition back to 'working' when unblocked.
-
-        EXPECTED TO FAIL: States 'working' and 'blocked' not in RUNTIME_STATES.
-        """
-        pass
+    # T4-T6 (running ↔ working ↔ blocked) were removed in quinn-ai-l6uh:
+    # the 'working' and 'blocked' runtime states existed in RUNTIME_STATES
+    # but no production code wrote them and no transition machinery existed.
+    # Task-level status lives at the bead/issue layer instead.
 
 
 class TestSessionT7AnyToStopped:
@@ -348,22 +319,20 @@ class TestSessionTransitionTable:
     def test_transition_table_matches_spec(self):
         """RUNTIME_TRANSITIONS must match the documented spec.
 
-        Transitions (current canonical, see cli/docs/worker-state-design.md
-        and shared/state_machines.py):
+        Transitions (current canonical, see STATEMACHINES.md and
+        shared/state_machines.py):
         - starting → [running, crashed, stopped]   # cancel before ready
-        - running → [idle, working, stopped, crashed]
+        - running → [idle, stopped, crashed]
         - idle → [running, stopped]
-        - working → [blocked, idle, stopped, crashed]
-        - blocked → [working, stopped, crashed]
         - stopped → [starting]                     # allow restart
         - crashed → [starting]                     # allow restart
+
+        'working'/'blocked' were removed in quinn-ai-l6uh.
         """
         expected = {
             "starting": ["running", "crashed", "stopped"],
-            "running": ["idle", "working", "stopped", "crashed"],
+            "running": ["idle", "stopped", "crashed"],
             "idle": ["running", "stopped"],
-            "working": ["blocked", "idle", "stopped", "crashed"],
-            "blocked": ["working", "stopped", "crashed"],
             "stopped": ["starting"],
             "crashed": ["starting"],
         }
