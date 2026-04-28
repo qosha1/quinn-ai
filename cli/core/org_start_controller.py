@@ -40,10 +40,14 @@ from cli.core.config import (
 )
 from cli.core.constants import (
     CONFIG_DIR,
+    INITIAL_PROMPT_FILESYSTEM_FLUSH,
+    INITIAL_PROMPT_VERIFICATION_POLL,
+    INITIAL_PROMPT_VERIFICATION_WINDOW,
     LIVE_DIR,
     SESSION_START_POLL_INTERVAL,
     SHARED_DIR,
     STORAGE_DIR,
+    TMUX_SEND_KEYS_INTERSTITIAL,
     TMUX_SESSION_PREFIX,
     WORKERS_DIR,
 )
@@ -448,7 +452,7 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
         )
         instructions_file.write_text(formatted_prompt)
 
-        time.sleep(2)
+        time.sleep(INITIAL_PROMPT_FILESYSTEM_FLUSH)
 
         tmux_session = f"{TMUX_SESSION_PREFIX}{ceo.id}"
         cmd = "cat INITIAL_TASK.md"
@@ -461,7 +465,7 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
                 check=True,
                 capture_output=True,
             )
-            time.sleep(0.5)
+            time.sleep(TMUX_SEND_KEYS_INTERSTITIAL)
             subprocess.run(
                 ["tmux", "send-keys", "-t", tmux_session, "Enter"],
                 check=True,
@@ -472,8 +476,8 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
             # actually landed and is being processed. Without this check
             # the prompt can disappear into a not-yet-ready TUI and we'd
             # never know.
-            verification_window = 5.0
-            poll_interval = 0.5
+            verification_window = INITIAL_PROMPT_VERIFICATION_WINDOW
+            poll_interval = INITIAL_PROMPT_VERIFICATION_POLL
             elapsed = 0.0
             received = False
             while elapsed < verification_window:

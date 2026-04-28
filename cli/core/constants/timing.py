@@ -49,6 +49,23 @@ LOG_TAIL_POLL_INTERVAL = 0.5
 SESSION_START_POLL_INTERVAL = 1.0
 """Polling interval when waiting for session startup."""
 
+INITIAL_PROMPT_FILESYSTEM_FLUSH = 2.0
+"""Pause after writing INITIAL_TASK.md before the tmux read so the
+filesystem write is fully visible to the spawned shell."""
+
+TMUX_SEND_KEYS_INTERSTITIAL = 0.5
+"""Brief pause between tmux 'send-keys' invocations (typing a command
+and then sending Enter), so tmux registers the command buffer before
+the Enter keystroke."""
+
+INITIAL_PROMPT_VERIFICATION_WINDOW = 5.0
+"""Time budget to confirm the CEO's INITIAL_TASK prompt actually
+landed in the tmux pane (vs. disappearing into a not-yet-ready TUI)."""
+
+INITIAL_PROMPT_VERIFICATION_POLL = 0.5
+"""Polling interval inside INITIAL_PROMPT_VERIFICATION_WINDOW for
+checking whether the pane content has changed."""
+
 GRACEFUL_SHUTDOWN_WAIT = 5.0
 """Wait time after graceful shutdown signal before force termination."""
 
