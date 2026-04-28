@@ -103,7 +103,7 @@ def config():
 
 
 @config.command("set-provider")
-@click.argument("provider", type=click.Choice(["claude_code", "anthropic", "openai"]))
+@click.argument("provider", type=str)
 @click.option(
     "--org-path",
     type=click.Path(exists=True, path_type=Path),
@@ -116,12 +116,30 @@ def set_provider_cmd(provider: str, org_path: Path):
     Changes the default provider in config/providers.yaml.
     This determines which AI service the org uses for worker sessions.
 
+    Provider names come from the session registry (see 'qn org provider
+    list'). Aliases are accepted (e.g. 'claude' resolves to 'claude_code').
+
     \b
     Examples:
         qn config set-provider claude_code --org-path ~/orgs/acme
-        qn config set-provider anthropic --org-path ./my-org
+        qn config set-provider codex --org-path ./my-org
     """
     import yaml
+    from cli.core.sessions.registry import get_default_registry
+
+    # Validate provider against the live registry instead of a hardcoded
+    # Choice — the registry is the source of truth for what's available
+    # (closes quinn-ai-j3ty). Aliases (claude → claude_code, etc.) work.
+    registry = get_default_registry()
+    if not registry.has(provider):
+        available = ", ".join(sorted(registry.list_adapters()))
+        click.echo(click.style(
+            f"Error: Provider '{provider}' not registered.\n"
+            f"Available: {available}\n"
+            "Run 'qn org provider list' for capabilities.",
+            fg="red",
+        ))
+        raise SystemExit(1)
 
     config_path = get_org_config_path(org_path)
     providers_path = config_path / "providers.yaml"

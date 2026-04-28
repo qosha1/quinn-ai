@@ -11,6 +11,8 @@ default: claude_code
 authorized_providers:
   - claude_code
   - anthropic
+  - codex
+  - gemini
   - openai
 
 # Available providers
@@ -24,6 +26,18 @@ providers:
   anthropic:
     enabled: false
     api_key: ${ANTHROPIC_API_KEY}
+    timeout: 60
+    max_retries: 3
+
+  codex:
+    enabled: false
+    api_key: "not-needed-uses-system-auth"
+    timeout: 60
+    max_retries: 3
+
+  gemini:
+    enabled: false
+    api_key: ${GOOGLE_API_KEY}
     timeout: 60
     max_retries: 3
 
