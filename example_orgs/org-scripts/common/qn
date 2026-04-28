@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
-# Wrapper script to run qn CLI without installing
+# Wrapper script to run qn CLI without installing.
+#
+# Picks a Python interpreter in this priority order:
+#   1. $QUINNAI_PYTHON (caller-supplied, e.g. tests pass sys.executable)
+#   2. <repo-root>/.venv/bin/python (the dev venv next to this shim)
+#   3. python3 on PATH (last resort — only works if quinnai's deps are
+#      installed into that interpreter, e.g. via pip install -e .)
+#
+# Bare 'python3' on macOS often resolves to /opt/homebrew/.../python3.X
+# without quinnai's deps installed, so 'click' import fails. The venv
+# fallback makes test_example_orgs work without forcing every developer
+# to activate their venv first.
+set -euo pipefail
 QUINNAI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-export PYTHONPATH="$QUINNAI_DIR:$PYTHONPATH"
-python3 -m cli.commands.main "$@"
+export PYTHONPATH="$QUINNAI_DIR:${PYTHONPATH:-}"
+
+if [[ -n "${QUINNAI_PYTHON:-}" ]]; then
+  PY="$QUINNAI_PYTHON"
+elif [[ -x "$QUINNAI_DIR/.venv/bin/python" ]]; then
+  PY="$QUINNAI_DIR/.venv/bin/python"
+else
+  PY="python3"
+fi
+
+exec "$PY" -m cli.commands.main "$@"
