@@ -27,7 +27,7 @@ fi
 
 # Initialize the org
 echo "Initializing org with CEO..."
-"$QN" --org-path "$ORG_DIR" org init --ceo-name "Alice" --ceo-role "CEO"
+"$QN" --org-path "$ORG_DIR" org init --ceo-name "Alice"
 
 # Copy custom worker templates (includes Engineer role)
 if [[ -f "$SCRIPT_DIR/config/worker-templates.yaml" ]]; then

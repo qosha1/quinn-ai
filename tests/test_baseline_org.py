@@ -137,7 +137,6 @@ class TestOrgInit:
         result = qn_runner(
             "org", "init",
             "--ceo-name", "CustomCEO",
-            "--ceo-role", "Chief Executive",
             org_path=org
         )
 

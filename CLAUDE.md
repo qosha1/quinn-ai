@@ -419,7 +419,7 @@ bd close <task-id> --reason "Implemented feature, coverage now 85%"
 
 ```bash
 # Initialize org
-qn org init --ceo-name="Alice" --ceo-role="CEO"
+qn org init --ceo-name="Alice"
 
 # Start org (activates CEO)
 qn org start

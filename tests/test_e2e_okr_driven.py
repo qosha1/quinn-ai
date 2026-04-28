@@ -30,7 +30,6 @@ class TestE2EOkrDriven:
         result = qn_runner(
             "org", "init",
             "--ceo-name", "Alice",
-            "--ceo-role", "CEO",
             org_path=org
         )
         assert result.returncode == 0
