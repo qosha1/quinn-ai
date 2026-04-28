@@ -9,6 +9,7 @@ import logging
 import sqlite3
 import threading
 from contextlib import contextmanager
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Generator, Optional
 
@@ -21,6 +22,26 @@ _logger = logging.getLogger(__name__)
 
 # Connection configuration
 WAL_MODE_ENABLED = True
+
+
+# Python 3.12+ deprecated the default datetime/date adapter+converter that
+# `detect_types=PARSE_DECLTYPES` would otherwise activate. Register explicit
+# ISO-8601 adapters once at import time so the connection picks them up
+# instead of the deprecated defaults. (quinn-ai-5pd0)
+sqlite3.register_adapter(datetime, lambda v: v.isoformat())
+sqlite3.register_adapter(date, lambda v: v.isoformat())
+sqlite3.register_converter(
+    "DATETIME",
+    lambda b: datetime.fromisoformat(b.decode()),
+)
+sqlite3.register_converter(
+    "TIMESTAMP",
+    lambda b: datetime.fromisoformat(b.decode()),
+)
+sqlite3.register_converter(
+    "DATE",
+    lambda b: date.fromisoformat(b.decode()),
+)
 
 
 class Database:
