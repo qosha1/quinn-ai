@@ -1133,7 +1133,7 @@ class TestOrgLogs:
             w.is_session_active = True
             mock_worker_get.return_value = w
 
-            with patch("cli.commands.org.logs.get_worker_by_name") as mock_by_name:
+            with patch("cli.commands.org.logs.resolve_worker") as mock_by_name:
                 d = MagicMock()
                 d.id = "ceo-id"
                 mock_by_name.return_value = d
@@ -1164,7 +1164,7 @@ class TestOrgLogs:
                     w.id = "ceo-id"
                     w.is_session_active = True
                     mock_worker.return_value = w
-                    with patch("cli.commands.org.logs.get_worker_by_name") as mock_name:
+                    with patch("cli.commands.org.logs.resolve_worker") as mock_name:
                         d = MagicMock()
                         d.id = "ceo-id"
                         mock_name.return_value = d
@@ -1189,7 +1189,7 @@ class TestOrgLogs:
                     w.is_session_active = True
                     mock_worker.return_value = w
 
-                    with patch("cli.commands.org.logs.get_worker_by_name") as mock_by_name:
+                    with patch("cli.commands.org.logs.resolve_worker") as mock_by_name:
                         d = MagicMock()
                         d.id = "ceo-id"
                         mock_by_name.return_value = d
@@ -1222,7 +1222,7 @@ class TestOrgLogs:
                     w.id = "ceo-id"
                     w.is_session_active = True
                     mock_worker.return_value = w
-                    with patch("cli.commands.org.logs.get_worker_by_name") as mock_name:
+                    with patch("cli.commands.org.logs.resolve_worker") as mock_name:
                         d = MagicMock()
                         d.id = "ceo-id"
                         mock_name.return_value = d

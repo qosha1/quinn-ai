@@ -324,10 +324,14 @@ class TestBoardStatusAlerts:
         finally:
             db.close()
 
-        result = runner.invoke(qn, [
-            "--org-path", str(started_org),
-            "board", "status"
-        ])
+        # Mock TmuxSession.exists so reconcile_runtime_states (called at
+        # the top of board status — see quinn-ai-pwjp) doesn't reset the
+        # 4 'idle' rows we just set to 'stopped' for lack of real tmux.
+        with patch("shared.pyterm.tmux_session.TmuxSession.exists", return_value=True):
+            result = runner.invoke(qn, [
+                "--org-path", str(started_org),
+                "board", "status"
+            ])
         assert result.exit_code == 0
         assert "P2" in result.output
         assert "idle" in result.output.lower()
