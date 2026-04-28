@@ -46,12 +46,7 @@ def test_wrkr_get_work_for_hired_worker(hired_team, org_with_ceo, qn_runner):
 
 
 def test_wrkr_search_runs_cleanly(hired_team, org_with_ceo, qn_runner):
-    """`qn wrkr search <query>` returns 0 with no matches on a fresh org.
-
-    NOTE: query intentionally contains no hyphens — qn wrkr search currently
-    treats hyphens as FTS5 operators and crashes on 'a-b-c' inputs (tracked
-    separately as a P2 search-input-sanitize bug).
-    """
+    """`qn wrkr search <query>` returns 0 with no matches on a fresh org."""
     worker_id = hired_team[0]
     result = qn_runner([
             "--org-path", str(org_with_ceo),
@@ -60,6 +55,23 @@ def test_wrkr_search_runs_cleanly(hired_team, org_with_ceo, qn_runner):
     )
     assert result.returncode == 0, f"wrkr search failed:\n{result.stderr}"
     assert "Traceback" not in result.stderr
+
+
+def test_wrkr_search_handles_hyphenated_query(hired_team, org_with_ceo, qn_runner):
+    """Regression: `qn wrkr search a-b-c` must not crash on FTS5 operator parse.
+
+    Pre-fix this raised `sqlite3.OperationalError: no such column: such`
+    because FTS5 parsed 'no-such-string' as 'no MINUS such MINUS string'.
+    """
+    worker_id = hired_team[0]
+    result = qn_runner([
+            "--org-path", str(org_with_ceo),
+            "wrkr", "--worker-id", worker_id, "search", "no-such-string",
+        ],
+    )
+    assert result.returncode == 0, f"wrkr search crashed on hyphenated query:\n{result.stderr}"
+    assert "Traceback" not in result.stderr
+    assert "OperationalError" not in result.stderr
 
 
 def test_wrkr_report_sends_status(hired_team, org_with_ceo, qn_runner):

@@ -215,26 +215,27 @@ def qn_runner():
     setuptools-generated qn shim. Use this in new e2e tests; existing
     smoke tests may keep cli_runner.
 
-    Resolves 'qn' from (in order):
-      1. PATH (`shutil.which`)
-      2. The venv next to the python interpreter pytest is running under
-         (`<sys.executable dir>/qn`) — handles the common case where the
-         user runs `.venv/bin/pytest` without activating the venv.
-      3. The project-root `.venv/bin/qn`.
+    Resolves 'qn' in this priority order so tests always run against the
+    *local* checkout, not a globally-installed copy (pipx, brew, etc.):
+      1. The venv pytest is running under (`<sys.executable dir>/qn`)
+      2. Project-root `.venv/bin/qn`
+      3. `qn` on PATH (last resort — only kicks in if neither venv has it)
     Skips the test if none of those resolve.
     """
-    qn_bin = shutil.which("qn")
+    qn_bin = None
+    # Prefer the venv that pytest is running under. This is the only way to
+    # guarantee tests exercise the local working copy when a global 'qn' is
+    # also installed (e.g., pipx). PATH-based lookup last, not first.
+    candidate = Path(sys.executable).parent / "qn"
+    if candidate.exists() and os.access(candidate, os.X_OK):
+        qn_bin = str(candidate)
     if not qn_bin:
-        # Try the venv that pytest is running under
-        candidate = Path(sys.executable).parent / "qn"
-        if candidate.exists() and os.access(candidate, os.X_OK):
-            qn_bin = str(candidate)
-    if not qn_bin:
-        # Fall back to project-root .venv/bin/qn
         project_root = Path(__file__).parent.parent.parent
         candidate = project_root / ".venv" / "bin" / "qn"
         if candidate.exists() and os.access(candidate, os.X_OK):
             qn_bin = str(candidate)
+    if not qn_bin:
+        qn_bin = shutil.which("qn")
     if not qn_bin:
         pytest.skip("qn binary not found (run 'pip install -e .' in your venv)")
 

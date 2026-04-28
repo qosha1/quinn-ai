@@ -49,14 +49,7 @@ def test_provider_list_uninitialized_org_still_lists(temp_org_dir, qn_runner):
 
 
 def test_config_set_provider_writes_yaml(initialized_org, qn_runner):
-    """`qn config set-provider <name>` updates config/providers.yaml's default.
-
-    NOTE: 'qn config set-provider' currently restricts choices to
-    {claude_code, anthropic, openai} via a hardcoded click.Choice, even
-    though 'qn org provider list' shows 4 providers (codex, gemini also).
-    Tracked separately as a P3 surface-inconsistency bug. We use openai
-    here because it's accepted by both surfaces.
-    """
+    """`qn config set-provider <name>` updates config/providers.yaml's default."""
     config_path = initialized_org / "config" / "providers.yaml"
     assert config_path.exists(), f"providers.yaml missing: {config_path}"
 
@@ -77,6 +70,27 @@ def test_config_set_provider_writes_yaml(initialized_org, qn_runner):
         f"providers.yaml 'default' should be {target!r} after set-provider, "
         f"got {after.get('default')!r}"
     )
+
+
+@pytest.mark.parametrize("provider", ["codex", "gemini"])
+def test_config_set_provider_accepts_registry_providers(initialized_org, qn_runner, provider):
+    """Regression: set-provider must accept any provider listed by 'org provider list'.
+
+    Pre-fix (quinn-ai-j3ty): set-provider had a hardcoded click.Choice of
+    {claude_code, anthropic, openai} so codex and gemini were rejected even
+    though `qn org provider list` shipped them.
+    """
+    result = qn_runner(
+        ["config", "set-provider", provider, "--org-path", str(initialized_org)],
+    )
+    assert result.returncode == 0, (
+        f"set-provider {provider!r} should be accepted (registered provider):\n"
+        f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+    )
+
+    config_path = initialized_org / "config" / "providers.yaml"
+    after = yaml.safe_load(config_path.read_text()) or {}
+    assert after.get("default") == provider
 
 
 def test_config_set_provider_unknown_fails_cleanly(initialized_org, qn_runner):
