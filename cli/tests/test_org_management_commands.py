@@ -1399,13 +1399,13 @@ class TestOkrList:
         call_args = mock_bd.call_args[0][0]
         assert any("assignee" in a for a in call_args)
 
-    def test_okr_list_from_db_shows_key_results_progress(self, runner, initialized_org):
-        """--from-db should query the database directly."""
-        with patch("cli.core.queries.list_okrs") as mock_list:
-            mock_list.return_value = []
+    def test_okr_list_empty_when_beads_returns_no_okrs(self, runner, initialized_org):
+        """qn org okr list shows the empty-state message when beads has no OKRs."""
+        with patch("cli.commands.org.okr.list_cmd._helpers.run_bd") as mock_bd:
+            mock_bd.return_value = MagicMock(returncode=0, stdout="[]", stderr="")
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
-                "org", "okr", "list", "--from-db"
+                "org", "okr", "list"
             ])
         assert result.exit_code == 0
         assert "No OKRs found" in result.output

@@ -26,7 +26,8 @@ def register(okr_group):
         "--from-db",
         "from_db",
         is_flag=True,
-        help="Read from database instead of beads (shows key results progress)",
+        hidden=True,
+        help="(deprecated) Same as default — both views are now merged.",
     )
     @pass_context
     def list_cmd(
@@ -38,18 +39,18 @@ def register(okr_group):
     ):
         """List all OKRs from the organization.
 
-        Shows objective title, status, owner, and progress.
+        Shows objective title, status, owner, key results, and progress
+        in a single unified view. Beads is the canonical source for
+        status/labels/assignee; the SQLite mirror provides key results
+        and progress data.
 
         \b
         Examples:
-          qn org okr list                    # List open OKRs from beads
-          qn org okr list --from-db          # List from database with progress
+          qn org okr list                    # List open OKRs (merged view)
           qn org okr list --all              # Include closed
           qn org okr list --status=in_progress
           qn org okr list --assignee=ceo
         """
-        from cli.core.queries import get_worker_by_name, list_okrs
-
         org_path = ctx.org_path
         db_path = get_org_db_path(org_path)
 
@@ -59,90 +60,54 @@ def register(okr_group):
                 "Run 'qn org init' first."
             )
 
-        if from_db:
-            _list_from_db(db_path, status, assignee, show_all, list_okrs, get_worker_by_name)
-            return
-
-        _list_from_beads(org_path, status, assignee, show_all)
+        _list_unified(org_path, db_path, status, assignee, show_all)
 
     return list_cmd
 
 
-def _list_from_db(
+def _list_unified(
+    org_path,
     db_path,
     status: Optional[str],
     assignee: Optional[str],
     show_all: bool,
-    list_okrs,
-    get_worker_by_name,
 ) -> None:
+    """Unified OKR list: beads for canonical metadata + filters, db for KRs + progress.
+
+    For each beads OKR, look up the SQLite mirror by id; if present, layer
+    in key results and progress. If the mirror is missing (legacy/unsynced
+    OKR), display beads-only fields with no KR section.
+    """
+    from cli.core.queries import get_okr
+
+    beads_okrs = _fetch_beads_okrs(org_path, status, assignee, show_all)
+
+    if not beads_okrs:
+        click.echo("No OKRs found.")
+        return
+
     db = open_database(db_path)
     try:
-        # Map beads status to db status
-        db_status = None
-        if status:
-            status_map = {
-                "open": "active",
-                "in_progress": "active",
-                "closed": "completed",
-                "active": "active",
-                "completed": "completed",
-                "cancelled": "cancelled",
-                "draft": "draft",
-            }
-            db_status = status_map.get(status, status)
-
-        owner_id = None
-        if assignee:
-            worker = get_worker_by_name(db, assignee)
-            owner_id = worker.id if worker else assignee
-
-        okrs = list_okrs(db, status=db_status, owner_id=owner_id, include_closed=show_all)
-
-        if not okrs:
-            click.echo("No OKRs found in database.")
-            return
-
-        for okr in okrs:
-            click.echo("")
-            click.echo("=" * 60)
-            click.echo(f"OKR: {okr.title}")
-            click.echo("=" * 60)
-            click.echo(f"  ID: {okr.id}")
-            click.echo(f"  Status: {okr.status}")
-            click.echo(f"  Owner: {okr.owner_worker_id}")
-            if okr.description:
-                click.echo(f"  Description: {okr.description[:100]}...")
-            if okr.due_date:
-                click.echo(f"  Due: {okr.due_date}")
-            if okr.key_results:
-                click.echo("  Key Results:")
-                for kr in okr.key_results:
-                    progress = kr.progress()
-                    icon = "✓" if kr.is_met() else "○"
-                    click.echo(
-                        f"    {icon} {kr.metric}: {kr.current}/{kr.target} {kr.unit} ({progress:.0f}%)"
-                    )
-                click.echo(f"  Overall Progress: {okr.progress():.0f}%")
-            if okr.created_at:
-                created_str = (
-                    okr.created_at.strftime("%Y-%m-%d")
-                    if hasattr(okr.created_at, "strftime")
-                    else str(okr.created_at)[:10]
-                )
-                click.echo(f"  Created: {created_str}")
-            else:
-                click.echo("  Created: N/A")
-        click.echo("")
+        for beads_okr in beads_okrs:
+            okr_id = beads_okr.get("id")
+            db_okr = get_okr(db, okr_id) if okr_id else None
+            _render_okr(beads_okr, db_okr)
     finally:
         db.close()
 
+    click.echo("")
 
-def _list_from_beads(org_path, status: Optional[str], assignee: Optional[str], show_all: bool) -> None:
+
+def _fetch_beads_okrs(
+    org_path,
+    status: Optional[str],
+    assignee: Optional[str],
+    show_all: bool,
+) -> list:
+    """Query beads for OKR ids/metadata. Returns list of dicts (possibly empty)."""
     args = ["list", "--label=okr", "--json"]
 
     if status:
-        # Map database statuses to beads statuses
         beads_status = status
         if status in ("active", "draft"):
             beads_status = "open"
@@ -166,46 +131,59 @@ def _list_from_beads(org_path, status: Optional[str], assignee: Optional[str], s
 
     if result.returncode != 0:
         if "no issues found" in result.stderr.lower() or not result.stdout.strip():
-            click.echo("No OKRs found.")
-            return
+            return []
         raise click.ClickException(
             f"Failed to list OKRs: {result.stderr}\n"
             "Ensure beads is properly configured for this organization."
         )
 
     try:
-        okrs = json.loads(result.stdout)
+        return json.loads(result.stdout) or []
     except json.JSONDecodeError:
-        click.echo("No OKRs found.")
-        return
+        return []
 
-    if not okrs:
-        click.echo("No OKRs found.")
-        return
 
-    for okr in okrs:
-        click.echo("")
-        click.echo("=" * 60)
-        click.echo(f"OKR: {okr.get('title', 'Untitled')}")
-        click.echo("=" * 60)
-        click.echo(f"  ID: {okr.get('id', 'N/A')}")
-        click.echo(f"  Status: {okr.get('status', 'N/A')}")
-        click.echo(f"  Priority: P{okr.get('priority', 2)}")
+def _render_okr(beads_okr: dict, db_okr) -> None:
+    """Render one OKR block, preferring db_okr fields when available."""
+    title = beads_okr.get("title") or (db_okr.title if db_okr else "Untitled")
 
-        assignee_val = okr.get("assignee")
-        if assignee_val:
-            click.echo(f"  Owner: {assignee_val}")
+    # Status: prefer the OKR-specific db status (active/completed/draft/cancelled).
+    # Fall back to beads issue status (open/closed) when the mirror is missing.
+    status_val = db_okr.status if db_okr else beads_okr.get("status", "N/A")
 
-        desc = okr.get("description", "")
-        if desc:
-            click.echo(f"  Description: {desc.strip()[:100]}...")
-
-        labels = okr.get("labels", [])
-        if labels:
-            click.echo(f"  Labels: {', '.join(labels)}")
-
-        created = okr.get("created_at", "")
-        if created:
-            click.echo(f"  Created: {created[:10]}")
+    owner = beads_okr.get("assignee") or (db_okr.owner_worker_id if db_okr else None)
+    description = (db_okr.description if db_okr and db_okr.description else
+                   beads_okr.get("description", ""))
+    priority = beads_okr.get("priority", 2)
+    labels = beads_okr.get("labels", [])
+    created = beads_okr.get("created_at", "")
 
     click.echo("")
+    click.echo("=" * 60)
+    click.echo(f"OKR: {title}")
+    click.echo("=" * 60)
+    click.echo(f"  ID: {beads_okr.get('id', 'N/A')}")
+    click.echo(f"  Status: {status_val}")
+    click.echo(f"  Priority: P{priority}")
+    if owner:
+        click.echo(f"  Owner: {owner}")
+    if description:
+        click.echo(f"  Description: {description.strip()[:100]}...")
+    if labels:
+        click.echo(f"  Labels: {', '.join(labels)}")
+
+    if db_okr and db_okr.key_results:
+        click.echo("  Key Results:")
+        for kr in db_okr.key_results:
+            progress = kr.progress()
+            icon = "✓" if kr.is_met() else "○"
+            click.echo(
+                f"    {icon} {kr.metric}: {kr.current}/{kr.target} {kr.unit} ({progress:.0f}%)"
+            )
+        click.echo(f"  Overall Progress: {db_okr.progress():.0f}%")
+
+    if db_okr and db_okr.due_date:
+        click.echo(f"  Due: {db_okr.due_date}")
+
+    if created:
+        click.echo(f"  Created: {created[:10]}")

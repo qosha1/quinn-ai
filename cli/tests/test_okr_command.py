@@ -551,38 +551,34 @@ class TestOkrErrorHandling:
 class TestOkrDatabaseIntegration:
     """Test OKR database integration features."""
 
-    def test_list_from_db_shows_message_when_empty(self, runner, initialized_org):
-        """--from-db should show no OKRs message when database is empty.
+    @patch('cli.commands.org.okr.list_cmd._helpers.run_bd')
+    def test_list_shows_empty_message_when_no_okrs(self, mock_run_bd, runner, initialized_org):
+        """qn org okr list shows the empty-state message when no OKRs exist.
 
-        Note: org init seeds a bootstrap OKR (quinn-ai-lxp). To exercise
-        the empty-state output we have to clear the okrs table first.
+        Beads is the canonical source for OKR ids; with no OKRs in beads,
+        nothing is rendered regardless of what's in the SQLite mirror.
         """
-        import sqlite3
-        from cli.core.db import get_org_db_path
-        conn = sqlite3.connect(str(get_org_db_path(initialized_org)))
-        try:
-            conn.execute("DELETE FROM okrs")
-            conn.commit()
-        finally:
-            conn.close()
+        mock_run_bd.return_value = MagicMock(returncode=0, stdout="[]", stderr="")
 
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
-            "org", "okr", "list", "--from-db"
+            "org", "okr", "list"
         ])
 
         assert result.exit_code == 0
-        assert "No OKRs found in database" in result.output
+        assert "No OKRs found" in result.output
 
-    def test_list_from_db_shows_okrs(self, runner, initialized_org):
-        """--from-db should list OKRs from database with progress."""
+    @patch('cli.commands.org.okr.list_cmd._helpers.run_bd')
+    def test_list_merges_beads_metadata_with_db_key_results(
+        self, mock_run_bd, runner, initialized_org
+    ):
+        """qn org okr list merges beads (status/labels/priority) with db (KRs/progress)."""
+        import json
         from cli.core.db import open_database, get_org_db_path
         from cli.core.queries import create_okr, add_okr_key_result
 
-        # Create an OKR directly in the database
         db = open_database(get_org_db_path(initialized_org))
         try:
-            # Get CEO worker ID
             from cli.core.org import Org
             org = Org.load(db)
             ceo_id = org.ceo_worker_id
@@ -593,24 +589,42 @@ class TestOkrDatabaseIntegration:
                 owner_id=ceo_id,
                 description="Test description",
                 status="active",
+                okr_id="test-merge-1",
             )
-
-            # Add a key result
             add_okr_key_result(db, okr.id, "metric_a", 100.0, "count", 25.0)
         finally:
             db.close()
 
+        # Beads returns the same OKR id so the merge succeeds.
+        mock_run_bd.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps([{
+                "id": "test-merge-1",
+                "title": "Test OKR from DB",
+                "status": "open",
+                "priority": 1,
+                "labels": ["okr"],
+                "assignee": ceo_id,
+                "created_at": "2026-04-28T00:00:00Z",
+            }]),
+            stderr="",
+        )
+
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
-            "org", "okr", "list", "--from-db"
+            "org", "okr", "list"
         ])
 
         assert result.exit_code == 0
         assert "Test OKR from DB" in result.output
+        # Status comes from db (active), not beads (open) — db is authoritative for OKR state
         assert "active" in result.output
+        # Priority comes from beads
+        assert "P1" in result.output
+        # KRs come from db
         assert "metric_a" in result.output
-        assert "25" in result.output  # Current value
-        assert "100" in result.output  # Target value
+        assert "25" in result.output
+        assert "100" in result.output
 
     @patch('cli.commands.org.okr._helpers.run_bd')
     def test_set_stores_in_database(self, mock_run_bd, runner, initialized_org):
@@ -645,40 +659,47 @@ class TestOkrDatabaseIntegration:
         finally:
             db.close()
 
-    def test_list_from_db_with_status_filter(self, runner, initialized_org):
-        """--from-db should respect status filter."""
-        from cli.core.db import open_database, get_org_db_path
-        from cli.core.queries import create_okr
+    @patch('cli.commands.org.okr.list_cmd._helpers.run_bd')
+    def test_list_respects_status_filter(self, mock_run_bd, runner, initialized_org):
+        """qn org okr list --status=<x> passes the right filter to beads.
 
-        # Get CEO ID
-        db = open_database(get_org_db_path(initialized_org))
-        try:
-            from cli.core.org import Org
-            org = Org.load(db)
-            ceo_id = org.ceo_worker_id
+        Filtering happens via beads (`bd list --status=...`); the test
+        verifies the status flag round-trips correctly and the filtered
+        beads response controls what's rendered.
+        """
+        import json
 
-            # Create active and completed OKRs
-            create_okr(db=db, title="Active OKR", owner_id=ceo_id, status="active")
-            create_okr(db=db, title="Completed OKR", owner_id=ceo_id, status="completed")
-        finally:
-            db.close()
+        active_response = json.dumps([{
+            "id": "test-active-1", "title": "Active OKR",
+            "status": "open", "priority": 2, "labels": ["okr"],
+        }])
+        completed_response = json.dumps([{
+            "id": "test-completed-1", "title": "Completed OKR",
+            "status": "closed", "priority": 2, "labels": ["okr"],
+        }])
 
-        # List only active
+        # First call: active
+        mock_run_bd.return_value = MagicMock(returncode=0, stdout=active_response, stderr="")
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
-            "org", "okr", "list", "--from-db", "--status=active"
+            "org", "okr", "list", "--status=active"
         ])
-
         assert result.exit_code == 0
         assert "Active OKR" in result.output
         assert "Completed OKR" not in result.output
+        # Verify status filter mapped to beads 'open'
+        bd_args = mock_run_bd.call_args[0][0]
+        assert "--status=open" in bd_args
 
-        # List only completed
+        # Second call: completed
+        mock_run_bd.return_value = MagicMock(returncode=0, stdout=completed_response, stderr="")
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
-            "org", "okr", "list", "--from-db", "--status=completed"
+            "org", "okr", "list", "--status=completed"
         ])
-
         assert result.exit_code == 0
         assert "Completed OKR" in result.output
         assert "Active OKR" not in result.output
+        # Verify completed maps to beads 'closed'
+        bd_args = mock_run_bd.call_args[0][0]
+        assert "--status=closed" in bd_args
