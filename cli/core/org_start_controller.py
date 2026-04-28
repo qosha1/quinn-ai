@@ -406,10 +406,28 @@ Send your introduction message above, then read BRIEFING.md and follow the "Firs
 Start by running: `msgr send #general "Hi team! I'm {ceo_name}, CEO. Starting work now. Reading briefing and reviewing OKRs."`"""
 
 
+def _capture_pane(tmux_session: str) -> str:
+    """Capture current pane content from a tmux session, or return ''."""
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-t", tmux_session, "-p"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        return result.stdout if result.returncode == 0 else ""
+    except (subprocess.SubprocessError, OSError):
+        return ""
+
+
 def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
     """Phase 5 (Kickstart): Send initial prompt to CEO.
 
-    Best-effort: failure here doesn't fail the org start.
+    Best-effort: failure here doesn't fail the org start. After delivering
+    the prompt, poll the pane briefly to verify the CEO actually received
+    and started processing it (quinn-ai-kx03). Without this verification
+    we used to print 'sent and executed' even when the prompt vanished
+    into a TUI that wasn't ready yet.
     """
     try:
         click.echo("Creating initial task instructions...")
@@ -424,6 +442,8 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
         cmd = "cat INITIAL_TASK.md"
 
         try:
+            pane_before = _capture_pane(tmux_session)
+
             subprocess.run(
                 ["tmux", "send-keys", "-t", tmux_session, cmd],
                 check=True,
@@ -435,8 +455,38 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
                 check=True,
                 capture_output=True,
             )
-            click.echo("✓ Initial task instructions sent and executed in CEO session")
-            click.echo("  CEO should now be reading instructions and starting autonomous work")
+
+            # Poll briefly for pane content change as evidence the prompt
+            # actually landed and is being processed. Without this check
+            # the prompt can disappear into a not-yet-ready TUI and we'd
+            # never know.
+            verification_window = 5.0
+            poll_interval = 0.5
+            elapsed = 0.0
+            received = False
+            while elapsed < verification_window:
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+                pane_after = _capture_pane(tmux_session)
+                if pane_after and pane_after != pane_before:
+                    received = True
+                    break
+
+            if received:
+                click.echo("✓ Initial task instructions delivered; CEO session is processing")
+                click.echo("  Use 'qn org observe ceo' to watch progress, or 'qn org logs ceo' for transcripts")
+            else:
+                click.echo(
+                    f"⚠ Initial task instructions sent but no pane activity observed within "
+                    f"{verification_window:.0f}s",
+                    err=True,
+                )
+                click.echo(
+                    "  The CEO may not have received the prompt. Check with 'qn org observe ceo' "
+                    "and re-send manually if needed: tmux send-keys -t "
+                    f"{tmux_session} 'cat INITIAL_TASK.md' Enter",
+                    err=True,
+                )
         except subprocess.CalledProcessError as e:
             click.echo(f"Warning: Could not send command to tmux: {e}", err=True)
             click.echo("  CEO can manually run: cat INITIAL_TASK.md", err=True)
