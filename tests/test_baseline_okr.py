@@ -79,9 +79,9 @@ class TestOKRList:
         assert result.returncode == 0
         assert "Improve Quality" in result.stdout or "okr" in result.stdout.lower()
 
-    def test_list_empty_org(self, temp_org_factory, qn_runner):
-        """Should handle org with no OKRs."""
-        org = temp_org_factory("okr_list_empty")
+    def test_list_after_init_shows_bootstrap_okr(self, temp_org_factory, qn_runner):
+        """Init seeds a bootstrap OKR; the listing should render it cleanly."""
+        org = temp_org_factory("okr_list_bootstrap")
         qn_runner("org", "init", org_path=org)
 
         result = qn_runner(
@@ -90,8 +90,9 @@ class TestOKRList:
         )
 
         assert result.returncode == 0
-        # Should show empty message or no results
-        assert "No OKRs" in result.stdout or result.stdout.strip() == ""
+        assert "Establish organizational foundation" in result.stdout, (
+            f"Expected bootstrap OKR in listing, got:\n{result.stdout}"
+        )
 
     def test_list_requires_init(self, temp_org_factory, qn_runner):
         """Should require org to be initialized."""
