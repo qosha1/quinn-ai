@@ -97,10 +97,57 @@ jobs:
             test-reports/
           retention-days: 30
 
+  e2e-tests:
+    name: End-to-End CLI Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install QuinnAI (cli + terminal-app)
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e ".[dev]"
+          .venv/bin/pip install -e ./terminal-app
+
+      # bd is a runtime system dependency for the e2e suite. The conftest
+      # skip-gate skips every test cleanly if bd isn't found, so install
+      # is required for the suite to actually run rather than skip silently.
+      - name: Install bd (beads CLI)
+        continue-on-error: true
+        run: |
+          # bd from upstream. If install fails, the e2e suite will skip
+          # cleanly via the conftest gate (won't fail the job from this step).
+          cargo install --locked --git https://github.com/steveyegge/beads bd
+
+      - name: Run e2e suite
+        run: |
+          .venv/bin/pytest tests/e2e/ --timeout=180 -v
+        timeout-minutes: 10
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-e2e
+          path: |
+            .pytest_cache/
+            test-reports/
+          retention-days: 7
+
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [baseline-tests, all-integration-tests]
+    needs: [baseline-tests, all-integration-tests, e2e-tests]
     if: always()
 
     steps:
@@ -108,9 +155,12 @@ jobs:
         run: |
           echo "Baseline tests: ${{ needs.baseline-tests.result }}"
           echo "All integration tests: ${{ needs.all-integration-tests.result }}"
+          echo "E2E CLI tests: ${{ needs.e2e-tests.result }}"
 
-          if [ "${{ needs.baseline-tests.result }}" == "failure" ] || [ "${{ needs.all-integration-tests.result }}" == "failure" ]; then
-            echo "::error::Some integration tests failed"
+          if [ "${{ needs.baseline-tests.result }}" == "failure" ] || \
+             [ "${{ needs.all-integration-tests.result }}" == "failure" ] || \
+             [ "${{ needs.e2e-tests.result }}" == "failure" ]; then
+            echo "::error::Some integration or e2e tests failed"
             exit 1
           fi
 

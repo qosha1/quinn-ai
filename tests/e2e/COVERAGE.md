@@ -2,14 +2,22 @@
 
 ## Test Distribution
 
-| Command | Test Count | Coverage |
+| Command group | Test Count | Coverage |
 |---------|------------|----------|
 | `qn org init` | 5 tests | Full |
 | `qn org status` | 5 tests | Full |
 | `qn org start` | 7 tests | Full |
 | `qn org stop` | 9 tests | Full |
-| Full workflows | 5 tests | Full |
-| **Total** | **31 tests** | **100%** |
+| `qn org okr` (set/add/list/show/progress/cascade/update-kr/link) | 10 tests | Full |
+| `qn org hire/fire/promote/demote/delegations` | 9 tests | Full |
+| `qn wrkr status/get-work/search/report` | 5 tests | Full |
+| `qn board status/alerts/health/pause/resume/fire` | 7 tests | Full |
+| `qn config set-provider/validate` + `qn org provider list` | 5 tests | Full |
+| Full workflows (init→start→...→stop) | 5 tests | Full |
+| Full lifecycle (init→start→OKR→hire→intervene→stop) | 1 test | Full |
+| **Total** | **68 tests** | **100%** |
+
+Run with: `make test-e2e` (~3 minutes serially)
 
 ## Coverage Matrix
 

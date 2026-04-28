@@ -1,10 +1,12 @@
-# E2E Smoke Tests
+# E2E Tests
 
-End-to-end smoke tests for QuinnAI CLI commands.
+End-to-end tests for QuinnAI CLI commands. These exercise the real `qn` binary
+and a real `bd` binary against a `tmp_path` org — no mocks at the integration
+boundary.
 
 ## Purpose
 
-These tests verify that actual CLI commands work end-to-end, catching issues that unit tests miss:
+Verify that actual CLI commands work end-to-end, catching issues that unit tests miss:
 
 - Org path auto-detection
 - Database migrations
@@ -13,123 +15,136 @@ These tests verify that actual CLI commands work end-to-end, catching issues tha
 - State transitions
 - Command-line argument parsing
 - Error message quality
+- bd integration (OKRs, beads-backed lifecycle work)
+- Worker hire/fire/promote flows
+- Board intervention (pause/resume/fire)
 
 ## Test Structure
 
 ### Test Files
 
-- `test_smoke_org_init.py` - Tests for `qn org init`
-- `test_smoke_org_status.py` - Tests for `qn org status`
-- `test_smoke_org_start.py` - Tests for `qn org start`
-- `test_smoke_org_stop.py` - Tests for `qn org stop`
-- `test_smoke_full_workflow.py` - Full lifecycle workflows
+Smoke tests (org lifecycle):
+
+- `test_smoke_org_init.py` — `qn org init`
+- `test_smoke_org_status.py` — `qn org status`
+- `test_smoke_org_start.py` — `qn org start`
+- `test_smoke_org_stop.py` — `qn org stop`
+- `test_smoke_full_workflow.py` — full init→start→status→stop
+
+End-to-end command coverage:
+
+- `test_e2e_okr_workflow.py` — `qn org okr` set/add/list/show/progress/cascade/update-kr/link
+- `test_e2e_hire_fire.py` — `qn org hire/fire/promote/demote/delegations`
+- `test_e2e_wrkr_commands.py` — `qn wrkr status/get-work/search/report`
+- `test_e2e_intervention.py` — `qn board status/alerts/health/pause/resume/fire`
+- `test_e2e_provider.py` — `qn config set-provider/validate` and `qn org provider list`
+- `test_e2e_full_lifecycle.py` — composed init→start→OKR→hire→intervene→stop
 
 ### Fixtures (conftest.py)
 
-- `temp_org_dir` - Temporary directory for org testing
-- `cli_runner` - Function to run CLI commands via subprocess
-- `initialized_org` - Pre-initialized org for testing
-- `running_org` - Pre-started org for testing
-- `mock_provider_config` - Mock provider configuration
+- `temp_org_dir` — temporary directory for org testing
+- `cli_runner` — runs CLI commands via subprocess (used by smoke tests)
+- `qn_runner` — same idea, looks up `qn` from PATH (used by `test_e2e_*`)
+- `initialized_org` — pre-initialized org
+- `running_org` / `org_with_ceo` — pre-started org with CEO
+- `hired_team` — parametrizable factory that hires N workers under the CEO
+- `mock_provider_config` — minimal provider configuration
+- `env_hygiene` (autouse) — strips ambient `QUINN_*` and provider API key env vars
+  so the dev shell can't bleed credentials into the test process
+- Module-level `pytest.skip` gate — skips the entire suite cleanly when no `bd`
+  binary is available on PATH or in `cli/bin/{platform}/bd`
 
 ## Running Tests
 
 ```bash
-# Run all E2E tests
-pytest tests/e2e/
+# Canonical: from project root
+make test-e2e
 
-# Run specific test file
-pytest tests/e2e/test_smoke_org_init.py
+# Or directly with pytest
+.venv/bin/pytest tests/e2e/ -v --timeout=180
 
-# Run specific test
-pytest tests/e2e/test_smoke_org_init.py::test_org_init_success
+# Single file
+.venv/bin/pytest tests/e2e/test_e2e_okr_workflow.py -v
 
-# Run with verbose output
-pytest tests/e2e/ -v
-
-# Run with output capture disabled (see prints)
-pytest tests/e2e/ -s
+# Single test
+.venv/bin/pytest tests/e2e/test_e2e_hire_fire.py::test_hire_under_ceo_succeeds -v
 ```
 
 ## Test Philosophy
 
-1. **Use subprocess, not imports** - Run actual CLI commands to catch integration issues
-2. **Test exit codes** - Verify commands return correct exit codes
-3. **Test error messages** - Ensure error messages are helpful and actionable
-4. **Test auto-detection** - Verify org path auto-detection works
-5. **Test idempotency** - Commands should be safe to run multiple times
-6. **Test state transitions** - Verify org state machine works end-to-end
-7. **Avoid session spawning** - Use `--no-spawn-ceo` to avoid complexity
+1. **Use subprocess, not imports** — run actual CLI commands against the installed `qn` binary
+2. **No mocks at the integration boundary** — real `bd`, real SQLite, real filesystem
+3. **One org per test** — each test gets an isolated `tmp_path` org
+4. **Verify exit codes AND stdout/stderr** — a non-zero exit isn't enough on its own
+5. **Avoid spawning real LLM sessions** — pass `--no-spawn-ceo` / `--skip-config-validation`
+6. **Use `--force` / `--yes`** to skip interactive confirmations
+7. **Read from SQLite directly** when verifying side effects, but always set up via `qn`
 
 ## What These Tests Catch
 
-These tests have caught real bugs:
+Real bugs surfaced or pinned by this suite:
 
-1. **Auto-detection failures** - Org path detection not working in certain directories
-2. **Migration issues** - Database migrations failing on startup
-3. **Config validation** - Missing or invalid provider configs causing cryptic errors
-4. **Directory structure** - Missing required directories after init
-5. **State machine bugs** - Invalid state transitions not caught by unit tests
-6. **CLI argument parsing** - Args not passed correctly to underlying functions
-7. **Error message quality** - Errors that crash instead of providing helpful messages
+1. Auto-detection failures across nested working directories
+2. Database migration failures on startup
+3. Provider config validation gaps
+4. Missing required directories after init
+5. Invalid state transitions not caught by unit tests
+6. CLI argument plumbing bugs (placement of `--worker-id`, `--org-path`)
+7. Cryptic error messages that should be actionable
+8. bd integration regressions (OKR cascade, link, update-kr)
+9. Worker lifecycle edge cases (firing the CEO, firing unknown ID)
+10. Board intervention safety (interactive confirm gates, force flag)
 
 ## CI/CD Integration
 
-These tests run in CI for every PR to catch regressions:
+E2E runs as its own job in `.github/workflows/test-integration.yml`:
 
 ```yaml
-# .github/workflows/test.yml
-- name: Run E2E smoke tests
-  run: pytest tests/e2e/ -v
+e2e-tests:
+  steps:
+    - Install qn (cli + terminal-app)
+    - Install bd (cargo install --locked --git ...)
+    - .venv/bin/pytest tests/e2e/ --timeout=180 -v
 ```
+
+The bd install step is `continue-on-error: true` because the conftest skip gate
+will skip the whole suite cleanly if `bd` isn't installed — the job won't fail
+spuriously, but it also won't silently pass without coverage.
 
 ## Adding New Tests
 
 When adding a new CLI command:
 
-1. Create a new test file: `test_smoke_{command}.py`
-2. Test success cases
-3. Test error cases (invalid args, missing deps, etc.)
-4. Test auto-detection if applicable
-5. Test idempotency if applicable
-6. Add to full workflow test if part of core lifecycle
+1. Create `test_e2e_{command}.py` (or extend an existing file)
+2. Use `qn_runner` + a fixture (`initialized_org`, `running_org`, `hired_team`) for setup
+3. Cover: success, errors, edge cases, auto-detection (where relevant)
+4. Update `COVERAGE.md` with the new test count
+5. Run the full suite to verify no regressions
 
 ## Performance
 
-E2E tests are slower than unit tests because they:
-
-- Spawn actual subprocesses
-- Create real file systems
-- Initialize databases
-- Run full command chains
-
-Current test suite runs in ~10-30 seconds depending on system.
+| Suite | Tests | Runtime |
+|-------|-------|---------|
+| Smoke (`test_smoke_*`) | 31 | ~50s |
+| E2E (`test_e2e_*`) | 37 | ~140s |
+| **Full suite** | **68** | **~3 min** |
 
 To keep tests fast:
 
-- Use `--no-spawn-ceo` to avoid session spawning
-- Use `--skip-config-validation` when appropriate
-- Use `--force` to skip interactive prompts
-- Use fixtures to reuse initialized orgs
+- Use `--no-spawn-ceo` to skip session spawning
+- Use `--skip-config-validation` for start when validation isn't the SUT
+- Use `--force` / `--yes` to bypass confirmations
+- Reuse fixtures (`initialized_org`, `running_org`) instead of re-initing per test
 
 ## Debugging
 
 ```bash
-# Run with debug output
-pytest tests/e2e/ --log-cli-level=DEBUG
+# Verbose output
+.venv/bin/pytest tests/e2e/ -v --log-cli-level=DEBUG
 
-# Run single test with full output
-pytest tests/e2e/test_smoke_org_init.py::test_org_init_success -s -v
+# Single test with stdout visible
+.venv/bin/pytest tests/e2e/test_e2e_hire_fire.py::test_hire_under_ceo_succeeds -s -v
 
-# Keep temp directories for inspection
-pytest tests/e2e/ --basetemp=/tmp/pytest-debug
+# Keep temp dirs for inspection
+.venv/bin/pytest tests/e2e/ --basetemp=/tmp/pytest-debug
 ```
-
-## Known Limitations
-
-- Session spawning not tested (requires tmux, complex setup)
-- Worker operations not tested (requires running org)
-- Board commands not tested (requires active org)
-- OKR commands not tested (requires beads integration)
-
-These are covered by separate integration tests or manual testing.

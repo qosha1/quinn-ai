@@ -1,4 +1,4 @@
-.PHONY: help setup test board lint clean
+.PHONY: help setup test test-terminal-app test-e2e test-all board lint clean
 
 # QuinnAI Project Makefile
 # RollerCoaster Tycoon for AI Organizations
@@ -10,7 +10,8 @@ help:
 	@echo "  make setup              - Run development environment setup"
 	@echo "  make test               - Run CLI test suite"
 	@echo "  make test-terminal-app  - Run terminal-app test suite"
-	@echo "  make test-all           - Run ALL test suites (CLI + terminal-app)"
+	@echo "  make test-e2e           - Run end-to-end CLI tests (real qn + bd, ~3 min)"
+	@echo "  make test-all           - Run ALL test suites (CLI + terminal-app + e2e)"
 	@echo "  make lint               - Run ruff and black linters"
 	@echo ""
 	@echo "Running QuinnAI:"
@@ -33,7 +34,12 @@ test:
 test-terminal-app:
 	cd terminal-app && ../.venv/bin/pytest
 
-# Run all tests (CLI + terminal-app)
+# Run end-to-end tests (real qn binary + real bd binary against tmp_path orgs)
+# Requires bd on PATH or in cli/bin/{platform}/bd. Skips entire suite if missing.
+test-e2e:
+	.venv/bin/pytest tests/e2e/ -v --timeout=180
+
+# Run all tests (CLI + terminal-app + e2e)
 test-all:
 	@echo "Running CLI tests..."
 	@.venv/bin/pytest; CLI_EXIT=$$?; \
@@ -41,11 +47,14 @@ test-all:
 	echo "Running terminal-app tests..."; \
 	cd terminal-app && ../.venv/bin/pytest; TERM_EXIT=$$?; \
 	echo ""; \
-	if [ $$CLI_EXIT -eq 0 ] && [ $$TERM_EXIT -eq 0 ]; then \
-		echo "✓ All test suites passed"; \
+	echo "Running e2e tests..."; \
+	cd $(CURDIR) && .venv/bin/pytest tests/e2e/ --timeout=180; E2E_EXIT=$$?; \
+	echo ""; \
+	if [ $$CLI_EXIT -eq 0 ] && [ $$TERM_EXIT -eq 0 ] && [ $$E2E_EXIT -eq 0 ]; then \
+		echo "✓ All test suites passed (CLI + terminal-app + e2e)"; \
 		exit 0; \
 	else \
-		echo "✗ Some tests failed (CLI exit: $$CLI_EXIT, terminal-app exit: $$TERM_EXIT)"; \
+		echo "✗ Some tests failed (CLI: $$CLI_EXIT, terminal-app: $$TERM_EXIT, e2e: $$E2E_EXIT)"; \
 		exit 1; \
 	fi
 

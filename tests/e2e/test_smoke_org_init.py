@@ -38,20 +38,19 @@ def test_org_init_success(temp_org_dir, cli_runner):
 
 
 def test_org_init_with_custom_ceo(temp_org_dir, cli_runner):
-    """Should initialize org with custom CEO name and role."""
-    # Run org init with custom CEO
+    """Should initialize org with a custom CEO name."""
+    # --ceo-role was removed (CEO is always the role); only --ceo-name remains.
     result = cli_runner(
         [
             "--org-path", str(temp_org_dir),
             "org", "init",
             "--ceo-name", "Alice",
-            "--ceo-role", "Chief Executive Officer",
         ],
         check=True,
     )
 
     assert result.returncode == 0
-    assert "Created CEO: Alice (Chief Executive Officer)" in result.stdout
+    assert "Alice" in result.stdout, f"missing 'Alice' in init output:\n{result.stdout}"
 
 
 def test_org_init_already_exists(initialized_org, cli_runner):

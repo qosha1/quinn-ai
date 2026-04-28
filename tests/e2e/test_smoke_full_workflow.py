@@ -16,13 +16,12 @@ def test_full_workflow_init_start_status_stop(temp_org_dir, cli_runner):
     5. Stop org
     6. Check status (should be stopped)
     """
-    # Step 1: Initialize
+    # Step 1: Initialize (note: --ceo-role was removed; CEO is always the role)
     init_result = cli_runner(
         [
             "--org-path", str(temp_org_dir),
             "org", "init",
             "--ceo-name", "TestCEO",
-            "--ceo-role", "CEO",
         ],
         check=True,
     )
