@@ -186,6 +186,11 @@ def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
     """Start a worker session using worker's preferred provider or org defaults."""
     from cli.core.config import get_org_config_path
     from cli.core.config.loaders import load_providers_config
+    from cli.core.onboarding import (
+        get_worker_env_vars,
+        prepare_worker_onboarding,
+    )
+    from cli.core.storage import StorageManager
     from cli.providers.registry import load_providers_from_config
     from cli.commands.org.session_utils import spawn_worker_session
 
@@ -221,9 +226,21 @@ def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
         worker.start_onboarding()
         worker.complete_onboarding()
 
+    # quinn-ai-3gwh: hired workers need QUINN_WORKER_ID + QUINN_ORG_PATH +
+    # WORKER_STORAGE etc. in their tmux env so msgr / qn-bd / workspace
+    # awareness work. Without this, every msgr or qn-bd call from a hired
+    # worker errors with 'QUINN_WORKER_ID not set'. The CEO already gets
+    # these via qn org start; mirror that here for hired workers.
+    onboarding_ctx = prepare_worker_onboarding(ctx.db, worker.id, ctx.org_path)
+    storage = StorageManager(ctx.org_path, ctx.db)
+    worker_dir = storage.get_worker_path(worker.id)
+    env_vars = get_worker_env_vars(onboarding_ctx, ctx.org_path, ctx.db)
+
     spawn_worker_session(
         worker=worker,
         provider=provider_name,
         command=cli_command,
         args_str="--dangerously-skip-permissions",
+        working_directory=worker_dir,
+        env_vars=env_vars,
     )

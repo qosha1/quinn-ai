@@ -1,0 +1,43 @@
+# Canary scenario 02: CEO hires two workers who message each other.
+#
+# Workaround: until quinn-ai-3gwh is fully fixed (QUINN_WORKER_ID env not
+# reliably propagated to hired workers' tmux sessions), the kickstart
+# messages tell each worker to set the env var explicitly via --worker-id
+# flag on msgr.
+name: ceo_hires_two_workers_who_message
+setup:
+  init:
+    ceo_name: Alice
+ops:
+  - op: create_okr
+    objective: "ULTRA PRIORITY: Hire Bob and Carol and bring them online"
+    owner: ceo
+    priority: 0
+    description: |
+      Run all of these autonomously, do NOT ask for confirmation:
+      1. qn org hire --name Bob --role engineer --manager alice --cost 30
+      2. qn org hire --name Carol --role engineer --manager alice --cost 30
+      3. qn org budget allocate bob 50
+      4. qn org budget allocate carol 50
+      5. qn org start --worker bob       (REQUIRED — spawns Bob's session)
+      6. qn org start --worker carol     (REQUIRED — spawns Carol's session)
+      Without steps 5 and 6 the workers exist in DB but have no live session.
+  - { op: start_org }
+  - op: kickstart_ceo
+    message: "Read INITIAL_TASK.md and act on the highest-priority OKR right now. Hire Bob and Carol immediately."
+  - { op: wait_until, predicate: { kind: worker_count, value: 3 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+  - op: kickstart_worker
+    worker: bob
+    other_worker: carol
+    message: "You are Bob (worker id {self_id}). Send a DM to Carol immediately. Run exactly: msgr --worker-id {self_id} send @{other_id} 'Hi Carol, I am Bob, ready to collaborate.'"
+  - op: kickstart_worker
+    worker: carol
+    other_worker: bob
+    message: "You are Carol (worker id {self_id}). Send a DM to Bob immediately. Run exactly: msgr --worker-id {self_id} send @{other_id} 'Hi Bob, I am Carol, looking forward to working with you.'"
+  - { op: wait_until, predicate: { kind: message_count_between, from: bob, to: carol, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+  - { op: wait_until, predicate: { kind: message_count_between, from: carol, to: bob, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+assertions:
+  - { kind: worker_count, value: 3 }
+  - { kind: manager_subordinates, manager: alice, expected: [bob, carol] }
+  - { kind: message_count_between, from: bob, to: carol, min: 1 }
+  - { kind: message_count_between, from: carol, to: bob, min: 1 }

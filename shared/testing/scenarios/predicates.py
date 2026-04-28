@@ -193,6 +193,62 @@ def pred_escalation_state_is(run: "ScenarioRun", a: dict[str, Any]) -> str | Non
     return None
 
 
+def pred_message_count_from(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
+    """Count messages sent BY a given worker (any channel).
+
+    YAML: { kind: message_count_from, worker: bob, min: 1 }
+    """
+    worker_name = a["worker"]
+    minimum = int(a.get("min", a.get("value", 1)))
+    worker = run.db.find_worker_by_name(worker_name)
+    if worker is None:
+        return f"message_count_from: no worker named {worker_name!r}"
+    row = run.db.conn.execute(
+        "SELECT COUNT(*) AS c FROM messages WHERE from_worker_id=?",
+        (worker["id"],),
+    ).fetchone()
+    actual = row["c"] if row else 0
+    if actual < minimum:
+        return f"message_count_from({worker_name}): expected ≥{minimum}, got {actual}"
+    return None
+
+
+def pred_message_count_between(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
+    """Count messages sent FROM worker_a addressed to worker_b.
+
+    Direct messages: channel.type='direct' and worker_b is subscribed to that
+    channel. We count messages from worker_a in any channel where worker_b
+    is also a subscriber (covers DMs + shared topic/team channels — for a
+    canonical 1:1 DM scenario this is what we want).
+
+    YAML: { kind: message_count_between, from: bob, to: carol, min: 1 }
+    """
+    from_name = a["from"]
+    to_name = a["to"]
+    minimum = int(a.get("min", a.get("value", 1)))
+    sender = run.db.find_worker_by_name(from_name)
+    receiver = run.db.find_worker_by_name(to_name)
+    if sender is None:
+        return f"message_count_between: no sender named {from_name!r}"
+    if receiver is None:
+        return f"message_count_between: no receiver named {to_name!r}"
+    row = run.db.conn.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM messages m
+        JOIN channel_subscriptions cs ON cs.channel_id = m.channel_id
+        WHERE m.from_worker_id=? AND cs.worker_id=?
+        """,
+        (sender["id"], receiver["id"]),
+    ).fetchone()
+    actual = row["c"] if row else 0
+    if actual < minimum:
+        return (
+            f"message_count_between({from_name}→{to_name}): expected ≥{minimum}, got {actual}"
+        )
+    return None
+
+
 PREDICATES: dict[str, Predicate] = {
     "org_status": pred_org_status,
     "worker_count": pred_worker_count,
@@ -204,4 +260,6 @@ PREDICATES: dict[str, Predicate] = {
     "bead_status_is": pred_bead_status_is,
     "bead_assignee": pred_bead_assignee,
     "escalation_state_is": pred_escalation_state_is,
+    "message_count_from": pred_message_count_from,
+    "message_count_between": pred_message_count_between,
 }
