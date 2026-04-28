@@ -17,7 +17,8 @@ DELETED_DIRS = [
     "landing",
     "e2e",
     "compose",
-    ".envs",
+    # Note: .envs/ is INTENTIONALLY kept — it holds .envs/.local/.env.example,
+    # the QuinnAI local-dev env template (gitignored .env, tracked .example).
     "openspec/changes",
 ]
 
