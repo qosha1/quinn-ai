@@ -2,8 +2,8 @@
 ║                  QuinnAI Worker Session                        ║
 ╠════════════════════════════════════════════════════════════════╣
 ║ Worker:  {{ worker_name }} ({{ worker_id }})
-║ Role:    {{ worker_role }}
-║ Team:    {{ team_name }}
+{% if worker_name|lower != worker_role|lower %}║ Role:    {{ worker_role }}
+{% endif %}║ Team:    {{ team_name }}
 ║ Manager: {{ manager_name or "Board" }}
 {% if is_ceo or is_manager %}
 ║ Mode:    AUTONOMOUS (continue working based on OKRs)           ║

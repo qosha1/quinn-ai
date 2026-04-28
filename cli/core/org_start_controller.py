@@ -357,7 +357,7 @@ def _spawn_ceo_session_if_needed(
         raise SessionSpawnError(ceo.id, str(e))
 
 
-_INITIAL_PROMPT_TEMPLATE = """You are {ceo_name}, the CEO of this organization. You've just been onboarded.
+_INITIAL_PROMPT_TEMPLATE = """You are {self_intro}. You've just been onboarded.
 
 Your working directory contains important onboarding materials:
 - BRIEFING.md - Your role, responsibilities, OKRs, and first actions
@@ -374,7 +374,7 @@ Your working directory contains important onboarding materials:
    msgr channels
 
    # Send your first message (required)
-   msgr send #general "Hi team! I'm {ceo_name}, CEO. Starting work now. Reading briefing and reviewing OKRs."
+   msgr send #general "Hi team! {chat_intro} Starting work now. Reading briefing and reviewing OKRs."
 
    # Confirm message sent
    msgr inbox
@@ -403,7 +403,7 @@ Post status updates to #general as you work:
 **YOUR FIRST TASK:**
 Send your introduction message above, then read BRIEFING.md and follow the "First Actions" section.
 
-Start by running: `msgr send #general "Hi team! I'm {ceo_name}, CEO. Starting work now. Reading briefing and reviewing OKRs."`"""
+Start by running: `msgr send #general "Hi team! {chat_intro} Starting work now. Reading briefing and reviewing OKRs."`"""
 
 
 def _capture_pane(tmux_session: str) -> str:
@@ -433,7 +433,19 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
         click.echo("Creating initial task instructions...")
 
         instructions_file = worker_dir / "INITIAL_TASK.md"
-        formatted_prompt = _INITIAL_PROMPT_TEMPLATE.format(ceo_name=ceo.name)
+        # Elide the redundant "{name}, the CEO" / "I'm {name}, CEO" phrasing
+        # when the worker's name matches their role (placeholder-default
+        # case — see quinn-ai-exem). Reads as "You are the CEO" / "I'm the CEO".
+        if ceo.name.strip().casefold() == ceo.role.strip().casefold():
+            self_intro = f"the {ceo.role} of this organization"
+            chat_intro = f"I'm the {ceo.role}."
+        else:
+            self_intro = f"{ceo.name}, the {ceo.role} of this organization"
+            chat_intro = f"I'm {ceo.name}, {ceo.role}."
+        formatted_prompt = _INITIAL_PROMPT_TEMPLATE.format(
+            self_intro=self_intro,
+            chat_intro=chat_intro,
+        )
         instructions_file.write_text(formatted_prompt)
 
         time.sleep(2)

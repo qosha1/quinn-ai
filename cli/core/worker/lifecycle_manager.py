@@ -110,10 +110,19 @@ class WorkerLifecycleManager:
                 # No general channel - skip welcome message
                 return
 
-            # Compose welcome message
+            # Compose welcome message. Elide the redundant 'Role:' line when
+            # the worker's name matches their role (e.g., placeholder default
+            # 'CEO' name — see quinn-ai-exem). Otherwise we get the silly
+            # 'Welcome CEO! / Role: CEO' duplication.
+            name = self.worker.name
+            role = self.worker.role
+            role_line = (
+                "" if name.strip().casefold() == role.strip().casefold()
+                else f"Role: {role}\n"
+            )
             message = (
-                f"Welcome {self.worker.name}! 👋\n\n"
-                f"Role: {self.worker.role}\n"
+                f"Welcome {name}! 👋\n\n"
+                f"{role_line}"
                 f"Team: {self.worker.team_id or 'Unassigned'}\n\n"
                 f"Get started:\n"
                 f"• Check your inbox: `msgr inbox`\n"

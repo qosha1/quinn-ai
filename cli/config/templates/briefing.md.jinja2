@@ -1,7 +1,7 @@
 # Worker Briefing: {{ worker_name }}
 
-**Role:** {{ worker_role }}
-**Team:** {{ team_name }}
+{% if worker_name|lower != worker_role|lower %}**Role:** {{ worker_role }}
+{% endif %}**Team:** {{ team_name }}
 **Manager:** {{ manager_name or "Board" }}
 **Started:** {{ timestamp }}
 

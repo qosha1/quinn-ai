@@ -138,3 +138,79 @@ def test_org_start_creates_required_dirs(initialized_org, cli_runner):
     )
 
     assert result.returncode == 0
+
+
+def test_org_start_onboarding_files_elide_redundant_role_when_name_equals_role(
+    temp_org_dir, cli_runner
+):
+    """Regression: when --ceo-name is omitted (placeholder 'CEO'), the
+    Role line in WELCOME.md/BRIEFING.md should be elided rather than
+    duplicated as 'Worker: CEO / Role: CEO' (quinn-ai-exem).
+    """
+    # Init without --ceo-name → CEO name defaults to literal 'CEO' (placeholder)
+    cli_runner(
+        ["--org-path", str(temp_org_dir), "org", "init"],
+        check=True,
+    )
+
+    cli_runner(
+        [
+            "--org-path", str(temp_org_dir),
+            "org", "start",
+            "--no-spawn-ceo",
+            "--skip-config-validation",
+        ],
+        check=True,
+    )
+
+    # Find the CEO's worker dir (only one worker after init+start --no-spawn-ceo)
+    workers_dir = temp_org_dir / "storage" / "workers"
+    worker_dirs = [p for p in workers_dir.rglob("WELCOME.md")]
+    assert worker_dirs, "no WELCOME.md found in worker storage"
+    welcome = worker_dirs[0].read_text()
+    briefing = worker_dirs[0].with_name("BRIEFING.md").read_text()
+
+    # When name == role, the role line should NOT appear.
+    assert "Role:    CEO" not in welcome, (
+        "WELCOME.md still has redundant 'Role: CEO' line when name=role:\n" + welcome
+    )
+    assert "**Role:** CEO" not in briefing, (
+        "BRIEFING.md still has redundant '**Role:** CEO' line when name=role:\n" + briefing
+    )
+
+    # But the worker IS still the CEO — name should appear once.
+    assert "CEO" in welcome
+    assert "CEO" in briefing
+
+
+def test_org_start_onboarding_files_show_role_when_name_differs(
+    temp_org_dir, cli_runner
+):
+    """Regression: when --ceo-name is a real name, Role line MUST appear.
+
+    Counterpart to the placeholder-name test — verifies we didn't over-elide.
+    """
+    cli_runner(
+        ["--org-path", str(temp_org_dir), "org", "init", "--ceo-name", "Alice"],
+        check=True,
+    )
+
+    cli_runner(
+        [
+            "--org-path", str(temp_org_dir),
+            "org", "start",
+            "--no-spawn-ceo",
+            "--skip-config-validation",
+        ],
+        check=True,
+    )
+
+    workers_dir = temp_org_dir / "storage" / "workers"
+    worker_dirs = [p for p in workers_dir.rglob("WELCOME.md")]
+    welcome = worker_dirs[0].read_text()
+    briefing = worker_dirs[0].with_name("BRIEFING.md").read_text()
+
+    assert "Alice" in welcome
+    assert "Role:    CEO" in welcome
+    assert "Alice" in briefing
+    assert "**Role:** CEO" in briefing
