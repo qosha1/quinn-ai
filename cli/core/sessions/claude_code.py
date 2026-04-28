@@ -23,6 +23,7 @@ from shared.pyterm import (
     AgentSession,
     AgentSessionConfig,
     PytermConfig,
+    TmuxSession,
 )
 from shared.pyterm.agent_state import AgentState
 from shared.pyterm.protocols import PytermSessionState
@@ -114,12 +115,31 @@ class ClaudeCodeSession(SessionInterface):
     def _spawn_process(self) -> None:
         """Spawn the Claude Code CLI process via pyterm AgentSession."""
         try:
+            session_name = f"{TMUX_SESSION_PREFIX}{self._config.worker_id}"
+
+            # If a stale tmux session with this name exists from a previously
+            # failed spawn, kill it. tmux new-session refuses to overwrite an
+            # existing session, so without this the retry-after-failure path
+            # always fails (quinn-ai-3tsi).
+            if TmuxSession.exists(session_name):
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    f"Killing stale tmux session '{session_name}' before respawn"
+                )
+                import subprocess
+                subprocess.run(
+                    ["tmux", "kill-session", "-t", session_name],
+                    capture_output=True,
+                    check=False,
+                )
+
             # Create AgentSession config
             agent_config = AgentSessionConfig.create(
                 worker_id=self._config.worker_id,
                 provider="claude_code",
                 db_path=self._config.transcript_db_path,
-                session_name=f"{TMUX_SESSION_PREFIX}{self._config.worker_id}",
+                session_name=session_name,
                 pyterm_config=self._pyterm_config,
             )
 
