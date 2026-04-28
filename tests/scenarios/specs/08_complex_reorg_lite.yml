@@ -1,0 +1,19 @@
+name: complex_reorg_lite
+setup:
+  init:
+    ceo_name: Alice
+ops:
+  - { op: hire, name: Bob, role: Engineer, manager: ceo, cost: 30 }
+  - { op: hire, name: Carol, role: Engineer, manager: ceo, cost: 30 }
+  - { op: hire, name: Dave, role: Designer, manager: ceo, cost: 25 }
+  - { op: transition_lifecycle, worker: bob, to: onboarding }
+  - { op: transition_lifecycle, worker: bob, to: active }
+  - { op: transition_lifecycle, worker: carol, to: onboarding }
+  - { op: transition_lifecycle, worker: carol, to: active }
+  - { op: fire, worker: dave, reason: "no longer needed" }
+assertions:
+  - { kind: worker_count, value: 4 }
+  - { kind: worker_lifecycle_is, name: bob, value: active }
+  - { kind: worker_lifecycle_is, name: carol, value: active }
+  - { kind: worker_lifecycle_is, name: dave, value: terminated }
+  - { kind: manager_subordinates, manager: ceo, expected: [bob, carol, dave] }

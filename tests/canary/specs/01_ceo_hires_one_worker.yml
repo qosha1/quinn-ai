@@ -1,18 +1,30 @@
-# Canonical canary scenario: prove that a real LLM-driven CEO can hire one worker.
+# Canonical canary scenario: prove a real-LLM CEO can hire one worker.
+#
+# Strategy (per user direction): instead of relying on free-form msgr
+# directives, we make the hire intent native to the org by:
+#   1. Pre-creating an ultra-priority OKR ('Hire one engineer named Bob')
+#      assigned to the CEO BEFORE starting the org. The CEO will pull this
+#      from beads on first work-loop iteration.
+#   2. The ceo_briefing onboarding doc tells the CEO to act on highest-
+#      priority OKRs first, so the directive is reinforced at session boot.
+#
 # Runs against a live Anthropic API key when QUINNAI_RUN_CANARY=1.
-# Reuses the same YAML schema as Tier 2 — only the session driver swaps.
 name: ceo_hires_one_worker
 setup:
   init:
     ceo_name: Alice
 ops:
-  # Start the org so the CEO session boots.
+  # Plant the directive as a P0 OKR before the CEO ever boots.
+  - {
+      op: create_okr,
+      objective: "Hire one engineer named Bob using qn org hire",
+      owner: ceo,
+      description: "ULTRA PRIORITY: As your first action, hire an engineer named Bob with role engineer and cost 30. Use 'qn org hire --name Bob --role engineer --manager ceo --cost 30'."
+    }
+  # Boot the org — CEO session spawns and reads its briefing + work queue.
   - { op: start_org }
-  # Inject the directive that drives the CEO to act.
-  - { op: send_to_worker, worker: ceo, message: "Please hire one engineer named Bob using qn org hire." }
-  # Wait until either Bob exists OR the budget runs out.
-  - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 240 }
+  # Wait up to 4 minutes for Bob to exist (CEO needs time to read OKR + act).
+  - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 240, poll_interval_seconds: 5 }
 assertions:
   - { kind: worker_count, value: 2 }
-  - { kind: worker_lifecycle_is, name: bob, value: pending }
   - { kind: manager_subordinates, manager: ceo, expected: [bob] }

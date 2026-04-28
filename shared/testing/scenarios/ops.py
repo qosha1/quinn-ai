@@ -85,6 +85,28 @@ def op_demote(run: "ScenarioRun", op: dict[str, Any]) -> None:
     _run_qn(run, args)
 
 
+def op_delegate_authority(run: "ScenarioRun", op: dict[str, Any]) -> None:
+    """Grant hiring authority + budget to a worker so they can hire reports.
+
+    YAML form:
+      - { op: delegate_authority, to: bob, level: team-lead, budget: 200, max_reports: 5 }
+    """
+    target_id = run._resolve_worker_id(op["to"])
+    args = ["org", "delegate-authority", "--to", target_id, "--force"]
+    if "level" in op:
+        args += ["--level", op["level"]]
+    if "from" in op:
+        from_id = run._resolve_worker_id(op["from"])
+        args += ["--from", from_id]
+    if "budget" in op:
+        args += ["--budget", str(op["budget"])]
+    if "max_reports" in op:
+        args += ["--max-reports", str(op["max_reports"])]
+    if "max_cost" in op:
+        args += ["--max-cost", str(op["max_cost"])]
+    _run_qn(run, args)
+
+
 def op_transition_lifecycle(run: "ScenarioRun", op: dict[str, Any]) -> None:
     """Direct DB push of worker.status."""
     worker_id = run._resolve_worker_id(op["worker"])
@@ -246,6 +268,7 @@ OPS: dict[str, OpHandler] = {
     "demote": op_demote,
     "transition_lifecycle": op_transition_lifecycle,
     "transition_runtime": op_transition_runtime,
+    "delegate_authority": op_delegate_authority,
     "create_okr": op_create_okr,
     "assign_kr": op_assign_kr,
     "create_bead": op_create_bead,

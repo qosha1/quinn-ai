@@ -5,8 +5,8 @@ setup:
     ceo_role: CEO
 ops:
   - { op: hire, name: Bob, role: Manager, manager: ceo, cost: 100 }
-  - { op: promote, worker: bob, to: team-lead, reason: "scenario test" }
-  - { op: hire, name: Carol, role: Engineer, manager: bob, cost: 50 }
+  - { op: delegate_authority, to: bob, level: team-lead, budget: 200, max_reports: 5 }
+  - { op: hire, name: Carol, role: engineer, manager: bob, cost: 50 }
 assertions:
   - { kind: worker_count, value: 3 }
   - { kind: org_chart_depth, value: 3 }

@@ -1,0 +1,69 @@
+name: Validation Tiers (T1 + T2)
+
+# PR-only — tier suites must pass before merge to main, but don't run on
+# every push since they overlap with test-integration.yml's coverage.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tier1-state-machines:
+    name: Tier 1 — State-machine sequences
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run Tier 1
+        run: pytest tests/state_sequences/ --timeout=10 -q
+
+  tier2-scenarios:
+    name: Tier 2 — FakeSpawner scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      # Tier 2 unit + integration must pass; xfailed scenarios stay xfailed
+      # (they're linked to specific bug beads — see tests/scenarios/conftest.py
+      # EXPECTED_FAILURES). Strict-fails-on-XPASS is OFF so a fix surfaces as
+      # a green XPASS rather than a regression.
+      - name: Run Tier 2
+        run: pytest tests/scenarios/ --timeout=60 -q
+
+  tier3-canary-units:
+    name: Tier 3 — Canary unit tests (no LLM spend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      # Live canary itself only fires post-publish (release.yml); here we
+      # just verify the BudgetGuard + ProviderConfig + scaffolding code is
+      # green without touching real APIs.
+      - name: Run Tier 3 unit tests
+        run: pytest tests/canary/unit/ --timeout=15 -q
