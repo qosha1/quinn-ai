@@ -13,7 +13,7 @@ import click
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
-from cli.core.queries import get_worker_by_name
+from cli.core.queries import resolve_worker
 from cli.core.org import Org
 from shared.exceptions import WorkerNotFound
 
@@ -88,7 +88,7 @@ def fire_cmd(
         org = Org.load(db)
 
         # Find worker to terminate
-        worker_data = get_worker_by_name(db, worker)
+        worker_data = resolve_worker(db, worker)
         if not worker_data:
             # Try by ID
             try:
@@ -116,7 +116,7 @@ def fire_cmd(
 
         # Determine and verify authorizing manager
         if manager:
-            manager_data = get_worker_by_name(db, manager)
+            manager_data = resolve_worker(db, manager)
             if not manager_data:
                 try:
                     auth_manager = Worker.get(db, manager)
@@ -149,7 +149,7 @@ def fire_cmd(
         # Find reassignment target if specified
         reassign_worker = None
         if reassign_to:
-            reassign_data = get_worker_by_name(db, reassign_to)
+            reassign_data = resolve_worker(db, reassign_to)
             if not reassign_data:
                 try:
                     reassign_worker = Worker.get(db, reassign_to)

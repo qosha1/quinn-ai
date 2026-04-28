@@ -14,7 +14,7 @@ import click
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
-from cli.core.queries import update_worker_runtime_status
+from cli.core.queries import update_worker_runtime_status, resolve_worker
 from shared import WorkerNotFound, InvalidStateTransition
 from shared.enums import WorkerLifecycleStatus
 
@@ -44,6 +44,14 @@ def pause_cmd(ctx: Context, worker_id: str, reason: str):
     db = open_database(db_path)
 
     try:
+        # Resolve selector (id, name, or unique role) to canonical id.
+        resolved = resolve_worker(db, worker_id)
+        if resolved is None:
+            raise click.ClickException(
+                f"Worker '{worker_id}' not found.\n"
+                "Run 'qn board status' to see available workers."
+            )
+        worker_id = resolved.id
         try:
             worker = Worker.get(db, worker_id)
         except WorkerNotFound:
@@ -65,7 +73,7 @@ def pause_cmd(ctx: Context, worker_id: str, reason: str):
         if runtime in ("stopped", "crashed", None):
             raise click.ClickException(
                 f"Worker '{worker.name}' session already stopped (runtime: {runtime or 'none'}).\n"
-                "Use 'qn board resume {worker_id}' to restart the worker."
+                f"Use 'qn board resume {worker.name}' to restart the worker."
             )
 
         click.echo(f"Pausing worker: {worker.name} ({worker_id})")
@@ -119,6 +127,14 @@ def resume_cmd(ctx: Context, worker_id: str):
     db = open_database(db_path)
 
     try:
+        # Resolve selector (id, name, or unique role) to canonical id.
+        resolved = resolve_worker(db, worker_id)
+        if resolved is None:
+            raise click.ClickException(
+                f"Worker '{worker_id}' not found.\n"
+                "Run 'qn board status' to see available workers."
+            )
+        worker_id = resolved.id
         try:
             worker = Worker.get(db, worker_id)
         except WorkerNotFound:
@@ -140,7 +156,7 @@ def resume_cmd(ctx: Context, worker_id: str):
         if runtime not in ("stopped", "crashed"):
             raise click.ClickException(
                 f"Worker '{worker.name}' is not paused (runtime: {runtime}).\n"
-                "Use 'qn board pause {worker_id}' to pause the worker first."
+                f"Use 'qn board pause {worker.name}' to pause the worker first."
             )
 
         click.echo(f"Resuming worker: {worker.name} ({worker_id})")
@@ -192,6 +208,14 @@ def fire_cmd(ctx: Context, worker_id: str, reason: str, force: bool):
     db = open_database(db_path)
 
     try:
+        # Resolve selector (id, name, or unique role) to canonical id.
+        resolved = resolve_worker(db, worker_id)
+        if resolved is None:
+            raise click.ClickException(
+                f"Worker '{worker_id}' not found.\n"
+                "Run 'qn board status' to see available workers."
+            )
+        worker_id = resolved.id
         try:
             worker = Worker(db, worker_id, org_path=org_path)
             # Load worker data to verify exists

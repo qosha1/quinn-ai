@@ -12,7 +12,7 @@ from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
 from cli.core.queries import (
-    get_worker_by_name,
+    resolve_worker,
     get_delegations_by_delegator,
 )
 from shared.exceptions import DelegationNotFoundError
@@ -81,7 +81,7 @@ def revoke_authority_cmd(
 
     try:
         # Find worker
-        worker_data = get_worker_by_name(db, worker)
+        worker_data = resolve_worker(db, worker)
         if not worker_data:
             raise click.ClickException(f"Worker '{worker}' not found.")
 
@@ -95,7 +95,7 @@ def revoke_authority_cmd(
 
         # Find revoker (default to worker's manager)
         if revoker_name:
-            revoker_data = get_worker_by_name(db, revoker_name)
+            revoker_data = resolve_worker(db, revoker_name)
             if not revoker_data:
                 raise click.ClickException(
                     f"Revoker '{revoker_name}' not found."

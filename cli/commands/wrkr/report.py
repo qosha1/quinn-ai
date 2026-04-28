@@ -107,8 +107,8 @@ def report_cmd(
             recipient_data = get_worker(db, recipient)
             if not recipient_data:
                 # Try by name
-                from cli.core.queries import get_worker_by_name
-                recipient_data = get_worker_by_name(db, recipient)
+                from cli.core.queries import resolve_worker
+                recipient_data = resolve_worker(db, recipient)
             if not recipient_data:
                 if as_json:
                     click.echo(json.dumps({

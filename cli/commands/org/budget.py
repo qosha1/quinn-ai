@@ -189,8 +189,8 @@ def budget_allocate(ctx: Context, worker_name: str, amount: float, from_worker: 
         budget_service = BudgetService(db)
 
         # Find target worker by name
-        from cli.core.queries import get_worker_by_name
-        target = get_worker_by_name(db, worker_name)
+        from cli.core.queries import resolve_worker
+        target = resolve_worker(db, worker_name)
         if not target:
             raise click.ClickException(
                 f"Worker '{worker_name}' not found.\n"
@@ -199,7 +199,7 @@ def budget_allocate(ctx: Context, worker_name: str, amount: float, from_worker: 
 
         # Determine source worker
         if from_worker:
-            source = get_worker_by_name(db, from_worker)
+            source = resolve_worker(db, from_worker)
             if not source:
                 raise click.ClickException(
                     f"Source worker '{from_worker}' not found.\n"
@@ -266,8 +266,8 @@ def budget_transactions(ctx: Context, worker_name: Optional[str], txn_type: Opti
 
         # Determine worker
         if worker_name:
-            from cli.core.queries import get_worker_by_name
-            worker = get_worker_by_name(db, worker_name)
+            from cli.core.queries import resolve_worker
+            worker = resolve_worker(db, worker_name)
             if not worker:
                 raise click.ClickException(
                     f"Worker '{worker_name}' not found.\n"

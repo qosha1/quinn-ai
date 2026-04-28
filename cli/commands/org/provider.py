@@ -13,7 +13,7 @@ import click
 
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
-from cli.core.queries import get_worker, get_worker_by_name, update_worker_preferred_provider
+from cli.core.queries import get_worker, resolve_worker, update_worker_preferred_provider
 from cli.core.sessions.registry import get_default_registry
 from cli.core.worker import Worker
 
@@ -163,7 +163,7 @@ def set_worker_provider(ctx: Context, worker: str, provider_name: str):
     db = open_database(db_path)
     try:
         # Find worker
-        worker_data = get_worker_by_name(db, worker)
+        worker_data = resolve_worker(db, worker)
         if not worker_data:
             worker_data = get_worker(db, worker)
 
@@ -223,7 +223,7 @@ def show_worker_provider(ctx: Context, worker: str):
     db = open_database(db_path)
     try:
         # Find worker
-        worker_data = get_worker_by_name(db, worker)
+        worker_data = resolve_worker(db, worker)
         if not worker_data:
             worker_data = get_worker(db, worker)
 

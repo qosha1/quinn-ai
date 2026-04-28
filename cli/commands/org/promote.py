@@ -11,7 +11,7 @@ import click
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
-from cli.core.queries import get_worker_by_name
+from cli.core.queries import resolve_worker
 from cli.core.constants import DELEGATION_PRESETS
 from shared.exceptions import CircularDelegationError, ConcurrentModificationError
 
@@ -75,7 +75,7 @@ def promote_cmd(
 
     try:
         # Find worker to promote
-        worker_data = get_worker_by_name(db, worker)
+        worker_data = resolve_worker(db, worker)
         if not worker_data:
             raise click.ClickException(f"Worker '{worker}' not found.")
 
@@ -83,7 +83,7 @@ def promote_cmd(
 
         # Find promoter (default to worker's manager)
         if promoter_name:
-            promoter_data = get_worker_by_name(db, promoter_name)
+            promoter_data = resolve_worker(db, promoter_name)
             if not promoter_data:
                 raise click.ClickException(
                     f"Promoter '{promoter_name}' not found."

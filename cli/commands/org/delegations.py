@@ -14,7 +14,7 @@ from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
 from cli.core.queries import (
-    get_worker_by_name,
+    resolve_worker,
     get_delegation_audit,
     get_delegation_chain,
 )
@@ -134,7 +134,7 @@ def delegations_cmd(
     try:
         if worker:
             # Show specific worker's delegation chain
-            worker_data = get_worker_by_name(db, worker)
+            worker_data = resolve_worker(db, worker)
             if not worker_data:
                 raise click.ClickException(f"Worker '{worker}' not found.")
 

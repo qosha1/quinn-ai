@@ -12,7 +12,7 @@ from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
 from cli.core.queries import (
-    get_worker_by_name,
+    resolve_worker,
     get_delegations_by_delegator,
 )
 from shared.exceptions import DelegationNotFoundError
@@ -74,7 +74,7 @@ def demote_cmd(
 
     try:
         # Find worker
-        worker_data = get_worker_by_name(db, worker)
+        worker_data = resolve_worker(db, worker)
         if not worker_data:
             raise click.ClickException(f"Worker '{worker}' not found.")
 
@@ -88,7 +88,7 @@ def demote_cmd(
 
         # Find demoter (default to worker's manager)
         if demoter_name:
-            demoter_data = get_worker_by_name(db, demoter_name)
+            demoter_data = resolve_worker(db, demoter_name)
             if not demoter_data:
                 raise click.ClickException(
                     f"Demoter '{demoter_name}' not found."

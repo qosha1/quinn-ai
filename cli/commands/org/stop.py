@@ -307,11 +307,11 @@ def _stop_worker(
                 "Start the org before stopping a worker workday."
             )
 
-        from cli.core.queries import get_worker_by_name, get_channel_by_name, create_default_org_channels, create_message
+        from cli.core.queries import resolve_worker, get_channel_by_name, create_default_org_channels, create_message
         from cli.core.notifications import create_notification_bead
 
         # Find worker
-        worker_data = get_worker_by_name(db, worker)
+        worker_data = resolve_worker(db, worker)
         if not worker_data:
             try:
                 worker_obj = Worker.get(db, worker)

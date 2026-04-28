@@ -12,7 +12,7 @@ import click
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
-from cli.core.queries import get_worker_by_name
+from cli.core.queries import resolve_worker
 from cli.core.constants import DELEGATION_PRESETS
 from shared.exceptions import (
     CircularDelegationError,
@@ -125,7 +125,7 @@ def delegate_authority_cmd(
 
     try:
         # Find delegate worker
-        delegate_data = get_worker_by_name(db, delegate_name)
+        delegate_data = resolve_worker(db, delegate_name)
         if not delegate_data:
             raise click.ClickException(
                 f"Worker '{delegate_name}' not found. "
@@ -136,7 +136,7 @@ def delegate_authority_cmd(
 
         # Find delegator (default to CEO if not specified)
         if delegator_name:
-            delegator_data = get_worker_by_name(db, delegator_name)
+            delegator_data = resolve_worker(db, delegator_name)
             if not delegator_data:
                 raise click.ClickException(
                     f"Delegator '{delegator_name}' not found."
@@ -173,7 +173,7 @@ def delegate_authority_cmd(
 
         elif copy_from:
             # Copy from another worker
-            source_data = get_worker_by_name(db, copy_from)
+            source_data = resolve_worker(db, copy_from)
             if not source_data:
                 raise click.ClickException(
                     f"Source worker '{copy_from}' not found."
