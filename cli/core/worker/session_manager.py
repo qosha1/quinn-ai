@@ -43,6 +43,56 @@ if TYPE_CHECKING:
 _logger = get_logger(__name__)
 
 
+def reconcile_runtime_states(db: "Database") -> int:
+    """Reconcile worker runtime_status against observed tmux reality.
+
+    Scans every non-terminated worker. For each:
+    - If runtime_status is one of (running, idle, starting) but the
+      worker's tmux session does NOT exist, reset to 'stopped'.
+    - If runtime_status is 'crashed' but the tmux session DOES exist,
+      restore to 'idle' (a respawn happened externally — the user can
+      observe to verify health).
+
+    Returns the number of repairs made. Cheap to call before displaying
+    status — typically does nothing unless something external (a tmux
+    kill-server, manual session deletion, etc.) put the db out of sync.
+
+    Closes quinn-ai-pwjp.
+    """
+    from shared.pyterm.tmux_session import TmuxSession
+    from ..constants import TMUX_SESSION_PREFIX
+
+    rows = db.fetchall(
+        """SELECT w.id, ws.runtime_status
+           FROM workers w
+           LEFT JOIN worker_state ws ON ws.worker_id = w.id
+           WHERE w.status != 'terminated'"""
+    )
+    repairs = 0
+    for row in rows:
+        worker_id = row["id"]
+        runtime = row["runtime_status"]
+        tmux_name = f"{TMUX_SESSION_PREFIX}{worker_id}"
+        tmux_alive = TmuxSession.exists(tmux_name)
+
+        if runtime in ("running", "idle", "starting") and not tmux_alive:
+            _logger.info(
+                f"Reconcile: {worker_id} runtime='{runtime}' but tmux '{tmux_name}' "
+                "missing — resetting to 'stopped'."
+            )
+            update_worker_runtime_status(db, worker_id, "stopped")
+            repairs += 1
+        elif runtime == "crashed" and tmux_alive:
+            _logger.info(
+                f"Reconcile: {worker_id} runtime='crashed' but tmux '{tmux_name}' "
+                "alive — restoring to 'idle'."
+            )
+            update_worker_runtime_status(db, worker_id, "idle")
+            repairs += 1
+
+    return repairs
+
+
 class WorkerSessionManager:
     """Manages session operations for a worker.
 
@@ -97,6 +147,26 @@ class WorkerSessionManager:
             active_states = ("starting", "running", "idle")
             if session_record.get("state") in active_states:
                 return True
+
+            # Inverse auto-repair (quinn-ai-pwjp): worker_state says
+            # 'crashed' / 'stopped' but a tmux session by the canonical
+            # name actually exists — likely from an external respawn or
+            # a missed state update. Verify with TmuxSession.exists()
+            # and bring runtime_status back into sync.
+            runtime = self.runtime_status
+            if runtime in ("crashed",):
+                from shared.pyterm.tmux_session import TmuxSession
+                from cli.core.constants import TMUX_SESSION_PREFIX
+                tmux_name = f"{TMUX_SESSION_PREFIX}{self.worker.id}"
+                if TmuxSession.exists(tmux_name):
+                    _logger.warning(
+                        f"Worker {self.worker.id} state shows 'crashed' but "
+                        f"tmux session '{tmux_name}' is alive. "
+                        "Auto-repairing by resetting to 'idle'."
+                    )
+                    update_worker_runtime_status(self.worker.db, self.worker.id, "idle")
+                    self.worker._state_data = None
+                    return True
 
         # No session found - check if worker state thinks it's running
         runtime = self.runtime_status

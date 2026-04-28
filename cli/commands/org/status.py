@@ -28,6 +28,13 @@ def status_cmd(ctx: Context):
     db = open_database(db_path)
 
     try:
+        # Bring worker runtime_status into sync with tmux reality before
+        # display, so transient mismatches (external tmux kill, missed
+        # state update, etc.) don't show stale 'crashed' / 'running'
+        # rows. See quinn-ai-pwjp.
+        from cli.core.worker.session_manager import reconcile_runtime_states
+        reconcile_runtime_states(db)
+
         org = Org.load(db)
 
         click.echo(f"Organization: {org_path}")

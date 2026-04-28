@@ -50,6 +50,11 @@ def status_cmd(ctx: Context, as_json: bool):
     db = open_database(db_path)
 
     try:
+        # Reconcile runtime_status against tmux reality before reading
+        # session counts (quinn-ai-pwjp).
+        from cli.core.worker.session_manager import reconcile_runtime_states
+        reconcile_runtime_states(db)
+
         org = Org.load(db)
 
         # Collect status data
