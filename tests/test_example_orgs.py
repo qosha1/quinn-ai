@@ -1037,34 +1037,44 @@ class TestWorkManagement:
         data = json.loads(result.stdout) if result.stdout else {}
         work_id = data.get("id") or "unknown"  # May need to parse differently
 
-    # xfail removed - beads now initialized in org init
     def test_work_priority_ordering(self, temp_org_dir):
-        """Work items are ordered by priority (P0 first)."""
+        """Work items created by the test are ordered by priority (P1 first).
+
+        Note: init seeds bootstrap work items (initial tasks) so the bd
+        list includes more than just what the test creates. The test
+        filters to its own items by title prefix to make the priority
+        check deterministic.
+        """
         run_qn("org", "init", org_path=temp_org_dir)
 
         from cli.core.bd_wrapper import run_bd
 
-        # Create P3, P1, P2 tasks (out of order) - these will fail without bd init
-        result1 = run_bd(["create", "Low priority", "--priority=3", "--json"],
-                         org_path=Path(temp_org_dir), skip_permission_check=True, capture_output=True)
-        assert result1.returncode == 0, "Should be able to create beads"
+        # Use a unique title prefix so we can filter to just our items below.
+        prefix = "PRIO-TEST"
 
-        result2 = run_bd(["create", "High priority", "--priority=1", "--json"],
-                         org_path=Path(temp_org_dir), skip_permission_check=True, capture_output=True)
-        assert result2.returncode == 0, "Should be able to create beads"
+        for label, prio in (("Low", 3), ("High", 1), ("Medium", 2)):
+            r = run_bd(
+                ["create", f"{prefix} {label} priority", f"--priority={prio}", "--json"],
+                org_path=Path(temp_org_dir),
+                skip_permission_check=True,
+                capture_output=True,
+            )
+            assert r.returncode == 0, f"Should be able to create {label} priority bead"
 
-        result3 = run_bd(["create", "Medium priority", "--priority=2", "--json"],
-                         org_path=Path(temp_org_dir), skip_permission_check=True, capture_output=True)
-        assert result3.returncode == 0, "Should be able to create beads"
-
-        # List and verify ordering
-        result = run_bd(["list", "--json"],
-                        org_path=Path(temp_org_dir), skip_permission_check=True, capture_output=True)
+        result = run_bd(
+            ["list", "--json"],
+            org_path=Path(temp_org_dir),
+            skip_permission_check=True,
+            capture_output=True,
+        )
         import json
-        items = json.loads(result.stdout) if result.stdout else []
+        all_items = json.loads(result.stdout) if result.stdout else []
+        items = [i for i in all_items if i.get("title", "").startswith(prefix)]
 
-        # Verify we have items and they are ordered by priority
-        assert len(items) == 3, "Should have 3 work items"
+        assert len(items) == 3, (
+            f"Should have 3 test-created work items (filtered by prefix); "
+            f"got {len(items)} of {len(all_items)} total"
+        )
         priorities = [item.get("priority", 4) for item in items]
         assert priorities == sorted(priorities), "Items should be sorted by priority"
 
@@ -1118,13 +1128,21 @@ class TestOKRCascade:
         assert result.returncode == 0
         assert "Test OKR" in result.stdout
 
-    def test_okr_list_empty_org(self, temp_org_dir):
-        """qn org okr list on empty org shows no OKRs."""
+    def test_okr_list_after_init_shows_bootstrap_okr(self, temp_org_dir):
+        """qn org okr list after init shows the bootstrap OKR.
+
+        init no longer produces an OKR-empty org — it seeds 'Establish
+        organizational foundation' so newcomers have something to align
+        with from day one. Test that the listing renders cleanly and
+        includes the bootstrap title.
+        """
         run_qn("org", "init", org_path=temp_org_dir)
 
         result = run_qn("org", "okr", "list", org_path=temp_org_dir)
         assert result.returncode == 0
-        assert "No OKRs found" in result.stdout or result.stdout.strip() == ""
+        assert "Establish organizational foundation" in result.stdout, (
+            f"Expected bootstrap OKR in listing, got:\n{result.stdout}"
+        )
 
     # xfail removed - beads now initialized in org init
     def test_okr_hierarchy_via_parent(self, temp_org_dir):
