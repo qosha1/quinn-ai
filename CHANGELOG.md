@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.1] - 2026-04-27
+
+### Added
+- `[board]` extra: install with `pip install quinnai[board]` to pull in the Textual TUI dependency. The `qn board` command group ships in the base package; the dependency is opt-in.
+- `tests/board_ui/` test suite (was `terminal-app/tests/`); `make test-board` target.
+
+### Changed
+- Merged the standalone `terminal-app/` package into the main `quinnai` distribution. The board UI now lives under `cli.commands.board` and `board_ui/` (top-level package). The separate `terminal-app/` directory was removed.
+- `cli/core/session.py` split into a `cli/core/session/` package (types/exceptions/interface) for clearer surface area.
+- `cli/core/org_init.py` split into `cli/core/org_init/` package (types/scaffolding/bootstrap/init).
+- `cli/commands/org/okr.py` split into `cli/commands/org/okr/` package.
+- `shared/escalation/manager.py` (864L) split into types/config/manager.
+- `WorkerBridge` moved from `shared.pyterm` to `cli.core.pyterm`.
+- pyterm `SessionState` / `SessionConfig` / `ProviderConfig` renamed with `Pyterm` prefix to disambiguate from session-provider config.
+
+### Removed
+- `cli/core/worker.py.bak` (71KB tracked backup).
+- `TranscriptRepository` (wrong layer, zero prod consumers).
+
+### Fixed
+- Reconciled triplicated `SessionConfig` / `ProviderConfig` / `PromptResult` definitions into a single source of truth.
+- Encapsulated `cli.core.logging` module state behind `_LoggingState` to avoid module-level global mutation.
+- Hoisted `WorkerBridge` imports + rerouted test patches; inlined `TMUX_ATTACH_WAIT`.
+- PyPI publish step now uses `--skip-existing` to avoid double-upload errors.
+
+---
+
 ## [0.2.0] - 2026-04-25
 
 ### Removed
