@@ -177,11 +177,18 @@ stateDiagram-v2
 **Errors:**
 - InvalidOrgTransition
 - CEO activation fails → **INCONSISTENT STATE** (org running, CEO not active)
-- Session spawn fails → **INCONSISTENT STATE** (org running, no CEO session)
+- Session spawn fails → org RUNNING but CEO session not active. The
+  orchestrator surfaces a clear error and points at retry/debug commands.
 
-**Rollback:** ❌ None implemented
+**Rollback:** ✅ Two-layer:
+  - `Org.start()` (Python API) wraps CEO onboarding in try/except and
+    reverts CEO lifecycle to its pre-start status on failure
+    (quinn-ai-tage). Org status only updates after CEO + briefing
+    succeed, so it never moves prematurely.
+  - `org_start_controller._phase_2_transition` reverts org status to
+    INITIALIZED on transition failure.
 
-**Status:** ⚠️ Partial (no rollback, leaves inconsistent state on failure)
+**Status:** ✅ Implemented
 
 ---
 
@@ -205,10 +212,12 @@ stateDiagram-v2
 - Sessions stopped (best-effort)
 
 **Errors:**
-- Some sessions fail to stop → **Continues anyway**, shows warnings
+- Some sessions fail to stop → continues with `--force` fallback in the
+  CLI orchestrator; surfaces unacked workers as a clear ⚠ warning block
+  on stderr in the stop summary (quinn-ai-ef4z).
 - Cleanup fails → **Org already stopped**, no rollback
 
-**Status:** ⚠️ Partial (no session stop verification)
+**Status:** ✅ Implemented
 
 ---
 
@@ -227,11 +236,14 @@ stateDiagram-v2
 **Postconditions:**
 - org_status = 'running'
 - CEO lifecycle unchanged (already 'active')
-- **NO CEO SESSION SPAWNED**
+- No CEO session spawned at the Python-API layer (deliberate — see
+  the Layering note at the top of this section)
 
 **Errors:** InvalidOrgTransition
 
-**Status:** ❌ Broken (inconsistent with T2, doesn't spawn CEO session)
+**Status:** ✅ Implemented (the orchestrator runs `_spawn_ceo_session_if_needed`
+for both FIRST_START and RESUME, so end-to-end behavior is consistent —
+quinn-ai-wbwy).
 
 ---
 
@@ -523,9 +535,10 @@ stateDiagram-v2
 - BudgetExhaustedError - Insufficient credits
 - Provider error - Session spawn failed
 
-**Rollback:** ❌ None (budget deducted even if spawn fails)
+**Rollback:** ✅ Budget refunded if spawn fails. Pinned by
+test_t1_rollback_on_spawn_failure.
 
-**Status:** ⚠️ Partial (no rollback)
+**Status:** ✅ Implemented
 
 ---
 
@@ -546,7 +559,8 @@ stateDiagram-v2
 - worker_state.runtime_status = 'running'
 - Session can accept tasks
 
-**Status:** ❌ Broken (session adapter doesn't call this automatically)
+**Status:** ✅ Implemented (session adapters call `session_ready()`
+automatically — pinned by `test_t2_automatic_callback`).
 
 ---
 
@@ -564,7 +578,8 @@ stateDiagram-v2
 1. Validate runtime transition
 2. **Update worker_state.runtime_status = 'running'**
 
-**Status:** ❌ Broken (manual calls only, no automatic triggers)
+**Status:** ✅ Implemented (automatic triggers wired up — pinned by
+`test_t3_automatic_triggers`).
 
 ---
 
@@ -617,7 +632,8 @@ session-runtime-status layer.
 - worker_state.runtime_status = 'crashed'
 - Error logged
 
-**Status:** ❌ Broken (crash detection may not trigger this)
+**Status:** ✅ Implemented (crash detection triggers `mark_crashed()` —
+pinned by `test_t8_automatic_on_crash`).
 
 ---
 
@@ -700,24 +716,13 @@ worker_state table UPDATED
 
 **Type:** Data propagation pipeline
 **Purpose:** Session state → Database → UI
-**Status:** ❌ Broken (no automatic propagation)
+**Implementation:** `cli/core/sessions/state_sync.py` (`SessionStateSync` class) +
+session adapter `_on_state_change` callbacks routed through
+`binding_manager.py`.
+**Status:** ✅ Implemented (pinned by `test_status_sync_latency_under_500ms`
+and `test_session_state_change_updates_database`).
 
-### Current Flow (Broken)
-
-```mermaid
-graph LR
-    A[Session State Change] -->|❌ No callback| B[Worker Instance]
-    B -->|❌ Not called| C[update_worker_runtime_status]
-    C -->|❌ Not updated| D[worker_state table]
-    D -->|User navigates| E[Terminal UI]
-    E -->|Shows stale| F[Outdated Status]
-```
-
-**Problem:** Sessions change state internally, Worker methods never called, database never updated.
-
----
-
-### Desired Flow
+### Current Flow
 
 ```mermaid
 graph LR
@@ -729,11 +734,22 @@ graph LR
     F -->|✓ Fresh| G[Current Status]
 ```
 
-**Solution:** Callbacks + auto-refresh
-
 ---
 
 ### Components
+
+> The detailed component breakdown below was originally written as a
+> Jan-2026 gap analysis ("Current vs Required") for the propagation
+> pipeline. Most of those gaps have since been closed — see the actual
+> implementation in `cli/core/sessions/state_sync.py`,
+> `cli/core/sessions/binding_manager.py`, and the per-adapter
+> `_on_state_change` callbacks. The "Required" / "Fix" snippets here
+> are kept for historical context but should not be treated as TODO
+> items without re-checking the code first.
+
+---
+
+### Components (historical gap analysis — read with caveat above)
 
 #### 1. Session Adapter State Change
 
@@ -1000,7 +1016,11 @@ def record_worker_heartbeat(db: Database, worker_id: str) -> None:
 
 **Type:** Sequential workflow within Worker 'onboarding' lifecycle state
 **Implementation:** `cli/core/onboarding.py`
-**Status:** ⚠️ Partial (works but no error recovery, no checkpointing)
+**Status:** ✅ Implemented. `Org.start()` wraps the CEO onboarding pair
+in try/except and reverts the worker's lifecycle status on failure
+(quinn-ai-tage). No mid-onboarding checkpointing yet — if a worker is
+killed between `start_onboarding()` and `complete_onboarding()` they'll
+be left in 'onboarding' status and require manual cleanup.
 
 ### Sequence
 
@@ -1241,7 +1261,8 @@ shared/onboarding/configs/
 
 **Type:** Decision tree within Session spawn (T1)
 **Implementation:** `cli/core/worker.py` - `Worker.spawn_session()`
-**Status:** ⚠️ Partial (no rollback on spawn failure)
+**Status:** ✅ Implemented. Budget is refunded if session spawn fails —
+pinned by `test_t1_rollback_on_spawn_failure`.
 
 ### Decision Flow
 
@@ -1553,13 +1574,17 @@ before_spawn():
 
 **C1: Org state consistency after resume**
 ```python
-# T4 (stopped → running) should behave like T2
-after_org_resume():
-    if previous_state_had_ceo_session:
-        assert ceo.has_active_session or INCONSISTENT
+# At the orchestrator layer, T4 (stopped → running) behaves like T2
+after_org_resume_via_orchestrator():
+    if spawn_ceo:
+        assert ceo.has_active_session
 ```
-**Violated by:** T4 doesn't spawn CEO session
-**Status:** ❌ Broken
+**Enforced at:** `org_start_controller.py` calls
+`_spawn_ceo_session_if_needed` for both FIRST_START and RESUME modes
+(quinn-ai-wbwy). Note: at the Python-API layer, `Org.start()` never
+spawns sessions in either mode by design — see the Layering note in the
+Org Lifecycle section.
+**Status:** ✅ Implemented (orchestrator layer)
 
 ---
 
@@ -1581,8 +1606,12 @@ on_session_state_change(old, new):
     assert update_worker_runtime_status.called
     assert worker_state.runtime_status == map_state(new)
 ```
-**Violated by:** Missing callbacks in session adapters
-**Status:** ❌ Broken
+**Enforced at:** Session adapters route state changes through
+`cli/core/sessions/binding_manager.py` which calls
+`update_worker_runtime_status`. See also `cli/core/sessions/state_sync.py`
+for the polling-based fallback path. Pinned by
+`test_c3_all_state_changes_propagate` and `test_status_sync_latency_under_500ms`.
+**Status:** ✅ Implemented
 
 ---
 
