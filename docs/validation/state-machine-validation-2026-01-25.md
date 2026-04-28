@@ -1,19 +1,32 @@
-# State Machine Implementation Validation
+# State Machine Implementation Validation (HISTORICAL — JAN 2026)
+
+> **⚠️ HISTORICAL SNAPSHOT — DO NOT TREAT AS CURRENT.**
+>
+> This document captures the state of the implementation as of
+> 2026-01-25. The findings in this report drove a wave of test xfails
+> and follow-up work. As of 2026-04-28, every gap listed below has been
+> closed (re-validated in commits leading up to 2026-04-28; see
+> `STATEMACHINES.md` for current status labels and the bead tracker for
+> the resolutions: quinn-ai-tage / wbwy / l6uh / ef4z and the cleanup
+> of 13 xpassed tests in commit dc9c56c).
+>
+> Kept for context on the architectural shifts that happened across
+> Q1 2026; not a current TODO list.
 
 **Date:** 2026-01-25
 **Validated Against:** STATEMACHINES.md
-**Status:** ❌ Multiple critical mismatches found
+**Status (at the time):** ❌ Multiple critical mismatches found
 
-## Summary
+## Summary (at the time)
 
-| State Machine | Status | Critical Issues |
-|---------------|--------|-----------------|
-| Org Lifecycle | ⚠️ Partial | No rollback, resume inconsistency |
-| Worker Lifecycle | ❌ MISMATCH | States don't match documentation |
-| Session Lifecycle | ❌ MISMATCH | Missing working/blocked states |
-| Status Sync | ❌ Broken | No automatic propagation |
-| Onboarding Sequence | ⚠️ Partial | No checkpointing, no rollback |
-| Budget Enforcement | ⚠️ Partial | No transaction wrapping |
+| State Machine | Status (Jan 2026) | Resolution |
+|---------------|-------------------|------------|
+| Org Lifecycle | ⚠️ Partial — no rollback, resume inconsistency | Fixed: rollback in `Org.start()` (tage); resume layering documented (wbwy) |
+| Worker Lifecycle | ❌ MISMATCH — states don't match docs | Fixed: spec updated to include `offboarding` (l6uh) |
+| Session Lifecycle | ❌ MISMATCH — missing working/blocked states | Fixed: working/blocked removed from `RUNTIME_STATES` (l6uh) — they were vestigial, no production code wrote them |
+| Status Sync | ❌ Broken — no automatic propagation | Fixed: `cli/core/sessions/state_sync.py` + `binding_manager.py` |
+| Onboarding Sequence | ⚠️ Partial — no checkpointing, no rollback | Fixed: rollback wraps onboarding pair (tage). Mid-onboarding checkpointing still TBD if needed. |
+| Budget Enforcement | ⚠️ Partial — no transaction wrapping | Fixed: budget refunded on spawn failure |
 
 ---
 
