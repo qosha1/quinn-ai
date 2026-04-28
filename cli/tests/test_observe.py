@@ -301,8 +301,9 @@ class TestObserveCommand:
         call_args = mock_stream_fn.call_args
         assert call_args[1].get('poll_interval') == 1.5 or (len(call_args[0]) > 1 and call_args[0][1] == 1.5)
 
+    @patch('cli.commands.org.observe._stdout_is_tty', return_value=True)
     @patch('cli.commands.org.observe.TmuxSession')
-    def test_observe_attach_mode_closes_db(self, mock_tmux_class, runner, initialized_org):
+    def test_observe_attach_mode_closes_db(self, mock_tmux_class, mock_isatty, runner, initialized_org):
         """Should close database before attaching to tmux session."""
         temp_org, ceo_id = initialized_org
         mock_tmux_class.exists.return_value = True
@@ -377,8 +378,9 @@ class TestObserveCommandEdgeCases:
         # Either finds worker (no session error) or doesn't find (not found error)
         assert result.exit_code != 0
 
+    @patch('cli.commands.org.observe._stdout_is_tty', return_value=True)
     @patch('cli.commands.org.observe.TmuxSession')
-    def test_observe_with_idle_runtime_status(self, mock_tmux_class, runner, initialized_org):
+    def test_observe_with_idle_runtime_status(self, mock_tmux_class, mock_isatty, runner, initialized_org):
         """Should work when worker is in IDLE state (considered active)."""
         temp_org, ceo_id = initialized_org
         mock_tmux_class.exists.return_value = True
@@ -396,8 +398,9 @@ class TestObserveCommandEdgeCases:
         assert result.exit_code == 0
         mock_tmux_class.attach.assert_called_once()
 
+    @patch('cli.commands.org.observe._stdout_is_tty', return_value=True)
     @patch('cli.commands.org.observe.TmuxSession')
-    def test_observe_with_starting_runtime_status(self, mock_tmux_class, runner, initialized_org):
+    def test_observe_with_starting_runtime_status(self, mock_tmux_class, mock_isatty, runner, initialized_org):
         """Should work when worker is in STARTING state (considered active)."""
         temp_org, ceo_id = initialized_org
         mock_tmux_class.exists.return_value = True

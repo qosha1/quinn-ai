@@ -10,7 +10,7 @@ For backward compatibility, all exports are re-exported at the package level.
 from .common import generate_id, parse_datetime, get_or_create_config
 from .org import OrgState, get_org_state, update_org_status
 from .team import Team, TeamMember, create_team, get_team, get_team_channel, get_team_children, get_all_teams, add_team_member, get_team_member, update_team_member_role, remove_team_member, get_team_members_list, get_worker_team_memberships, get_team_members_by_role
-from .worker import Worker, WorkerState, create_worker, get_worker, get_worker_by_name, update_worker_status, get_workers_by_status, get_workers_by_manager, get_team_workers, get_all_workers_for_topology, get_root_worker, create_worker_state, get_worker_state, update_worker_runtime_status, record_worker_heartbeat, increment_worker_task_count, get_workers_by_runtime_status, is_worker_manager, update_worker_preferred_provider, get_worker_preferred_provider, get_worker_continuation_context
+from .worker import Worker, WorkerState, create_worker, get_worker, get_worker_by_name, get_workers_by_role, resolve_worker, update_worker_status, get_workers_by_status, get_workers_by_manager, get_team_workers, get_all_workers_for_topology, get_root_worker, create_worker_state, get_worker_state, update_worker_runtime_status, record_worker_heartbeat, increment_worker_task_count, get_workers_by_runtime_status, is_worker_manager, update_worker_preferred_provider, get_worker_preferred_provider, get_worker_continuation_context
 from .session import get_active_session_tmux_name
 from .channel import Channel, Message, ChannelAccessError, create_channel, create_direct_channel, get_or_create_direct_channel, get_channel, get_channel_by_name, create_default_org_channels, can_subscribe_to_channel, subscribe_to_channel, is_subscribed_to_channel, unsubscribe_from_channel, get_channel_subscribers, get_worker_channels, unsubscribe_from_all_channels, create_message, create_message_with_notifications, get_message, get_channel_messages, get_thread_messages, search_messages, add_message_ref, get_message_refs
 
@@ -53,6 +53,8 @@ __all__ = [
     "create_worker",
     "get_worker",
     "get_worker_by_name",
+    "get_workers_by_role",
+    "resolve_worker",
     "update_worker_status",
     "get_workers_by_status",
     "get_workers_by_manager",

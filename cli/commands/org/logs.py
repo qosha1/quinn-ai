@@ -13,7 +13,7 @@ import click
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
-from cli.core.queries import get_worker_by_name
+from cli.core.queries import get_worker_by_name, resolve_worker
 from cli.core.constants import TMUX_SESSION_PREFIX, LOG_TAIL_POLL_INTERVAL
 from shared.exceptions import WorkerNotFound
 
@@ -134,8 +134,9 @@ def logs_cmd(ctx: Context, worker: str, lines: Optional[int], follow: bool):
     db = open_database(db_path)
 
     try:
-        # Try to find worker by name first, then by ID
-        worker_data = get_worker_by_name(db, worker)
+        # Resolve selector (id, name, or role); 'ceo' resolves to the
+        # unique CEO regardless of the human-readable name (quinn-ai-f1ct).
+        worker_data = resolve_worker(db, worker)
         worker_id = worker_data.id if worker_data else worker
 
         # Use Worker class to validate and check session state

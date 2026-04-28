@@ -182,6 +182,51 @@ def get_worker_by_name(db: Database, name: str) -> Optional[Worker]:
     return _row_to_worker(row)
 
 
+def get_workers_by_role(db: Database, role: str) -> list[Worker]:
+    """Get all workers with a given role.
+
+    Args:
+        db: Database instance
+        role: Role to match (case-insensitive, e.g. 'CEO', 'director')
+
+    Returns:
+        List of matching workers (may be empty or have multiple entries)
+    """
+    rows = db.fetchall(
+        "SELECT * FROM workers WHERE LOWER(role) = LOWER(?)",
+        (role,)
+    )
+    return [_row_to_worker(row) for row in rows]
+
+
+def resolve_worker(db: Database, selector: str) -> Optional[Worker]:
+    """Resolve a worker selector (name, id, or role) to a single Worker.
+
+    Tries in order:
+    1. Exact ID match
+    2. Case-insensitive name match
+    3. Case-insensitive role match — only succeeds if exactly ONE worker
+       holds that role (so 'ceo' resolves to the unique CEO, but 'engineer'
+       won't if there are five engineers).
+
+    Returns None if no match. Returns None for ambiguous role match too;
+    callers can re-query get_workers_by_role to disambiguate.
+    """
+    by_id = get_worker(db, selector)
+    if by_id is not None:
+        return by_id
+
+    by_name = get_worker_by_name(db, selector)
+    if by_name is not None:
+        return by_name
+
+    by_role = get_workers_by_role(db, selector)
+    if len(by_role) == 1:
+        return by_role[0]
+
+    return None
+
+
 def update_worker_status(db: Database, worker_id: str, status: str) -> None:
     """Update worker lifecycle status.
 

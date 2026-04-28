@@ -4,15 +4,25 @@ qn org observe command.
 Attach to or stream a worker's tmux session in real-time.
 """
 
+import sys
 import time
 from typing import Optional
 
 import click
 
+
+def _stdout_is_tty() -> bool:
+    """Return True if stdout is connected to a real terminal.
+
+    Wrapped so tests can patch this single function instead of trying to
+    patch sys.stdout.isatty (which Click's CliRunner replaces).
+    """
+    return sys.stdout.isatty()
+
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.worker import Worker
-from cli.core.queries import get_worker_by_name, get_worker
+from cli.core.queries import get_worker_by_name, get_worker, resolve_worker
 from cli.core.constants import TMUX_SESSION_PREFIX
 from shared import WorkerNotFound
 from shared.pyterm.tmux_session import TmuxSession
@@ -120,11 +130,9 @@ def observe_cmd(ctx: Context, worker: str, stream: bool, poll_interval: float):
     db = open_database(db_path)
 
     try:
-        # Try to find worker by name first, then by ID
-        worker_data = get_worker_by_name(db, worker)
-        if worker_data is None:
-            worker_data = get_worker(db, worker)
-
+        # Resolve selector (id, name, or role); 'ceo' resolves to the
+        # unique CEO regardless of the human-readable name (quinn-ai-f1ct).
+        worker_data = resolve_worker(db, worker)
         if worker_data is None:
             raise click.ClickException(
                 f"Worker '{worker}' not found.\n"
@@ -168,6 +176,15 @@ def observe_cmd(ctx: Context, worker: str, stream: bool, poll_interval: float):
             # Stream mode - poll and print output
             stream_session_output(session_name, poll_interval)
         else:
+            # Attach mode requires a real terminal. Fail fast with an
+            # actionable message rather than letting tmux exec and emit
+            # 'open terminal failed: not a terminal' (quinn-ai-qii5).
+            if not _stdout_is_tty():
+                raise click.ClickException(
+                    "Cannot attach: this process is not connected to a terminal. "
+                    "Use 'qn org logs <worker>' for non-interactive log access, "
+                    "or 'qn org observe <worker> --stream' to poll output."
+                )
             # Attach mode - take over terminal
             click.echo("Attaching to session... (Ctrl+B, then D to detach)")
             db.close()  # Close DB before exec replaces process
