@@ -14,10 +14,8 @@ SPECS_DIR = Path(__file__).parent / "specs"
 # so the run doesn't fail if the underlying bug gets fixed and the scenario
 # starts passing — that just becomes an XPASS signal).
 EXPECTED_FAILURES = {
-    # 03_chain_3_levels was unblocked by adding the delegate_authority op
-    # (commit pending). Keeping the table syntax for future xfails.
-    "05_okr_cascade": ("quinn-ai-4zgi", "okr_owner predicate queries non-existent 'okrs' table"),
-    "06_work_distribution": ("quinn-ai-772u", "qn-bd subcommand surface unverified"),
+    # 03_chain_3_levels was unblocked by adding the delegate_authority op.
+    # 05_okr_cascade was unblocked by reading OKRs via qn-bd show --json.
 }
 
 

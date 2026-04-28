@@ -140,48 +140,87 @@ def op_transition_runtime(run: "ScenarioRun", op: dict[str, Any]) -> None:
 
 
 def op_create_okr(run: "ScenarioRun", op: dict[str, Any]) -> None:
-    """Create an OKR via 'qn org okr set'. OKRs are stored as beads of type 'okr'."""
-    args = ["org", "okr", "set", "--title", op["objective"]]
+    """Create an OKR via 'qn org okr set'. OKRs are stored as beads of type 'okr'.
+
+    Captures the generated bead id from the 'Created issue: <id>' line so
+    later ops/assertions can reference it via id_var.
+    """
+    from cli.commands.main import qn
+
+    args = ["--org-path", str(run.org_path), "org", "okr", "set", "--title", op["objective"]]
     if "owner" in op:
         worker_id = run._resolve_worker_id(op["owner"])
         args += ["--owner", worker_id]
     if "description" in op:
         args += ["--description", op["description"]]
-    _run_qn(run, args)
+
+    result = run.runner.invoke(qn, args, catch_exceptions=False)
+    if result.exit_code != 0:
+        raise RuntimeError(
+            f"qn org okr set failed (exit {result.exit_code}):\n{result.output}"
+        )
+    # Parse 'Created issue: quinnai-XXXX' from output
+    okr_id = None
+    for line in result.output.splitlines():
+        if "Created issue:" in line:
+            parts = line.split("Created issue:", 1)[1].strip().split()
+            if parts:
+                okr_id = parts[0]
+                break
+    if "id_var" in op and okr_id:
+        run.context[op["id_var"]] = okr_id
 
 
 def op_assign_kr(run: "ScenarioRun", op: dict[str, Any]) -> None:
-    """Add or update a key result on an OKR via 'qn org okr update-kr'."""
+    """Add or update a key result on an OKR via 'qn org okr update-kr'.
+
+    Resolves op['okr'] from run.context if it matches an id_var; otherwise
+    treats it as a literal bead id.
+    """
+    okr_ref = op["okr"]
+    okr_id = run.context.get(okr_ref, okr_ref)
     args = [
         "org", "okr", "update-kr",
-        op["okr"],  # OKR id is positional
+        okr_id,
         "--metric", op.get("kr", op.get("metric", "kr")),
         "--target", str(op.get("target", 1)),
     ]
     _run_qn(run, args)
 
 
-def op_create_bead(run: "ScenarioRun", op: dict[str, Any]) -> None:
-    """Create a bead via qn-bd subprocess. Skipped if bd not on PATH."""
-    if not shutil.which("bd"):
-        import pytest
-        pytest.skip("bd binary not on PATH — skipping bead-dependent scenario")
-    import subprocess
-    import sys
+def _bd_direct(run: "ScenarioRun", bd_args: list[str]) -> "subprocess.CompletedProcess":
+    """Invoke the bundled bd binary directly with --sandbox + --db.
 
-    cmd = [
-        sys.executable, "-m", "cli.commands.qn_bd",
-        "--org-path", str(run.org_path),
+    Sidesteps the qn-bd Python wrapper which has fd-plumbing issues that
+    swallow stdout under captured-subprocess invocation. Used for ops that
+    need to read bd's output (e.g. capturing a created bead id).
+    """
+    import subprocess
+    from cli.core.bd_wrapper import get_bundled_bd_path, get_org_beads_dir
+
+    bd_path = get_bundled_bd_path()
+    beads_db = get_org_beads_dir(run.org_path) / "beads.db"
+    cmd = [str(bd_path), "--sandbox", f"--db={beads_db}"] + bd_args
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+
+def op_create_bead(run: "ScenarioRun", op: dict[str, Any]) -> None:
+    """Create a bead via the bundled bd binary directly."""
+    if not shutil.which("bd") and not _bundled_bd_exists():
+        import pytest
+        pytest.skip("bd binary not available — skipping bead-dependent scenario")
+
+    bd_args = [
         "create",
         "--title", op["title"],
         "--type", op.get("type", "task"),
     ]
     if "priority" in op:
-        cmd += ["--priority", str(op["priority"])]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        bd_args += ["--priority", str(op["priority"])]
+    result = _bd_direct(run, bd_args)
     if result.returncode != 0:
         raise RuntimeError(
-            f"qn-bd create failed (exit {result.returncode}):\n"
+            f"bd create failed (exit {result.returncode}):\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
     bead_id = None
@@ -195,26 +234,30 @@ def op_create_bead(run: "ScenarioRun", op: dict[str, Any]) -> None:
 
 
 def op_claim_bead(run: "ScenarioRun", op: dict[str, Any]) -> None:
-    if not shutil.which("bd"):
+    """Update a bead's status + assignee via the bundled bd binary directly."""
+    if not shutil.which("bd") and not _bundled_bd_exists():
         import pytest
-        pytest.skip("bd binary not on PATH")
-    import subprocess
-    import sys
+        pytest.skip("bd binary not available")
 
     bead_id = run.context.get(op["bead"], op["bead"])
     worker_id = run._resolve_worker_id(op["worker"])
-    cmd = [
-        sys.executable, "-m", "cli.commands.qn_bd",
-        "--org-path", str(run.org_path),
+    result = _bd_direct(run, [
         "update", bead_id,
         "--status", "in_progress",
         "--assignee", worker_id,
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    ])
     if result.returncode != 0:
         raise RuntimeError(
-            f"qn-bd claim failed: stdout={result.stdout} stderr={result.stderr}"
+            f"bd update failed: stdout={result.stdout} stderr={result.stderr}"
         )
+
+
+def _bundled_bd_exists() -> bool:
+    try:
+        from cli.core.bd_wrapper import get_bundled_bd_path
+        return get_bundled_bd_path().exists()
+    except Exception:
+        return False
 
 
 def op_induce_escalation(run: "ScenarioRun", op: dict[str, Any]) -> None:
