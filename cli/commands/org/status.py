@@ -70,6 +70,27 @@ def status_cmd(ctx: Context):
                 else:
                     click.echo(f"  Authority: {', '.join(scope.allowed_roles)}")
 
+        # Other workers (closes quinn-ai-v05t — status used to only show CEO).
+        ceo_id = org.ceo.id if org.ceo else None
+        rows = db.fetchall(
+            """SELECT w.id, w.name, w.role, w.status, ws.runtime_status
+               FROM workers w
+               LEFT JOIN worker_state ws ON ws.worker_id = w.id
+               WHERE w.status != 'terminated'
+                 AND (? IS NULL OR w.id != ?)
+               ORDER BY w.created_at"""
+            ,
+            (ceo_id, ceo_id),
+        )
+        if rows:
+            click.echo("")
+            click.echo(f"Other Workers ({len(rows)}):")
+            for r in rows:
+                runtime = f", {r['runtime_status']}" if r["runtime_status"] else ""
+                click.echo(
+                    f"  {r['name']} ({r['role']}) - {r['status']}{runtime}"
+                )
+
         # Timestamps
         if org.started_at:
             click.echo("")
