@@ -29,7 +29,7 @@ def main():
         "--org-path",
         type=Path,
         default=os.environ.get("QUINN_ORG_PATH"),
-        help="Path to org folder. Falls back to QUINN_ORG_PATH env var.",
+        help="Path to org folder. Falls back to $QUINN_ORG_PATH (no cwd auto-detection).",
     )
     parser.add_argument(
         "--worker-id",

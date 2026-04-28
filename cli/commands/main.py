@@ -21,7 +21,7 @@ from cli.core.org_discovery import find_org_root
     "--org-path",
     type=click.Path(exists=False, path_type=Path),
     envvar="QUINN_ORG_PATH",
-    help="Path to org folder. Defaults to QUINN_ORG_PATH env var.",
+    help="Path to org folder. Falls back to $QUINN_ORG_PATH, then auto-detection from cwd.",
 )
 @click.option(
     "-v", "--verbose",
@@ -170,7 +170,7 @@ def qn(ctx, org_path: Optional[Path], verbose: bool, debug: bool):
     "--org-path",
     type=click.Path(exists=False, path_type=Path),
     envvar="QUINN_ORG_PATH",
-    help="Path to org folder. Auto-detects from current directory if not specified.",
+    help="Path to org folder. Falls back to $QUINN_ORG_PATH, then auto-detection from cwd.",
 )
 @click.pass_context
 def org(ctx, org_path: Optional[Path]):
@@ -193,7 +193,7 @@ def org(ctx, org_path: Optional[Path]):
     "--org-path",
     type=click.Path(exists=False, path_type=Path),
     envvar="QUINN_ORG_PATH",
-    help="Path to org folder. Defaults to QUINN_ORG_PATH env var.",
+    help="Path to org folder. Falls back to $QUINN_ORG_PATH, then auto-detection from cwd.",
 )
 @click.option(
     "--worker-id",
@@ -274,7 +274,7 @@ wrkr.add_command(restart_cmd, name="restart")
     "--org-path",
     type=click.Path(exists=False, path_type=Path),
     envvar="QUINN_ORG_PATH",
-    help="Path to org folder. Defaults to QUINN_ORG_PATH env var.",
+    help="Path to org folder. Falls back to $QUINN_ORG_PATH, then auto-detection from cwd.",
 )
 @click.pass_context
 def board(ctx, org_path: Optional[Path]):
