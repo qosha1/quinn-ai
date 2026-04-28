@@ -25,11 +25,13 @@ from cli.providers.base import (
 from shared.core import Message
 
 
-# Model definitions with explicit capabilities and tier mappings
+# Model definitions with explicit capabilities and tier mappings.
+# Model IDs reflect the current Claude 4.X family (April 2026):
+# Opus 4.7, Sonnet 4.6, Haiku 4.5.
 ANTHROPIC_MODELS = [
     ModelInfo(
-        id="claude-3-5-haiku-20241022",
-        name="Claude 3.5 Haiku",
+        id="claude-haiku-4-5-20251001",
+        name="Claude Haiku 4.5",
         tier=CostTier.BUDGET,
         tiers=[CostTier.BUDGET],
         capabilities=ModelCapabilities(
@@ -42,8 +44,8 @@ ANTHROPIC_MODELS = [
         max_tokens=8192,
     ),
     ModelInfo(
-        id="claude-sonnet-4-20250514",
-        name="Claude Sonnet 4",
+        id="claude-sonnet-4-6",
+        name="Claude Sonnet 4.6",
         tier=CostTier.STANDARD,
         tiers=[CostTier.STANDARD, CostTier.ADVANCED],
         capabilities=ModelCapabilities(
@@ -56,8 +58,8 @@ ANTHROPIC_MODELS = [
         max_tokens=16384,
     ),
     ModelInfo(
-        id="claude-opus-4-5-20251101",
-        name="Claude Opus 4.5",
+        id="claude-opus-4-7",
+        name="Claude Opus 4.7",
         tier=CostTier.PREMIUM,
         tiers=[CostTier.PREMIUM],
         capabilities=ModelCapabilities(
@@ -71,11 +73,13 @@ ANTHROPIC_MODELS = [
     ),
 ]
 
-# Cost per 1K tokens in USD (as of 2024)
+# Cost per 1K tokens in USD. Values copied from the prior model entries
+# as a placeholder — these need to be reverified against current
+# Anthropic pricing for the 4.X family (Haiku 4.5 / Sonnet 4.6 / Opus 4.7).
 TOKEN_COSTS = {
-    "claude-3-5-haiku-20241022": {"input": 0.00025, "output": 0.00125},
-    "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
-    "claude-opus-4-5-20251101": {"input": 0.015, "output": 0.075},
+    "claude-haiku-4-5-20251001": {"input": 0.00025, "output": 0.00125},
+    "claude-sonnet-4-6": {"input": 0.003, "output": 0.015},
+    "claude-opus-4-7": {"input": 0.015, "output": 0.075},
 }
 
 
@@ -94,7 +98,7 @@ class AnthropicProvider(Provider):
         provider = AnthropicProvider(config)
         result = provider.complete(
             messages=[Message(role="user", content="Hello")],
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
         )
     """
 
@@ -175,7 +179,7 @@ class AnthropicProvider(Provider):
             APIError: For other API errors
         """
         if model is None:
-            model = "claude-sonnet-4-20250514"
+            model = "claude-sonnet-4-6"
 
         # Validate model exists
         if not any(m.id == model for m in self.models):
