@@ -186,6 +186,13 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      # qn org init runs `git commit --allow-empty` for the org-chart bootstrap;
+      # the runner has no git identity by default so configure one for the test.
+      - name: Configure git identity for qn org init
+        run: |
+          git config --global user.email "ci@quinn-ai.test"
+          git config --global user.name "CI Smoke Test"
+
       - name: Resolve version
         id: ver
         run: |
