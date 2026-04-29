@@ -2,16 +2,17 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WorkerRow } from "@/components/WorkerRow";
-import { OKRNode } from "@/components/OKRNode";
-import { buildOKRTree, formatCurrency, formatRelativeTime } from "@/lib/transforms";
-import type { OrgDashboard, WorkerInfo, Message, OKRInfo, ActivityEntry, Channel } from "@/lib/types";
+import { WorkBoard } from "@/components/WorkBoard";
+import { formatCurrency, formatRelativeTime } from "@/lib/transforms";
+import type { OrgDashboard, WorkerInfo, Message, ActivityEntry, Channel } from "@/lib/types";
+import type { Bead, Dependency } from "@/lib/beads-db";
 
-export type Tab = "dashboard" | "team" | "messages" | "okrs" | "activity";
+export type Tab = "dashboard" | "team" | "messages" | "work" | "activity";
 
 interface Toast { id: number; message: string; type: "success" | "error" }
 
 const POLL_INTERVAL = 15000;
-const TABS: Tab[] = ["dashboard", "team", "messages", "okrs", "activity"];
+const TABS: Tab[] = ["dashboard", "team", "messages", "work", "activity"];
 
 async function fetchWithRetry<T>(url: string, opts?: RequestInit, retries = 2): Promise<T> {
   for (let i = 0; i <= retries; i++) {
@@ -73,7 +74,8 @@ export function BoardShell({ tab }: Props) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [okrs, setOKRs] = useState<OKRInfo[]>([]);
+  const [beads, setBeads] = useState<Bead[]>([]);
+  const [beadDeps, setBeadDeps] = useState<Dependency[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [replyText, setReplyText] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -101,17 +103,18 @@ export function BoardShell({ tab }: Props) {
   const fetchAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [db, ws, chans, os, act] = await Promise.all([
+      const [db, ws, chans, bd, act] = await Promise.all([
         fetchWithRetry<OrgDashboard>("/api/org"),
         fetchWithRetry<{ workers: WorkerInfo[] }>("/api/workers"),
         fetchWithRetry<{ channels: Channel[] }>("/api/messages?channel=_channels"),
-        fetchWithRetry<{ okrs: OKRInfo[] }>("/api/okrs"),
+        fetchWithRetry<{ beads: Bead[]; dependencies: Dependency[] }>("/api/beads"),
         fetchWithRetry<{ activity: ActivityEntry[] }>("/api/activity"),
       ]);
       setDashboard(db);
       setWorkers(ws.workers);
       setChannels(chans.channels);
-      setOKRs(os.okrs);
+      setBeads(bd.beads ?? []);
+      setBeadDeps(bd.dependencies ?? []);
       setActivity(act.activity);
       setError(null);
       setActiveChannel((prev) => {
@@ -188,7 +191,6 @@ export function BoardShell({ tab }: Props) {
   }, [replyText, activeChannel, sending, messages, toast, fetchMessages]);
 
   const totalUnread = channels.reduce((sum, c) => sum + (c.unread_count ?? 0), 0);
-  const orgTree = buildOKRTree(okrs);
 
   if (loading) {
     return (
@@ -233,7 +235,9 @@ export function BoardShell({ tab }: Props) {
       <nav className="tab-bar">
         {TABS.map((t) => (
           <button key={t} className={`tab ${tab === t ? "tab--active" : ""}`} onClick={() => router.push(`/${t}`)}>
-            {t === "messages" && totalUnread > 0 ? `Messages (${totalUnread})` : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t === "messages" && totalUnread > 0 ? `Messages (${totalUnread})` :
+             t === "work" ? `Work${beads.length > 0 ? ` (${beads.filter((b) => b.status !== "closed").length})` : ""}` :
+             t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </nav>
@@ -403,13 +407,9 @@ export function BoardShell({ tab }: Props) {
           </div>
         )}
 
-        {/* ── OKRs ── */}
-        {tab === "okrs" && (
-          <div>
-            <div className="section-title" style={{ marginBottom: 16 }}>{okrs.length} OKRs</div>
-            {orgTree.length === 0 && <div className="empty-state">No active OKRs</div>}
-            {orgTree.map((node) => <OKRNode key={node.id} node={node} depth={0} />)}
-          </div>
+        {/* ── WORK ── */}
+        {tab === "work" && (
+          <WorkBoard beads={beads} dependencies={beadDeps} />
         )}
 
         {/* ── ACTIVITY ── */}
