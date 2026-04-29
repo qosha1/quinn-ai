@@ -263,3 +263,37 @@ PREDICATES: dict[str, Predicate] = {
     "message_count_from": pred_message_count_from,
     "message_count_between": pred_message_count_between,
 }
+
+
+def pred_file_contains(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
+    """Filesystem assertion: file at `path` does/doesn't contain `substring`.
+
+    YAML forms:
+      - { kind: file_contains, path: /tmp/x.py, substring: "isalnum" }
+      - { kind: file_contains, path: /tmp/x.py, substring: "isspace", should: absent }
+
+    Used to verify that workers actually edited shared files per review
+    feedback, not merely acknowledged it. The 'should' key takes
+    'present' (default) or 'absent'.
+    """
+    from pathlib import Path
+    path = Path(a["path"])
+    substring = a["substring"]
+    expected = a.get("should", "present")
+
+    if not path.exists():
+        return f"file_contains: file does not exist at {path}"
+    try:
+        text = path.read_text()
+    except Exception as e:
+        return f"file_contains: could not read {path}: {e}"
+
+    has = substring in text
+    if expected == "present" and not has:
+        return f"file_contains({path}): substring {substring!r} NOT found"
+    if expected == "absent" and has:
+        return f"file_contains({path}): substring {substring!r} should be ABSENT but is present"
+    return None
+
+
+PREDICATES["file_contains"] = pred_file_contains

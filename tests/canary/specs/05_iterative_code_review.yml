@@ -1,0 +1,67 @@
+# Canary 05: deeper than 03 — iterative code-review LOOP.
+#
+# Bob writes is_palindrome (the canonical buggy version that strips
+# whitespace but not punctuation). Carol reviews and flags the bug. Bob
+# READS Carol's feedback and APPLIES the fix (switch isspace → isalnum).
+# Carol re-reads and approves with 'LGTM'.
+#
+# This is one strict step deeper than canary 03: instead of just one DM
+# round-trip, we verify that the workers actually iterate on each other's
+# feedback and the shared artifact CHANGES per the review. Real
+# collaboration, not performative.
+#
+# Cost: ~$1-2 per paid run (4-6 model turns total across both workers).
+name: iterative_code_review
+setup:
+  init:
+    ceo_name: Alice
+ops:
+  - op: create_okr
+    objective: "ULTRA PRIORITY: Hire Bob (writer) and Carol (reviewer)"
+    owner: ceo
+    priority: 0
+    description: |
+      Run autonomously, do not ask for confirmation:
+      1. qn org hire --name Bob --role engineer --manager alice --cost 30
+      2. qn org hire --name Carol --role engineer --manager alice --cost 30
+      3. qn org budget allocate bob 80
+      4. qn org budget allocate carol 80
+      (Budget allocation auto-spawns each worker's session.)
+  - { op: start_org }
+  - op: kickstart_ceo
+    message: "Read INITIAL_TASK.md and act on the highest-priority OKR right now. Hire Bob and Carol immediately."
+  - { op: wait_until, predicate: { kind: worker_count, value: 3 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+
+  # Round 1: Bob writes the (initially-buggy) function.
+  - op: kickstart_worker
+    worker: bob
+    other_worker: carol
+    message: "Your task as Bob: (1) Write a Python function `is_palindrome(s: str) -> bool` to /tmp/canary05-code.py. Strip ONLY whitespace via isspace() (this is intentionally a first draft — Carol will catch issues). (2) DM Carol via `msgr send @{other_id}` asking her to review at /tmp/canary05-code.py. Then STOP and wait for her review."
+  - op: kickstart_worker
+    worker: carol
+    other_worker: bob
+    message: "Your task as Carol: wait ~30 seconds, then (1) read /tmp/canary05-code.py — Bob will have written a function. (2) Review it carefully. There is a real bug related to PUNCTUATION (think 'A man, a plan, a canal: Panama'). (3) DM Bob via `msgr send @{other_id}` with concrete review feedback that explicitly says he should switch from isspace() to isalnum(). After this initial review, KEEP CHECKING the file every ~30 seconds (up to 5 minutes). When Bob has applied your suggested fix (the file uses isalnum and no longer uses isspace), DM Bob the literal text 'LGTM — approved'. Then stop."
+
+  # Wait for the initial round (Bob's request + Carol's review).
+  - { op: wait_until, predicate: { kind: message_count_between, from: bob, to: carol, min: 1 }, timeout_seconds: 180, poll_interval_seconds: 5 }
+  - { op: wait_until, predicate: { kind: message_count_between, from: carol, to: bob, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+
+  # Round 2: Bob applies the fix and notifies Carol.
+  - op: kickstart_worker
+    worker: bob
+    other_worker: carol
+    message: "Carol just sent you review feedback. (1) Read your inbox: `msgr inbox --full`. (2) Apply her suggested fix to /tmp/canary05-code.py — switch ch.isspace() to ch.isalnum() (and flip the polarity of the filter so non-alnum chars are removed). (3) DM Carol via `msgr send @{other_id}` saying you've applied the fix and asking for re-review. Then stop."
+
+  # Wait for Bob to send a second message (the 'fix applied' notification).
+  - { op: wait_until, predicate: { kind: message_count_between, from: bob, to: carol, min: 2 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+  # Wait for Carol's approval (her second message).
+  - { op: wait_until, predicate: { kind: message_count_between, from: carol, to: bob, min: 2 }, timeout_seconds: 300, poll_interval_seconds: 5 }
+
+assertions:
+  - { kind: worker_count, value: 3 }
+  - { kind: manager_subordinates, manager: alice, expected: [bob, carol] }
+  - { kind: message_count_between, from: bob, to: carol, min: 2 }
+  - { kind: message_count_between, from: carol, to: bob, min: 2 }
+  # Proof Bob actually applied the fix: file uses isalnum, no longer uses isspace.
+  - { kind: file_contains, path: /tmp/canary05-code.py, substring: "isalnum" }
+  - { kind: file_contains, path: /tmp/canary05-code.py, substring: "isspace", should: absent }
