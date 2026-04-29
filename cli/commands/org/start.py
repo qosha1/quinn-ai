@@ -77,6 +77,19 @@ from cli.core.sessions.registry import get_default_registry  # noqa: F401
     help="Additional args to pass to the CLI command.",
 )
 @click.option(
+    "--model",
+    "model",
+    default=None,
+    envvar="QUINNAI_CANARY_MODEL",
+    help=(
+        "Pin the LLM model for the spawned CEO session (e.g., "
+        "'claude-sonnet-4-6', 'claude-opus-4-7', or aliases like "
+        "'sonnet'/'opus'). For claude_code, this becomes '--model <id>' "
+        "on the claude CLI. Defaults to \\$QUINNAI_CANARY_MODEL or, if "
+        "unset, whatever model the user is logged into. (quinn-ai-875q)"
+    ),
+)
+@click.option(
     "--skip-config-validation",
     is_flag=True,
     default=False,
@@ -107,6 +120,7 @@ def start_cmd(
     provider: str,
     session_command: str,
     session_args: str,
+    model: Optional[str],
     skip_config_validation: bool,
     wait: bool,
     wait_timeout: int,
@@ -128,6 +142,7 @@ def start_cmd(
         provider=provider,
         session_command=session_command,
         session_args=session_args,
+        model=model,
         skip_config_validation=skip_config_validation,
         wait=wait,
         wait_timeout=wait_timeout,

@@ -174,11 +174,20 @@ class ClaudeCodeSession(SessionInterface):
                 + self._config.command
             )
 
+            # If the caller pinned a model via SessionConfig.model, prepend
+            # it to claude's args so the spawned session uses that model
+            # instead of whatever the user is logged into. claude CLI
+            # supports both aliases ('sonnet', 'opus') and full ids
+            # ('claude-sonnet-4-6'). (quinn-ai-875q)
+            args = list(self._config.args or [])
+            if getattr(self._config, "model", None):
+                args = ["--model", self._config.model, *args]
+
             # Start with session config that includes our command and args
             from shared.pyterm.protocols import PytermSessionConfig
             session_config = PytermSessionConfig(
                 shell=shell_cmd,
-                args=self._config.args,
+                args=args,
                 cwd=str(self._config.working_directory) if self._config.working_directory else None,
                 env=scrubbed_env,
                 cols=self._config.cols,

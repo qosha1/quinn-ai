@@ -152,6 +152,55 @@ class TestClaudeCodeSessionSpawn:
 
     @patch("cli.core.sessions.claude_code.AgentSession")
     @patch("cli.core.sessions.claude_code.AgentSessionConfig")
+    def test_spawn_passes_model_through_as_claude_cli_flag(
+        self, mock_config_class, mock_session_class, pyterm_config, mock_agent_session
+    ):
+        """Regression: SessionConfig.model must reach claude as
+        '--model <id>' so QUINNAI_CANARY_MODEL actually pins the
+        model the spawned session uses (quinn-ai-875q).
+        """
+        mock_session_class.return_value = mock_agent_session
+        mock_config_class.create.return_value = MagicMock()
+
+        cfg = SessionConfig(
+            worker_id="test-worker",
+            provider="claude_code",
+            command="claude",
+            args=["--dangerously-skip-permissions"],
+            model="claude-sonnet-4-6",
+            working_directory=Path("/tmp/test"),
+        )
+        ClaudeCodeSession(cfg, pyterm_config)._spawn_process()
+
+        spawn_cfg = mock_agent_session.start.call_args[0][0]
+        assert spawn_cfg.args[0] == "--model"
+        assert spawn_cfg.args[1] == "claude-sonnet-4-6"
+        # The original arg is preserved after the model pair.
+        assert "--dangerously-skip-permissions" in spawn_cfg.args
+
+    @patch("cli.core.sessions.claude_code.AgentSession")
+    @patch("cli.core.sessions.claude_code.AgentSessionConfig")
+    def test_spawn_omits_model_flag_when_unset(
+        self, mock_config_class, mock_session_class, pyterm_config, mock_agent_session
+    ):
+        """When SessionConfig.model is None, no --model flag is added."""
+        mock_session_class.return_value = mock_agent_session
+        mock_config_class.create.return_value = MagicMock()
+
+        cfg = SessionConfig(
+            worker_id="test-worker",
+            provider="claude_code",
+            command="claude",
+            args=["--dangerously-skip-permissions"],
+            working_directory=Path("/tmp/test"),
+        )
+        ClaudeCodeSession(cfg, pyterm_config)._spawn_process()
+
+        spawn_cfg = mock_agent_session.start.call_args[0][0]
+        assert "--model" not in spawn_cfg.args
+
+    @patch("cli.core.sessions.claude_code.AgentSession")
+    @patch("cli.core.sessions.claude_code.AgentSessionConfig")
     def test_spawn_strips_anthropic_api_key_to_avoid_oauth_conflict(
         self, mock_config_class, mock_session_class, pyterm_config, mock_agent_session
     ):

@@ -81,6 +81,14 @@ class SessionConfig:
     args: list[str] = field(default_factory=list)
     """Command line arguments."""
 
+    model: Optional[str] = None
+    """Provider-specific model identifier (e.g., 'claude-sonnet-4-6',
+    'claude-opus-4-7'). When set on a claude_code session, the
+    adapter prepends '--model <id>' to the claude CLI args so the
+    spawned session uses that model instead of whatever the user is
+    logged into. Default: None means 'use the provider's default'.
+    See quinn-ai-875q."""
+
     # Environment
     working_directory: Optional[Path] = None
     """Working directory for the session."""

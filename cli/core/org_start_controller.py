@@ -303,6 +303,7 @@ def _spawn_ceo_session_if_needed(
     command: str,
     args_str: str,
     force: bool = False,
+    model: "str | None" = None,
 ) -> None:
     """Phases 3-5: Onboarding, Session Spawn, Kickstart.
 
@@ -336,6 +337,7 @@ def _spawn_ceo_session_if_needed(
         provider=provider,
         command=command,
         args=args,
+        model=model,
         working_directory=worker_dir,
         env_vars=env_vars,
     )
@@ -701,6 +703,7 @@ def execute_start(
     wait: bool,
     wait_timeout: int,
     force: bool,
+    model: "str | None" = None,
 ) -> None:
     """Run the full org start sequence (or worker-specific start).
 
@@ -742,6 +745,7 @@ def execute_start(
             try:
                 _spawn_ceo_session_if_needed(
                     org.ceo, org_path, db, provider, session_command, session_args, force,
+                    model=model,
                 )
             except Exception as e:
                 click.echo("\nError: Failed to spawn CEO session", err=True)
