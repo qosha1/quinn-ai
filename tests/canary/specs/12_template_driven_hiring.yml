@@ -1,0 +1,158 @@
+# Canary 12: BOARD-TPL — CEO uses qn org hire-team to spin up a real team,
+#                         then nests a launch_pod under that team.
+#
+# Spec sources (read these — bead l2wl's parent description prescribes a
+# single hire-team call; this canary nests two as called for in the user
+# requirements):
+#   - quinn-ai-56yh §1 — 5 v0 templates; product_team has 5 members,
+#     launch_pod has 4 members.
+#   - quinn-ai-56yh §7 — composition: launch_pod requires `--under`
+#     pointing at an existing product_team.
+#   - quinn-ai-56yh §8 — single-CLI-call hire UX with `--template`,
+#     `--name`, `--manager`, `--under`.
+#   - quinn-ai-iabn §A — templates.yaml schema; channel name_template
+#     "product-{team_name}" / "launch-{team_name}" derives the channel name.
+#   - quinn-ai-iabn §F — `qn org hire-team` and `qn org templates list/show`
+#     CLI commands.
+#
+# What this proves end-to-end against a live LLM:
+#   1. Templates.yaml is loaded at `qn org` start; the registry is reachable
+#      from the CEO's briefing.
+#   2. The CEO uses `qn org hire-team` (not hand-rolled multi-step hires)
+#      because the briefing announces templates exist and the OKR points at
+#      the command.
+#   3. After the first call, a product_team named "mobile-app" exists with
+#      5 workers and a #product-mobile-app channel.
+#   4. After the second call, a launch_pod named "auth-redesign" exists with
+#      4 workers, references mobile-app via parent_team_id, and has a
+#      #launch-auth-redesign channel.
+#   5. Total worker_count is exactly 1 (CEO) + 5 + 4 = 10.
+#
+# Cost expectation: ~$3-5/run. 9 worker hires sequential at ~30s each + LLM
+# reasoning loops on the CEO side ≈ 5-8 minutes wall.
+#
+# This canary FAILS today because:
+#   - cli.core.templates doesn't exist; `qn org hire-team` is not registered.
+#   - The teams table doesn't yet have template_type / ttl_hours columns.
+#   - default_team_templates.yaml is not yet shipped.
+#
+# TODO (Phase 4 — op-vocabulary extension): once templates impl lands, the
+# harness needs FOUR new ops/predicates not yet in
+# shared/testing/scenarios/ops.py or shared/testing/scenarios/predicates.py:
+#
+#   - op: templates_yaml_seed
+#       Writes templates.yaml content into <org>/config/ before init.
+#
+#   - kind: team_count
+#       Number of rows in the teams table; supports {value: N} or {min: N}.
+#
+#   - kind: channel_exists
+#       True iff a row in channels has name == <name>.
+#
+#   - kind: team_parent_is
+#       Asserts teams.parent_team_id of <child_name> resolves to the team_id
+#       of <parent_name>. Used to verify the launch_pod points at mobile-app.
+#
+# Until those land, this spec parses but cannot run — that is the intended
+# state for a Phase-2 failing artifact.
+
+name: template_driven_hiring
+setup:
+  init:
+    ceo_name: Alice
+
+ops:
+  # Seed the templates registry with the 5 v0 templates. (In the live system,
+  # `qn org init` will copy default_team_templates.yaml into config/ — the
+  # explicit seed here keeps the canary self-contained while default-shipping
+  # is being developed.)
+  - op: templates_yaml_seed
+    content: |
+      version: 1
+      templates:
+        - name: product_team
+          description: "Standard product team — PM-led, ships features."
+          members:
+            - { role: pm,        count: 1, is_manager: true, cost: 60 }
+            - { role: engineer,  count: 2, cost: 50 }
+            - { role: designer,  count: 1, cost: 45 }
+            - { role: qa,        count: 1, cost: 40 }
+          channel:
+            auto_create: true
+            name_template: "product-{team_name}"
+          requires: []
+          initial_okrs: []
+        - name: launch_pod
+          description: "Time-bounded launch pod — references an existing product_team."
+          members:
+            - { role: tech-lead, count: 1, is_manager: true, cost: 60 }
+            - { role: engineer,  count: 1, cost: 50 }
+            - { role: designer,  count: 1, cost: 45 }
+            - { role: qa,        count: 1, cost: 40 }
+          channel:
+            auto_create: true
+            name_template: "launch-{team_name}"
+          requires: [product_team]
+          initial_okrs: []
+
+  # Plant the directive. The OKR explicitly names the two hire-team calls so
+  # the CEO uses templates rather than hand-rolling 9 individual `qn org hire`
+  # invocations. The OKR description doubles as the impl reference (per the
+  # canary-04 prompt-injection-aware pattern).
+  - op: create_okr
+    objective: "Spin up the mobile-app product team and a launch_pod under it"
+    owner: ceo
+    priority: 0
+    description: |
+      Goal: stand up two teams using the org-templates feature.
+
+      Key results:
+        - A product_team named 'mobile-app' exists, reporting up to Alice.
+        - A launch_pod named 'auth-redesign' exists under 'mobile-app'.
+        - All 9 new workers are hired in two single commands (NOT one
+          `qn org hire` per worker).
+
+      Standard template-driven team-build sequence (safe to chain with &&):
+        qn org hire-team --template=product_team --name=mobile-app --manager=alice
+        qn org hire-team --template=launch_pod   --name=auth-redesign \
+          --manager=<the new mobile-app PM> --under=mobile-app
+
+      Find the new PM's worker id by listing the mobile-app team after the
+      first command completes. Then run the second command. Once both teams
+      exist, this OKR is complete.
+
+  # Boot the org.
+  - { op: start_org }
+
+  # Kickstart the CEO so it picks up the OKR and acts on it.
+  - op: kickstart_ceo
+    message: "Please review your top OKR and proceed to fulfill it. Use `qn org hire-team` for both team builds (not individual hires)."
+
+  # Two hire-team calls × ~5s validation + 9 worker hires × ~30s session
+  # spawn = roughly 5-6 minutes wall, plus reasoning. Allow up to 8 min.
+  - {
+      op: wait_until,
+      predicate: { kind: worker_count, value: 10 },
+      timeout_seconds: 480,
+      poll_interval_seconds: 10,
+    }
+
+assertions:
+  # (a) Total worker count: 1 CEO + 5 product_team + 4 launch_pod = 10.
+  - { kind: worker_count, value: 10 }
+
+  # (b) Two non-exec teams exist (mobile-app + auth-redesign), plus the
+  #     default exec team `qn org init` creates → 3 total. The min-form is
+  #     more robust to future init-time team additions.
+  - { kind: team_count, min: 3 }
+
+  # (c) The launch_pod's parent_team_id resolves to the mobile-app team_id.
+  - {
+      kind: team_parent_is,
+      child: "auth-redesign",
+      parent: "mobile-app",
+    }
+
+  # (d) Both auto-derived channels exist.
+  - { kind: channel_exists, name: "product-mobile-app" }
+  - { kind: channel_exists, name: "launch-auth-redesign" }

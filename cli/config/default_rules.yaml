@@ -1,0 +1,116 @@
+# QuinnAI default board-rules catalog (per quinn-ai-c5hb §3).
+#
+# Loaded automatically when an org has no org/config/rules.yaml of its own.
+# Operators run `qn org templates init --copy-defaults` (or the equivalent for
+# rules) to write this file out for local customization.
+#
+# Severity vocabulary:
+#   SUGGESTED  — stderr nudge, proceeds.
+#   ENCOURAGED — proceeds only with --justify <bead-id>.
+#   REQUIRED   — proceeds only with --override <approved-bead-id> from direct manager.
+#   ABSOLUTE   — never overridable at runtime.
+
+version: 1
+rules:
+  # ------------------------------------------------------------------------
+  # SUGGESTED — light nudges, proceed silently
+  # ------------------------------------------------------------------------
+  - id: no-trivial-ceo-dm
+    severity: SUGGESTED
+    actions: ["msgr.send"]
+    description: "Workers two or more levels below CEO should route trivial questions through their manager rather than DMing the CEO."
+    scope:
+      worker_role_min_level: 2
+
+  - id: prefer-bead-over-channel-broadcast
+    severity: SUGGESTED
+    actions: ["msgr.send"]
+    description: "Task-shaped messages belong in beads, not in #general broadcasts."
+
+  - id: pr-title-prefix
+    severity: SUGGESTED
+    actions: ["qn-bd.create"]
+    description: "Beads touching cli/core/ should use a module-prefixed title."
+
+  # ------------------------------------------------------------------------
+  # ENCOURAGED — proceed with a defensible artifact (a justify bead)
+  # ------------------------------------------------------------------------
+  - id: tests-before-merge
+    severity: ENCOURAGED
+    actions: ["qn-bd.update"]
+    description: "Closing a feature/bug bead without running the test suite needs a justify bead with the test output inline."
+    artifact_required: true
+
+  - id: okr-link-on-features
+    severity: ENCOURAGED
+    actions: ["qn-bd.create"]
+    description: "New feature beads should serve a parent OKR; if not, file a justify bead explaining why."
+    artifact_required: true
+
+  - id: coverage-floor
+    severity: ENCOURAGED
+    actions: ["qn-bd.update"]
+    description: "Don't drop overall coverage below the current baseline; justify with a coverage diff."
+    artifact_required: true
+
+  # ------------------------------------------------------------------------
+  # REQUIRED — direct-manager approval before proceeding
+  # ------------------------------------------------------------------------
+  - id: no-fire-without-replacement-plan
+    severity: REQUIRED
+    actions: ["qn-org.fire"]
+    description: "Firing a worker requires direct-manager approval with a succession plan."
+
+  - id: budget-allocation-cap
+    severity: REQUIRED
+    actions: ["qn-org.budget-allocate"]
+    description: "Large budget allocations need direct-manager approval. Threshold lives in the rule's pattern (out of scope for v0)."
+
+  - id: cross-team-hire
+    severity: REQUIRED
+    actions: ["qn-org.hire"]
+    description: "Hiring across team boundaries requires the requester's direct manager to approve."
+
+  - id: okr-set-mid-quarter
+    severity: REQUIRED
+    actions: ["qn-org.okr-set"]
+    description: "Setting or replacing an OKR after quarter-start requires direct-manager approval."
+
+  # ------------------------------------------------------------------------
+  # ABSOLUTE — never overridable at runtime
+  # ------------------------------------------------------------------------
+  - id: no-drop-database
+    severity: ABSOLUTE
+    actions: ["qn-bd.create", "qn-bd.update"]
+    description: "Bead bodies containing destructive SQL (DROP TABLE, DROP DATABASE, TRUNCATE) are refused."
+    pattern:
+      kind: regex
+      target: body
+      expr: "(?i)\\b(DROP\\s+TABLE|DROP\\s+DATABASE|TRUNCATE)\\b"
+
+  - id: no-rm-rf-storage
+    severity: ABSOLUTE
+    actions: ["qn-bd.create", "qn-bd.update"]
+    description: "Bead bodies containing `rm -rf` against the storage tree are refused."
+    pattern:
+      kind: regex
+      target: body
+      expr: "rm\\s+-rf\\s+.*storage"
+
+  - id: no-force-push-main
+    severity: ABSOLUTE
+    actions: ["qn-bd.create", "qn-bd.update"]
+    description: "Bead bodies referencing a force-push to main are refused."
+    pattern:
+      kind: regex
+      target: body
+      expr: "git\\s+push\\s+(--force|-f)\\s+.*\\bmain\\b"
+
+  - id: no-secret-commit
+    severity: ABSOLUTE
+    actions: ["qn-bd.create", "qn-bd.update"]
+    description: "Bead bodies referencing commits of credential files (.env, *.pem, *.key) are refused."
+    pattern:
+      kind: regex
+      target: body
+      expr: "(?i)(\\.env|\\.pem|\\.key|credentials\\.json)"

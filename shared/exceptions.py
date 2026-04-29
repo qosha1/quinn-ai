@@ -246,3 +246,131 @@ class StorageError(Exception):
     """Base exception for storage operations."""
 
     pass
+
+
+# --- Board rules domain (per quinn-ai-zm8a §11) ---
+
+class RuleEngineError(Exception):
+    """Base for all rules-engine errors."""
+
+    pass
+
+
+class RuleViolation(RuleEngineError):
+    """Raised when evaluate_or_raise hits a BLOCK-class decision."""
+
+    def __init__(self, decision: "Any"):
+        self.decision = decision
+        rule_id = decision.rule.id if decision.rule is not None else "<unknown>"
+        super().__init__(
+            f"Action blocked by rule '{rule_id}': {decision.message}"
+        )
+
+
+class RuleSetLoadError(RuleEngineError):
+    """Loader failed (YAML parse, schema validation, regex compile)."""
+
+    def __init__(self, source_path: "Path | str", message: str):
+        self.source_path = source_path
+        super().__init__(f"Failed to load rules from {source_path}: {message}")
+
+
+class RuleEvalTimeout(RuleEngineError):
+    """signal.alarm fired during evaluate(). Engine fails closed."""
+
+    def __init__(self, action: str, timeout_seconds: int):
+        self.action = action
+        self.timeout_seconds = timeout_seconds
+        super().__init__(
+            f"Rule evaluation for action '{action}' exceeded {timeout_seconds}s timeout"
+        )
+
+
+# --- Org templates domain (per quinn-ai-u0h2 §9) ---
+
+class TemplateError(Exception):
+    """Base for template-system errors."""
+
+    pass
+
+
+class TemplateNotFound(TemplateError):
+    """Named template not in registry."""
+
+    pass
+
+
+class TemplateMissingParent(TemplateError):
+    """Template requires a parent but no parent_team_name was provided."""
+
+    def __init__(self, template_name: str, requires: tuple[str, ...]):
+        self.template_name = template_name
+        self.requires = requires
+        super().__init__(
+            f"Template '{template_name}' requires parent of type {list(requires)}; "
+            f"pass --under <existing-team-name>"
+        )
+
+
+class TemplateWrongParentType(TemplateError):
+    """Parent team's template_type doesn't match the child's `requires`."""
+
+    def __init__(
+        self,
+        template_name: str,
+        parent_team_name: str,
+        parent_template_type: "str | None",
+        requires: tuple[str, ...],
+    ):
+        self.template_name = template_name
+        self.parent_team_name = parent_team_name
+        self.parent_template_type = parent_template_type
+        self.requires = requires
+        if parent_template_type is None:
+            msg = (
+                f"Team '{parent_team_name}' predates the templates feature "
+                f"(NULL template_type); cannot be referenced as parent. "
+                f"Retag it via `qn org templates retag` (out of scope for v0)."
+            )
+        else:
+            msg = (
+                f"Template '{template_name}' requires parent of type "
+                f"{list(requires)}, but team '{parent_team_name}' has type "
+                f"'{parent_template_type}'"
+            )
+        super().__init__(msg)
+
+
+class TemplateParentTerminated(TemplateError):
+    """Parent team exists but is terminated/inactive."""
+
+    def __init__(self, parent_team_name: str):
+        self.parent_team_name = parent_team_name
+        super().__init__(
+            f"Parent team '{parent_team_name}' is terminated; cannot attach a "
+            f"new team under an inactive parent"
+        )
+
+
+class HireTeamRollbackFailed(TemplateError):
+    """Rollback itself failed; org is in a partial state — operator must intervene."""
+
+    def __init__(self, original: Exception, rollback_errors: list[Exception]):
+        self.original = original
+        self.rollback_errors = rollback_errors
+        super().__init__(
+            f"hire-team failed AND rollback failed. Original: {original}. "
+            f"Rollback errors: {len(rollback_errors)} additional exceptions. "
+            f"Manual cleanup required."
+        )
+
+
+class ChannelNameCollision(TemplateError):
+    """Auto-derived channel name already exists; pick a different team --name."""
+
+    def __init__(self, channel_name: str):
+        self.channel_name = channel_name
+        super().__init__(
+            f"Channel '{channel_name}' already exists. "
+            f"Pick a different `--name` for hire-team."
+        )

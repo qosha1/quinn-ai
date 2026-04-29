@@ -1,0 +1,71 @@
+# QuinnAI default team-template catalog (per quinn-ai-56yh §1).
+#
+# Loaded automatically when an org has no org/config/templates.yaml of its own.
+# Operators run `qn org templates init --copy-defaults` to write this file out
+# for local customization.
+#
+# Costs are LLM-tier values (0-100), passed through to the existing
+# `qn org hire --cost <n>` flow. Templates do NOT carry quarterly salaries
+# or a budget block — the existing budget enforcement in cli/core/budget/
+# handles allocation at the per-hire boundary.
+
+version: 1
+templates:
+  - name: product_team
+    description: "Standard product team — PM-led, ships features."
+    members:
+      - {role: pm, count: 1, is_manager: true, cost: 60}
+      - {role: engineer, count: 2, cost: 50}
+      - {role: designer, count: 1, cost: 45}
+      - {role: qa, count: 1, cost: 40}
+    channel:
+      auto_create: true
+      name_template: "product-{team_name}"
+    requires: []
+
+  - name: data_team
+    description: "Data engineering and analytics."
+    members:
+      - {role: data-eng, count: 1, is_manager: true, cost: 60}
+      - {role: data-eng, count: 1, cost: 50}
+      - {role: analyst, count: 1, cost: 45}
+      - {role: ml-eng, count: 1, cost: 55}
+    channel:
+      auto_create: true
+      name_template: "data-{team_name}"
+    requires: []
+
+  - name: launch_pod
+    description: "Cross-functional launch pod operating under an existing product team."
+    members:
+      - {role: tech-lead, count: 1, is_manager: true, cost: 65}
+      - {role: engineer, count: 1, cost: 50}
+      - {role: designer, count: 1, cost: 45}
+      - {role: qa, count: 1, cost: 40}
+    channel:
+      auto_create: true
+      name_template: "launch-{team_name}"
+    requires: [product_team]
+
+  - name: incident_response_squad
+    description: "Time-bounded incident response squad."
+    members:
+      - {role: incident-commander, count: 1, is_manager: true, cost: 70}
+      - {role: sre, count: 2, cost: 55}
+      - {role: comms, count: 1, cost: 40}
+    channel:
+      auto_create: true
+      name_template: "incident-{team_name}"
+    requires: []
+    ttl_hours: 72
+
+  - name: research_pod
+    description: "Research pod — investigates, prototypes, hands off."
+    members:
+      - {role: research-lead, count: 1, is_manager: true, cost: 65}
+      - {role: researcher, count: 2, cost: 50}
+      - {role: engineer, count: 1, cost: 50}
+    channel:
+      auto_create: true
+      name_template: "research-{team_name}"
+    requires: []
