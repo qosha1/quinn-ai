@@ -14,6 +14,7 @@ from .okr import okr_cmd
 from .budget import budget_cmd
 from .chart import chart_cmd
 from .hire import hire_cmd
+from .hire_team import hire_team_cmd, templates_cmd
 from .fire import fire_cmd
 from .delegate_authority import delegate_authority_cmd
 from .revoke_authority import revoke_authority_cmd
@@ -36,6 +37,8 @@ __all__ = [
     "budget_cmd",
     "chart_cmd",
     "hire_cmd",
+    "hire_team_cmd",
+    "templates_cmd",
     "fire_cmd",
     "delegate_authority_cmd",
     "revoke_authority_cmd",

@@ -239,6 +239,8 @@ from cli.commands.org import (
     budget_cmd,
     chart_cmd,
     hire_cmd,
+    hire_team_cmd,
+    templates_cmd,
     fire_cmd,
     delegate_authority_cmd,
     revoke_authority_cmd,
@@ -261,6 +263,8 @@ org.add_command(okr_cmd, name="okr")
 org.add_command(budget_cmd, name="budget")
 org.add_command(chart_cmd, name="chart")
 org.add_command(hire_cmd, name="hire")
+org.add_command(hire_team_cmd, name="hire-team")
+org.add_command(templates_cmd, name="templates")
 org.add_command(fire_cmd, name="fire")
 org.add_command(delegate_authority_cmd, name="delegate-authority")
 org.add_command(revoke_authority_cmd, name="revoke-authority")

@@ -44,6 +44,7 @@ class OnboardingContext:
     timestamp: str
     first_actions: list[str]  # Actionable first steps for worker
     escalation_timeout_minutes: int  # How long before idle triggers escalation
+    team_template: Optional[str] = None  # Template name if hired via qn org hire-team (quinn-ai-x71x)
 
 
 def prepare_worker_onboarding(
@@ -143,10 +144,22 @@ def _load_onboarding_context(
 
     # Get team name (default to role if team lookup fails)
     team_name = worker.role
+    team_template: Optional[str] = None
     try:
         team = get_team(db, worker.team_id)
         if team and team.name:
             team_name = team.name
+        # Surface team-template membership (per quinn-ai-x71x).
+        # Tolerates the dataclass not having template_type if the migration
+        # hasn't applied or if team is None.
+        team_template = getattr(team, "template_type", None) if team else None
+        if team_template is None and team is not None:
+            # Fallback path: dataclass may not have been refreshed; query directly.
+            row = db.fetchone(
+                "SELECT template_type FROM teams WHERE id = ?", (worker.team_id,)
+            )
+            if row is not None and row["template_type"]:
+                team_template = row["template_type"]
     except sqlite3.Error as e:
         # Team lookup failed - use role as team name
         _logger.debug(f"Failed to load team info: {e}")
@@ -202,6 +215,7 @@ def _load_onboarding_context(
         timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
         first_actions=first_actions,
         escalation_timeout_minutes=escalation_timeout,
+        team_template=team_template,
     )
 
 
