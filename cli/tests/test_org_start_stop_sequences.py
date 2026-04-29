@@ -363,15 +363,22 @@ class TestOrgStopZombieCleanup:
     """Test zombie session cleanup."""
 
     def test_cleanup_orphaned_tmux_sessions(self, db, mock_tmux_spawner):
-        """Should clean up orphaned tmux sessions."""
-        # Mock an orphaned tmux session (exists in tmux but not in DB)
-        mock_tmux_spawner.list_sessions.return_value = ["qn-orphan123"]
+        """Should clean up orphaned tmux sessions for THIS org's workers
+        (quinn-ai-non8: orphan check requires worker_id in our workers table).
+        """
+        from cli.core.queries import create_team, create_worker
+
+        team = create_team(db, "Engineering")
+        worker = create_worker(db, "Alice", "Engineer", team.id, 30)
+        tmux_name = f"qn-{worker.id}"
+
+        mock_tmux_spawner.list_sessions.return_value = [tmux_name]
 
         result = cleanup_orphaned_sessions(
             db, mock_tmux_spawner, kill_tmux=True, update_db=True
         )
 
-        assert "qn-orphan123" in result.orphaned_tmux_sessions
+        assert tmux_name in result.orphaned_tmux_sessions
         assert result.tmux_sessions_killed == 1
 
     def test_cleanup_stale_db_sessions(self, running_org, mock_tmux_spawner):
@@ -628,13 +635,19 @@ class TestOrgStopErrorRecovery:
 
     def test_cleanup_reports_errors(self, db, mock_tmux_spawner):
         """Cleanup should report errors without crashing."""
-        mock_tmux_spawner.list_sessions.return_value = ["qn-orphan123"]
+        from cli.core.queries import create_team, create_worker
+
+        team = create_team(db, "Engineering")
+        worker = create_worker(db, "Alice", "Engineer", team.id, 30)
+        tmux_name = f"qn-{worker.id}"
+
+        mock_tmux_spawner.list_sessions.return_value = [tmux_name]
         mock_tmux_spawner.stop.side_effect = Exception("tmux error")
 
         result = cleanup_orphaned_sessions(db, mock_tmux_spawner)
 
         assert len(result.errors) > 0
-        assert "qn-orphan123" in result.orphaned_tmux_sessions
+        assert tmux_name in result.orphaned_tmux_sessions
 
 
 # =============================================================================

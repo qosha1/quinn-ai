@@ -77,33 +77,45 @@ def find_orphaned_tmux_sessions(
     db: "Database",
     tmux_spawner: Optional[TmuxSpawner] = None,
 ) -> list[OrphanedSession]:
-    """Find tmux sessions that exist but aren't tracked in the database.
+    """Find tmux sessions that belong to THIS org but aren't tracked.
 
-    Scans for tmux sessions with the quinnai prefix (qn-*) and checks
-    if they have a corresponding active database record.
+    Scans for tmux sessions whose name encodes a wrkr-id we know about
+    (from this org's workers table) and checks if they have a
+    corresponding active record in this org's sessions table.
+
+    The worker-id check is critical (quinn-ai-non8): on a multi-org
+    machine, every QuinnAI org's tmux sessions share the global
+    'qn-' prefix, so naively listing all 'qn-*' sessions and treating
+    anything not in this DB as 'orphan' caused us to kill sibling orgs'
+    sessions. By keying on 'wrkr-id is in OUR workers table' we only
+    consider sessions for workers this org actually owns.
 
     Args:
-        db: Database instance
+        db: Database instance for THIS org.
         tmux_spawner: Optional TmuxSpawner instance (creates default if None)
 
     Returns:
-        List of OrphanedSession objects for tmux-only sessions
+        List of OrphanedSession objects for tmux-only sessions whose
+        wrkr-id belongs to this org.
     """
     if tmux_spawner is None:
         tmux_spawner = TmuxSpawner()
 
     orphans = []
 
-    # Get all tmux sessions
-    all_tmux_sessions = tmux_spawner.list_sessions()
-
-    # Filter to quinnai sessions only
+    # Get all tmux sessions, filter to quinnai-prefixed ones
     qn_tmux_sessions = [
-        s for s in all_tmux_sessions
+        s for s in tmux_spawner.list_sessions()
         if s.startswith(TMUX_SESSION_PREFIX)
     ]
 
-    # Get all tracked sessions from database
+    # Determine which wrkr-ids belong to THIS org. Tmux sessions for
+    # workers we don't own (sibling orgs on the same machine) must not
+    # be considered orphans here.
+    from ..queries import get_all_workers_for_topology
+    own_worker_ids = {w["id"] for w in get_all_workers_for_topology(db)}
+
+    # Tracked tmux session names from this org's sessions table
     db_sessions = get_all_sessions(db)
     tracked_tmux_names = {
         s.get("tmux_session_name")
@@ -111,8 +123,13 @@ def find_orphaned_tmux_sessions(
         if s.get("tmux_session_name")
     }
 
-    # Find tmux sessions not in database
     for tmux_name in qn_tmux_sessions:
+        # Extract worker_id from session name 'qn-wrkr-XXX' → 'wrkr-XXX'.
+        worker_id = tmux_name[len(TMUX_SESSION_PREFIX):] if \
+            tmux_name.startswith(TMUX_SESSION_PREFIX) else None
+        if worker_id not in own_worker_ids:
+            # Not our worker — sibling org or stray. Leave it alone.
+            continue
         if tmux_name not in tracked_tmux_names:
             orphans.append(OrphanedSession(
                 session_name=tmux_name,

@@ -130,80 +130,111 @@ class TestFindOrphanedTmuxSessions:
 
     def test_no_orphans_when_all_tracked(self, db, worker, mock_tmux_spawner):
         """Should return empty when all tmux sessions are tracked."""
-        # Create a tracked session
+        tmux_name = f"qn-{worker.id}"
         create_session_record(
             db=db,
             session_id="session-123",
             worker_id=worker.id,
             provider="claude_code",
             command="claude",
-            tmux_session_name="qn-worker-tracked",
+            tmux_session_name=tmux_name,
             state="running",
         )
 
-        # Mock tmux to return only tracked session
-        mock_tmux_spawner.list_sessions.return_value = ["qn-worker-tracked"]
+        mock_tmux_spawner.list_sessions.return_value = [tmux_name]
 
         orphans = find_orphaned_tmux_sessions(db, mock_tmux_spawner)
 
         assert len(orphans) == 0
 
-    def test_finds_orphaned_tmux_session(self, db, mock_tmux_spawner):
-        """Should find tmux sessions not in database."""
-        # Mock tmux to return untracked session
-        mock_tmux_spawner.list_sessions.return_value = [
-            "qn-orphan-1",
-            "qn-orphan-2",
-        ]
-
-        orphans = find_orphaned_tmux_sessions(db, mock_tmux_spawner)
-
-        assert len(orphans) == 2
-        assert orphans[0].session_name == "qn-orphan-1"
-        assert orphans[0].source == "tmux"
-        assert orphans[1].session_name == "qn-orphan-2"
-        assert orphans[1].source == "tmux"
-
-    def test_ignores_non_quinnai_sessions(self, db, mock_tmux_spawner):
-        """Should ignore tmux sessions without quinnai prefix."""
-        mock_tmux_spawner.list_sessions.return_value = [
-            "other-session",
-            "my-dev-session",
-            "qn-orphan",
-        ]
+    def test_finds_orphaned_tmux_session_for_known_worker(
+        self, db, worker, mock_tmux_spawner
+    ):
+        """Should find tmux sessions for OUR workers that aren't tracked
+        in the sessions table (e.g., crashed without DB cleanup)."""
+        # Worker exists in DB but no session record — yet tmux has a
+        # session named after the worker.
+        tmux_name = f"qn-{worker.id}"
+        mock_tmux_spawner.list_sessions.return_value = [tmux_name]
 
         orphans = find_orphaned_tmux_sessions(db, mock_tmux_spawner)
 
         assert len(orphans) == 1
-        assert orphans[0].session_name == "qn-orphan"
+        assert orphans[0].session_name == tmux_name
+        assert orphans[0].source == "tmux"
+
+    def test_ignores_non_quinnai_sessions(self, db, worker, mock_tmux_spawner):
+        """Should ignore tmux sessions without the quinnai prefix."""
+        # Plus a sibling-org session (qn- prefix but unknown worker_id) —
+        # should also be ignored.
+        mock_tmux_spawner.list_sessions.return_value = [
+            "other-session",
+            "my-dev-session",
+            f"qn-{worker.id}",  # ours — would be classified as orphan
+            "qn-wrkr-deadbeef",  # sibling org's, must NOT be touched
+        ]
+
+        orphans = find_orphaned_tmux_sessions(db, mock_tmux_spawner)
+
+        # Only OUR wrkr's untracked session is reported.
+        assert len(orphans) == 1
+        assert orphans[0].session_name == f"qn-{worker.id}"
 
     def test_mixed_tracked_and_orphaned(self, db, worker, mock_tmux_spawner):
-        """Should find only orphaned sessions among mixed list."""
-        # Create a tracked session
+        """Should find only orphaned sessions among mixed list — and they
+        must all key on workers that belong to THIS db."""
+        from cli.core.queries import create_worker
+
+        worker2 = create_worker(db, "Bob", "Engineer", worker.team_id, 30)
+
+        tracked = f"qn-{worker.id}"
+        untracked_own = f"qn-{worker2.id}"
+        sibling_org = "qn-wrkr-sibling"  # must be ignored
+
         create_session_record(
             db=db,
             session_id="session-tracked",
             worker_id=worker.id,
             provider="claude_code",
             command="claude",
-            tmux_session_name="qn-tracked",
+            tmux_session_name=tracked,
             state="running",
         )
 
-        # Mock tmux with mix of tracked and orphaned
         mock_tmux_spawner.list_sessions.return_value = [
-            "qn-tracked",
-            "qn-orphan-1",
-            "qn-orphan-2",
+            tracked, untracked_own, sibling_org,
         ]
 
         orphans = find_orphaned_tmux_sessions(db, mock_tmux_spawner)
 
-        assert len(orphans) == 2
+        # Only the untracked-but-OURS session is an orphan.
         session_names = [o.session_name for o in orphans]
-        assert "qn-orphan-1" in session_names
-        assert "qn-orphan-2" in session_names
-        assert "qn-tracked" not in session_names
+        assert session_names == [untracked_own]
+        assert tracked not in session_names
+        assert sibling_org not in session_names
+
+    def test_does_not_classify_sibling_orgs_sessions_as_orphans(
+        self, db, worker, mock_tmux_spawner
+    ):
+        """Regression for quinn-ai-non8: a tmux session for a worker_id
+        not in this org's workers table must NOT be flagged as orphan,
+        even though it shares the global 'qn-' prefix.
+
+        Pre-fix, running canaries 03 and 04 in parallel caused canary 03's
+        startup cleanup to kill canary 04's CEO session because the global
+        list_sessions() returns sessions from EVERY QuinnAI org on the
+        machine. We now key on 'wrkr-id is in OUR workers table'.
+        """
+        # This db has 'worker' (Alice). The sibling org has wrkr-foreign.
+        sibling_session = "qn-wrkr-foreign-from-other-org"
+        mock_tmux_spawner.list_sessions.return_value = [sibling_session]
+
+        orphans = find_orphaned_tmux_sessions(db, mock_tmux_spawner)
+
+        assert orphans == [], (
+            f"sibling org's session '{sibling_session}' must NOT be classified "
+            f"as orphan — got {[o.session_name for o in orphans]}"
+        )
 
 
 class TestFindStaleDbSessions:
@@ -299,21 +330,26 @@ class TestFindAllOrphans:
 
     def test_finds_both_types(self, db, worker, mock_tmux_spawner):
         """Should find both tmux orphans and stale db records."""
-        # Create a stale session
+        from cli.core.queries import create_worker
+
+        # Stale db record: worker has session in DB but tmux is dead.
         create_session_record(
             db=db,
             session_id="session-stale",
             worker_id=worker.id,
             provider="claude_code",
             command="claude",
-            tmux_session_name="qn-stale",
+            tmux_session_name=f"qn-{worker.id}",
             state="running",
         )
 
-        # Mock tmux with orphaned session and stale session dead
-        mock_tmux_spawner.list_sessions.return_value = [
-            "qn-orphan-tmux",
-        ]
+        # Tmux orphan: a SECOND worker exists in this org with a tmux
+        # session but no DB record. Per quinn-ai-non8 the orphan check
+        # only fires for sessions whose worker_id is in our workers
+        # table, so the orphan needs a real worker_id.
+        worker2 = create_worker(db, "Bob", "Engineer", worker.team_id, 30)
+
+        mock_tmux_spawner.list_sessions.return_value = [f"qn-{worker2.id}"]
         mock_tmux_spawner.is_alive.return_value = False
 
         orphans = find_all_orphans(db, mock_tmux_spawner)
@@ -327,11 +363,17 @@ class TestFindAllOrphans:
 class TestCleanupOrphanedSessions:
     """Tests for cleanup_orphaned_sessions."""
 
-    def test_kills_orphaned_tmux_sessions(self, db, mock_tmux_spawner):
-        """Should kill orphaned tmux sessions."""
+    def test_kills_orphaned_tmux_sessions(self, db, team, mock_tmux_spawner):
+        """Should kill orphaned tmux sessions for THIS org's workers."""
+        from cli.core.queries import create_worker
+
+        # Orphans must reference real worker_ids (quinn-ai-non8 fix).
+        w1 = create_worker(db, "Alice", "Engineer", team.id, 30)
+        w2 = create_worker(db, "Bob", "Engineer", team.id, 30)
+
         mock_tmux_spawner.list_sessions.return_value = [
-            "qn-orphan-1",
-            "qn-orphan-2",
+            f"qn-{w1.id}",
+            f"qn-{w2.id}",
         ]
         mock_tmux_spawner.stop.return_value = True
 
@@ -403,9 +445,9 @@ class TestCleanupOrphanedSessions:
         session = get_session_by_id(db, "session-stale")
         assert session is None
 
-    def test_respects_kill_tmux_false(self, db, mock_tmux_spawner):
+    def test_respects_kill_tmux_false(self, db, worker, mock_tmux_spawner):
         """Should not kill tmux when kill_tmux=False."""
-        mock_tmux_spawner.list_sessions.return_value = ["qn-orphan"]
+        mock_tmux_spawner.list_sessions.return_value = [f"qn-{worker.id}"]
 
         result = cleanup_orphaned_sessions(
             db=db,
@@ -445,9 +487,9 @@ class TestCleanupOrphanedSessions:
         session = get_session_by_id(db, "session-stale")
         assert session["state"] == "running"
 
-    def test_records_errors(self, db, mock_tmux_spawner):
+    def test_records_errors(self, db, worker, mock_tmux_spawner):
         """Should record errors without failing."""
-        mock_tmux_spawner.list_sessions.return_value = ["qn-orphan"]
+        mock_tmux_spawner.list_sessions.return_value = [f"qn-{worker.id}"]
         mock_tmux_spawner.stop.side_effect = Exception("tmux error")
 
         result = cleanup_orphaned_sessions(
@@ -466,18 +508,23 @@ class TestRunStartupCleanup:
 
     def test_startup_cleanup_settings(self, db, worker, mock_tmux_spawner):
         """Should use appropriate settings for startup."""
-        # Create both types of orphans
+        from cli.core.queries import create_worker
+
+        # Stale db record for the existing worker.
         create_session_record(
             db=db,
             session_id="session-stale",
             worker_id=worker.id,
             provider="claude_code",
             command="claude",
-            tmux_session_name="qn-stale",
+            tmux_session_name=f"qn-{worker.id}",
             state="running",
         )
 
-        mock_tmux_spawner.list_sessions.return_value = ["qn-orphan-tmux"]
+        # Tmux orphan for a SECOND worker (must reference a real wrkr-id
+        # in this org's workers table — quinn-ai-non8).
+        worker2 = create_worker(db, "Bob", "Engineer", worker.team_id, 30)
+        mock_tmux_spawner.list_sessions.return_value = [f"qn-{worker2.id}"]
         mock_tmux_spawner.is_alive.return_value = False
         mock_tmux_spawner.stop.return_value = True
 
