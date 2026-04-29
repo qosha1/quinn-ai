@@ -1,0 +1,47 @@
+# Canary scenario 03: real-work code review.
+#
+# Bob writes a small Python function in his shared workspace; Carol reviews
+# it and posts feedback to Bob via msgr; Bob acknowledges. Tests:
+#   - workers can read/write to a shared workspace via filesystem
+#   - msgr DMs flow round-trip with substantive content (not just hellos)
+#   - the cross-worker review loop completes within budget
+#
+# Expected cost: ~$0.50-2.00 depending on tool calls.
+name: code_review_workflow
+setup:
+  init:
+    ceo_name: Alice
+ops:
+  - op: create_okr
+    objective: "ULTRA PRIORITY: Hire Bob (writer) and Carol (reviewer)"
+    owner: ceo
+    priority: 0
+    description: |
+      Run autonomously, do not ask for confirmation:
+      1. qn org hire --name Bob --role engineer --manager alice --cost 30
+      2. qn org hire --name Carol --role engineer --manager alice --cost 30
+      3. qn org budget allocate bob 50
+      4. qn org budget allocate carol 50
+      (Budget allocation auto-spawns each worker's session — no separate
+      'qn org start --worker' step is needed.)
+  - { op: start_org }
+  - op: kickstart_ceo
+    message: "Read INITIAL_TASK.md and act on the highest-priority OKR right now. Hire Bob and Carol immediately."
+  - { op: wait_until, predicate: { kind: worker_count, value: 3 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+  # Bob: write a Python function and post a review request.
+  - op: kickstart_worker
+    worker: bob
+    other_worker: carol
+    message: "Your task as Bob: (1) Write a Python function `is_palindrome(s: str) -> bool` to /tmp/qa-shared-code.py — handle case and whitespace. (2) Send Carol a DM using `msgr send @{other_id}` saying you've written the function and asking for review at /tmp/qa-shared-code.py. Do all this autonomously, then stop."
+  # Carol: read Bob's code, review it, send feedback.
+  - op: kickstart_worker
+    worker: carol
+    other_worker: bob
+    message: "Your task as Carol: wait ~30 seconds, then (1) read /tmp/qa-shared-code.py — Bob will have written a Python function there. (2) Review it for correctness, edge cases, style. (3) Send Bob a DM using `msgr send @{other_id}` with concrete review feedback (mention at least one specific concern or approval). Do all this autonomously, then stop."
+  - { op: wait_until, predicate: { kind: message_count_between, from: bob, to: carol, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+  - { op: wait_until, predicate: { kind: message_count_between, from: carol, to: bob, min: 1 }, timeout_seconds: 300, poll_interval_seconds: 5 }
+assertions:
+  - { kind: worker_count, value: 3 }
+  - { kind: manager_subordinates, manager: alice, expected: [bob, carol] }
+  - { kind: message_count_between, from: bob, to: carol, min: 1 }
+  - { kind: message_count_between, from: carol, to: bob, min: 1 }
