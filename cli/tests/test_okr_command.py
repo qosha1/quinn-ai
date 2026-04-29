@@ -703,3 +703,143 @@ class TestOkrDatabaseIntegration:
         # Verify completed maps to beads 'closed'
         bd_args = mock_run_bd.call_args[0][0]
         assert "--status=closed" in bd_args
+
+
+class TestOkrCloseCommand:
+    """Test qn org okr close (regression for quinn-ai-kljb).
+
+    Workers reach for `bd close <okr-id>` because OKR ids share the beads
+    format, but bd close alone leaves the SQLite okrs.status row stuck on
+    'active'. `qn org okr close` updates BOTH stores.
+    """
+
+    def test_close_help_listed_in_group(self, runner):
+        """qn org okr --help should advertise the close subcommand."""
+        result = runner.invoke(qn, ["org", "okr", "--help"])
+        assert result.exit_code == 0
+        assert "close" in result.output
+
+    def test_close_requires_init(self, runner, temp_org):
+        result = runner.invoke(qn, [
+            "--org-path", str(temp_org),
+            "org", "okr", "close", "myorg-abc",
+        ])
+        assert result.exit_code != 0
+        assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
+
+    @patch('cli.commands.org.okr.manage._helpers.run_bd')
+    def test_close_invokes_bd_close_and_updates_sqlite(
+        self, mock_run_bd, runner, initialized_org
+    ):
+        """Closing an OKR fires `bd close <id>` AND flips SQLite status."""
+        from cli.core.db import get_org_db_path, open_database
+        from cli.core.queries import create_okr, get_okr
+
+        # Seed a real OKR row in SQLite so update_okr_status has something to flip.
+        db_path = get_org_db_path(initialized_org)
+        db = open_database(db_path)
+        try:
+            from cli.core.org import Org
+            ceo_id = Org.load(db).ceo_worker_id
+            create_okr(
+                db=db,
+                title="Test OKR",
+                owner_id=ceo_id,
+                description="seeded for close test",
+                status="active",
+                okr_id="testorg-close1",
+            )
+        finally:
+            db.close()
+
+        mock_run_bd.return_value = MagicMock(returncode=0, stdout="Closed: testorg-close1", stderr="")
+
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "close", "testorg-close1",
+        ])
+        assert result.exit_code == 0, result.output
+        # bd close <id> was called
+        bd_args = mock_run_bd.call_args[0][0]
+        assert bd_args[0] == "close"
+        assert bd_args[1] == "testorg-close1"
+        # SQLite mirror reflects closure
+        db = open_database(db_path)
+        try:
+            okr = get_okr(db, "testorg-close1")
+            assert okr is not None
+            assert okr.status == "completed"
+        finally:
+            db.close()
+        assert "Closed OKR testorg-close1" in result.output
+
+    @patch('cli.commands.org.okr.manage._helpers.run_bd')
+    def test_close_supports_cancelled_status(
+        self, mock_run_bd, runner, initialized_org
+    ):
+        """--status=cancelled abandons rather than completes the OKR."""
+        from cli.core.db import get_org_db_path, open_database
+        from cli.core.queries import create_okr, get_okr
+
+        db_path = get_org_db_path(initialized_org)
+        db = open_database(db_path)
+        try:
+            from cli.core.org import Org
+            ceo_id = Org.load(db).ceo_worker_id
+            create_okr(
+                db=db, title="Doomed OKR", owner_id=ceo_id,
+                description="will be cancelled", status="active",
+                okr_id="testorg-cancel1",
+            )
+        finally:
+            db.close()
+
+        mock_run_bd.return_value = MagicMock(returncode=0, stdout="Closed", stderr="")
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "close", "testorg-cancel1",
+            "--status=cancelled", "--reason=superseded",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # --reason flowed through to bd close
+        bd_args = mock_run_bd.call_args[0][0]
+        assert "--reason" in bd_args
+        assert "superseded" in bd_args
+
+        db = open_database(db_path)
+        try:
+            okr = get_okr(db, "testorg-cancel1")
+            assert okr.status == "cancelled"
+        finally:
+            db.close()
+
+    @patch('cli.commands.org.okr.manage._helpers.run_bd')
+    def test_close_propagates_bd_failure(self, mock_run_bd, runner, initialized_org):
+        """If bd close fails (id not found, permission), surface the error."""
+        mock_run_bd.return_value = MagicMock(
+            returncode=1, stdout="", stderr="issue 'nope-xyz' not found",
+        )
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "close", "nope-xyz",
+        ])
+        assert result.exit_code != 0
+        assert "Failed to close OKR" in result.output
+
+    @patch('cli.commands.org.okr.manage._helpers.run_bd')
+    def test_close_tolerates_missing_sqlite_mirror(
+        self, mock_run_bd, runner, initialized_org
+    ):
+        """Closing an OKR that exists as a bead but has no SQLite mirror row
+        should still succeed — bead is the source of truth."""
+        mock_run_bd.return_value = MagicMock(returncode=0, stdout="Closed", stderr="")
+
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "close", "ghost-okr-id",
+        ])
+        # bd close succeeded and we don't fail just because the SQLite mirror
+        # is missing (legacy / direct-bd OKRs).
+        assert result.exit_code == 0, result.output
+        assert "Closed OKR ghost-okr-id" in result.output

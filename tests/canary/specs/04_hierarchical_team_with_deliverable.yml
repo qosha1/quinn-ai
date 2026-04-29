@@ -11,16 +11,13 @@
 #      it and DMs Eve back. Real artifact + peer review at depth 3.
 #   4. Diana reports a status update UP THE CHAIN to Alice via DM.
 #
-# Prompt design notes:
-# - OKR descriptions are stored in DB and read via `qn org okr show`, so
-#   they CAN be multi-line.
-# - Kickstart messages are delivered via `tmux send-keys`, which types the
-#   string literally — every '\n' becomes an Enter press. Multi-line YAML
-#   block scalars ('message: |') get shredded into partial submissions and
-#   confuse claude. Keep kickstart messages SINGLE-LINE.
-# - Earlier 'do NOT ask' imperatives tripped Opus 4.7's prompt-injection
-#   detector (quinn-ai-womk). This revision frames work as legitimate
-#   tasking and keeps directives concise.
+# Prompt design notes (see beads quinn-ai-womk):
+# Earlier drafts used imperative anti-confirmation language ('do NOT ask,
+# do NOT explain, just run it') in the OKR description. Opus 4.7 correctly
+# flagged this as a prompt-injection pattern and refused to execute.
+# This revision frames each instruction as a real OKR (objective + KRs +
+# implementation reference) and each kickstart as a normal tasking message,
+# so the safety-tuned model sees legitimate work and proceeds.
 #
 # Workaround note (until quinn-ai-3gwh is fully fixed): msgr commands
 # explicitly pass --worker-id {self_id}.
@@ -53,38 +50,71 @@ ops:
       Once Diana is online, this OKR is complete. She'll handle hiring
       her team from there.
   - { op: start_org }
-
-  # Single-line kickstart so tmux send-keys delivers it as one input.
   - op: kickstart_ceo
-    message: "Please review your top OKR and execute it now. Run the four onboarding commands at the bottom of the OKR description (chain with && in one bash call for efficiency)."
+    message: "Please review your top OKR and proceed to fulfill it. The implementation reference at the bottom of the description shows the standard Director-onboarding commands; you can chain them with && to do it in one shell call."
+  # Wait for Diana to materialize.
   - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 240, poll_interval_seconds: 2 }
 
-  # Diana hires Eve + Frank. One bash -c, one shot. Single line.
+  # Diana hires Eve + Frank.
   - op: kickstart_worker
     worker: diana
-    message: "Hi Diana — you are Director of Engineering (worker id {self_id}). Please build out the engineering team by running this one bash command: bash -c \"qn org hire --name Eve --role engineer --manager {self_id} --cost 30 && qn org hire --name Frank --role engineer --manager {self_id} --cost 30 && qn org budget allocate eve 50 && qn org budget allocate frank 50 && qn org start --worker eve && qn org start --worker frank\""
+    message: |
+      Hi Diana — you are Director of Engineering (worker id {self_id}). Your first task: build out the engineering team by hiring two engineers reporting to you, giving each a starter budget, and bringing their sessions online.
+
+      Standard team-build sequence (safe to chain with &&):
+        qn org hire --name Eve --role engineer --manager {self_id} --cost 30
+        qn org hire --name Frank --role engineer --manager {self_id} --cost 30
+        qn org budget allocate eve 50
+        qn org budget allocate frank 50
+        qn org start --worker eve
+        qn org start --worker frank
+
+      Once they're online, I'll hand them their first task directly.
   - { op: wait_until, predicate: { kind: worker_count, value: 4 }, timeout_seconds: 300, poll_interval_seconds: 2 }
 
-  # Eve drafts the proposal and DMs Frank. One bash -c, single line.
+  # Eve drafts the proposal and pings Frank for review.
   - op: kickstart_worker
     worker: eve
     other_worker: frank
-    message: "Hi Eve — you are an engineer (worker id {self_id}). Please draft a v0 architecture proposal and DM Frank for review by running: bash -c \"mkdir -p \\$SHARED_STORAGE/teams/engineering && printf '# Architecture Proposal v0\\nAuthor: Eve\\nProposal: start with a single-process monolith; extract services only when a clear scaling boundary appears.\\nOpen questions: observability stack, sync vs async ingestion.' > \\$SHARED_STORAGE/teams/engineering/proposal.md && msgr --worker-id {self_id} send @{other_id} 'Drafted shared/teams/engineering/proposal.md - please review and reply with feedback.'\""
+    message: |
+      Hi Eve — you are an engineer (worker id {self_id}) reporting to Diana. First task: draft a v0 architecture proposal at $SHARED_STORAGE/teams/engineering/proposal.md, then DM Frank (worker {other_id}) asking for review.
 
-  # Frank reviews and DMs back.
+      Suggested proposal content (one-shot writeable with mkdir + printf):
+        # Architecture Proposal v0
+        Author: Eve
+        Proposal: start with a single-process monolith. Extract services only when a clear scaling boundary appears (hot path > 50% CPU or a domain needing independent deploy cadence). Normalize data; denormalize at read-time via materialized views once query patterns stabilize.
+        Open questions:
+        - Observability stack: otel vs. self-hosted?
+        - Sync vs. async ingestion path for v1?
+
+      Suggested workflow (chain with &&):
+        mkdir -p $SHARED_STORAGE/teams/engineering
+        printf '...proposal content...' > $SHARED_STORAGE/teams/engineering/proposal.md
+        msgr --worker-id {self_id} send @{other_id} 'Drafted shared/teams/engineering/proposal.md - please review and reply with feedback.'
+
   - op: kickstart_worker
     worker: frank
     other_worker: eve
-    message: "Hi Frank — you are an engineer (worker id {self_id}). Eve drafted the architecture proposal. Please review it and DM her your feedback by running: bash -c \"cat \\$SHARED_STORAGE/teams/engineering/proposal.md && msgr --worker-id {self_id} send @{other_id} 'Reviewed proposal. Approving v0 with one suggestion: define migration trigger metrics quantitatively. Otherwise solid - ship it.'\""
+    message: |
+      Hi Frank — you are an engineer (worker id {self_id}) reporting to Diana. Eve has drafted v0 of the architecture proposal at $SHARED_STORAGE/teams/engineering/proposal.md. Please read it and DM Eve (worker {other_id}) with your review.
+
+      Suggested workflow (chain with &&):
+        cat $SHARED_STORAGE/teams/engineering/proposal.md
+        msgr --worker-id {self_id} send @{other_id} 'Reviewed proposal. Approving v0 with one suggestion: define migration trigger metrics quantitatively (e.g. p95 latency thresholds) so we have an objective extract-to-service signal. Otherwise solid - ship it.'
 
   - { op: wait_until, predicate: { kind: message_count_between, from: eve, to: frank, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 2 }
   - { op: wait_until, predicate: { kind: message_count_between, from: frank, to: eve, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 2 }
 
-  # Diana reports status to Alice.
+  # Diana reports up to Alice.
   - op: kickstart_worker
     worker: diana
     other_worker: alice
-    message: "Hi Diana — Eve and Frank just completed their first peer-review cycle. Please send a status update DM to Alice (worker {other_id}) by running: msgr --worker-id {self_id} send @{other_id} 'Status update: engineering team online. Eve drafted v0 architecture proposal; Frank reviewed and approved with one suggestion. Ready for next OKR.'"
+    message: |
+      Hi Diana — Eve and Frank have completed their first peer-review cycle on the architecture proposal. Please send a brief status update DM to Alice (worker {other_id}) summarizing what your team accomplished.
+
+      Suggested DM:
+        msgr --worker-id {self_id} send @{other_id} 'Status update: engineering team online. Eve drafted v0 architecture proposal in shared/teams/engineering/proposal.md; Frank reviewed and approved with one suggestion (quantify migration trigger metrics). Ready for the next OKR.'
+
   - { op: wait_until, predicate: { kind: message_count_between, from: diana, to: alice, min: 1 }, timeout_seconds: 180, poll_interval_seconds: 2 }
 
 assertions:
