@@ -6,6 +6,7 @@ from datetime import datetime
 from cli.msgr.context import pass_context, MsgrContext
 from cli.core.notifications import get_pending_notifications
 from cli.core.queries.channel import get_channel
+from cli.core.queries.messages import get_message
 from cli.core.queries.worker import get_worker
 
 
@@ -52,14 +53,14 @@ def inbox(ctx: MsgrContext, unread: bool, channel: str, limit: int):
         from cli.msgr.utils import resolve_channel
         try:
             channel_id = resolve_channel(db, channel, worker_id)
-            notifications = [n for n in notifications if n["channel_id"] == channel_id]
+            notifications = [n for n in notifications if n.channel_id == channel_id]
         except Exception as e:
             click.echo(f"Error: {e}", err=True)
             raise click.Abort()
 
     # Filter by unread if specified
     if unread:
-        notifications = [n for n in notifications if n["status"] == "pending"]
+        notifications = [n for n in notifications if n.status == "pending"]
 
     # Display notifications
     if not notifications:
@@ -74,30 +75,35 @@ def inbox(ctx: MsgrContext, unread: bool, channel: str, limit: int):
     click.echo(f"📬 {len(notifications)} notification(s):\n")
 
     for notif in notifications:
+        # NotificationBead points to a message; load it for sender + content.
+        msg = get_message(db, notif.message_id)
+        content = msg.content if msg else "(message deleted)"
+        from_worker_id = msg.from_worker_id if msg else None
+
         # Get channel info
-        chan = get_channel(db, notif["channel_id"])
-        channel_name = f"#{chan.name}" if chan else notif["channel_id"]
+        chan = get_channel(db, notif.channel_id)
+        channel_name = f"#{chan.name}" if chan else notif.channel_id
 
         # Get sender info
-        sender = get_worker(db, notif["from_worker_id"])
-        sender_name = sender.name if sender else notif["from_worker_id"]
+        sender = get_worker(db, from_worker_id) if from_worker_id else None
+        sender_name = sender.name if sender else (from_worker_id or "unknown")
 
         # Format status
-        status_icon = "🔵" if notif["status"] == "pending" else "✓"
+        status_icon = "🔵" if notif.status == "pending" else "✓"
 
         # Format time
-        created_at = notif["created_at"]
+        created_at = notif.created_at
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
-        time_str = created_at.strftime("%H:%M")
+        time_str = created_at.strftime("%H:%M") if created_at else "??:??"
 
         # Format priority
-        priority = notif.get("priority", 2)
+        priority = notif.priority if notif.priority is not None else 2
         priority_icon = "🔴" if priority == 0 else "🟡" if priority == 1 else ""
 
         # Display notification
         click.echo(f"{status_icon} {priority_icon} {channel_name} • {sender_name} • {time_str}")
-        click.echo(f"  {notif['message_id']}: {notif['content'][:100]}")
-        if len(notif['content']) > 100:
+        click.echo(f"  {notif.message_id}: {content[:200]}")
+        if len(content) > 200:
             click.echo("  ...")
         click.echo()
