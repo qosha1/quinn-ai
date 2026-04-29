@@ -1,28 +1,24 @@
-# Canary 09: competing priorities under hard budget pressure.
+# Canary 09: competing priorities AND scale — CEO must defend a tradeoff
+# AND staff the chosen path properly.
 #
 # What this proves (and prior canaries don't):
-#   - The CEO is given TWO simultaneous P0s that genuinely cannot both be
-#     fully resourced. Budget + time make it physically impossible. There
-#     is NO right answer — just a defensible one.
-#   - We do not prescribe which P0 wins. The CEO picks, documents the
-#     choice, and defends it in writing. Assertions check that the
-#     tradeoff was made and documented — not which way it went.
-#   - The deferred P0 must have a real handoff (owner + when), not just
-#     "we'll get to it." Tests that the CEO actually closes the loop on
-#     work they're choosing not to do today.
+#   - The CEO is given TWO simultaneous P0s. There is NO prescribed answer
+#     for which to ship — they pick, document the call, and defend it.
+#   - The CHOSEN P0 (whichever it is) is genuinely large: 4 deliverables
+#     spanning 4 skillsets (Engineer / QA / Marketing-comms / Writer).
+#     Solo execution is physically infeasible in the SLA window.
+#   - Combined with the new "decompose by vertical and skillset" guidance
+#     in BRIEFING.md (cli/config/templates/briefing.md.jinja2), this
+#     forces real delegation rather than first-person execution.
+#   - The deferred P0 still needs a real handoff (owner + when).
 #
 # What we explicitly do NOT prescribe:
-#   - Which P0 to ship.
-#   - How many people to hire (only that ≥1 hire happens — solo execution
-#     under this kind of pressure is the failure mode we want to flush out).
-#   - The specific writing or implementation form.
+#   - Which P0 to ship (the four deliverable file paths are the same;
+#     content differs by chosen P0).
+#   - Specific worker names.
+#   - The exact writing or implementation form.
 #
-# Specialty hint vs canary 07/08: canary 09 is about JUDGMENT, not
-# diversity. A single capable engineer could plausibly do this — the test
-# is whether the CEO can resist the temptation to do everything and
-# instead delegate + defend a tradeoff.
-#
-# Cost expectation: ~$0.80–1.30 per run.
+# Cost expectation: ~$1.50–2.50 per run (4 hires + 4 deliverables).
 name: competing_priorities
 setup:
   init:
@@ -58,12 +54,28 @@ ops:
       Compliance wants a documented patch within today's working window.
       Customer data is not currently leaking but the path is open.
 
-        Deliverable shape (if you ship this one):
-          /tmp/canary09-prioritized.py — a Python module that
-          demonstrates the parameterized-query fix for a vulnerable
-          login function. It must NOT use string concatenation or
-          f-strings to build SQL containing user input. Use a
-          parameterized query (e.g. cursor.execute(sql, (params,))).
+      Shipping this P0 fully requires FOUR distinct deliverables, each
+      a different specialty — you cannot serially write all of these
+      yourself in the SLA window:
+
+        1. /tmp/canary09-prioritized.py — Python module with a
+           parameterized-query fix for the vulnerable login. NO string
+           concatenation or f-strings building SQL from user input.
+           Owned by an Engineer. Must include a smoke test that rejects
+           classic injection payloads.
+        2. /tmp/canary09-tests.py — pytest suite proving the fix.
+           At least 3 `def test_*` cases with `assert`s, including the
+           regression for the original injection. Owned by QA.
+        3. /tmp/canary09-advisory.md — customer-facing security
+           advisory. Public-statement voice, no engineering jargon.
+           Tells customers what was at risk, what was fixed, what to
+           do. Owned by a Marketing / Communications specialist.
+        4. /tmp/canary09-postmortem.md — internal compliance
+           postmortem. Must include the strings "root cause" and
+           "mitigation". Owned by a Security / Compliance writer (or
+           senior engineer doing the writeup — different person from
+           the one who wrote the patch, so the fix is independently
+           summarized).
 
       P0-DEMO (sales / customer)
       --------------------------
@@ -71,84 +83,135 @@ ops:
       10am. They asked for CSV export of /v1/orders. If the demo
       doesn't show this working, the deal slips a quarter.
 
-        Deliverable shape (if you ship this one):
-          /tmp/canary09-prioritized.py — a Python module exposing a
-          function that converts a list of order dicts into a valid
-          CSV string with header row and at least one body row.
+      Shipping this P0 fully also requires FOUR distinct deliverables
+      from different specialties:
 
-      Note: only ONE /tmp/canary09-prioritized.py exists. Whichever P0
-      you ship, that file IS the deliverable. Don't try to ship both
-      in one file — pick.
+        1. /tmp/canary09-prioritized.py — Python module with a
+           function converting a list of order dicts into a valid CSV
+           string (header row + ≥1 body row). Owned by an Engineer.
+        2. /tmp/canary09-tests.py — pytest suite for the export.
+           ≥3 `def test_*` cases with `assert`s covering the header,
+           a body row, and an edge case (commas/quotes/newlines).
+           Owned by QA.
+        3. /tmp/canary09-advisory.md — customer-facing API doc /
+           release note for the new export. Customer voice, includes a
+           short usage example. Owned by Marketing / Communications.
+        4. /tmp/canary09-postmortem.md — internal demo-readiness
+           writeup. Must include "root cause" (why we didn't have
+           this earlier) and "mitigation" (what we built). Owned by
+           a separate writer / senior engineer.
+
+      Note on file paths: whichever P0 you pick, the FOUR file paths
+      are the same — the CONTENT differs based on which P0 wins.
+
+      Hard volume reality
+      ===================
+      Four distinct artifacts in four distinct specialty voices is NOT
+      something one person can serially produce at quality in the
+      SLA window. The work is large enough that solo execution is the
+      wrong shape — you need at least one Engineer, one QA, one
+      Marketing/Comms specialist, and one Writer (or a senior eng
+      doing the writeup). Per your briefing's "decompose by vertical
+      and skillset" rule, this is a 4-skillset job and must be hired.
 
       Budget reality
       ==============
-      You have ~100 credits. A specialist hire costs 30–40 each, and
-      doing either deliverable to a real bar takes ~50 credits of focused
-      work. Trying to half-ass both is a worse outcome than shipping one
-      well and deferring the other cleanly.
+      You have generous budget. Hiring 4 specialists fits well within
+      it. Not hiring is the failure mode — it caps the org at one
+      person's bandwidth and quality bar.
 
       What we need from you (CEO)
       ===========================
-      1. Decide WHICH P0 ships today. The other defers.
-      2. Write the decision down in /tmp/canary09-decision.md. The memo
-         must:
+      1. Decide WHICH P0 ships today. The other defers. Document the
+         call in /tmp/canary09-decision.md. The memo must:
            - Reference BOTH P0-AUTH and P0-DEMO by name.
            - State which one ships and which defers.
-           - Give substantive reasoning (cost, risk, customer impact —
-             not just "I picked this one"). Words like "because",
-             "given", "however", or "since" should appear naturally as
-             you defend the call.
-      3. Broadcast the tradeoff to #general so stakeholders know what
+           - Give substantive reasoning (cost, risk, customer impact).
+             Words like "because", "given", "however", or "since"
+             should appear naturally as you defend the call.
+      2. **Hire the team for the chosen P0**. The chosen P0 has FOUR
+         skillsets of work — Engineer, QA, Marketing/Comms, and
+         Writer (or senior eng doing the writeup). Hire ≥3 specialists
+         (you don't have to hire all 4 if one person can plausibly
+         own two adjacent cells, but solo execution is not viable).
+         Use `qn org hire --name=... --role="Engineer"` etc. Give each
+         hire the role that matches their cell.
+      3. Delegate the four deliverables to the right specialists.
+         Each artifact's voice should reflect its owner's specialty —
+         the engineer's code reads like code, the marketing advisory
+         reads like customer comms, the postmortem reads like an
+         internal writeup, etc.
+      4. Broadcast the tradeoff to #general so stakeholders know what
          to expect today vs. tomorrow.
-      4. Execute on the chosen path: the prioritized deliverable file
-         lands, and the chosen bead closes with a substantive reason.
       5. The DEFERRED P0 gets a handoff doc at /tmp/canary09-deferred.md
-         that names an owner (the worker, by name or role, who will
-         pick it up) and an approximate timeframe (e.g. "tomorrow",
-         "after demo", "within 24h"). Don't close the deferred bead —
-         leave it open so the handoff target can claim it.
+         that names an owner (worker name or role) and an approximate
+         timeframe. Don't close the deferred bead — leave it open so
+         the handoff target can claim it.
 
       Stakeholder context
       ===================
       Both Compliance and Sales know this is a hard call. They are not
-      expecting both today. They ARE expecting a defended decision and
-      a clean handoff for whichever side waits.
+      expecting both today. They ARE expecting a defended decision, a
+      properly staffed execution of the chosen P0, and a clean handoff
+      for whichever side waits.
 
   - { op: start_org }
   - op: kickstart_ceo
-    message: "Two P0s landed at once and the budget doesn't cover both. Read the OKR carefully. Pick which one ships today, write the decision memo at /tmp/canary09-decision.md (mention both P0s by name and defend the call), broadcast to #general, then ship the prioritized deliverable to /tmp/canary09-prioritized.py. The deferred P0 needs a handoff doc at /tmp/canary09-deferred.md naming who picks it up and when."
+    message: "Two P0s landed at once. Read the OKR — both P0s require FOUR skillsets each (Engineer, QA, Marketing/Comms, Writer). You cannot ship either alone in the SLA window. Pick which P0 ships, write /tmp/canary09-decision.md (mention both P0s, defend the call), then HIRE your team (≥3 specialists for the chosen P0) and delegate the four deliverables. Broadcast tradeoff to #general. Write /tmp/canary09-deferred.md handoff for the deferred P0."
 
-  # Phase 1: at least one hire. Solo CEO doing it all is the failure mode
-  # — we want to see real delegation under pressure, even if minimal.
-  - { op: wait_until, predicate: { kind: worker_count, min: 2 }, timeout_seconds: 180, poll_interval_seconds: 5 }
+  # Phase 1: CEO must hire the team. ≥4 workers (CEO + 3 specialists)
+  # because the chosen P0 has 4 skillsets of work. Solo execution is
+  # the failure mode this canary catches.
+  - { op: wait_until, predicate: { kind: worker_count, min: 4 }, timeout_seconds: 300, poll_interval_seconds: 5 }
 
-  # Phase 2: decision memo lands first (the gate before execution).
-  # Both P0 names must appear — proves the CEO didn't just rubber-stamp one.
+  # Phase 2: decision memo names BOTH P0s — proves CEO didn't rubber-stamp.
   - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary09-decision.md, substring: "P0-AUTH" }, timeout_seconds: 240, poll_interval_seconds: 5 }
   - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary09-decision.md, substring: "P0-DEMO" }, timeout_seconds: 240, poll_interval_seconds: 5 }
 
-  # Phase 3: prioritized deliverable lands. We accept either P0's shape.
-  # If P0-AUTH won: file mentions parameterized / cursor.execute / placeholders.
-  # If P0-DEMO won: file mentions csv / writer / header.
+  # Phase 3: each of the four chosen-P0 deliverables lands. Substrings
+  # accept either P0's expected content shape.
   - op: wait_until
     predicate:
       kind: file_contains_any
       path: /tmp/canary09-prioritized.py
       substrings: ["parameterized", "cursor.execute", "placeholder", "csv", "writer", "writerow"]
       case_insensitive: true
-    timeout_seconds: 360
+    timeout_seconds: 480
     poll_interval_seconds: 5
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary09-tests.py, substring: "def test_" }, timeout_seconds: 480, poll_interval_seconds: 5 }
+  - op: wait_until
+    predicate:
+      kind: file_contains_any
+      path: /tmp/canary09-advisory.md
+      substrings: ["customers", "we are", "today", "we have identified", "release", "available"]
+      case_insensitive: true
+    timeout_seconds: 480
+    poll_interval_seconds: 5
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary09-postmortem.md, substring: "root cause" }, timeout_seconds: 480, poll_interval_seconds: 5 }
 
   # Phase 4: handoff doc for the deferred P0.
   - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary09-deferred.md, substring: "" }, timeout_seconds: 240, poll_interval_seconds: 5 }
 
 assertions:
-  # CEO did not solo this — at least one hire under pressure.
-  - { kind: worker_count, min: 2 }
+  # CEO hired a real team. The chosen P0 has 4 skillsets of work; solo
+  # execution is the failure mode this canary catches. ≥4 workers means
+  # CEO + ≥3 specialists.
+  - { kind: worker_count, min: 4 }
 
-  # Decision memo names BOTH P0s and reads like a defended choice, not a
-  # rubber-stamp. Reasoning markers are the proxy: at least one of these
-  # connectives should appear when you're explaining a tradeoff.
+  # Specialty diversity in the staffing. Whichever P0 won, the team must
+  # include at least one Engineer-shaped role and at least one
+  # Marketing/Comms-shaped role (because every chosen-P0 deliverable set
+  # spans those two specialties at minimum).
+  - kind: worker_role_contains
+    substrings: ["engineer", "developer", "eng"]
+    min: 1
+    exclude_ceo: true
+  - kind: worker_role_contains
+    substrings: ["marketing", "comms", "communications", "writer", "pr"]
+    min: 1
+    exclude_ceo: true
+
+  # Decision memo names BOTH P0s and reads like a defended call.
   - { kind: file_contains, path: /tmp/canary09-decision.md, substring: "P0-AUTH" }
   - { kind: file_contains, path: /tmp/canary09-decision.md, substring: "P0-DEMO" }
   - kind: file_contains_any
@@ -156,23 +219,22 @@ assertions:
     substrings: ["because", "given", "since", "however", "tradeoff", "trade-off", "rationale"]
     case_insensitive: true
 
-  # Prioritized deliverable: either P0's shape is acceptable. We don't
-  # care which won — only that something real shipped.
+  # All four chosen-P0 deliverables shipped. Either P0's content shape is OK.
   - kind: file_contains_any
     path: /tmp/canary09-prioritized.py
     substrings: ["parameterized", "cursor.execute", "placeholder", "csv", "writer", "writerow"]
     case_insensitive: true
+  - { kind: file_contains, path: /tmp/canary09-tests.py, substring: "def test_" }
+  - { kind: file_contains, path: /tmp/canary09-tests.py, substring: "assert" }
+  - kind: file_contains_any
+    path: /tmp/canary09-advisory.md
+    substrings: ["customers", "we are", "today", "we have identified", "release", "available", "service"]
+    case_insensitive: true
+  - { kind: file_contains, path: /tmp/canary09-postmortem.md, substring: "root cause" }
+  - { kind: file_contains, path: /tmp/canary09-postmortem.md, substring: "mitigation" }
 
-  # Deferred handoff names a human/role and a rough timeframe. We can't
-  # check arbitrary names, so we check for ANY of the structural markers
-  # that a real handoff doc has.
+  # Deferred handoff names an owner / role and a rough timeframe.
   - kind: file_contains_any
     path: /tmp/canary09-deferred.md
     substrings: ["owner", "assigned", "handoff", "tomorrow", "after", "next", "pick up", "engineer", "specialist"]
     case_insensitive: true
-
-  # The chosen P0 must be closed; the deferred one stays open for handoff.
-  # We can't assert "exactly one of two is closed" without an or-predicate,
-  # so we just assert ≥1 closed by name (sec_id OR demo_id) via a separate
-  # predicate. Skipped here to keep the spec minimal — the file checks
-  # above are the load-bearing assertions for whether work shipped.
