@@ -388,7 +388,7 @@ Your working directory contains important onboarding materials:
    msgr inbox
    ```
 
-2. Read your BRIEFING.md file: `cat BRIEFING.md`
+2. Read your BRIEFING.md file: `cat "$WORKER_STORAGE/BRIEFING.md"` (use the full path — your cwd may be the project root in host-mode, not your storage dir)
 3. Review your assigned OKRs: `qn org okr list`
 4. Check for ready work: `bd ready`
 5. Start working autonomously on your highest priority OKR
@@ -561,7 +561,12 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
         time.sleep(INITIAL_PROMPT_FILESYSTEM_FLUSH)
 
         tmux_session = f"{TMUX_SESSION_PREFIX}{ceo.id}"
-        cmd = "cat INITIAL_TASK.md"
+        # Use the absolute path. In host-mode, the worker's cwd is the
+        # project_root (so they can edit project files directly), not the
+        # worker's storage dir — so a bare 'cat INITIAL_TASK.md' fails.
+        # The absolute path works in both greenfield and host-mode.
+        # (quinn-ai-ltvl)
+        cmd = f"cat {instructions_file}"
 
         try:
             # quinn-ai-k2cy: wait for the CEO TUI to be ready before sending
@@ -615,12 +620,12 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
                 click.echo(
                     "  The CEO may not have received the prompt. Check with 'qn org observe ceo' "
                     "and re-send manually if needed: tmux send-keys -t "
-                    f"{tmux_session} 'cat INITIAL_TASK.md' Enter",
+                    f"{tmux_session} 'cat {instructions_file}' Enter",
                     err=True,
                 )
         except subprocess.CalledProcessError as e:
             click.echo(f"Warning: Could not send command to tmux: {e}", err=True)
-            click.echo("  CEO can manually run: cat INITIAL_TASK.md", err=True)
+            click.echo(f"  CEO can manually run: cat {instructions_file}", err=True)
 
     except Exception as e:
         click.echo(f"Warning: Failed to deliver initial instructions: {e}", err=True)
