@@ -48,6 +48,51 @@ def find_org_root(start_path: Optional[Path] = None) -> Optional[Path]:
     return None
 
 
+def find_worker_id_from_cwd(
+    org_path: Path,
+    start_path: Optional[Path] = None,
+) -> Optional[str]:
+    """Infer the current worker_id by matching cwd against the org's worker
+    storage tree.
+
+    Worker storage lives at <org_path>/storage/workers/<...hierarchy...>/<wrkr-id>/.
+    If the current directory (or any of its parents up to org_path) is or
+    is inside such a directory, return the corresponding wrkr-id. Returns
+    None if no match — e.g. cwd is outside the org or above storage/workers/.
+
+    This is a best-effort fallback for the case where QUINN_WORKER_ID isn't
+    set in the environment (e.g., env propagation through a child process
+    failed) but the worker is running from inside its own storage dir
+    (quinn-ai-3gwh).
+
+    Args:
+        org_path: Resolved org root path.
+        start_path: Path to start search from. Defaults to cwd.
+
+    Returns:
+        Worker id string (e.g. 'wrkr-8d726ee5') or None.
+    """
+    if start_path is None:
+        start_path = Path.cwd()
+    current = start_path.resolve()
+    org_path = org_path.resolve()
+
+    workers_root = org_path / "storage" / "workers"
+    try:
+        rel = current.relative_to(workers_root)
+    except ValueError:
+        return None
+
+    # The wrkr-id is the LAST path component that starts with 'wrkr-'.
+    # The hierarchy puts each worker's dir under their manager's dir, so
+    # the path looks like: storage/workers/ceo/director-X/engineer-Y.
+    # Each segment may itself be a wrkr-id directory; pick the deepest.
+    for part in reversed(rel.parts):
+        if part.startswith("wrkr-"):
+            return part
+    return None
+
+
 def require_org_root(start_path: Optional[Path] = None) -> Path:
     """Find org root or raise error.
 

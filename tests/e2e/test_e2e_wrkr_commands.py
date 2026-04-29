@@ -97,4 +97,40 @@ def test_wrkr_status_unknown_worker_fails_cleanly(org_with_ceo, qn_runner):
         ],
     )
     assert result.returncode != 0
+
+
+def test_wrkr_id_inferred_from_cwd_under_worker_storage(
+    hired_team, org_with_ceo, qn_runner
+):
+    """Regression: when cwd is inside <org>/storage/workers/<...>/<wrkr-id>/,
+    `qn wrkr status` (no --worker-id, no QUINN_WORKER_ID env) should
+    auto-detect the worker (quinn-ai-3gwh).
+
+    This covers the AI-worker-with-scrubbed-env case: a hired worker
+    whose tmux env didn't propagate through claude's Bash tool can still
+    use 'qn wrkr ...' as long as it's running from inside its own
+    storage dir.
+    """
+    worker_id = hired_team[0]
+
+    # Locate the hired worker's storage dir.
+    worker_dir = None
+    for path in (org_with_ceo / "storage" / "workers").rglob(worker_id):
+        if path.is_dir():
+            worker_dir = path
+            break
+    assert worker_dir is not None, f"no storage dir for {worker_id}"
+
+    # Important: env={} stripping is not enough — the env_hygiene autouse
+    # fixture already removes QUINN_WORKER_ID from os.environ. So just
+    # don't pass --worker-id; cwd fallback is the only signal left.
+    result = qn_runner(
+        ["--org-path", str(org_with_ceo), "wrkr", "status"],
+        cwd=worker_dir,
+    )
+    assert result.returncode == 0, (
+        f"wrkr status should auto-detect worker_id from cwd; got:\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert "Traceback" not in result.stderr
     assert "Traceback" not in result.stderr

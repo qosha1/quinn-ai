@@ -10,7 +10,7 @@ from typing import Optional
 
 import click
 
-from cli.core.org_discovery import find_org_root
+from cli.core.org_discovery import find_org_root, find_worker_id_from_cwd
 from cli.msgr.context import MsgrContext
 
 
@@ -48,9 +48,25 @@ def msgr(ctx, org_path: Optional[Path], worker_id: Optional[str]):
             click.echo("Error: Could not find org root. Set QUINN_ORG_PATH or run from org directory.", err=True)
             sys.exit(1)
 
-    # Require worker ID for actual commands
+    # Resolve worker_id: explicit flag > QUINN_WORKER_ID env > infer from cwd.
+    # The cwd fallback covers the case where env propagation through a child
+    # process didn't carry QUINN_WORKER_ID but the worker is running from
+    # inside its own storage dir (quinn-ai-3gwh). msgr's flag and envvar
+    # handling already cover the first two via Click; this adds the cwd path.
     if worker_id is None:
-        click.echo("Error: QUINN_WORKER_ID not set. Are you running in a worker session?", err=True)
+        worker_id = find_worker_id_from_cwd(org_path)
+
+    if worker_id is None:
+        click.echo(
+            "Error: worker identity unknown. msgr needs to know which worker is calling.\n"
+            "Resolution order:\n"
+            "  1. --worker-id <wrkr-id>  (explicit, always works)\n"
+            "  2. QUINN_WORKER_ID env var (set by qn org start / qn org hire)\n"
+            "  3. cwd inside <org>/storage/workers/<...>/<wrkr-id>/  (auto-detect)\n"
+            "If you're an AI worker whose env was scrubbed (e.g., env didn't\n"
+            "propagate through a child shell), pass --worker-id explicitly.",
+            err=True,
+        )
         sys.exit(1)
 
     # Create context

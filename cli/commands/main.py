@@ -198,20 +198,31 @@ def org(ctx, org_path: Optional[Path]):
 @click.option(
     "--worker-id",
     envvar="QUINN_WORKER_ID",
-    help="Worker ID. Defaults to QUINN_WORKER_ID env var.",
+    help=(
+        "Worker ID. Falls back to $QUINN_WORKER_ID, then auto-detection "
+        "from cwd if it's inside <org>/storage/workers/<...>/<wrkr-id>/."
+    ),
 )
 @click.pass_context
 def wrkr(ctx, org_path: Optional[Path], worker_id: Optional[str]):
     """Worker operations.
 
     Commands for AI workers running in sessions.
-    Requires --worker-id option or QUINN_WORKER_ID environment variable.
+    Resolution: --worker-id > $QUINN_WORKER_ID > cwd auto-detect.
     """
     ctx.ensure_object(Context)
     if org_path:
         ctx.obj.org_path = org_path
     if worker_id:
         ctx.obj.worker_id = worker_id
+    elif ctx.obj.org_path:
+        # cwd fallback: walk cwd to find <org>/storage/workers/<...>/<wrkr-id>.
+        # Mirrors msgr's resolution order so a worker whose env got scrubbed
+        # but is running in its own storage dir still works (quinn-ai-3gwh).
+        from cli.core.org_discovery import find_worker_id_from_cwd
+        inferred = find_worker_id_from_cwd(ctx.obj.org_path)
+        if inferred:
+            ctx.obj.worker_id = inferred
 
 
 # Import and register subcommands
