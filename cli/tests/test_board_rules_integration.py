@@ -504,9 +504,26 @@ class TestRequiredSeverityOnFire:
                 ],
             )
 
+        combined = _combined_output(result)
         assert result.exit_code != 0, (
             "REQUIRED with wrong-approver override must STILL BLOCK; "
-            f"got exit=0 combined={_combined_output(result)!r}"
+            f"got exit=0 combined={combined!r}"
+        )
+        # Block must be from THE RULE (not e.g. unrelated permission failures)
+        # — proves the engine is actually wired.
+        assert "no-fire-without-replacement-plan" in combined, (
+            "Block message must mention the rule id (engine must be the gate, "
+            f"not some other failure mode); combined={combined!r}"
+        )
+        # Audit log records the BLOCK with the ineligible override bead.
+        entries = _read_audit_log(rules_org)
+        block_entries = [
+            e for e in entries
+            if e.get("rule_id") == "no-fire-without-replacement-plan"
+            and e.get("decision") in ("block", "BLOCK")
+        ]
+        assert block_entries, (
+            f"Audit log must record the rule-driven BLOCK; got entries={entries}"
         )
 
 
