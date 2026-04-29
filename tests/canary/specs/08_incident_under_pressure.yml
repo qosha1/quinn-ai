@@ -93,8 +93,26 @@ ops:
   - { op: wait_until, predicate: { kind: worker_count, min: 3 }, timeout_seconds: 300, poll_interval_seconds: 3 }
 
   # Phase 3: deliverable artifacts land. Generous per-file timeouts because
-  # the LLM is doing real drafting work, not just shell.
-  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary08-postmortem.md, substring: "root cause" }, timeout_seconds: 360, poll_interval_seconds: 5 }
+  # the LLM is doing real drafting work, not just shell. Use case-insensitive
+  # any-of for the postmortem markers — real postmortems write
+  # 'Root cause' / 'root-cause' / 'cause' as section headers; we don't lock
+  # the model to one phrasing.
+  - op: wait_until
+    predicate:
+      kind: file_contains_any
+      path: /tmp/canary08-postmortem.md
+      substrings: ["root cause", "root-cause", "cause:", "## cause", "## causes"]
+      case_insensitive: true
+    timeout_seconds: 360
+    poll_interval_seconds: 5
+  - op: wait_until
+    predicate:
+      kind: file_contains_any
+      path: /tmp/canary08-postmortem.md
+      substrings: ["mitigation", "remediation", "resolution", "fix:"]
+      case_insensitive: true
+    timeout_seconds: 60
+    poll_interval_seconds: 3
   - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary08-status-update.md, substring: "" }, timeout_seconds: 240, poll_interval_seconds: 5 }
 
   # Phase 4: incident bead closed.
@@ -113,9 +131,16 @@ assertions:
     min: 1
     exclude_ceo: true
 
-  # Deliverables exist with the right shape.
-  - { kind: file_contains, path: /tmp/canary08-postmortem.md, substring: "root cause" }
-  - { kind: file_contains, path: /tmp/canary08-postmortem.md, substring: "mitigation" }
+  # Deliverables exist with the right shape. Case-insensitive any-of so we
+  # accept reasonable phrasing variants ('Root cause', 'root-cause', 'cause:').
+  - kind: file_contains_any
+    path: /tmp/canary08-postmortem.md
+    substrings: ["root cause", "root-cause", "cause:", "## cause", "## causes"]
+    case_insensitive: true
+  - kind: file_contains_any
+    path: /tmp/canary08-postmortem.md
+    substrings: ["mitigation", "remediation", "resolution", "fix:"]
+    case_insensitive: true
   # Customer-facing tone signals (any-of): one of these public-statement
   # phrases should appear. We don't lock to a specific phrasing — just
   # require the artifact reads like a customer comms doc, not an
