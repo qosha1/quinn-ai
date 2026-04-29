@@ -141,6 +141,18 @@ def _prompt_for_okrs() -> List[ObjectiveConfig]:
         "flag only if you know the existing .beads/ is yours to extend."
     ),
 )
+@click.option(
+    "--host/--no-host",
+    "host_mode_flag",
+    default=None,
+    help=(
+        "Host mode: overlay the org onto an existing project. Org metadata "
+        "lands under <path>/.quinnai/; project's existing .beads/ is reused; "
+        "root files (CLAUDE.md, README.md, AGENTS.md) are not created or "
+        "overwritten. Auto-detected when .beads/ or .git/ exists at the "
+        "target path. Use --no-host to force greenfield."
+    ),
+)
 @pass_context
 def init_cmd(
     ctx: Context,
@@ -148,6 +160,7 @@ def init_cmd(
     okrs_file: Optional[str],
     skip_okrs: bool,
     reuse_beads: bool,
+    host_mode_flag: Optional[bool],
 ):
     """Initialize a new organization.
 
@@ -169,6 +182,23 @@ def init_cmd(
     # (walk up looking for live/quinn.db) can't help. Fall back to cwd —
     # mirrors `git init` semantics.
     org_path = ctx.org_path or Path.cwd()
+
+    # Resolve host mode (host-mode-init):
+    #   --host         → True (explicit)
+    #   --no-host      → False (explicit greenfield)
+    #   neither passed → auto-detect: True iff .beads/ or .git/ exists.
+    if host_mode_flag is None:
+        host_mode = (
+            (org_path / ".beads").exists() or (org_path / ".git").exists()
+        )
+        if host_mode:
+            click.echo(
+                f"Host mode auto-detected at {org_path} (existing .beads/ or "
+                f".git/ found). Org metadata will land under .quinnai/. Use "
+                f"--no-host to force greenfield.",
+            )
+    else:
+        host_mode = host_mode_flag
 
     is_tty = sys.stdin.isatty()
 
@@ -211,6 +241,7 @@ def init_cmd(
         objectives=objectives,
         reuse_beads=reuse_beads,
         skip_okrs=skip_okrs,
+        host_mode=host_mode,
     )
 
     # Initialize the org

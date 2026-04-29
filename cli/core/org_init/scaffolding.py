@@ -48,6 +48,36 @@ def create_folder_structure(org_path: Path) -> None:
     storage.initialize_storage()
 
 
+def install_bd_shim(project_root: Path) -> None:
+    """Install the qn bd PATH shim into <project_root>/.quinnai/bin/bd.
+
+    The shim enforces the host-mode trust boundary (host-mode-init): a
+    worker (identified by $QUINN_WORKER_ID) cannot close a bead assigned
+    to anyone else. Humans (no $QUINN_WORKER_ID) bypass the check.
+
+    Worker session spawn prepends <project_root>/.quinnai/bin/ to $PATH
+    so workers' `bd` resolves to this shim. Idempotent: reinstall on
+    re-init replaces the file with the current source.
+    """
+    bin_dir = project_root / ".quinnai" / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    shim_dest = bin_dir / "bd"
+
+    # Locate the canonical shim source. Walk up from this module to the
+    # repo root, then into scripts/.
+    shim_src = (
+        Path(__file__).resolve().parents[3] / "scripts" / "quinnai-bd-shim"
+    )
+    if not shim_src.exists():
+        raise FileNotFoundError(
+            f"qn bd shim source missing at {shim_src} — install incomplete"
+        )
+
+    shutil.copy(shim_src, shim_dest)
+    # Ensure executable bit (shutil.copy preserves mode but be explicit).
+    shim_dest.chmod(0o755)
+
+
 def copy_default_configs(org_path: Path) -> None:
     """Copy default providers.yaml + worker-templates.yaml into config/."""
     config_dir = org_path / "config"

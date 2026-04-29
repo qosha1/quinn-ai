@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS org_state (
     ceo_worker_id TEXT,
     started_at DATETIME,
     stopped_at DATETIME,
+    -- Host mode (host-mode-init): when this org overlays an existing project,
+    -- project_root holds the absolute path to that project. NULL for greenfield orgs.
+    -- is_host_mode := (project_root IS NOT NULL)
+    project_root TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

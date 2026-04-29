@@ -6,6 +6,7 @@ Creates briefings, documentation, and welcome messages for new workers.
 
 import json
 import logging
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -511,6 +512,109 @@ def _link_architecture_docs(worker_dir: Path, org_path: Path) -> None:
                 link.symlink_to(agents_md)
             except (OSError, NotImplementedError):
                 link.write_text(agents_md.read_text())
+
+
+def get_worker_session_working_directory(
+    org_path: Path,
+    worker_id: str,
+) -> Path:
+    """Return the cwd a worker's session should spawn into.
+
+    Greenfield: the worker's hierarchical private storage dir (existing
+    behavior — workers cwd into their own storage).
+    Host mode: the project_root (workers operate ON the existing project
+    from its top-level dir).
+
+    `org_path` is the metadata root: greenfield = org root, host mode =
+    <project_root>/.quinnai/.
+
+    No new db connection is opened here — the host-mode check uses
+    is_host_mode which opens its own short-lived sqlite connection.
+    """
+    from cli.core.db import open_database
+    from cli.core.host_mode import is_host_mode, get_project_root
+
+    if is_host_mode(org_path):
+        return get_project_root(org_path)
+
+    # Greenfield: hierarchical worker storage dir. Resolve the 'ceo' alias.
+    db = open_database(get_org_db_path(org_path))
+    try:
+        resolved_id = worker_id
+        if worker_id.lower() == "ceo":
+            row = db.fetchone(
+                "SELECT ceo_worker_id FROM org_state WHERE id='default'"
+            )
+            if row is not None and row["ceo_worker_id"]:
+                resolved_id = row["ceo_worker_id"]
+        storage = StorageManager(org_path, db)
+        return storage.get_worker_path(resolved_id)
+    finally:
+        db.close()
+
+
+def get_worker_env_vars_for_worker(
+    org_path: Path,
+    worker_id: str,
+) -> dict[str, str]:
+    """Build the spawn-env for a worker by id, host-mode aware.
+
+    Simpler signature than get_worker_env_vars(ctx, org_path, db) — used
+    when the caller doesn't already have an OnboardingContext (e.g. host
+    mode tests, ad-hoc respawn tooling). Returns the same WORKER_*,
+    QUINN_*, ORG_* env vars plus PATH adjustments for host mode.
+
+    Accepts the literal worker id OR the 'ceo' alias (resolved via
+    org_state.ceo_worker_id).
+    """
+    from cli.core.db import open_database
+    from cli.core.host_mode import is_host_mode, get_project_root
+
+    db = open_database(get_org_db_path(org_path))
+    try:
+        # Resolve 'ceo' alias to the real worker id so storage lookups
+        # succeed regardless of which form the caller used.
+        resolved_id = worker_id
+        if worker_id.lower() == "ceo":
+            row = db.fetchone(
+                "SELECT ceo_worker_id FROM org_state WHERE id='default'"
+            )
+            if row is not None and row["ceo_worker_id"]:
+                resolved_id = row["ceo_worker_id"]
+        storage = StorageManager(org_path, db)
+        try:
+            worker_dir = storage.get_worker_path(resolved_id)
+        except Exception:
+            # Worker not yet onboarded into storage hierarchy — fall back
+            # to a deterministic path under storage/workers/<resolved_id>/
+            # so callers still get a usable env.
+            from cli.core.constants import STORAGE_DIR, WORKERS_DIR
+            worker_dir = org_path / STORAGE_DIR / WORKERS_DIR / resolved_id
+    finally:
+        db.close()
+    worker_id = resolved_id
+
+    env = {
+        "WORKER_ID": worker_id,
+        "QUINN_WORKER_ID": worker_id,
+        "ORG_PATH": str(org_path),
+        "QUINN_ORG_PATH": str(org_path),
+        "WORKER_STORAGE": str(worker_dir),
+    }
+
+    if is_host_mode(org_path):
+        # Prepend .quinnai/bin/ to PATH so workers' `bd` resolves to the
+        # trust-boundary shim (host-mode-init). Project root is up one
+        # level from the .quinnai/ metadata root.
+        project_root = get_project_root(org_path)
+        shim_dir = project_root / ".quinnai" / "bin"
+        # Use os.pathsep-less colon since spawn env runs in bash; this is
+        # macOS/linux only.
+        existing_path = os.environ.get("PATH", "")
+        env["PATH"] = f"{shim_dir}:{existing_path}" if existing_path else str(shim_dir)
+        env["PROJECT_ROOT"] = str(project_root)
+
+    return env
 
 
 def get_worker_env_vars(

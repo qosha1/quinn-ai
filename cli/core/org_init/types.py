@@ -83,6 +83,14 @@ class OrgInitConfig:
     # fallback). Used by tests, canaries, and any caller that wants to
     # plant its own OKRs immediately after init (see quinn-ai-6odb).
     skip_okrs: bool = False
+    # Host mode (host-mode-init): overlay an org onto an existing project.
+    # When True, `path` is interpreted as the project root; all org metadata
+    # is laid out under <path>/.quinnai/, the project's existing .beads/ is
+    # reused (no `bd init`), and root template files (README.md, CLAUDE.md,
+    # AGENTS.md) at project root are not created or overwritten. The
+    # project_root absolute path is recorded in org_state.project_root for
+    # is_host_mode() to detect.
+    host_mode: bool = False
 
 
 @dataclass

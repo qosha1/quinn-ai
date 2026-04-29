@@ -1,0 +1,80 @@
+#!/bin/bash
+# QuinnAI bd shim — host-mode trust boundary (host-mode-init).
+#
+# Installed at <project_root>/.quinnai/bin/bd by `qn org init --host`.
+# Worker session spawn prepends <project_root>/.quinnai/bin/ to $PATH so
+# `bd` from inside the worker resolves here. Humans don't have this on
+# their PATH and so bypass the check entirely.
+#
+# Behavior:
+#   - For `bd close <id>` and `bd update <id> --status=closed`:
+#       If $QUINN_WORKER_ID is set AND the bead's current assignee is
+#       not equal to $QUINN_WORKER_ID, refuse with a clear stderr
+#       message and exit 1.
+#   - Otherwise: exec the real bd with all args.
+#
+# Bash 3.2 compatible (macOS default). No associative arrays, no
+# bash-4-only builtins.
+
+set -e
+
+# Locate the real bd by walking $PATH and skipping our own dir.
+SHIM_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_BD=""
+IFS=':'
+for d in $PATH; do
+  if [ -n "$d" ] && [ "$d" != "$SHIM_DIR" ] && [ -x "$d/bd" ]; then
+    REAL_BD="$d/bd"
+    break
+  fi
+done
+unset IFS
+if [ -z "$REAL_BD" ]; then
+  echo "qn-bd-shim: cannot find real bd binary on PATH (excluding $SHIM_DIR)" >&2
+  exit 127
+fi
+
+# Detect close intent. We only gate close transitions; in_progress / new
+# / etc. pass through untouched (less destructive; assigning oneself to a
+# bead is fine).
+is_close=0
+bead_id=""
+case "$1" in
+  close)
+    is_close=1
+    bead_id="$2"
+    ;;
+  update)
+    # `bd update <id> --status=closed` (in any flag order)
+    bead_id="$2"
+    shift 2 || true
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --status=closed)
+          is_close=1
+          ;;
+        --status)
+          if [ "$2" = "closed" ]; then
+            is_close=1
+          fi
+          shift || true
+          ;;
+      esac
+      shift || true
+    done
+    ;;
+esac
+
+# Only enforce when both a worker context AND a close transition are present.
+if [ "$is_close" = "1" ] && [ -n "${QUINN_WORKER_ID:-}" ] && [ -n "$bead_id" ]; then
+  # Read the bead's current assignee. `bd show --json` for stable parsing.
+  show_out="$("$REAL_BD" show --json "$bead_id" 2>/dev/null || true)"
+  # Extract assignee with a portable sed (bash 3.2; no jq dependency).
+  assignee="$(printf '%s' "$show_out" | sed -n 's/.*"assignee"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  if [ -n "$assignee" ] && [ "$assignee" != "$QUINN_WORKER_ID" ]; then
+    echo "qn-bd-shim: worker $QUINN_WORKER_ID cannot close bead $bead_id assigned to $assignee" >&2
+    exit 1
+  fi
+fi
+
+exec "$REAL_BD" "$@"
