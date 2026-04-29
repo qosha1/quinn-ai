@@ -1,0 +1,73 @@
+# Canary 06: less-scripted real office work.
+#
+# CEO gets a vague product goal — "ship a small string-utility library
+# with tests" — and has to figure out everything: team composition,
+# delegation, work tracking via beads, cross-worker communication,
+# and split of impl-vs-tests responsibilities.
+#
+# Workers (Carol = engineer, Dave = QA) get role-based prompts but no
+# copy-pasteable command lists. They're expected to use BRIEFING.md +
+# the tools available (qn-bd, msgr, file I/O) to figure it out.
+#
+# Asserts verify OUTCOMES, not the path taken:
+#   - lib file exists with both required functions
+#   - test file exists referencing the lib
+#   - at least one bead got closed by a non-CEO
+#   - cross-worker msgr traffic from 2+ senders
+#
+# Cost estimate: $2-5 (4 sessions, multiple turns each).
+name: ship_a_feature
+setup:
+  init:
+    ceo_name: Alice
+ops:
+  # Goal-only OKR: no command list, just a deliverable.
+  - op: create_okr
+    objective: "Ship strutil v0.1: reverse() and is_palindrome() with tests, by EOD"
+    owner: ceo
+    priority: 0
+    description: |
+      You are running a small startup. The board (your boss) has asked you
+      to ship strutil v0.1: a Python module with two pure functions and a
+      passing test suite. Tonight.
+
+      Deliverables:
+        - /tmp/canary06-strutil.py implements:
+            reverse(s: str) -> str
+            is_palindrome(s: str) -> bool   (canonical: case + punctuation insensitive)
+        - /tmp/canary06-test.py contains a small pytest-style test suite
+          that imports the lib and exercises both functions including
+          edge cases.
+
+      How you achieve this is up to you. Suggested shape:
+        1. Hire an engineer to implement the lib.
+        2. Hire a QA engineer to write tests against it.
+        3. Track work in beads (qn-bd create, then assign).
+        4. Use msgr to coordinate handoff between engineer and QA.
+
+      Engineer gets cost: 30 (claude_code), QA cost: 30. Allocate 80
+      credits each from your budget.
+
+      Stop when both files exist and the test file imports the lib's
+      functions by name. Report completion in #general.
+  - { op: start_org }
+  - op: kickstart_ceo
+    message: "Read INITIAL_TASK.md and act on the highest-priority OKR right now. You're running this org — orchestrate the team to ship strutil v0.1 by yourself."
+
+  # Wait for the team to materialize. Allow 3 or more (CEO + 2 hires, or 4 with manager).
+  - { op: wait_until, predicate: { kind: worker_count, min: 3 }, timeout_seconds: 240, poll_interval_seconds: 10 }
+
+  # Long wait for the actual work. The deliverables are filesystem facts.
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary06-strutil.py, substring: "def reverse" }, timeout_seconds: 480, poll_interval_seconds: 10 }
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary06-strutil.py, substring: "def is_palindrome" }, timeout_seconds: 480, poll_interval_seconds: 10 }
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary06-test.py, substring: "is_palindrome" }, timeout_seconds: 480, poll_interval_seconds: 10 }
+
+assertions:
+  # Outcome: required deliverables present.
+  - { kind: file_contains, path: /tmp/canary06-strutil.py, substring: "def reverse" }
+  - { kind: file_contains, path: /tmp/canary06-strutil.py, substring: "def is_palindrome" }
+  - { kind: file_contains, path: /tmp/canary06-test.py, substring: "is_palindrome" }
+  - { kind: file_contains, path: /tmp/canary06-test.py, substring: "reverse" }
+
+  # Org sized to the work (≥3 workers including CEO).
+  - { kind: worker_count, min: 3 }

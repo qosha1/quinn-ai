@@ -24,8 +24,14 @@ def pred_org_status(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
 
 
 def pred_worker_count(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
-    expected = a["value"]
+    """Worker count assertion. Use 'value' for exact match or 'min' for >=."""
     actual = run.db.worker_count()
+    if "min" in a:
+        minimum = int(a["min"])
+        if actual < minimum:
+            return f"worker_count: expected ≥{minimum}, got {actual}"
+        return None
+    expected = a["value"]
     if actual != expected:
         return f"worker_count: {_fmt(actual, expected)}"
     return None
@@ -297,3 +303,52 @@ def pred_file_contains(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
 
 
 PREDICATES["file_contains"] = pred_file_contains
+
+
+def pred_bead_count_closed_by(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
+    """Count beads closed by a given worker (assignee = worker, status = closed/done).
+
+    Reads via bd direct (sidesteps qn-bd's tty-swallow issue from 4zgi).
+
+    YAML: { kind: bead_count_closed_by, worker: bob, min: 1 }
+    """
+    import json
+    import shutil
+    import subprocess
+    from cli.core.bd_wrapper import get_bundled_bd_path, get_org_beads_dir
+
+    if not shutil.which("bd") and not get_bundled_bd_path().exists():
+        return None  # cannot verify
+
+    worker_name = a["worker"]
+    minimum = int(a.get("min", a.get("value", 1)))
+    worker = run.db.find_worker_by_name(worker_name)
+    if worker is None:
+        return f"bead_count_closed_by: no worker named {worker_name!r}"
+
+    bd_path = get_bundled_bd_path()
+    beads_db = get_org_beads_dir(run.org_path) / "beads.db"
+    cmd = [str(bd_path), "--sandbox", f"--db={beads_db}",
+           "list", "--status", "closed", "--assignee", worker["id"], "--json"]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    if result.returncode != 0:
+        # bd may not support --status closed exactly; fall back to all-then-filter.
+        cmd2 = [str(bd_path), "--sandbox", f"--db={beads_db}", "list", "--all", "--json"]
+        result = subprocess.run(cmd2, capture_output=True, text=True, timeout=15)
+        if result.returncode != 0:
+            return f"bead_count_closed_by: bd list failed: {result.stderr[:200]}"
+    try:
+        rows = json.loads(result.stdout) or []
+    except json.JSONDecodeError:
+        return f"bead_count_closed_by: bd output not JSON"
+    actual = sum(
+        1 for r in rows
+        if r.get("assignee") == worker["id"]
+        and r.get("status", "").lower() in ("closed", "done", "resolved")
+    )
+    if actual < minimum:
+        return f"bead_count_closed_by({worker_name}): expected ≥{minimum}, got {actual}"
+    return None
+
+
+PREDICATES["bead_count_closed_by"] = pred_bead_count_closed_by

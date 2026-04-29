@@ -53,6 +53,23 @@ def op_wait_until(run: "ScenarioRun", op: dict[str, Any]) -> None:
     )
 
 
+def _flatten_for_send_keys(message: str) -> str:
+    """Make a message safe to type via 'tmux send-keys'.
+
+    tmux types each character literally, so a newline in the message is
+    typed as Enter — which on claude_code's TUI submits the partial input
+    and the rest of the message lands in subsequent prompts as fragments
+    (quinn-ai-wbgv). Collapse newlines to spaces and squeeze runs of
+    whitespace so the message arrives as a single prompt submission.
+    """
+    if "\n" not in message and "\r" not in message:
+        return message
+    # Replace \r\n / \r / \n with a single space, then squeeze runs of
+    # whitespace. A single explicit Enter is sent separately by the caller.
+    flat = message.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    return " ".join(flat.split())
+
+
 def op_kickstart_ceo(run: "ScenarioRun", op: dict[str, Any]) -> None:
     """Inject a directive into the CEO's tmux session via send-keys.
 
@@ -64,6 +81,9 @@ def op_kickstart_ceo(run: "ScenarioRun", op: dict[str, Any]) -> None:
     YAML form:
       - { op: kickstart_ceo, message: "Read INITIAL_TASK.md and act on the highest-priority OKR right now." }
 
+    Multi-line messages (YAML 'message: |' block scalars) are flattened to
+    a single line before delivery; see _flatten_for_send_keys.
+
     Reuses the same _wait_for_pane_ready + retry helpers used by qn org start.
     """
     import subprocess
@@ -72,9 +92,11 @@ def op_kickstart_ceo(run: "ScenarioRun", op: dict[str, Any]) -> None:
     if ceo is None:
         raise RuntimeError("kickstart_ceo: no CEO worker found")
     tmux_session = f"qn-{ceo['id']}"
-    message = op.get(
-        "message",
-        "Read INITIAL_TASK.md and act on the highest-priority OKR right now.",
+    message = _flatten_for_send_keys(
+        op.get(
+            "message",
+            "Read INITIAL_TASK.md and act on the highest-priority OKR right now.",
+        )
     )
 
     # Best-effort: reuse production helpers if importable; otherwise inline.
@@ -125,11 +147,12 @@ def op_kickstart_worker(run: "ScenarioRun", op: dict[str, Any]) -> None:
 
     raw_msg = op["message"]
     try:
-        message = raw_msg.format(**fmt)
+        formatted = raw_msg.format(**fmt)
     except KeyError:
         # Message used a placeholder we didn't supply — pass through as-is so
         # the operator sees the literal placeholder rather than crashing.
-        message = raw_msg
+        formatted = raw_msg
+    message = _flatten_for_send_keys(formatted)
 
     try:
         from cli.core.org_start_controller import (
