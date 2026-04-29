@@ -27,17 +27,25 @@ from cli.core.queries.worker import get_worker
     default=50,
     help="Maximum notifications to show (default: 50)",
 )
+@click.option(
+    "--full", "--content", "full",
+    is_flag=True,
+    default=False,
+    help="Show full message content (default: truncated to 200 chars).",
+)
 @pass_context
-def inbox(ctx: MsgrContext, unread: bool, channel: str, limit: int):
+def inbox(ctx: MsgrContext, unread: bool, channel: str, limit: int, full: bool):
     """View pending notifications.
 
     Shows notifications from all channels by default.
     Use --channel to filter to a specific channel.
     Use --unread to show only unread notifications.
+    Use --full (or --content) to print untruncated message bodies.
 
     \b
     Examples:
-      msgr inbox                  # All notifications
+      msgr inbox                  # All notifications, 200-char preview
+      msgr inbox --full           # Full content
       msgr inbox --unread         # Only unread
       msgr inbox --channel=#eng   # Engineering channel only
       msgr inbox --limit=10       # Last 10 notifications
@@ -103,7 +111,12 @@ def inbox(ctx: MsgrContext, unread: bool, channel: str, limit: int):
 
         # Display notification
         click.echo(f"{status_icon} {priority_icon} {channel_name} • {sender_name} • {time_str}")
-        click.echo(f"  {notif.message_id}: {content[:200]}")
-        if len(content) > 200:
-            click.echo("  ...")
+        if full:
+            click.echo(f"  {notif.message_id}:")
+            for line in content.splitlines() or [content]:
+                click.echo(f"    {line}")
+        else:
+            click.echo(f"  {notif.message_id}: {content[:200]}")
+            if len(content) > 200:
+                click.echo("  ...  (use --full to see all)")
         click.echo()
