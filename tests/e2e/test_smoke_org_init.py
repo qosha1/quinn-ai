@@ -122,6 +122,36 @@ def test_org_init_refuses_to_share_existing_beads_dir(tmp_path, cli_runner):
     )
 
 
+def test_org_init_skip_okrs_plants_no_okrs_at_all(temp_org_dir, cli_runner):
+    """Regression: 'qn org init --skip-okrs' must produce zero OKRs in
+    BOTH the SQLite okrs table AND the beads tracker (quinn-ai-6odb).
+
+    Pre-fix: --skip-okrs only suppressed the interactive prompt. Init
+    still planted a 'Establish organizational foundation' bootstrap
+    OKR that derailed canaries — the CEO would finish the spec's OKR,
+    see the planted one, and start working on it off-script.
+    """
+    import sqlite3
+
+    result = cli_runner(
+        ["--org-path", str(temp_org_dir), "org", "init", "--skip-okrs"],
+        check=True,
+    )
+    assert result.returncode == 0
+
+    # SQLite: okrs table must be empty
+    db_path = temp_org_dir / "live" / "quinn.db"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        rows = conn.execute("SELECT title FROM okrs").fetchall()
+    finally:
+        conn.close()
+    assert rows == [], (
+        f"--skip-okrs should plant NO OKRs in sqlite; got {rows} "
+        "(quinn-ai-6odb regression)"
+    )
+
+
 def test_org_init_reuse_beads_flag_lets_user_share_existing_tracker(
     tmp_path, cli_runner
 ):
