@@ -83,8 +83,8 @@ def prepare_worker_onboarding(
     # 3. Load onboarding context
     context = _load_onboarding_context(db, worker, org_path)
 
-    # 4. Generate and write briefing
-    _create_briefing(worker_dir, context)
+    # 4. Generate and write briefing (host-mode aware)
+    _create_briefing(worker_dir, context, org_path=org_path)
 
     # 5. Create STORAGE.md guide
     _create_storage_guide(worker_dir, context)
@@ -394,12 +394,17 @@ def _get_escalation_timeout(worker_role: str, is_ceo: bool, is_manager: bool) ->
         return DEFAULT_ESCALATION_TIMEOUT_WORKER
 
 
-def _create_briefing(worker_dir: Path, ctx: OnboardingContext) -> None:
+def _create_briefing(
+    worker_dir: Path, ctx: OnboardingContext, *, org_path: Path | None = None
+) -> None:
     """Generate BRIEFING.md from template.
 
     Args:
         worker_dir: Worker's directory path
         ctx: Onboarding context
+        org_path: Org metadata root (used to detect host mode and pass
+            project_root into the template). Optional for back-compat;
+            when omitted the template renders without host-mode block.
     """
     template_dir = Path(__file__).parent.parent / "config" / "templates"
     env = Environment(
@@ -408,6 +413,17 @@ def _create_briefing(worker_dir: Path, ctx: OnboardingContext) -> None:
     )
 
     template = env.get_template("briefing.md.jinja2")
+
+    # Host-mode awareness for the briefing template (host-mode-init):
+    # workers in a host-mode org get a lead paragraph clarifying that
+    # the project's CLAUDE.md is authoritative for code conventions.
+    is_host = False
+    project_root_str = ""
+    if org_path is not None:
+        from cli.core.host_mode import is_host_mode, get_project_root
+        if is_host_mode(org_path):
+            is_host = True
+            project_root_str = str(get_project_root(org_path))
 
     content = template.render(
         worker_id=ctx.worker_id,
@@ -422,6 +438,8 @@ def _create_briefing(worker_dir: Path, ctx: OnboardingContext) -> None:
         shared_storage=str(worker_dir.parent.parent / SHARED_DIR),
         is_ceo=ctx.is_ceo,
         is_manager=ctx.is_manager,
+        is_host_mode=is_host,
+        project_root=project_root_str,
         timestamp=ctx.timestamp,
         first_actions=ctx.first_actions,
         escalation_timeout_minutes=ctx.escalation_timeout_minutes,
@@ -639,7 +657,7 @@ def get_worker_env_vars(
     # Determine session mode - CEOs and managers default to autonomous
     session_mode = "autonomous" if (ctx.is_ceo or ctx.is_manager) else "interactive"
 
-    return {
+    env = {
         "WORKER_ID": ctx.worker_id,
         "QUINN_WORKER_ID": ctx.worker_id,
         "WORKER_NAME": ctx.worker_name,
@@ -656,6 +674,34 @@ def get_worker_env_vars(
         "WORKER_COST_TIER": str(ctx.cost_tier),
         "QUINN_SESSION_MODE": session_mode,
     }
+
+    # Host mode (host-mode-init): expose PROJECT_ROOT and prepend
+    # .quinnai/bin/ to PATH so workers' `bd` resolves to the trust-boundary
+    # shim. Greenfield orgs leave PATH and PROJECT_ROOT untouched.
+    from cli.core.host_mode import is_host_mode, get_project_root
+    if is_host_mode(org_path):
+        project_root = get_project_root(org_path)
+        env["PROJECT_ROOT"] = str(project_root)
+        shim_dir = project_root / ".quinnai" / "bin"
+        existing_path = os.environ.get("PATH", "")
+        env["PATH"] = (
+            f"{shim_dir}:{existing_path}" if existing_path else str(shim_dir)
+        )
+
+    return env
+
+
+def resolve_session_cwd(org_path: Path, worker_dir: Path) -> Path:
+    """Return the cwd a worker session should spawn into.
+
+    In host mode, returns the project_root so workers operate on the
+    project's actual files. In greenfield, returns the worker's
+    hierarchical storage dir (existing behavior).
+    """
+    from cli.core.host_mode import is_host_mode, get_project_root
+    if is_host_mode(org_path):
+        return get_project_root(org_path)
+    return worker_dir
 
 
 def generate_welcome_message(ctx: OnboardingContext, worker_dir: Path) -> str:

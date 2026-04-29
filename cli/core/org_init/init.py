@@ -87,7 +87,11 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
         try:
             # 8. Create CEO worker
             org = Org(db)
-            ceo = org.init(config.ceo_name, config.ceo_role)
+            ceo = org.init(
+                config.ceo_name,
+                config.ceo_role,
+                skip_beads_init=config.host_mode,
+            )
 
             # 8.1. Record project_root in org_state for is_host_mode() detection.
             if config.host_mode:

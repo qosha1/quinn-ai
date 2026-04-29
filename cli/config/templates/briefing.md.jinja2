@@ -44,7 +44,24 @@ of shipping the wrong artifact and finding out at review time.
 
 ## Your Responsibility
 
-{% if is_ceo %}
+{% if is_host_mode %}
+> **You are working in an existing project at `{{ project_root }}` (your cwd).**
+> The project's `CLAUDE.md` (at project root) is authoritative for code
+> conventions, architecture, and constraints. This BRIEFING.md adds
+> your role-specific layer. When they conflict: project CLAUDE.md wins
+> for code; this BRIEFING.md wins for role behavior (delegation,
+> communication patterns).
+>
+> Your private storage at `$WORKER_STORAGE` is for drafts, notes, and
+> scratch — NOT the place to write deliverables. Edit project files
+> from your cwd. The org metadata (db, beads view, sessions) lives
+> under `.quinnai/` and you generally don't touch it directly.
+>
+> The project's existing `.beads/` is shared with the team. `bd ready`
+> surfaces what's open across the project. Workers cannot close beads
+> assigned to anyone but themselves (enforced by the QuinnAI bd shim).
+
+{% endif %}{% if is_ceo %}
 Lead the organization to achieve its objectives. You have authority to:
 - Hire and manage directors
 - Allocate budget across teams

@@ -147,6 +147,8 @@ class Org:
         ceo_name: str,
         ceo_role: str = "CEO",
         initial_budget: float = 1000.0,
+        *,
+        skip_beads_init: bool = False,
     ) -> Worker:
         """Initialize org with a CEO.
 
@@ -247,8 +249,12 @@ class Org:
         )
         subscribe_to_channel(self.db, board_channel.id, ceo_data.id)
 
-        # Initialize beads database for work tracking
-        self._init_beads()
+        # Initialize beads database for work tracking. Skipped in host
+        # mode (host-mode-init): the project's existing .beads/ at
+        # project root is authoritative; running bd init inside
+        # .quinnai/ would create a parallel tracker we don't want.
+        if not skip_beads_init:
+            self._init_beads()
 
         # Update org status
         old_status = OrgStatus.UNINITIALIZED.value

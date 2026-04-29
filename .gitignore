@@ -184,3 +184,8 @@ cli/bin/bd
 /org-chart/
 /config/
 /generated-orgs/
+
+# host-mode-init: project-root .quinnai/ dirs are per-project and never
+# committed at the QuinnAI repo root (this would only happen by accident
+# during local dev / test runs).
+.quinnai/

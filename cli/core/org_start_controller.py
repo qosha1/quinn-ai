@@ -58,6 +58,7 @@ from cli.core.onboarding import (
     get_worker_env_vars,
     load_onboarding_context,
     prepare_worker_onboarding,
+    resolve_session_cwd,
 )
 from cli.core.session import SessionConfig
 from cli.core.sessions.registry import get_default_registry
@@ -338,7 +339,7 @@ def _spawn_ceo_session_if_needed(
         command=command,
         args=args,
         model=model,
-        working_directory=worker_dir,
+        working_directory=resolve_session_cwd(org_path, worker_dir),
         env_vars=env_vars,
     )
 
@@ -721,7 +722,7 @@ def _start_worker(
             provider=effective_provider,
             command=session_command,
             args_str=session_args,
-            working_directory=worker_dir,
+            working_directory=resolve_session_cwd(org_path, worker_dir),
             env_vars=env_vars,
             force_restart=True,
         )
