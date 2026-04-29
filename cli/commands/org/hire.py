@@ -166,9 +166,16 @@ def hire_cmd(
         except NoBudgetAllocationError:
             # Fresh-org case: managers haven't allocated per-worker budget yet.
             # Not really a failure — frame it as the expected 2-step flow.
-            click.echo(f"Worker created. Allocate budget first, then start the session:")
-            click.echo(f"  qn org budget allocate {new_worker.name} <amount>")
-            click.echo(f"  qn org start --worker {new_worker.name}")
+            # Single copy-pasteable command so an autonomous CEO can chain it
+            # without remembering the order (quinn-ai-xdwo).
+            click.echo(
+                f"Worker created. Run this to give them a budget and bring "
+                f"the session online:"
+            )
+            click.echo(
+                f"  qn org budget allocate {new_worker.name} <amount> "
+                f"&& qn org start --worker {new_worker.name}"
+            )
         except Exception as e:
             click.echo(f"Warning: Failed to start session: {e}")
             click.echo("You can start manually with: qn org start")

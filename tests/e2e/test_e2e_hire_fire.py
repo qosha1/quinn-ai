@@ -56,6 +56,65 @@ def test_hire_under_unknown_manager_fails(org_with_ceo, qn_runner):
     assert "Traceback" not in result.stderr
 
 
+def test_hire_without_budget_does_not_leave_worker_in_starting(
+    org_with_ceo, qn_runner
+):
+    """Regression: when hire fails to spawn because no budget allocation
+    exists, the worker_state row should NOT be left at runtime_status
+    ='starting' (quinn-ai-xdwo).
+
+    Pre-fix: _validate_spawn_preconditions created worker_state with
+    'starting' BEFORE the budget check raised, so the worker looked
+    forever-starting in the UI even though no session ever spawned.
+    Fix: budget check moved to phase 1, before any state mutation.
+    """
+    # CEO has a budget pool but no per-worker allocations exist yet.
+    # The first hire should hit NoBudgetAllocationError when the spawn
+    # tries to enforce budget — and should NOT leave a starting state.
+    result = qn_runner(
+        [
+            "--org-path", str(org_with_ceo),
+            "org", "hire",
+            "--name", "stuck-bob-no-budget",
+            "--role", "Engineer",
+            "--manager", "ceo",
+        ],
+        timeout=30,
+    )
+    # Hire still succeeds (worker row created), but the message tells the
+    # user how to give the worker a budget.
+    assert result.returncode == 0, (
+        f"hire should succeed at the worker-creation level even when budget "
+        f"is missing:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+
+    # SQLite: the worker exists, but there should be NO worker_state row
+    # (or at least none with runtime_status='starting').
+    db_path = org_with_ceo / "live" / "quinn.db"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        worker_row = conn.execute(
+            "SELECT id FROM workers WHERE name = ?", ("stuck-bob-no-budget",)
+        ).fetchone()
+        assert worker_row is not None, "worker row should exist"
+        worker_id = worker_row[0]
+
+        state_rows = conn.execute(
+            "SELECT runtime_status FROM worker_state WHERE worker_id = ?",
+            (worker_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    # Either no state row OR a state row that's NOT 'starting'.
+    starting_rows = [r for r in state_rows if r[0] == "starting"]
+    assert not starting_rows, (
+        f"worker_state.runtime_status='starting' was left behind for "
+        f"{worker_id} after a budget-blocked hire — bug regression "
+        f"(quinn-ai-xdwo). Found rows: {state_rows}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # qn wrkr list — confirm hires show up
 # ---------------------------------------------------------------------------

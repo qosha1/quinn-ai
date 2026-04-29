@@ -414,10 +414,12 @@ class WorkerSessionManager:
         """Spawn a session for this worker.
 
         Orchestrates the session spawn process through distinct phases:
-        1. Validate preconditions (no existing active session, worker state ready)
-        2. Enforce budget constraints (estimate cost, check allocation)
-        3. Attach and start the session
-        4. Finalize (record spend, persist session record, handle race conditions)
+        1. Enforce budget constraints (estimate cost, check allocation) FIRST,
+           so a missing allocation doesn't leave a worker_state row behind.
+           (quinn-ai-xdwo)
+        2. Validate preconditions (no existing active session, worker state ready).
+        3. Attach and start the session.
+        4. Finalize (record spend, persist session record, handle race conditions).
 
         Args:
             session: Configured SessionInterface instance to spawn
@@ -429,11 +431,14 @@ class WorkerSessionManager:
             NoBudgetAllocationError: If worker has no budget allocation
             ActiveSessionExistsError: If worker already has an active session
         """
-        # Phase 1: Validate preconditions
-        self._validate_spawn_preconditions(session)
-
-        # Phase 2: Budget enforcement
+        # Phase 1: Budget enforcement — checked BEFORE creating worker_state,
+        # so a missing allocation raises cleanly without leaving the worker
+        # stuck in runtime_status='starting' (quinn-ai-xdwo).
         budget_check = self.worker._budget_mgr.enforce_spawn_budget(session)
+
+        # Phase 2: Validate preconditions (creates worker_state row if absent —
+        # safe to do now that budget has cleared)
+        self._validate_spawn_preconditions(session)
 
         # Phase 3: Attach and start session
         self._start_session(session)
