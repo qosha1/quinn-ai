@@ -230,6 +230,37 @@ def delete_budget_allocation(db: Database, allocation_id: str) -> None:
     db.connection.commit()
 
 
+def set_allocation_can_delegate(
+    db: Database,
+    worker_id: str,
+    can_delegate: bool,
+) -> bool:
+    """Flip can_delegate on a worker's current budget allocation.
+
+    Used by `qn org delegate-authority` so that a worker who's been granted
+    hiring authority + a delegated budget can also re-allocate from their
+    pool to their reports without a separate ceremony.
+
+    Args:
+        db: Database instance
+        worker_id: Worker whose current allocation should be updated
+        can_delegate: New value
+
+    Returns:
+        True if a row was updated; False if the worker has no current
+        allocation (caller can decide whether that's an error).
+    """
+    now = datetime.now()
+    cursor = db.execute(
+        """UPDATE budget_allocations
+           SET can_delegate = ?, updated_at = ?
+           WHERE worker_id = ? AND period_start <= ? AND period_end >= ?""",
+        (can_delegate, now, worker_id, now, now),
+    )
+    db.connection.commit()
+    return cursor.rowcount > 0
+
+
 __all__ = [
     "BudgetAllocation",
     "create_budget_allocation",
@@ -239,4 +270,5 @@ __all__ = [
     "get_allocations_by_pool",
     "update_allocation_spend",
     "delete_budget_allocation",
+    "set_allocation_can_delegate",
 ]

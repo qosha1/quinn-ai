@@ -71,9 +71,14 @@ def test_init_does_not_log_fk_constraint_warning(runner, temp_org):
     )
 
 
-def test_init_skip_okrs_creates_bootstrap_okr_in_sqlite(runner, temp_org):
-    """--skip-okrs must still create a bootstrap OKR in the SQLite okrs table
-    (so qn org okr list --from-db has something to show)."""
+def test_init_skip_okrs_creates_no_bootstrap_okr(runner, temp_org):
+    """--skip-okrs must create zero OKRs (regression for quinn-ai-6odb).
+
+    Earlier behavior was that --skip-okrs only suppressed the wizard prompt
+    but still planted a 'Establish organizational foundation' bootstrap OKR.
+    That defeated the flag's purpose for canaries and tests that need to
+    plant their own OKRs without a phantom bootstrap one derailing the CEO.
+    """
     import sqlite3
 
     result = runner.invoke(qn, ["--org-path", str(temp_org), "org", "init", "--skip-okrs"])
@@ -86,9 +91,4 @@ def test_init_skip_okrs_creates_bootstrap_okr_in_sqlite(runner, temp_org):
     finally:
         conn.close()
 
-    assert len(rows) == 1, f"Expected exactly one bootstrap OKR, got: {rows}"
-    bootstrap_id, bootstrap_title = rows[0]
-    # After quinn-ai-lxp the id is the bd issue id ({prefix}-{shortid}),
-    # not the legacy 'okr-...' format.
-    assert "-" in bootstrap_id, f"Bootstrap OKR id format unexpected: {bootstrap_id}"
-    assert bootstrap_title, "Bootstrap OKR must have a title"
+    assert rows == [], f"--skip-okrs must create no OKRs, got: {rows}"

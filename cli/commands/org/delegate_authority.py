@@ -243,6 +243,21 @@ def delegate_authority_cmd(
                 scope=scope,
             )
 
+            # Granting hiring authority + a delegated budget logically implies
+            # the delegate can sub-allocate from their own budget pool to the
+            # reports they hire. Without this flip, `qn org budget allocate`
+            # downstream raises 'source has can_delegate=False' and the
+            # delegate is stuck (see quinn-ai-hv0b).
+            from cli.core.queries.budget import set_allocation_can_delegate
+            updated = set_allocation_can_delegate(db, delegate.id, can_delegate=True)
+            if not updated:
+                click.echo(
+                    f"\nNote: {delegate.name} has no current budget allocation, "
+                    "so can_delegate was not flipped. Run "
+                    f"'qn org budget allocate {delegate.name} <amount>' first "
+                    "(or after this) to make their delegated budget spendable."
+                )
+
             click.echo("\nDelegation complete.")
             click.echo(
                 f"\n{delegate.name} can now hire workers with:"

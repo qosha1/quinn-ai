@@ -121,8 +121,14 @@ class TestOKRsFileImport:
 class TestSkipOKRsFlag:
     """Test skipping OKR prompting with --skip-okrs flag."""
 
-    def test_skip_okrs_uses_bootstrap(self, runner, temp_org_dir):
-        """Test that --skip-okrs creates bootstrap OKR without prompting."""
+    def test_skip_okrs_creates_no_okrs(self, runner, temp_org_dir):
+        """--skip-okrs must skip ALL OKR seeding (no prompt, no bootstrap).
+
+        Regression for quinn-ai-6odb: prior behavior planted a default
+        'Establish organizational foundation' bootstrap OKR even with
+        --skip-okrs, which derailed canaries that wanted to plant their
+        own OKRs without a phantom one in the CEO's queue.
+        """
         result = runner.invoke(
             qn,
             ['--org-path', str(temp_org_dir), 'org', 'init', '--skip-okrs'],
@@ -130,7 +136,6 @@ class TestSkipOKRsFlag:
 
         assert result.exit_code == 0, f"Command failed: {result.output}"
 
-        # Verify bootstrap OKR was created
         db_path = get_org_db_path(temp_org_dir)
         db = open_database(db_path)
         try:
@@ -139,8 +144,7 @@ class TestSkipOKRsFlag:
             ceo_id = org.ceo_worker_id
 
             okrs = get_okrs_by_owner(db, ceo_id)
-            assert len(okrs) == 1
-            assert okrs[0].title == DEFAULT_BOOTSTRAP_OKR_TITLE
+            assert okrs == [], f"--skip-okrs must create no OKRs, got: {okrs}"
         finally:
             db.close()
 

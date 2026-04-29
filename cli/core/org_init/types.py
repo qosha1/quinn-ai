@@ -79,6 +79,10 @@ class OrgInitConfig:
     # erroring (quinn-ai-hmn1). Default False — fail-fast is the right
     # default to prevent accidental cross-project bead pollution.
     reuse_beads: bool = False
+    # Suppress all initial OKR seeding (prompt + config-file + bootstrap
+    # fallback). Used by tests, canaries, and any caller that wants to
+    # plant its own OKRs immediately after init (see quinn-ai-6odb).
+    skip_okrs: bool = False
 
 
 @dataclass

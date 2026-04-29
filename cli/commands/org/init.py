@@ -210,6 +210,7 @@ def init_cmd(
         ceo_role="CEO",  # Always CEO
         objectives=objectives,
         reuse_beads=reuse_beads,
+        skip_okrs=skip_okrs,
     )
 
     # Initialize the org

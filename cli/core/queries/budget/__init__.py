@@ -17,6 +17,7 @@ from .allocations import (
     get_allocations_by_pool,
     update_allocation_spend,
     delete_budget_allocation,
+    set_allocation_can_delegate,
 )
 from .transactions import (
     BudgetTransaction,
@@ -68,6 +69,7 @@ __all__ = [
     "get_worker_balance",
     "get_worker_delegation_authority",
     "is_worker_manager",
+    "set_allocation_can_delegate",
     "update_allocation_spend",
     "update_budget_pool",
 ]

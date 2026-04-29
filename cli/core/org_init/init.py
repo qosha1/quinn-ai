@@ -75,10 +75,17 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
             ceo = org.init(config.ceo_name, config.ceo_role)
 
             # 8.5. Create initial OKRs (GAP 1 fix)
-            okr_ids = create_initial_okrs(org_path, db, ceo.id, config.objectives)
+            # skip_okrs=True suppresses both objective-seeded OKRs AND the
+            # bootstrap fallback (quinn-ai-6odb).
+            if config.skip_okrs:
+                okr_ids: list[str] = []
+            else:
+                okr_ids = create_initial_okrs(org_path, db, ceo.id, config.objectives)
 
             # 8.6. Create initial CEO tasks linked to bootstrap OKR (GAP 2 fix)
-            create_initial_tasks(org_path, db, ceo.id, okr_ids)
+            # No starter tasks make sense without an OKR to anchor them to.
+            if okr_ids:
+                create_initial_tasks(org_path, db, ceo.id, okr_ids)
 
             # 9. Create org-chart
             create_org_chart(org_path, ceo)
