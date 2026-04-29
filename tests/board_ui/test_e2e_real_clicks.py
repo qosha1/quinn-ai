@@ -35,6 +35,56 @@ from tests.board_ui.test_e2e_messages_view import (
 # ─── Fixtures ────────────────────────────────────────────────────────────
 
 
+REAL_CLEO_MESSAGE = """Riley — you are third in our discovery sprint, working closely with Pria. Your assignment: **What is the right fundraising thesis?**
+
+You start after Pria has a working product brief (she's drafting now). Once that lands, your job is to synthesize it into an investor-grade thesis.
+
+**Your deliverable:**
+A fundraise thesis doc (save to `storage/shared/company/THESIS_DRAFT.md`) that answers:
+1. In one sentence: why should an investor write a check NOW vs later, and into us vs. competitors?
+2. What stage are we honestly at (pre-seed continuation, seed, bridge?) and what does $1M actually unlock?
+3. What is the narrative arc? (Where have we been → where we are → where we're going)
+4. What objections will we get, and how do we answer them?
+
+[Actions ▸] sprinkled brackets to mimic any potentially-Rich-markup-looking content."""
+
+
+@pytest.fixture
+def org_with_real_message():
+    """Org with a real-shaped message containing markdown + brackets +
+    backticks — same shape as Cleo's actual outbound DMs that triggered
+    the user's 'right pane shows nothing' report."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        org_path = Path(tmpdir) / "test-org-realmsg"
+        org_path.mkdir()
+        db_path = create_base_org_db(org_path)
+        add_messages_to_channel(db_path, "board-channel", [
+            {"content": REAL_CLEO_MESSAGE, "priority": 2, "is_unread": True},
+        ])
+        yield org_path
+
+
+@pytest.fixture
+def org_with_actual_live_message():
+    """Org seeded with the EXACT verbatim content of the Cleo→Riley DM
+    from ~/orgs/debugg-fundraise that the user reported as 'still
+    fucking nothing in the messages side bar'. If a Pilot test against
+    this content fails to render the body, that's the live bug
+    reproduced."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        org_path = Path(tmpdir) / "test-org-actualmsg"
+        org_path.mkdir()
+        db_path = create_base_org_db(org_path)
+        live_msg_path = Path("/tmp/cleo_real_msg.txt")
+        if not live_msg_path.exists():
+            pytest.skip("no /tmp/cleo_real_msg.txt — run sqlite dump first")
+        content = live_msg_path.read_text()
+        add_messages_to_channel(db_path, "board-channel", [
+            {"content": content, "priority": 2, "is_unread": True},
+        ])
+        yield org_path
+
+
 @pytest.fixture
 def populated_org():
     """Org with workers, a board-channel message, and an OKR."""
@@ -229,6 +279,94 @@ class TestMessagesPanel:
                 f"Got body: {rendered!r}\n"
                 "If this fails but the keyboard variant passes, the bug is "
                 "specific to click-driven RowSelected events (kl7m-adjacent)."
+            )
+
+
+class TestMessagesPanelRealContent:
+    """Real-world message content with brackets / markdown / backticks
+    must render in the body — not silently fail Rich markup parsing."""
+
+    @pytest.mark.asyncio
+    async def test_body_renders_message_with_markdown_and_brackets(self, org_with_real_message):
+        app = await _boot_app(org_with_real_message)
+        async with app.run_test(size=PILOT_SIZE) as pilot:
+            await pilot.pause()
+            await app._connect_to_org(org_with_real_message)
+            await pilot.pause()
+
+            app.action_switch_tab("messages")
+            await pilot.pause()
+
+            table = app.query_one("#messages-table", DataTable)
+            assert table.row_count >= 1
+
+            # Auto-highlight on mount should already have triggered
+            # _select_message_by_row_key. If body.update() crashed in
+            # Rich markup parsing, the placeholder text remains.
+            body = app.query_one("#message-body", Static)
+            rendered = str(body.render())
+
+            # Distinctive substring from REAL_CLEO_MESSAGE that would
+            # only appear if the body actually rendered the content.
+            assert "discovery sprint" in rendered, (
+                f"Body did not render real-shaped message content. "
+                f"Got: {rendered[:200]!r}\n"
+                "If this fails: Static defaults to markup=True; brackets "
+                "or unmatched markup in the content are crashing the "
+                "render. Fix: pass markup=False to body.update or wrap "
+                "content in rich.text.Text(..., markup=None)."
+            )
+
+
+    @pytest.mark.asyncio
+    async def test_body_renders_against_live_debugg_fundraise_org(self):
+        """Connect to ~/orgs/debugg-fundraise and verify the body
+        renders. This is the closest reproduction of the user's
+        environment short of having them paste a screenshot. Skip if
+        the live org doesn't exist (so the test stays portable)."""
+        live_org = Path.home() / "orgs" / "debugg-fundraise"
+        if not (live_org / "live" / "quinn.db").exists():
+            pytest.skip(f"live org not present at {live_org}")
+
+        app = await _boot_app(live_org)
+        async with app.run_test(size=PILOT_SIZE) as pilot:
+            await pilot.pause()
+            await app._connect_to_org(live_org)
+            await pilot.pause()
+
+            app.action_switch_tab("messages")
+            await pilot.pause()
+
+            table = app.query_one("#messages-table", DataTable)
+            if table.row_count == 0:
+                pytest.skip("live org has no messages to render")
+
+            body = app.query_one("#message-body", Static)
+            rendered = str(body.render())
+            assert "Click on a message" not in rendered, (
+                f"After mount + auto-highlight, body still shows the "
+                f"placeholder. Live data isn't populating. "
+                f"Body content: {rendered[:200]!r}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_body_renders_actual_live_cleo_message(self, org_with_actual_live_message):
+        """Identical to the test above but seeded from the verbatim DM
+        content the user is staring at. If this passes but the user
+        still reports a blank body, the bug is environment-specific."""
+        app = await _boot_app(org_with_actual_live_message)
+        async with app.run_test(size=PILOT_SIZE) as pilot:
+            await pilot.pause()
+            await app._connect_to_org(org_with_actual_live_message)
+            await pilot.pause()
+
+            app.action_switch_tab("messages")
+            await pilot.pause()
+
+            body = app.query_one("#message-body", Static)
+            rendered = str(body.render())
+            assert "discovery sprint" in rendered, (
+                f"Live-content body did not render. Got: {rendered[:200]!r}"
             )
 
 

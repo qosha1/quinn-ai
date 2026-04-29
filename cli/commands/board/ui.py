@@ -1,15 +1,22 @@
 """
-Board TUI command.
+Board UI command.
 
-Launches the interactive board terminal UI for organization oversight.
+Launches the browser-based board UI for organization oversight.
 """
 
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
-from typing import Optional
 
 import click
 
 from cli.commands.context import pass_context
+
+
+BOARD_UI_DIR = Path(__file__).parent.parent.parent.parent / "board_ui_web"
+DEFAULT_PORT = 7842
 
 
 @click.command()
@@ -17,76 +24,106 @@ from cli.commands.context import pass_context
     "--org-path",
     "-o",
     type=click.Path(exists=True, path_type=Path),
-    multiple=True,
-    help="Path to org folder(s) to monitor",
+    help="Path to org folder to monitor",
 )
 @click.option(
-    "--terminal",
-    "-t",
-    type=click.Choice(["kitty", "iterm", "terminal", "auto"]),
-    default="auto",
-    help="Preferred terminal emulator for chat windows",
+    "--port",
+    "-p",
+    type=int,
+    default=DEFAULT_PORT,
+    help=f"Port for the web UI (default: {DEFAULT_PORT})",
+)
+@click.option(
+    "--no-open",
+    is_flag=True,
+    default=False,
+    help="Don't open browser automatically",
 )
 @pass_context
-def ui_cmd(ctx, org_path: tuple[Path, ...], terminal: str) -> None:
-    """Launch the board terminal UI.
+def ui_cmd(ctx, org_path: Path | None, port: int, no_open: bool) -> None:
+    """Launch the board web UI.
 
-    Interactive dashboard for monitoring and managing AI organizations.
+    Opens a browser-based dashboard for monitoring and managing AI organizations.
 
     \b
     Examples:
-        qn board ui                       # Auto-detect orgs in current dir
+        qn board ui                       # Auto-detect org from current dir
         qn board ui -o ~/my-org           # Connect to specific org
-        qn board ui -o ~/org1 -o ~/org2   # Monitor multiple orgs
-        qn board ui --terminal kitty      # Use Kitty for chat windows
+        qn board ui --port 8080           # Use custom port
+        qn board ui --no-open             # Start server without opening browser
     """
-    try:
-        from board_ui.app import BoardApp
-        from board_ui.config import BoardConfig
-        from board_ui.interfaces.terminal import TerminalType
-    except ImportError as e:
-        click.echo(
-            "Error: Board UI not installed. "
-            'Install with: pip install "quinn-ai[board]"',
-            err=True,
-        )
-        raise click.Abort() from e
+    if not BOARD_UI_DIR.exists():
+        click.echo(f"Error: Board UI not found at {BOARD_UI_DIR}", err=True)
+        raise click.Abort()
 
-    # Build configuration
-    config = BoardConfig(
-        org_paths=list(org_path) if org_path else [],
-        preferred_terminal=_parse_terminal(terminal),
+    node_modules = BOARD_UI_DIR / "node_modules"
+    if not node_modules.exists():
+        click.echo("Installing board UI dependencies…")
+        subprocess.run(["npm", "install", "--silent"], cwd=BOARD_UI_DIR, check=True)
+
+    next_build = BOARD_UI_DIR / ".next"
+    if not next_build.exists():
+        click.echo("Building board UI (first run, takes ~20s)…")
+        subprocess.run(["npm", "run", "build"], cwd=BOARD_UI_DIR, check=True)
+
+    resolved_org = _resolve_org_path(org_path, ctx)
+    db_path = resolved_org / "live" / "quinn.db" if resolved_org else None
+
+    env = os.environ.copy()
+    if db_path and db_path.exists():
+        env["QUINN_DB_PATH"] = str(db_path)
+        env["QUINN_ORG_PATH"] = str(resolved_org)
+        click.echo(f"Connected to org: {resolved_org.name} ({db_path})")
+    else:
+        click.echo("Warning: No org database found. Dashboard will show errors until org is initialized.")
+
+    url = f"http://localhost:{port}"
+    click.echo(f"Starting QuinnAI Board at {url}")
+
+    proc = subprocess.Popen(
+        ["npm", "start", "--", "--port", str(port)],
+        cwd=BOARD_UI_DIR,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
-    # If no org paths specified, use default search paths
-    if not config.org_paths:
-        # Use context org_path if available
-        if ctx.org_path:
-            config.org_paths = [ctx.org_path]
-        else:
-            # Fall back to default search paths
-            cwd = Path.cwd()
-            default_orgs_dir = Path.home() / "orgs"
-            config.org_paths = [default_orgs_dir, cwd]
+    # Wait for server to start
+    if not _wait_for_server(url, timeout=15):
+        click.echo("Error: Server failed to start within 15 seconds", err=True)
+        proc.terminate()
+        sys.exit(1)
 
-    # Launch the app
-    app = BoardApp(config)
-    app.run()
+    if not no_open:
+        click.launch(url)
 
-
-def _parse_terminal(terminal: str) -> Optional["TerminalType"]:
-    """Parse terminal choice to TerminalType."""
+    click.echo(f"Board UI running at {url} (Ctrl+C to stop)")
     try:
-        from board_ui.interfaces.terminal import TerminalType
-    except ImportError:
-        return None
+        proc.wait()
+    except KeyboardInterrupt:
+        click.echo("\nStopping board UI…")
+        proc.terminate()
 
-    if terminal == "auto":
-        return None
-    elif terminal == "kitty":
-        return TerminalType.KITTY
-    elif terminal == "iterm":
-        return TerminalType.ITERM2
-    elif terminal == "terminal":
-        return TerminalType.MACOS_TERMINAL
+
+def _resolve_org_path(org_path: Path | None, ctx) -> Path | None:
+    if org_path:
+        return org_path
+    if ctx and ctx.org_path:
+        return ctx.org_path
+    cwd = Path.cwd()
+    if (cwd / "live" / "quinn.db").exists():
+        return cwd
     return None
+
+
+def _wait_for_server(url: str, timeout: int = 15) -> bool:
+    import urllib.request
+    import urllib.error
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(f"{url}/api/org", timeout=2)
+            return True
+        except Exception:
+            time.sleep(0.5)
+    return False

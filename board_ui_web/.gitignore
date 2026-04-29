@@ -1,0 +1,13 @@
+# Next.js
+.next/
+out/
+
+# Dependencies
+node_modules/
+
+# Build
+*.tsbuildinfo
+next-env.d.ts
+
+# Test coverage
+coverage/

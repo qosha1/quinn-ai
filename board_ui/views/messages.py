@@ -178,6 +178,11 @@ class MessagesView(Widget):
                 yield Static(
                     "Click on a message in the list to view its contents.",
                     id="message-body",
+                    markup=False,  # message content is plain text — never
+                                   # try to parse it as Rich markup, which
+                                   # silently swallows render errors when
+                                   # content contains [-bracketed text or
+                                   # other Rich syntax-shaped substrings.
                 )
 
             with Container(id="reply-area"):
@@ -449,12 +454,45 @@ class MessagesView(Widget):
         header.update(f"From: {self._selected_message.from_worker_name}")
 
         body = self.query_one("#message-body", Static)
-        time_str = self._selected_message.created_at.strftime("%Y-%m-%d %H:%M")
-        body.update(
+        try:
+            time_str = self._selected_message.created_at.strftime("%Y-%m-%d %H:%M")
+        except (AttributeError, TypeError):
+            time_str = str(self._selected_message.created_at)
+        body_text = (
             f"Priority: {'High' if self._selected_message.priority >= 3 else 'Normal'}\n"
             f"Time: {time_str}\n\n"
             f"{self._selected_message.content}"
         )
+
+        # Synchronous debug trace to /tmp until kl7m is fully understood —
+        # the json log handler buffers, /tmp/board_debug.log flushes per
+        # write so we can see what body.update receives in real time.
+        try:
+            with open("/tmp/board_debug.log", "a") as _f:
+                _f.write(
+                    f"[{datetime.now().isoformat()}] body.update: "
+                    f"msg_id={self._selected_message.id} "
+                    f"len={len(body_text)} "
+                    f"preview={body_text[:140]!r} "
+                    f"body_widget={body!r}\n"
+                )
+        except Exception:
+            pass
+
+        logger.info(
+            "body.update: msg_id=%s len=%d preview=%r",
+            self._selected_message.id, len(body_text), body_text[:120],
+        )
+        try:
+            body.update(body_text)
+        except Exception as e:
+            try:
+                with open("/tmp/board_debug.log", "a") as _f:
+                    _f.write(f"[{datetime.now().isoformat()}] body.update RAISED: {e!r}\n")
+            except Exception:
+                pass
+            logger.exception("body.update failed: %s", e)
+            body.update(f"[render error] {e}\n\n{body_text}")
 
         # Show and enable reply controls
         self.query_one("#reply-placeholder", Static).add_class("hidden")
