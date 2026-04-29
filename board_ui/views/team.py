@@ -388,58 +388,85 @@ class TeamView(VerticalScroll):
         return tmux_name
 
     async def _hire_worker(self) -> None:
-        """Hire a new worker.
-
-        Shows input prompts for worker name, role, and manager selection.
-        """
-        from textual.screen import ModalScreen
-        from textual.widgets import Input
-
-        # TODO(quinn-ai-6hn): replace this notify-then-tell-them-to-CLI fallback
-        # with a proper Hire form modal.
-        self.app.notify(
-            "Worker hiring coming soon. For now, use: qn org hire --name=<name> --role=<role> --manager=<manager>",
-            severity="information",
-            timeout=8
-        )
-
-    async def _show_worker_actions_menu(self, worker: WorkerInfo) -> None:
-        """Show actions menu for a worker.
-
-        Displays Fire/Promote/Demote options based on worker type.
-        """
-        # TODO(quinn-ai-6hn): replace this notification with a proper
-        # Fire/Promote/Demote action menu modal.
-
-        actions = []
-        if not worker.is_ceo:
-            actions.append("Fire")
-        if worker.manager_id is None and not worker.is_ceo:  # Manager
-            actions.append("Demote")
-        elif worker.manager_id is not None:  # Regular worker
-            actions.append("Promote")
-
-        self.app.notify(
-            f"Worker actions for {worker.name}: {', '.join(actions)}. Use CLI for now: qn org fire {worker.id}",
-            severity="information",
-            timeout=6
-        )
-
-    async def _fire_worker(self, worker: WorkerInfo) -> None:
-        """Fire a worker.
-
-        Shows confirmation dialog and executes qn org fire command.
-        """
-        if worker.is_ceo:
-            self.app.notify("Cannot fire the CEO", severity="error")
-            return
-
-        # TODO(quinn-ai-6hn): show a Fire confirmation dialog before invoking.
+        """Hire a new worker via a modal form."""
+        from ._modals import HireWorkerModal
         from ..services.qn_cli_client import get_default_qn_cli
 
         conn = get_org_connection(self.app)
         if conn is None:
             self.app.notify("No org connected", severity="error")
+            return
+
+        result = await self.app.push_screen_wait(HireWorkerModal())
+        if result is None:
+            return  # cancelled
+
+        self.app.notify(
+            f"Hiring {result['name']} as {result['role']} under {result['manager']}...",
+            severity="information",
+        )
+        cli_result = get_default_qn_cli().org_hire(
+            conn.org_path,
+            name=result["name"],
+            role=result["role"],
+            manager=result["manager"],
+        )
+        if cli_result.success:
+            self.app.notify(f"Hired {result['name']} successfully", severity="success")
+            await self.refresh_workers()
+        else:
+            self.app.notify(
+                f"Failed to hire {result['name']}: {cli_result.stderr or cli_result.stdout}",
+                severity="error",
+            )
+
+    async def _show_worker_actions_menu(self, worker: WorkerInfo) -> None:
+        """Show a Fire/Promote/Demote modal for a worker."""
+        from ._modals import WorkerActionsModal
+
+        actions: list[str] = []
+        if not worker.is_ceo:
+            actions.append("fire")
+        # Promote: only meaningful for non-CEO workers that aren't already managers
+        # Demote:  only meaningful for managers (manager_id is None means top-level)
+        if worker.manager_id is None and not worker.is_ceo:
+            actions.append("demote")
+        elif worker.manager_id is not None:
+            actions.append("promote")
+
+        if not actions:
+            self.app.notify(f"No actions available for {worker.name}", severity="information")
+            return
+
+        choice = await self.app.push_screen_wait(
+            WorkerActionsModal(worker.name, actions)
+        )
+        if choice is None:
+            return
+
+        if choice == "fire":
+            await self._fire_worker(worker)
+        elif choice == "promote":
+            await self._promote_worker(worker)
+        elif choice == "demote":
+            await self._demote_worker(worker)
+
+    async def _fire_worker(self, worker: WorkerInfo) -> None:
+        """Fire a worker after a yes/no confirmation modal."""
+        if worker.is_ceo:
+            self.app.notify("Cannot fire the CEO", severity="error")
+            return
+
+        from ._modals import ConfirmFireModal
+        from ..services.qn_cli_client import get_default_qn_cli
+
+        conn = get_org_connection(self.app)
+        if conn is None:
+            self.app.notify("No org connected", severity="error")
+            return
+
+        confirmed = await self.app.push_screen_wait(ConfirmFireModal(worker.name))
+        if not confirmed:
             return
 
         self.app.notify(f"Firing {worker.name}...", severity="information")
@@ -454,25 +481,31 @@ class TeamView(VerticalScroll):
             )
 
     async def _promote_worker(self, worker: WorkerInfo) -> None:
-        """Promote a worker to manager.
-
-        Shows confirmation and executes qn org promote command.
-        """
+        """Promote a worker to manager via `qn org promote`."""
         if worker.is_ceo or worker.manager_id is None:
             self.app.notify("Worker is already a manager or CEO", severity="warning")
             return
 
-        self.app.notify(
-            f"Worker promotion coming soon. Use: qn org promote {worker.id}",
-            severity="information",
-            timeout=6
-        )
+        from ..services.qn_cli_client import get_default_qn_cli
+
+        conn = get_org_connection(self.app)
+        if conn is None:
+            self.app.notify("No org connected", severity="error")
+            return
+
+        self.app.notify(f"Promoting {worker.name}...", severity="information")
+        result = get_default_qn_cli().org_promote(conn.org_path, worker.id, force=True)
+        if result.success:
+            self.app.notify(f"Promoted {worker.name} to team-lead", severity="success")
+            await self.refresh_workers()
+        else:
+            self.app.notify(
+                f"Failed to promote {worker.name}: {result.stderr or result.stdout}",
+                severity="error",
+            )
 
     async def _demote_worker(self, worker: WorkerInfo) -> None:
-        """Demote a manager to regular worker.
-
-        Shows confirmation and executes qn org demote command.
-        """
+        """Demote a manager to regular worker via `qn org demote`."""
         if worker.is_ceo:
             self.app.notify("Cannot demote the CEO", severity="error")
             return
@@ -481,11 +514,23 @@ class TeamView(VerticalScroll):
             self.app.notify("Worker is not a manager", severity="warning")
             return
 
-        self.app.notify(
-            f"Worker demotion coming soon. Use: qn org demote {worker.id}",
-            severity="information",
-            timeout=6
-        )
+        from ..services.qn_cli_client import get_default_qn_cli
+
+        conn = get_org_connection(self.app)
+        if conn is None:
+            self.app.notify("No org connected", severity="error")
+            return
+
+        self.app.notify(f"Demoting {worker.name}...", severity="information")
+        result = get_default_qn_cli().org_demote(conn.org_path, worker.id, force=True)
+        if result.success:
+            self.app.notify(f"Demoted {worker.name}", severity="success")
+            await self.refresh_workers()
+        else:
+            self.app.notify(
+                f"Failed to demote {worker.name}: {result.stderr or result.stdout}",
+                severity="error",
+            )
 
     def export_as_text(self) -> str:
         """Export team view content as plain text.

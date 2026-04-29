@@ -214,6 +214,54 @@ class QnCliClient:
             args.append("--force")
         return self.run(args, timeout=timeout)
 
+    def org_hire(
+        self,
+        org_path: Path,
+        name: str,
+        role: str,
+        manager: str,
+        *,
+        cost: Optional[int] = None,
+        timeout: float = 30,
+    ) -> CommandResult:
+        args = [
+            "--org-path", str(org_path), "org", "hire",
+            "--name", name, "--role", role, "--manager", manager,
+        ]
+        if cost is not None:
+            args += ["--cost", str(cost)]
+        return self.run(args, timeout=timeout)
+
+    def org_promote(
+        self,
+        org_path: Path,
+        worker_id: str,
+        *,
+        to: str = "team-lead",
+        force: bool = True,
+        timeout: float = 10,
+    ) -> CommandResult:
+        args = [
+            "--org-path", str(org_path), "org", "promote", worker_id,
+            "--to", to,
+        ]
+        if force:
+            args.append("--force")
+        return self.run(args, timeout=timeout)
+
+    def org_demote(
+        self,
+        org_path: Path,
+        worker_id: str,
+        *,
+        force: bool = True,
+        timeout: float = 10,
+    ) -> CommandResult:
+        args = ["--org-path", str(org_path), "org", "demote", worker_id]
+        if force:
+            args.append("--force")
+        return self.run(args, timeout=timeout)
+
     def org_provider_list(
         self,
         org_path: Path,
