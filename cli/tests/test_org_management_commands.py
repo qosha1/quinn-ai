@@ -1942,6 +1942,70 @@ class TestDelegateAuthorityValidation:
         assert result.exit_code != 0
         assert "max cost" in result.output.lower() or "0 and 100" in result.output
 
+    def test_delegate_authority_flips_can_delegate_on_existing_allocation(
+        self, runner, initialized_org
+    ):
+        """Regression for quinn-ai-hv0b: granting --level <preset> with a
+        --budget should flip can_delegate=True on the delegate's
+        allocation so they can sub-allocate to their own reports.
+
+        Pre-fix: Diana got hiring authority + a 200 budget but
+        can_delegate stayed False, so 'qn org budget allocate eve 50'
+        from Diana raised 'source has can_delegate=False' and Diana
+        couldn't fund her hires.
+        """
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries.budget import (
+            create_budget_allocation,
+            get_current_allocation,
+        )
+
+        ceo_id = get_ceo_worker_id(initialized_org)
+        diana_id = create_worker(initialized_org, "Diana", ceo_id)
+
+        # Pre-seed Diana with a budget allocation from the CEO's pool so
+        # the can_delegate flip has something to flip (matches the canary
+        # 04 sequence: CEO funds Diana before delegating authority).
+        db = open_database(get_org_db_path(initialized_org))
+        try:
+            ceo_alloc = get_current_allocation(db, ceo_id)
+            assert ceo_alloc is not None, "CEO should have an allocation from init"
+            create_budget_allocation(
+                db=db,
+                worker_id=diana_id,
+                allocated_credits=200,
+                period_start=ceo_alloc.period_start,
+                period_end=ceo_alloc.period_end,
+                pool_id=ceo_alloc.pool_id,
+                can_delegate=False,  # starts False — delegate-authority should flip it
+            )
+        finally:
+            db.close()
+
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "delegate-authority",
+            "--to", "Diana",
+            "--level", "team-lead",
+            "--budget", "200",
+            "--max-reports", "5",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Verify the flip landed
+        db = open_database(get_org_db_path(initialized_org))
+        try:
+            allocation = get_current_allocation(db, diana_id)
+        finally:
+            db.close()
+        assert allocation is not None, "Diana should have an allocation"
+        assert allocation.can_delegate is True, (
+            "delegate-authority --level <preset> with --budget must flip "
+            "can_delegate=True so the delegate can fund their own hires "
+            "(quinn-ai-hv0b)"
+        )
+
     def test_delegate_copy_from_worker_no_authority(self, runner, initialized_org):
         ceo_id = get_ceo_worker_id(initialized_org)
         create_worker(initialized_org, "NoAuthSource", ceo_id)
