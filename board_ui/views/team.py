@@ -11,6 +11,7 @@ Shows:
 
 from typing import Optional
 
+from textual import work
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.widgets import Button, DataTable, Label, Static
@@ -239,7 +240,9 @@ class TeamView(VerticalScroll):
             # Refresh table with new filter
             await self.refresh_workers()
         elif event.button.id == "hire-worker-btn":
-            await self._hire_worker()
+            # Run as a Textual worker — _hire_worker uses push_screen_wait
+            # which requires a worker context (NoActiveWorker otherwise).
+            self._hire_worker()
 
     async def on_data_table_cell_selected(self, event: DataTable.CellSelected) -> None:
         """Handle cell selection in the Actions column.
@@ -260,7 +263,10 @@ class TeamView(VerticalScroll):
                 # CEO has only one action — jump straight into chat
                 await self._open_worker_chat(worker)
             else:
-                await self._show_worker_actions_menu(worker)
+                # Run as a Textual worker so push_screen_wait inside has
+                # a worker context (else NoActiveWorker — observed in
+                # board UI when clicking action cells).
+                self._show_worker_actions_menu(worker)
 
     async def _cleanup_stale_session(self, worker: WorkerInfo) -> bool:
         """Auto-cleanup a stale session when validation fails.
@@ -382,6 +388,7 @@ class TeamView(VerticalScroll):
         await self.refresh_workers()
         return tmux_name
 
+    @work
     async def _hire_worker(self) -> None:
         """Hire a new worker via a modal form."""
         from ._modals import HireWorkerModal
@@ -415,6 +422,7 @@ class TeamView(VerticalScroll):
                 severity="error",
             )
 
+    @work
     async def _show_worker_actions_menu(self, worker: WorkerInfo) -> None:
         """Show a Chat/Fire/Promote/Demote modal for a worker.
 

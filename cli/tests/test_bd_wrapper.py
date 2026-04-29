@@ -145,6 +145,63 @@ class TestRunBd:
             assert result is expected
 
 
+class TestDoltModeBackend:
+    """Test that run_bd handles dolt-mode beads correctly (quinn-ai-k9ff)."""
+
+    def _write_metadata(self, beads_dir: Path, backend: str) -> None:
+        metadata = {
+            "database": backend,
+            "backend": backend,
+            "dolt_mode": "embedded" if backend == "dolt" else None,
+            "dolt_database": "test_db" if backend == "dolt" else None,
+            "project_id": "test-project-id",
+        }
+        (beads_dir / "metadata.json").write_text(json.dumps(metadata))
+
+    def test_dolt_mode_omits_db_override(self, temp_org):
+        """In dolt mode, must NOT pass --db=beads.db (the file is empty/wrong;
+        actual db lives in .beads/embeddeddolt/). bd auto-discovers via
+        BEADS_DIR + metadata.json."""
+        self._write_metadata(temp_org / ".beads", backend="dolt")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            run_bd(["list"], org_path=temp_org)
+
+            cmd = mock_run.call_args.args[0]
+            assert not any(arg.startswith("--db=") for arg in cmd), (
+                f"--db= override leaked into dolt-mode cmd: {cmd}"
+            )
+
+    def test_sqlite_mode_keeps_db_override(self, temp_org):
+        """Non-dolt (legacy sqlite or no metadata) keeps current behavior with --db=."""
+        # No metadata.json — legacy path
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            run_bd(["list"], org_path=temp_org)
+
+            cmd = mock_run.call_args.args[0]
+            assert any(arg.startswith("--db=") for arg in cmd), (
+                f"--db= override missing in non-dolt cmd: {cmd}"
+            )
+
+    def test_dolt_mode_unsets_beads_db_env(self, temp_org):
+        """BEADS_DB env should not be set in dolt mode (it points at the wrong sqlite file)."""
+        self._write_metadata(temp_org / ".beads", backend="dolt")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            run_bd(["list"], org_path=temp_org)
+
+            call_env = mock_run.call_args.kwargs["env"]
+            assert "BEADS_DB" not in call_env, (
+                f"BEADS_DB leaked into dolt-mode env: {call_env.get('BEADS_DB')}"
+            )
+
+
 class TestWorkerIdOverride:
     """Test worker ID override behavior."""
 

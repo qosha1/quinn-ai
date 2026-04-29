@@ -196,6 +196,13 @@ class MessagesView(Widget):
         """Handle channel selector change."""
         if event.select.id == "channel-selector":
             new_channel_id = event.value
+            # Drop stale Changed events whose value no longer matches the
+            # selector's current value — Textual queues a Changed event
+            # for every assignment, including the auto-pick fired by
+            # set_options(), and processing those out-of-order causes the
+            # inbox to flip-flop between channels on init (quinn-ai-qc1a).
+            if event.select.value != new_channel_id:
+                return
             if new_channel_id and new_channel_id != self._current_channel_id:
                 self._current_channel_id = new_channel_id
                 await self._load_channel_messages()
@@ -227,11 +234,18 @@ class MessagesView(Widget):
             try:
                 # Load channels
                 self._channels = conn.get_all_channels()
-                self._update_channel_selector()
 
-                # Load messages from current channel (or first channel if none selected)
+                # Pick the default channel BEFORE updating the selector so
+                # the selector can be initialised on the right value in
+                # one shot (avoids a Changed-event race that left the
+                # inbox stuck on an empty alphabetically-first channel —
+                # see quinn-ai-qc1a).
                 if not self._current_channel_id and self._channels:
-                    self._current_channel_id = self._channels[0]["id"]
+                    self._current_channel_id = self._pick_default_channel(
+                        conn, self._channels
+                    )
+
+                self._update_channel_selector()
 
                 if self._current_channel_id:
                     self._messages = conn.get_channel_messages(
@@ -259,6 +273,51 @@ class MessagesView(Widget):
                 return
         else:
             self._populate_placeholder_data()
+
+    def _pick_default_channel(self, conn, channels: list[dict]) -> str:
+        """Return the id of the channel that should be active on first paint.
+
+        Preference order:
+        1. Channels with unread messages (highest unread count wins).
+        2. The board-channel if it exists and is non-empty.
+        3. The first channel that has any messages.
+        4. As a last resort, the first channel returned by the reader.
+
+        This avoids landing on an empty alphabetically-first channel like
+        'board-channel' when the real traffic lives in 'general' (see
+        quinn-ai-qc1a).
+        """
+        if not channels:
+            return ""
+
+        # 1. Channel with the most unread.
+        with_unread = [c for c in channels if c.get("unread_count", 0) > 0]
+        if with_unread:
+            with_unread.sort(key=lambda c: c["unread_count"], reverse=True)
+            return with_unread[0]["id"]
+
+        # 2. board-channel if it has messages.
+        for channel in channels:
+            if channel.get("name") == "board-channel":
+                if self._channel_has_messages(conn, channel["id"]):
+                    return channel["id"]
+                break  # exists but empty; fall through to step 3
+        # 3. Any channel with messages.
+        for channel in channels:
+            if self._channel_has_messages(conn, channel["id"]):
+                return channel["id"]
+
+        # 4. Nothing has messages — keep the original first-alphabetical default.
+        return channels[0]["id"]
+
+    @staticmethod
+    def _channel_has_messages(conn, channel_id: str) -> bool:
+        """Cheap probe: ask the connection if a channel has any messages."""
+        try:
+            msgs = conn.get_channel_messages(channel_id, limit=1)
+        except Exception:
+            return False
+        return bool(msgs)
 
     def _update_channel_selector(self) -> None:
         """Update channel selector with available channels."""
@@ -342,19 +401,40 @@ class MessagesView(Widget):
         return f"{days}d ago"
 
     async def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle message selection."""
+        """Handle message selection via Enter on a focused row."""
+        await self._select_message_by_row_key(event.row_key)
+
+    async def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Update the detail pane as the user clicks or arrows through rows.
+
+        Textual's DataTable fires RowHighlighted on click and on cursor
+        movement (arrow keys); RowSelected fires only on Enter. Without
+        this handler, mouse-clicking a message row left the detail pane
+        stuck on its placeholder ('Click on a message in the list to
+        view its contents.') — quinn-ai-kl7m, the user-visible 'right
+        side shows nothing' bug. Updating on highlight gives a more
+        natural inbox-style UX where stepping through messages previews
+        each one.
+        """
+        if event.row_key is not None:
+            await self._select_message_by_row_key(event.row_key)
+
+    async def _select_message_by_row_key(self, row_key) -> None:
+        """Render the message identified by row_key in the detail pane."""
         from ..logging_config import get_board_logger
         logger = get_board_logger(__name__)
 
-        table = self.query_one("#messages-table", DataTable)
-        row_key = event.row_key
+        # Textual's row_key may be a RowKey wrapper or a plain string.
+        # RowKey.__eq__ accepts string comparison, but pulling .value
+        # gives a stable str for logging.
+        row_key_value = row_key.value if hasattr(row_key, "value") else row_key
 
-        logger.debug(f"Row selected - row_key: {row_key}")
+        logger.debug(f"Row selected - row_key: {row_key} value: {row_key_value!r}")
         logger.debug(f"Available message IDs: {[m.id for m in self._messages]}")
 
         # Find message by ID
         self._selected_message = next(
-            (m for m in self._messages if m.id == row_key), None
+            (m for m in self._messages if m.id == row_key_value), None
         )
 
         if not self._selected_message:

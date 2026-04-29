@@ -370,17 +370,31 @@ def check_bd_permission(
         db.close()
 
 
-def get_bundled_bd_path() -> Path:
+def get_bundled_bd_path(prefer_system: bool = False) -> Path:
     """Locate the bd binary.
 
     Resolution order:
-        1. cli/bin/bd (or cli/bin/bd.exe on Windows) — explicit bundle
-        2. cli/bin/{platform}-{arch}/bd — repo dev builds
-        3. system PATH via shutil.which("bd")
+        1. (if prefer_system) system PATH via shutil.which("bd")
+        2. cli/bin/bd (or cli/bin/bd.exe on Windows) — explicit bundle
+        3. cli/bin/{platform}-{arch}/bd — repo dev builds
+        4. system PATH via shutil.which("bd")
+
+    Args:
+        prefer_system: If True, prefer the system-installed bd over the
+            bundled one. Used for dolt-mode orgs since the bundled bd
+            (0.43.x) doesn't fully support dolt --sandbox; modern system
+            bd (1.x+) does. (quinn-ai-k9ff)
 
     Raises:
         FileNotFoundError: If no bd binary can be located.
     """
+    import shutil
+
+    if prefer_system:
+        system_bd = shutil.which("bd")
+        if system_bd:
+            return Path(system_bd)
+
     cli_dir = Path(__file__).parent.parent
     bin_dir = cli_dir / "bin"
     bd_name = "bd.exe" if sys.platform == "win32" else "bd"
@@ -403,7 +417,6 @@ def get_bundled_bd_path() -> Path:
         if c.exists():
             return c
 
-    import shutil
     system_bd = shutil.which("bd")
     if system_bd:
         return Path(system_bd)
@@ -425,6 +438,25 @@ def get_org_beads_dir(org_path: Path) -> Path:
         Path to org's .beads directory
     """
     return org_path / BEADS_DIR
+
+
+def is_dolt_backend(beads_dir: Path) -> bool:
+    """Detect whether an org's beads is in dolt-embedded mode.
+
+    Reads .beads/metadata.json's "backend" field. Default for new orgs
+    created by `qn org init` is dolt; legacy orgs (or test fixtures with
+    no metadata.json) fall through to sqlite-style behaviour.
+
+    Returns False on missing/unreadable metadata.json (legacy/test path).
+    """
+    metadata_path = beads_dir / "metadata.json"
+    if not metadata_path.exists():
+        return False
+    try:
+        meta = json.loads(metadata_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    return meta.get("backend") == "dolt"
 
 
 class OKRLinkWarning(UserWarning):
@@ -642,17 +674,30 @@ def run_bd(
     if not skip_okr_check:
         check_okr_linking(args, org_path)
 
-    # Get bd binary
-    bd_path = get_bundled_bd_path()
+    # Get bd binary. Dolt-mode orgs need a 1.x+ bd; the bundled 0.43.x bd
+    # doesn't fully support dolt with --sandbox. Prefer system bd in that
+    # case. (quinn-ai-k9ff)
+    beads_dir_for_detection = get_org_beads_dir(org_path)
+    dolt_mode = is_dolt_backend(beads_dir_for_detection)
+    bd_path = get_bundled_bd_path(prefer_system=dolt_mode)
 
     # Set up environment
     env = os.environ.copy()
 
     # Point beads to org's .beads directory
-    beads_dir = get_org_beads_dir(org_path)
-    beads_db = beads_dir / "beads.db"
+    beads_dir = beads_dir_for_detection
     env["BEADS_DIR"] = str(beads_dir)
-    env["BEADS_DB"] = str(beads_db)
+
+    # Dolt-mode orgs (the default since 1.0+) keep the actual database in
+    # .beads/embeddeddolt/, not .beads/beads.db. Passing --db=beads.db there
+    # opens a separate, empty/stale sqlite that lacks issue_prefix config —
+    # bd then refuses writes ("issue_prefix config is missing"). For dolt
+    # orgs, drop the --db= override and the BEADS_DB env var; bd auto-
+    # discovers the dolt backend from .beads/metadata.json via BEADS_DIR.
+    # (quinn-ai-k9ff)
+    if not dolt_mode:
+        beads_db = beads_dir / "beads.db"
+        env["BEADS_DB"] = str(beads_db)
 
     # Add worker context if available
     if worker_id:
@@ -661,9 +706,12 @@ def run_bd(
         env["BEADS_ASSIGNEE"] = worker_id
 
     # Run bd command
-    # Use --sandbox mode to bypass daemon and --db to explicitly specify database
-    # This is necessary for isolated testing and when using custom org paths
-    cmd = [str(bd_path), "--sandbox", f"--db={beads_db}"] + args
+    # Use --sandbox mode to bypass daemon. Legacy sqlite orgs also pin the
+    # db file via --db=; dolt orgs let bd auto-discover (see above).
+    cmd: list[str] = [str(bd_path), "--sandbox"]
+    if not dolt_mode:
+        cmd.append(f"--db={beads_dir / 'beads.db'}")
+    cmd += args
 
     # NOTE: timeout is opt-in (default None) so user-facing `qn-bd` long-running
     # commands aren't killed prematurely. Programmatic write callers (especially

@@ -486,6 +486,94 @@ class TestPhase5Kickstart:
         )
 
 
+class TestPhase5VerificationContentAware:
+    """Phase 5 verification must check pane CONTENT, not just diff (quinn-ai-moho).
+
+    Original verification: pane_after != pane_before → success. False-positive
+    when claude TUI itself redraws between pane_before and pane_after (cursor
+    blinks, status bar updates, post-boot rendering finishing). Phase 5 then
+    reports 'delivered' even though the cat command never landed in claude's
+    input. CEO sits idle while qn claims success.
+    """
+
+    @patch("cli.core.org_start_controller._tmux_send_keys_with_retry")
+    @patch("cli.core.org_start_controller._wait_for_pane_ready")
+    @patch("cli.core.org_start_controller._capture_pane")
+    @patch("cli.core.org_start_controller.time.sleep")  # skip timing waits
+    def test_warns_when_pane_diff_but_no_cat_evidence(
+        self,
+        mock_sleep,
+        mock_capture,
+        mock_ready,
+        mock_send_keys,
+        initialized_org,
+        temp_org_dir,
+        capsys,
+    ):
+        """Pane changes but contains no cat-command evidence → must warn, not succeed."""
+        from cli.core.org_start_controller import _send_initial_prompt_to_ceo
+
+        worker_dir = temp_org_dir / "storage" / "workers" / "ceo"
+        worker_dir.mkdir(parents=True, exist_ok=True)
+
+        mock_ready.return_value = True
+        mock_send_keys.return_value = True
+        # Distinct panes (diff is non-zero) but neither contains cat or
+        # any claude processing indicator — keystrokes did not land.
+        # Verification polls multiple times; cycle through the two states.
+        from itertools import cycle
+        mock_capture.side_effect = cycle([
+            "bash-3.2$ \n❯ ",                              # pane_before
+            "bash-3.2$ \n❯ \n  status bar redraw flicker",  # pane_after polls
+        ])
+
+        _send_initial_prompt_to_ceo(initialized_org.ceo, worker_dir)
+
+        captured = capsys.readouterr()
+        # Must NOT print the success banner — verification was a false positive.
+        assert "Initial task instructions delivered" not in captured.out, (
+            "Verification reported delivered/processing but the pane shows "
+            "no evidence the cat command landed — that's the moho bug."
+        )
+        # Must surface the warning so the operator knows to intervene.
+        assert "no pane activity" in captured.err.lower() or "may not have received" in captured.err.lower(), (
+            f"Expected a warning about delivery uncertainty. Got stderr:\n{captured.err}"
+        )
+
+    @patch("cli.core.org_start_controller._tmux_send_keys_with_retry")
+    @patch("cli.core.org_start_controller._wait_for_pane_ready")
+    @patch("cli.core.org_start_controller._capture_pane")
+    @patch("cli.core.org_start_controller.time.sleep")
+    def test_succeeds_when_cat_command_visible_in_pane(
+        self,
+        mock_sleep,
+        mock_capture,
+        mock_ready,
+        mock_send_keys,
+        initialized_org,
+        temp_org_dir,
+        capsys,
+    ):
+        """When pane_after contains the cat command, delivery succeeded."""
+        from cli.core.org_start_controller import _send_initial_prompt_to_ceo
+
+        worker_dir = temp_org_dir / "storage" / "workers" / "ceo"
+        worker_dir.mkdir(parents=True, exist_ok=True)
+
+        mock_ready.return_value = True
+        mock_send_keys.return_value = True
+        from itertools import cycle
+        mock_capture.side_effect = cycle([
+            "❯ ",
+            f"❯ cat {worker_dir / 'INITIAL_TASK.md'}\n⏺ Reading file…",
+        ])
+
+        _send_initial_prompt_to_ceo(initialized_org.ceo, worker_dir)
+
+        captured = capsys.readouterr()
+        assert "Initial task instructions delivered" in captured.out
+
+
 # =============================================================================
 # PHASE 6: READINESS TESTS
 # =============================================================================

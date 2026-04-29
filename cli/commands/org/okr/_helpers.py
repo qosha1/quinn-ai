@@ -142,11 +142,31 @@ def _create_okr(
             "Run 'qn org init' first."
         )
 
+    # Resolve owner name → worker_id BEFORE bd create. Without this,
+    # bd stores assignee as the literal name (e.g. "Cleo") while
+    # downstream tooling (board health check, bd list --assignee, etc.)
+    # queries by worker_id and finds nothing — surfaces as the
+    # no_okrs false-positive (quinn-ai-uk9v). Fall through to the raw
+    # owner string only if resolution fails (preserves existing
+    # behaviour for unrecognised owners).
+    bd_assignee: Optional[str] = owner
+    if owner:
+        try:
+            _db_for_resolve = open_database(db_path)
+            try:
+                resolved = _resolve_owner_id(_db_for_resolve, owner)
+                if resolved:
+                    bd_assignee = resolved
+            finally:
+                _db_for_resolve.close()
+        except sqlite3.Error:
+            pass  # leave bd_assignee = owner; SQLite mirror step below logs.
+
     args = ["create", title, f"--type={BEAD_TYPE_EPIC}", f"--priority={priority}", "--label=okr"]
     if description:
         args.extend(["--description", description])
-    if owner:
-        args.extend(["--assignee", owner])
+    if bd_assignee:
+        args.extend(["--assignee", bd_assignee])
     for lbl in label:
         args.extend(["--label", lbl])
     if due:

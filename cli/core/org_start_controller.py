@@ -499,6 +499,39 @@ def _wait_for_pane_ready(
     return False
 
 
+def _pane_shows_prompt_landed(pane: str, sent_cmd: str) -> bool:
+    """True iff pane content shows specific evidence the prompt was delivered.
+
+    Two acceptable proofs (quinn-ai-moho):
+    1. The literal cat command (or a recognizable substring of it) appears
+       in the pane — keystrokes reached the TUI's input area.
+    2. A claude-code processing indicator appears — the message was
+       submitted and claude is actively responding. Indicators include
+       its tool-use bullets (⏺, ⎿), thinking spinner (✻), and common
+       English markers ('Crunching', 'Reading', 'Thinking').
+
+    The previous "any pane content changed" check was too loose — TUI
+    redraws between captures (cursor blink, status bar) registered as
+    'changed' even when keystrokes never landed.
+    """
+    if not pane:
+        return False
+
+    # Proof 1: the cat command (or its filename tail) is visible.
+    # Tail of sent_cmd is enough — long absolute paths get wrapped in
+    # the TUI input box, but the filename or "INITIAL_TASK.md" stays.
+    cmd_tail = sent_cmd.split("/")[-1] if "/" in sent_cmd else sent_cmd
+    if cmd_tail and cmd_tail in pane:
+        return True
+    # Also check for the leading "cat " token to catch shorter paths.
+    if sent_cmd in pane:
+        return True
+
+    # Proof 2: claude is actively processing.
+    processing_markers = ("⏺", "✻", "⎿", "Crunching", "Reading", "Thinking")
+    return any(m in pane for m in processing_markers)
+
+
 def _looks_like_tui_prompt(pane: str) -> bool:
     """True iff pane content shows an interactive TUI prompt cursor.
 
@@ -600,16 +633,28 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
             cmd_sent = _tmux_send_keys_with_retry(tmux_session, cmd)
             time.sleep(TMUX_SEND_KEYS_INTERSTITIAL)
             enter_sent = _tmux_send_keys_with_retry(tmux_session, "Enter")
+            # Second Enter (quinn-ai-moho): claude-code's TUI sometimes
+            # treats the first Enter after a long pasted line as a
+            # newline-in-input rather than submit. A second Enter
+            # reliably submits whatever's in the input. Empirically
+            # verified by manual repro against Cleo's session — first
+            # Enter left text in the input box, second Enter submitted.
+            time.sleep(TMUX_SEND_KEYS_INTERSTITIAL)
+            _tmux_send_keys_with_retry(tmux_session, "Enter")
             if not (cmd_sent and enter_sent):
                 raise subprocess.CalledProcessError(
                     1, ["tmux", "send-keys"],
                     output=b"send-keys retries exhausted",
                 )
 
-            # Poll briefly for pane content change as evidence the prompt
-            # actually landed and is being processed. Without this check
-            # the prompt can disappear into a not-yet-ready TUI and we'd
-            # never know.
+            # Poll briefly for SPECIFIC evidence the prompt landed:
+            # either the cat command text in the pane (proves keystrokes
+            # reached the TUI) or a claude processing indicator (proves
+            # the message was submitted and claude is responding).
+            # The previous "any pane diff = success" check was a
+            # false-positive when the TUI itself redrew (cursor blinks,
+            # status bar updates) between captures while keystrokes never
+            # actually landed (quinn-ai-moho).
             verification_window = INITIAL_PROMPT_VERIFICATION_WINDOW
             poll_interval = INITIAL_PROMPT_VERIFICATION_POLL
             elapsed = 0.0
@@ -618,7 +663,7 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
                 time.sleep(poll_interval)
                 elapsed += poll_interval
                 pane_after = _capture_pane(tmux_session)
-                if pane_after and pane_after != pane_before:
+                if pane_after and _pane_shows_prompt_landed(pane_after, cmd):
                     received = True
                     break
 

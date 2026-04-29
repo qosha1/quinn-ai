@@ -273,6 +273,52 @@ class TestOkrSetCommand:
         assert "--parent" in call_args
 
 
+class TestOkrSetResolvesOwnerToWorkerId:
+    """quinn-ai-uk9v: --owner <name> must be resolved to worker_id before
+    being passed to `bd create --assignee`. Otherwise bd stores the literal
+    name and downstream tooling (board health, bd list --assignee, etc.)
+    that queries by worker_id finds nothing → false-positive 'no_okrs'."""
+
+    @patch('cli.commands.org.okr._helpers.run_bd')
+    def test_owner_name_resolved_to_worker_id_for_bd(
+        self, mock_run_bd, runner, initialized_org
+    ):
+        mock_run_bd.return_value = MagicMock(
+            returncode=0,
+            stdout="Created issue: okr-abc123",
+            stderr="",
+        )
+
+        # The fixture's CEO is named "TestCEO". After resolution, the bd
+        # --assignee value should be the CEO's worker_id (wrkr-...), NOT
+        # the literal "TestCEO".
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set",
+            "--title=Test",
+            "--owner=TestCEO",
+            "--kr", "x:1:count",
+        ])
+
+        assert result.exit_code == 0, result.output
+
+        call_args = mock_run_bd.call_args[0][0]
+        # Find the value passed for --assignee
+        assignee_value = None
+        for i, a in enumerate(call_args):
+            if a == "--assignee":
+                assignee_value = call_args[i + 1]
+                break
+
+        assert assignee_value is not None, f"No --assignee in bd args: {call_args}"
+        assert assignee_value.startswith("wrkr-"), (
+            f"Expected --assignee to be a worker_id (wrkr-...), got "
+            f"{assignee_value!r}. The literal name leaked through to bd, which "
+            f"means the board health check will false-positive 'no_okrs' "
+            f"(quinn-ai-uk9v)."
+        )
+
+
 class TestOkrAddCommand:
     """Test qn org okr add command (alias for set)."""
 

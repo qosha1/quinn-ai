@@ -622,8 +622,17 @@ class TestE2EMessagesView:
             message_body = app.query_one("#message-body", Static)
             reply_input = app.query_one("#reply-input", TextArea)
 
-            # Initially reply input should be disabled
-            assert reply_input.disabled is True
+            # NOTE: post-quinn-ai-kl7m, RowHighlighted fires on mount
+            # when rows populate, so the first message is auto-selected
+            # and the reply input becomes enabled immediately. The old
+            # 'reply_input must start disabled' invariant no longer holds
+            # — the new inbox UX (matches Mail.app) previews the first
+            # message on load. Assert the populated state instead.
+            if table.row_count > 0:
+                assert reply_input.disabled is False, (
+                    "After channel load, the first message should be "
+                    "auto-selected and reply input enabled (kl7m UX)."
+                )
 
             # Select first message (if rows exist)
             if table.row_count > 0:
