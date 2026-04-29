@@ -6,6 +6,9 @@ Public surface (per u0h2 §2):
 - (Forthcoming) Class: TemplateOrchestrator
 """
 
+from cli.core.templates.composition import validate_parent_reference
+from cli.core.templates.loader import load_templates
+from cli.core.templates.orchestrator import TemplateOrchestrator
 from cli.core.templates.types import (
     ChannelSpec,
     HireTeamResult,
@@ -21,5 +24,8 @@ __all__ = [
     "InitialOKR",
     "Template",
     "TemplateMember",
+    "TemplateOrchestrator",
     "TemplateRegistry",
+    "load_templates",
+    "validate_parent_reference",
 ]

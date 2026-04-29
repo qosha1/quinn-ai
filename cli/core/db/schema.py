@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS teams (
     lead_id TEXT,
     channel_id TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    template_type TEXT,
+    ttl_hours INTEGER,
+    ttl_started_at DATETIME,
+    status TEXT NOT NULL DEFAULT 'active',
     FOREIGN KEY (parent_team_id) REFERENCES teams(id) ON DELETE SET NULL,
     FOREIGN KEY (lead_id) REFERENCES workers(id) ON DELETE SET NULL,
     FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE SET NULL

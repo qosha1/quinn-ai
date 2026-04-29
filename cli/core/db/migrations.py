@@ -640,6 +640,18 @@ def migrate_database(db: "Database", from_version: int, to_version: int) -> None
             "CREATE INDEX IF NOT EXISTS idx_activity_signals_worker ON activity_signals(worker_id, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_activity_signals_recent ON activity_signals(created_at DESC)",
         ],
+        # Version 24: Add template fields to teams (per quinn-ai-iabn §E + u0h2 §5)
+        # template_type: name of the team template that produced this team (NULL for legacy)
+        # ttl_hours / ttl_started_at: time-bounded teams (incident_response_squad)
+        # status: active|terminated, used by parent-reference validator
+        24: [
+            "ALTER TABLE teams ADD COLUMN template_type TEXT",
+            "ALTER TABLE teams ADD COLUMN ttl_hours INTEGER",
+            "ALTER TABLE teams ADD COLUMN ttl_started_at DATETIME",
+            "ALTER TABLE teams ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+            "CREATE INDEX IF NOT EXISTS idx_teams_template_type ON teams(template_type) WHERE template_type IS NOT NULL",
+            "CREATE INDEX IF NOT EXISTS idx_teams_status ON teams(status)",
+        ],
     }
 
     for version in range(from_version + 1, to_version + 1):

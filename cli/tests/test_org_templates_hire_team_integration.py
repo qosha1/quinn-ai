@@ -412,7 +412,7 @@ class TestHireTeamChannelCollision:
         ceo_id = _seed_ceo(db)
 
         # Pre-create a channel with the name the template will derive.
-        create_channel(db, name="product-mobile", channel_type="general")
+        create_channel(db, name="product-mobile", channel_type="topic")
 
         # Baseline counts.
         baseline_teams = db.fetchone("SELECT COUNT(*) AS c FROM teams")["c"]

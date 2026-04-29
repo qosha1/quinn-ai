@@ -76,8 +76,9 @@ def validate_parent_reference(
             requires=template.requires,
         )
 
-    parent_template_type = parent.get("template_type")
-    parent_status = parent.get("status", "active")
+    # Tolerate both dict-shaped fakes and sqlite3.Row real rows.
+    parent_template_type = parent["template_type"] if "template_type" in parent.keys() else None
+    parent_status = parent["status"] if "status" in parent.keys() else "active"
 
     # Legacy NULL template_type → wrong-type with the friendly retag message.
     if parent_template_type is None:
@@ -101,4 +102,4 @@ def validate_parent_reference(
     if parent_status != "active":
         raise TemplateParentTerminated(parent_team_name)
 
-    return parent.get("lead_id")
+    return parent["lead_id"] if "lead_id" in parent.keys() else None
