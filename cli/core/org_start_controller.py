@@ -433,27 +433,55 @@ def _wait_for_pane_ready(
 ) -> bool:
     """Poll capture-pane until the spawned TUI is ready to receive input.
 
-    The fix for quinn-ai-k2cy: the previous code fired tmux send-keys within
-    ~100ms of new-session, before claude had finished booting. Result: the
-    'cat INITIAL_TASK.md' keystrokes vanished into a not-yet-ready TUI and
-    the CEO sat idle forever.
+    Originally added for quinn-ai-k2cy: prior code fired tmux send-keys
+    within ~100ms of new-session, before claude had finished booting.
+    Result: 'cat INITIAL_TASK.md' keystrokes vanished into a not-yet-ready
+    TUI and the CEO sat idle forever.
 
-    'Ready' is heuristic — we look for either:
-      1. claude's prompt cursor character ('❯' or '>'), OR
-      2. any non-trivial pane content (>20 chars and not just shell banner).
+    Tightened for quinn-ai-qim4: the original heuristic was
+    'has ❯ OR len(pane.strip()) > 200'. The 200-char fallback matched
+    bash echoing the long 'claude --dangerously-skip-permissions'
+    invocation + a few dozen blank lines BEFORE the Claude Code TUI
+    rendered its ❯ prompt. Phase 5's keystrokes still landed in a
+    not-yet-receptive TUI and silently disappeared — surfaced live by
+    canary 09 instrumentation (cmd_ok=True, enter_ok=True,
+    pane_before_len==pane_after_len, no message in pane).
 
-    Returns True if ready before timeout, False otherwise. Caller can still
-    proceed if False — the existing best-effort send-keys will at least try.
+    Now require the actual prompt-cursor character. The known cursors:
+      - '❯'   Claude Code (and other Starship-style TUIs)
+      - '>'   simpler line editors used by some CLIs (e.g. cursor)
+    The '>' check is loose, so we also require it to appear at the
+    START of a line (after a newline) so it doesn't match '<a>' style
+    junk in pre-TUI banners. The '❯' is unique enough on its own.
+
+    Returns True if ready before timeout, False otherwise. Caller can
+    still proceed if False — best-effort delivery keeps Phase 5 from
+    failing the whole org start over a slow TUI boot.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         pane = _capture_pane(tmux_session)
-        if pane:
-            # Heuristic: prompt cursor present, OR enough content to suggest
-            # claude (or whatever TUI) has rendered something past its banner.
-            if "❯" in pane or len(pane.strip()) > 200:
-                return True
+        if pane and _looks_like_tui_prompt(pane):
+            return True
         time.sleep(poll_interval)
+    return False
+
+
+def _looks_like_tui_prompt(pane: str) -> bool:
+    """True iff pane content shows an interactive TUI prompt cursor.
+
+    Strict — matches the actual cursor character, not a content-length
+    heuristic that bash output can trip (qim4).
+    """
+    if "❯" in pane:
+        return True
+    # '>' must be at start of a line (after newline or at very start),
+    # followed by space — a typical line-editor prompt shape. Avoids
+    # matching XML-ish or arrow-shaped junk in pre-TUI output.
+    for line in pane.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("> ") or stripped == ">":
+            return True
     return False
 
 

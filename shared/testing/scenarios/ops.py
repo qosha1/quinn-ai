@@ -144,6 +144,14 @@ def op_create_okr(run: "ScenarioRun", op: dict[str, Any]) -> None:
 
     Captures the generated bead id from the 'Created issue: <id>' line so
     later ops/assertions can reference it via id_var.
+
+    Canary OKRs are intentionally exploratory test scaffolding, not real
+    organizational OKRs — they exist to drive a CEO session through a
+    specific decision shape, not to be measured against. Default to
+    --no-krs-needed so canaries continue to work after qn org okr set
+    started enforcing measurable KRs. Specs that DO want to exercise the
+    KR path can pass `key_results: [{metric:..., target:..., unit:...}]`
+    in the op YAML.
     """
     from cli.commands.main import qn
 
@@ -153,6 +161,16 @@ def op_create_okr(run: "ScenarioRun", op: dict[str, Any]) -> None:
         args += ["--owner", worker_id]
     if "description" in op:
         args += ["--description", op["description"]]
+
+    key_results = op.get("key_results") or []
+    if key_results:
+        for kr in key_results:
+            metric = kr["metric"]
+            target = kr["target"]
+            unit = kr["unit"]
+            args += ["--kr", f"{metric}:{target}:{unit}"]
+    else:
+        args += ["--no-krs-needed"]
 
     result = run.runner.invoke(qn, args, catch_exceptions=False)
     if result.exit_code != 0:

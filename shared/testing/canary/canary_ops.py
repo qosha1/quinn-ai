@@ -85,6 +85,8 @@ def op_kickstart_ceo(run: "ScenarioRun", op: dict[str, Any]) -> None:
     a single line before delivery; see _flatten_for_send_keys.
 
     Reuses the same _wait_for_pane_ready + retry helpers used by qn org start.
+    Verifies delivery by capturing the pane after send-keys and confirming
+    the message landed; warns loudly if not (qim4 diagnostic).
     """
     import subprocess
 
@@ -92,12 +94,21 @@ def op_kickstart_ceo(run: "ScenarioRun", op: dict[str, Any]) -> None:
     if ceo is None:
         raise RuntimeError("kickstart_ceo: no CEO worker found")
     tmux_session = f"qn-{ceo['id']}"
-    message = _flatten_for_send_keys(
-        op.get(
-            "message",
-            "Read INITIAL_TASK.md and act on the highest-priority OKR right now.",
-        )
+    raw_message = op.get(
+        "message",
+        "Read INITIAL_TASK.md and act on the highest-priority OKR right now.",
     )
+    message = _flatten_for_send_keys(raw_message)
+
+    def _capture():
+        try:
+            r = subprocess.run(
+                ["tmux", "capture-pane", "-t", tmux_session, "-p"],
+                capture_output=True, text=True, timeout=2, check=False,
+            )
+            return r.stdout if r.returncode == 0 else ""
+        except Exception:
+            return ""
 
     # Best-effort: reuse production helpers if importable; otherwise inline.
     try:
@@ -105,10 +116,25 @@ def op_kickstart_ceo(run: "ScenarioRun", op: dict[str, Any]) -> None:
             _tmux_send_keys_with_retry,
             _wait_for_pane_ready,
         )
-        _wait_for_pane_ready(tmux_session, timeout=15.0)
-        _tmux_send_keys_with_retry(tmux_session, message)
+        ready = _wait_for_pane_ready(tmux_session, timeout=15.0)
+        before = _capture()
+        cmd_ok = _tmux_send_keys_with_retry(tmux_session, message)
         time.sleep(0.5)
-        _tmux_send_keys_with_retry(tmux_session, "Enter")
+        enter_ok = _tmux_send_keys_with_retry(tmux_session, "Enter")
+        time.sleep(1.0)
+        after = _capture()
+        # qim4 diagnostic: verify the message actually landed in the pane.
+        # We look for a recognizable substring (first 30 chars of message).
+        marker = message[:30].strip()
+        landed = bool(marker) and marker in after
+        if not landed:
+            print(
+                f"[kickstart_ceo] WARNING: message did NOT appear in pane.\n"
+                f"  ready={ready} cmd_ok={cmd_ok} enter_ok={enter_ok}\n"
+                f"  marker={marker!r}\n"
+                f"  pane_before_len={len(before)} pane_after_len={len(after)}\n"
+                f"  pane_after_tail={after[-300:]!r}"
+            )
     except ImportError:
         subprocess.run(["tmux", "send-keys", "-t", tmux_session, message], check=False)
         time.sleep(0.5)

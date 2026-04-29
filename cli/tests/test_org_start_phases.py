@@ -563,3 +563,78 @@ class TestStartSequenceIntegration:
 
         # Org should still be RUNNING (not rolled back)
         assert initialized_org.status == OrgStatus.RUNNING.value
+
+
+class TestWaitForPaneReady:
+    """qim4: _wait_for_pane_ready must wait for the actual TUI prompt cursor,
+    not just any pane content.
+
+    The bug: the prior heuristic was 'has ❯ OR len(pane.strip()) > 200'.
+    The 200-char fallback matched bash echoing the long claude-launch
+    command + dozens of blank lines BEFORE Claude Code's TUI rendered its
+    prompt. Phase 5 then send-keys'd 'cat INITIAL_TASK.md' into a
+    not-yet-receptive TUI and the keystrokes vanished — CEO sat idle
+    forever with no directive (e.g. canary 09 every run on 2026-04-28).
+    """
+
+    @patch('cli.core.org_start_controller._capture_pane')
+    def test_does_not_match_pre_tui_bash_output(self, mock_capture):
+        """qim4 root cause: 311-char bash output without ❯ MUST NOT count
+        as ready. This is the exact pane content from canary 09's failed
+        kickstart instrumentation:
+          'bash-3.2$ env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN
+           claude --dangerously-skip-permissions\n\n\n\n\n\n\n\n\n\n...'
+        """
+        from cli.core.org_start_controller import _wait_for_pane_ready
+
+        # Same content the diagnostic captured: bash command + many blank
+        # lines, no ❯, length > 200.
+        pre_tui = (
+            "The default interactive shell is now zsh.\n"
+            "To update your account to use zsh, please run `chsh -s /bin/zsh`.\n"
+            "For more details, please visit https://support.apple.com/kb/HT208050.\n"
+            "bash-3.2$ env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN claude --dangerously-skip-permissions\n"
+            + ("\n" * 36)
+        )
+        assert len(pre_tui.strip()) > 200  # would have tripped the old heuristic
+        assert "❯" not in pre_tui          # but TUI not yet rendered
+
+        mock_capture.return_value = pre_tui
+
+        # Tight timeout so the test fails fast if the heuristic regresses.
+        result = _wait_for_pane_ready(
+            "fake-session", timeout=0.5, poll_interval=0.1
+        )
+        assert result is False, (
+            "pre-TUI bash output should NOT count as ready"
+        )
+
+    @patch('cli.core.org_start_controller._capture_pane')
+    def test_matches_real_claude_code_prompt(self, mock_capture):
+        """Once the Claude Code TUI renders its ❯ cursor, ready=True."""
+        from cli.core.org_start_controller import _wait_for_pane_ready
+
+        rendered = (
+            "bash-3.2$ claude\n"
+            " ▐▛███▜▌   Claude Code v2.1.122\n"
+            "▝▜█████▛▘  Opus 4.7 (1M context)\n"
+            "────────────────────\n"
+            "❯ \n"
+            "────────────────────\n"
+        )
+        mock_capture.return_value = rendered
+
+        assert _wait_for_pane_ready(
+            "fake-session", timeout=2.0, poll_interval=0.05
+        ) is True
+
+    @patch('cli.core.org_start_controller._capture_pane')
+    def test_returns_false_on_timeout_when_tui_never_renders(self, mock_capture):
+        """If the prompt never appears within timeout, return False."""
+        from cli.core.org_start_controller import _wait_for_pane_ready
+
+        mock_capture.return_value = "bash-3.2$ \n"  # no claude TUI ever
+
+        assert _wait_for_pane_ready(
+            "fake-session", timeout=0.3, poll_interval=0.1
+        ) is False
