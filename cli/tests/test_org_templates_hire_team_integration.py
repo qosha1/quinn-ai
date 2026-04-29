@@ -111,21 +111,19 @@ templates:
 def org_db(tmp_path: Path):
     """A fresh sqlite DB at tmp_path with the templates-fields migration applied.
 
-    The migration (add `template_type`, `ttl_hours`, `ttl_started_at` columns
-    to the teams table) is part of the BOARD-TPL impl — this fixture WILL fail
-    today on either:
-      (a) ImportError on `cli.core.templates` (the migration helper lives
-          alongside the orchestrator code), OR
-      (b) OperationalError when SELECTing template_type from a pre-migration
-          schema.
-    Both failures are correct test-time failures.
+    Per iabn §E, the migration adds `template_type`, `ttl_hours`,
+    `ttl_started_at` columns to the teams table. Once that ships,
+    `init_database` will apply it automatically. Until then, this fixture
+    fails at the orchestrator import below — the intended pre-impl mode.
     """
     from cli.core.db import init_database, get_org_db_path
-    from cli.core.templates.migration import apply_template_fields_migration  # noqa: F401
+    # Importing the orchestrator surfaces the "templates impl missing"
+    # error early. Once it lands, this import succeeds and the rest of the
+    # fixture (and the tests) run.
+    from cli.core.templates.orchestrator import TemplateOrchestrator  # noqa: F401
 
     db_path = get_org_db_path(tmp_path)
     db = init_database(db_path)
-    apply_template_fields_migration(db)
     yield db, tmp_path
     db.close()
 
