@@ -99,9 +99,13 @@ ops:
   - op: kickstart_ceo
     message: "We're shipping the email-parsing release. Read your top OKR and FEAT-EMAIL, then run this release the way a real eng team would — bd-tracked, tests-as-you-go, no ghost-writing across roles. The DoD is enforced by automation; if pytest doesn't actually pass at the end, the release isn't done."
 
-  # Phase 1: CEO must make the first hire fast. We expect a non-trivial
-  # delay because they have to read context first; 180s headroom.
-  - { op: wait_until, predicate: { kind: worker_count, min: 2 }, timeout_seconds: 180, poll_interval_seconds: 3 }
+  # Phase 1: CEO must make the first hire. Generous headroom (360s) — a
+  # competent CEO realistically spends 1-3 minutes investigating tools,
+  # finding the existing bead, drafting their plan, before delegating.
+  # Earlier runs showed Alice was actively reasoning at T+180s and would
+  # have hired ~30-60s later; the canary failed on the timeout, not the
+  # decision-making.
+  - { op: wait_until, predicate: { kind: worker_count, min: 2 }, timeout_seconds: 360, poll_interval_seconds: 3 }
 
   # MID-RUN REQUIREMENT CHANGE — fires the moment hiring kicks in.
   - op: kickstart_ceo
