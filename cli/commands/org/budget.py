@@ -234,6 +234,13 @@ def budget_allocate(ctx: Context, worker_name: str, amount: float, from_worker: 
                 "Check available budget with 'qn org budget status'."
             )
 
+        # quinn-ai-xdwo: auto-spawn the worker's session if it's been
+        # stranded in 'starting' state since `qn org hire` (which couldn't
+        # spawn because there was no budget yet). Without this an
+        # autonomous CEO has to know to also run `qn org start --worker
+        # <name>` after every allocation.
+        _auto_spawn_if_pending(ctx, db, org, target)
+
     finally:
         db.close()
 
@@ -316,3 +323,97 @@ def budget_transactions(ctx: Context, worker_name: Optional[str], txn_type: Opti
 
     finally:
         db.close()
+
+
+def _auto_spawn_if_pending(ctx, db, org, target_worker):
+    """If the target's session is stuck pending, spawn it now (quinn-ai-xdwo).
+
+    `qn org hire` swallows NoBudgetAllocationError and prints guidance to
+    run `qn org budget allocate` + `qn org start --worker`. After this
+    function runs at the end of `budget allocate`, the second step is no
+    longer needed: we detect a worker that has no live session yet but is
+    fully hired + just got budget, and bring them online.
+    """
+    try:
+        from cli.core.worker import Worker
+    except ImportError:
+        return
+
+    try:
+        worker_obj = Worker.get(db, target_worker.id)
+    except Exception:
+        return
+
+    # Only auto-spawn workers in lifecycle states that allow sessions and
+    # don't already have one. Skips terminated/offboarding workers and
+    # avoids stomping on a healthy live session.
+    if worker_obj.lifecycle_status not in ("pending", "onboarding", "active"):
+        return
+    if worker_obj.is_session_active:
+        return
+
+    try:
+        from cli.commands.org.session_utils import spawn_worker_session
+        from cli.core.config import get_org_config_path
+        from cli.core.config.loaders import load_providers_config
+        from cli.core.onboarding import get_worker_env_vars, prepare_worker_onboarding
+        from cli.core.storage import StorageManager
+        from cli.providers.registry import load_providers_from_config
+    except ImportError:
+        return
+
+    # Resolve provider the same way hire.py does — preferred_provider on the
+    # worker first, then cost-based selection, then the org's session default.
+    config_path = get_org_config_path(ctx.org_path) / "providers.yaml"
+    try:
+        registry = load_providers_from_config(config_path)
+    except Exception:
+        return
+
+    provider_name = None
+    cli_command = "claude"
+    if worker_obj.preferred_provider:
+        provider_name = worker_obj.preferred_provider
+        if registry.has(provider_name):
+            cli_command = registry.get(provider_name).cli_command
+    if provider_name is None:
+        try:
+            provider = registry.select_for_worker(worker_obj.cost, worker_obj.skills)[0]
+            provider_name = provider.name
+            cli_command = provider.cli_command
+        except ValueError:
+            try:
+                providers_cfg = load_providers_config(config_path)
+                provider_name = providers_cfg.default or "claude_code"
+            except Exception:
+                provider_name = "claude_code"
+
+    # Lifecycle nudge: hire flow leaves new workers in 'pending'; bring them
+    # to 'active' before spawn the same way hire.py would.
+    if worker_obj.lifecycle_status == "pending":
+        try:
+            worker_obj.start_onboarding()
+            worker_obj.complete_onboarding()
+        except Exception:
+            pass  # don't block budget allocation on lifecycle quirks
+
+    try:
+        onboarding_ctx = prepare_worker_onboarding(db, worker_obj.id, ctx.org_path)
+        storage = StorageManager(ctx.org_path, db)
+        worker_dir = storage.get_worker_path(worker_obj.id)
+        env_vars = get_worker_env_vars(onboarding_ctx, ctx.org_path, db)
+        spawn_worker_session(
+            worker=worker_obj,
+            provider=provider_name,
+            command=cli_command,
+            args_str="--dangerously-skip-permissions",
+            working_directory=worker_dir,
+            env_vars=env_vars,
+        )
+        click.echo(f"Session started for {worker_obj.name}")
+    except Exception as e:
+        # Non-fatal — operator can run `qn org start --worker <name>` manually.
+        click.echo(
+            f"Note: Could not auto-spawn session for {worker_obj.name}: {e}\n"
+            f"Run manually: qn org start --worker {worker_obj.name}"
+        )

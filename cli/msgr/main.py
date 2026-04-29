@@ -4,6 +4,9 @@ msgr CLI entry point.
 Provides the `msgr` command for QuinnAI messaging operations.
 """
 
+import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -12,6 +15,37 @@ import click
 
 from cli.core.org_discovery import find_org_root, find_worker_id_from_cwd
 from cli.msgr.context import MsgrContext
+
+
+_TMUX_SESSION_PATTERN = re.compile(r"^qn-(wrkr-[a-zA-Z0-9_-]+)$")
+
+
+def _find_worker_id_from_tmux() -> Optional[str]:
+    """Resolve the calling worker's id from the surrounding tmux session.
+
+    Every QuinnAI worker session is created via tmux_spawner with name
+    'qn-{worker_id}'. When claude's Bash tool runs msgr, the bash subprocess
+    inherits $TMUX, and `tmux display-message -p '#S'` returns the session
+    name regardless of cwd or other env vars. Robust against env scrubbing
+    by intermediate shells (quinn-ai-3gwh).
+
+    Returns None when not running inside a tmux session, or when the session
+    name doesn't follow the qn-wrkr-XXX pattern.
+    """
+    if not os.environ.get("TMUX"):
+        return None
+    try:
+        result = subprocess.run(
+            ["tmux", "display-message", "-p", "#S"],
+            capture_output=True, text=True, timeout=2,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    name = result.stdout.strip()
+    match = _TMUX_SESSION_PATTERN.match(name)
+    return match.group(1) if match else None
 
 
 @click.group()
@@ -48,13 +82,21 @@ def msgr(ctx, org_path: Optional[Path], worker_id: Optional[str]):
             click.echo("Error: Could not find org root. Set QUINN_ORG_PATH or run from org directory.", err=True)
             sys.exit(1)
 
-    # Resolve worker_id: explicit flag > QUINN_WORKER_ID env > infer from cwd.
-    # The cwd fallback covers the case where env propagation through a child
-    # process didn't carry QUINN_WORKER_ID but the worker is running from
-    # inside its own storage dir (quinn-ai-3gwh). msgr's flag and envvar
-    # handling already cover the first two via Click; this adds the cwd path.
+    # Resolve worker_id, in order:
+    #   1. --worker-id flag (Click handles it explicitly)
+    #   2. QUINN_WORKER_ID env (Click envvar=)
+    #   3. cwd inside <org>/storage/workers/<...>/<wrkr-id>/
+    #   4. tmux session name (qn-wrkr-XXXX)  ← real fix for quinn-ai-3gwh
+    #
+    # The tmux fallback is bullet-proof: every QuinnAI worker session is
+    # named 'qn-wrkr-XXXX' by tmux_spawner, so when claude's Bash tool
+    # spawns msgr — even with a scrubbed env and a cwd outside the worker
+    # storage tree — `tmux display-message -p '#S'` still gives us the
+    # worker id reliably as long as the bash subprocess inherits $TMUX.
     if worker_id is None:
         worker_id = find_worker_id_from_cwd(org_path)
+    if worker_id is None:
+        worker_id = _find_worker_id_from_tmux()
 
     if worker_id is None:
         click.echo(
@@ -63,8 +105,8 @@ def msgr(ctx, org_path: Optional[Path], worker_id: Optional[str]):
             "  1. --worker-id <wrkr-id>  (explicit, always works)\n"
             "  2. QUINN_WORKER_ID env var (set by qn org start / qn org hire)\n"
             "  3. cwd inside <org>/storage/workers/<...>/<wrkr-id>/  (auto-detect)\n"
-            "If you're an AI worker whose env was scrubbed (e.g., env didn't\n"
-            "propagate through a child shell), pass --worker-id explicitly.",
+            "  4. tmux session name 'qn-wrkr-XXXX' (auto-detect via $TMUX)\n"
+            "If none of the above work, pass --worker-id explicitly.",
             err=True,
         )
         sys.exit(1)
