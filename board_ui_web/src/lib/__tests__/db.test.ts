@@ -272,10 +272,12 @@ describe("getMessages", () => {
     expect(msgs[0].from_worker_name).toBeTruthy();
   });
 
-  it("sorts by priority ascending then date descending", async () => {
+  it("sorts messages chronologically (oldest first)", async () => {
     const { getMessages } = await import("@/lib/db");
     const msgs = getMessages(dbPath, "board-channel");
-    expect(msgs[0].priority).toBeLessThanOrEqual(msgs[msgs.length - 1].priority);
+    if (msgs.length > 1) {
+      expect(new Date(msgs[0].created_at).getTime()).toBeLessThanOrEqual(new Date(msgs[msgs.length - 1].created_at).getTime());
+    }
   });
 });
 

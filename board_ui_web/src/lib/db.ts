@@ -175,8 +175,8 @@ export function getMessages(dbPath: string, channelName: string = "board-channel
     LEFT JOIN notification_beads nb ON nb.message_id = m.id
     WHERE c.name = ?
     GROUP BY m.id
-    ORDER BY m.priority ASC, m.created_at DESC
-    LIMIT 100
+    ORDER BY m.created_at ASC
+    LIMIT 200
   `).all(channelName) as Array<{
     id: string;
     from_worker_id: string;

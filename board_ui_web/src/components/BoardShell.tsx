@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WorkerRow } from "@/components/WorkerRow";
-import { MessageItem } from "@/components/MessageItem";
 import { OKRNode } from "@/components/OKRNode";
 import { buildOKRTree, formatCurrency, formatRelativeTime } from "@/lib/transforms";
 import type { OrgDashboard, WorkerInfo, Message, OKRInfo, ActivityEntry, Channel } from "@/lib/types";
@@ -28,9 +27,44 @@ async function fetchWithRetry<T>(url: string, opts?: RequestInit, retries = 2): 
   throw new Error("unreachable");
 }
 
-interface Props {
-  tab: Tab;
+function avatarColor(name: string): string {
+  const colors = ["#58a6ff", "#3fb950", "#d29922", "#db6d28", "#f85149", "#a371f7", "#39d353", "#ffa657"];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) & 0xffffffff;
+  return colors[Math.abs(hash) % colors.length];
 }
+
+function Avatar({ name, size = 32 }: { name: string; size?: number }) {
+  const initial = name.charAt(0).toUpperCase();
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%",
+      background: avatarColor(name),
+      color: "#fff", fontWeight: 700, fontSize: size * 0.42,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      flexShrink: 0,
+    }}>
+      {initial}
+    </div>
+  );
+}
+
+function formatDmName(channelName: string, workers: WorkerInfo[]): string {
+  const parts = channelName.match(/wrkr-([a-z0-9]+)/g);
+  if (!parts || parts.length < 2) return channelName;
+  const names = parts.map((p) => {
+    const full = workers.find((w) => w.id.startsWith(p.slice(0, 12)));
+    return full?.name ?? p;
+  });
+  return names.join(" · ");
+}
+
+function formatChannelLabel(ch: Channel, workers: WorkerInfo[]): string {
+  if (ch.name.startsWith("dm-")) return formatDmName(ch.name, workers);
+  return ch.name;
+}
+
+interface Props { tab: Tab }
 
 export function BoardShell({ tab }: Props) {
   const router = useRouter();
@@ -41,24 +75,26 @@ export function BoardShell({ tab }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [okrs, setOKRs] = useState<OKRInfo[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [selectedMsg, setSelectedMsg] = useState<Message | null>(null);
   const [replyText, setReplyText] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
   const toastIdRef = useRef(0);
   const prevWorkersRef = useRef<WorkerInfo[]>([]);
 
-  const toast = useCallback((message: string, type: "success" | "error" = "success") => {
+  const toast = useCallback((msg: string, type: "success" | "error" = "success") => {
     const id = ++toastIdRef.current;
-    setToasts((prev) => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message: msg, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }, []);
 
-  const fetchMessages = useCallback(async (channelName: string) => {
+  const fetchMessages = useCallback(async (channelName: string, scrollToBottom = true) => {
     try {
       const data = await fetchWithRetry<{ messages: Message[] }>(`/api/messages?channel=${encodeURIComponent(channelName)}`);
       setMessages(data.messages);
+      if (scrollToBottom) setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch { /* silent */ }
   }, []);
 
@@ -78,15 +114,11 @@ export function BoardShell({ tab }: Props) {
       setOKRs(os.okrs);
       setActivity(act.activity);
       setError(null);
-
-      // Auto-select first channel with messages if none selected
-      if (chans.channels.length > 0) {
-        setActiveChannel((prev) => {
-          const chan = prev ?? chans.channels[0].name;
-          fetchMessages(chan);
-          return chan;
-        });
-      }
+      setActiveChannel((prev) => {
+        const chan = prev ?? chans.channels[0]?.name ?? null;
+        if (chan) fetchMessages(chan, !silent);
+        return chan;
+      });
     } catch (err) {
       setError(String(err));
     } finally {
@@ -95,26 +127,23 @@ export function BoardShell({ tab }: Props) {
   }, [fetchMessages]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
-
   useEffect(() => {
-    const interval = setInterval(() => fetchAll(true), POLL_INTERVAL);
-    return () => clearInterval(interval);
+    const iv = setInterval(() => fetchAll(true), POLL_INTERVAL);
+    return () => clearInterval(iv);
   }, [fetchAll]);
 
   const handleChannelSelect = useCallback((channelName: string) => {
     setActiveChannel(channelName);
-    setSelectedMsg(null);
     setReplyText("");
     fetchMessages(channelName);
   }, [fetchMessages]);
 
   const handleWorkerAction = useCallback(async (workerId: string, action: "pause" | "resume" | "fire") => {
     prevWorkersRef.current = workers;
-    toast(`${action.charAt(0).toUpperCase() + action.slice(1)}ing worker…`);
+    toast(`${action.charAt(0).toUpperCase() + action.slice(1)}ing…`);
     try {
       await fetchWithRetry(`/api/workers/${workerId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
       toast(`Worker ${action}d`, "success");
@@ -125,31 +154,38 @@ export function BoardShell({ tab }: Props) {
     }
   }, [workers, toast, fetchAll]);
 
-  const handleReply = useCallback(async (messageId: string) => {
-    if (!replyText.trim() || !selectedMsg) return;
+  const handleSend = useCallback(async () => {
+    if (!replyText.trim() || !activeChannel || sending) return;
+    // Use the most recent message ID as the reply target, or a sentinel if none
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg) return;
+    setSending(true);
+    const optimistic: Message = {
+      id: `optimistic-${Date.now()}`,
+      from_worker_id: "board-operator",
+      from_worker_name: "You",
+      channel_name: activeChannel,
+      content: replyText,
+      priority: 2,
+      created_at: new Date().toISOString(),
+      is_read: true,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    setReplyText("");
+    setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     try {
-      await fetchWithRetry(`/api/messages/${messageId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: replyText }),
+      await fetchWithRetry(`/api/messages/${lastMsg.id}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: optimistic.content }),
       });
-      toast("Reply sent", "success");
-      setReplyText("");
-      setSelectedMsg(null);
-      if (activeChannel) fetchMessages(activeChannel);
+      fetchMessages(activeChannel, false);
     } catch (err) {
-      toast(`Failed: ${err}`, "error");
+      toast(`Failed to send: ${err}`, "error");
+      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+    } finally {
+      setSending(false);
     }
-  }, [replyText, selectedMsg, activeChannel, toast, fetchMessages]);
-
-  const handleMarkRead = useCallback(async (messageId: string) => {
-    setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, is_read: true } : m));
-    try {
-      await fetch(`/api/messages/${messageId}`, { method: "PATCH" });
-    } catch {
-      setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, is_read: false } : m));
-    }
-  }, []);
+  }, [replyText, activeChannel, sending, messages, toast, fetchMessages]);
 
   const totalUnread = channels.reduce((sum, c) => sum + (c.unread_count ?? 0), 0);
   const orgTree = buildOKRTree(okrs);
@@ -157,11 +193,10 @@ export function BoardShell({ tab }: Props) {
   if (loading) {
     return (
       <div className="board-layout" style={{ justifyContent: "center", alignItems: "center" }}>
-        <span className="spinner">⟳</span> Loading…
+        <span className="spinner">⟳</span>&nbsp;Loading…
       </div>
     );
   }
-
   if (error && !dashboard) {
     return (
       <div className="board-layout" style={{ justifyContent: "center", alignItems: "center", padding: 40 }}>
@@ -183,36 +218,26 @@ export function BoardShell({ tab }: Props) {
             <span className={`org-status-badge org-status-badge--${
               dashboard.health.overall_score === "critical" ? "critical" :
               dashboard.health.overall_score === "warning" ? "warning" :
-              dashboard.org.status
-            }`}>
+              dashboard.org.status}`}>
               {dashboard.health.overall_score === "critical" ? "⚠ Critical" :
                dashboard.health.overall_score === "warning" ? `⚠ Warning (${dashboard.health.workers_with_issues})` :
                dashboard.org.status}
             </span>
           </>
         )}
-        <span style={{ marginLeft: "auto", color: "var(--fg-muted)", fontSize: 12 }}>
-          refreshes every {POLL_INTERVAL / 1000}s
-        </span>
+        <span style={{ marginLeft: "auto", color: "var(--fg-muted)", fontSize: 12 }}>refreshes every {POLL_INTERVAL / 1000}s</span>
         <button style={{ fontSize: 12, padding: "2px 10px" }} onClick={() => fetchAll(true)}>↺ Refresh</button>
       </header>
 
       {/* Tab bar */}
       <nav className="tab-bar">
         {TABS.map((t) => (
-          <button
-            key={t}
-            className={`tab ${tab === t ? "tab--active" : ""}`}
-            onClick={() => router.push(`/${t}`)}
-          >
-            {t === "messages" && totalUnread > 0
-              ? `Messages (${totalUnread})`
-              : t.charAt(0).toUpperCase() + t.slice(1)}
+          <button key={t} className={`tab ${tab === t ? "tab--active" : ""}`} onClick={() => router.push(`/${t}`)}>
+            {t === "messages" && totalUnread > 0 ? `Messages (${totalUnread})` : t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </nav>
 
-      {/* Tab content */}
       <main className="tab-content">
 
         {/* ── DASHBOARD ── */}
@@ -240,7 +265,6 @@ export function BoardShell({ tab }: Props) {
                 <div className="stat-card__sub">{totalUnread > 0 ? `${totalUnread} unread` : "all read"}</div>
               </div>
             </div>
-
             {dashboard.health.issues.length > 0 && (
               <div className="health-panel">
                 <div className="health-panel__title">Health Issues ({dashboard.health.workers_with_issues}/{dashboard.health.total_workers} workers)</div>
@@ -252,7 +276,6 @@ export function BoardShell({ tab }: Props) {
                 ))}
               </div>
             )}
-
             {dashboard.org.started_at && (
               <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>
                 Started {formatRelativeTime(dashboard.org.started_at)}
@@ -270,28 +293,21 @@ export function BoardShell({ tab }: Props) {
               <thead>
                 <tr>
                   <th style={{ width: 24 }}></th>
-                  <th>Name</th>
-                  <th>Role</th>
-                  <th>Team</th>
-                  <th>Status</th>
+                  <th>Name</th><th>Role</th><th>Team</th><th>Status</th>
                   <th style={{ width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {workers.map((w) => (
-                  <WorkerRow key={w.id} worker={w} onAction={handleWorkerAction} />
-                ))}
-                {workers.length === 0 && (
-                  <tr><td colSpan={6} className="empty-state">No workers found</td></tr>
-                )}
+                {workers.map((w) => <WorkerRow key={w.id} worker={w} onAction={handleWorkerAction} />)}
+                {workers.length === 0 && <tr><td colSpan={6} className="empty-state">No workers found</td></tr>}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* ── MESSAGES ── */}
+        {/* ── MESSAGES (Slack-style) ── */}
         {tab === "messages" && (
-          <div className="messages-layout" style={{ margin: "-20px" }}>
+          <div className="chat-layout" style={{ margin: "-20px" }}>
             {/* Channel sidebar */}
             <div className="channel-sidebar">
               <div className="channel-sidebar__header">Channels</div>
@@ -302,62 +318,87 @@ export function BoardShell({ tab }: Props) {
                   className={`channel-item ${activeChannel === ch.name ? "channel-item--active" : ""}`}
                   onClick={() => handleChannelSelect(ch.name)}
                 >
-                  <span className="channel-item__icon">{ch.channel_type === "direct" || ch.name.startsWith("dm-") ? "◎" : "#"}</span>
-                  <span className="channel-item__name">{ch.name.startsWith("dm-") ? formatDmName(ch.name, workers) : ch.name}</span>
+                  <span className="channel-item__icon">{ch.name.startsWith("dm-") ? "◎" : "#"}</span>
+                  <span className="channel-item__name">{formatChannelLabel(ch, workers)}</span>
                   {ch.unread_count > 0 && <span className="channel-item__badge">{ch.unread_count}</span>}
-                  <span className="channel-item__count">{ch.message_count}</span>
                 </button>
               ))}
             </div>
 
-            {/* Message list */}
-            <div className="messages-list">
-              {messages.length === 0 && activeChannel && (
-                <div className="empty-state">No messages in #{activeChannel}</div>
-              )}
-              {messages.map((msg) => (
-                <MessageItem
-                  key={msg.id}
-                  message={msg}
-                  isSelected={selectedMsg?.id === msg.id}
-                  onClick={() => { setSelectedMsg(msg); setReplyText(""); }}
-                  onReply={(id) => { setSelectedMsg(messages.find((m) => m.id === id) ?? null); }}
-                  onMarkRead={handleMarkRead}
-                />
-              ))}
-            </div>
-
-            {/* Message detail */}
-            <div className="messages-detail">
-              {selectedMsg ? (
-                <div>
-                  <div className="message-detail__header">
-                    <div className="message-detail__from">{selectedMsg.from_worker_name}</div>
-                    <div className="message-detail__meta">
-                      #{selectedMsg.channel_name} · {formatRelativeTime(selectedMsg.created_at)}
-                    </div>
-                  </div>
-                  <div className="message-detail__content">{selectedMsg.content}</div>
-                  <div className="reply-area">
-                    <div className="reply-area__label">Reply</div>
-                    <textarea
-                      rows={5}
-                      placeholder="Type your response…"
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleReply(selectedMsg.id);
-                      }}
-                    />
-                    <div className="reply-area__actions">
-                      <button className="btn-sm btn-sm--ghost" onClick={() => { setSelectedMsg(null); setReplyText(""); }}>Cancel</button>
-                      <button onClick={() => handleReply(selectedMsg.id)} disabled={!replyText.trim()}>Send ⌘↵</button>
-                    </div>
-                  </div>
+            {/* Chat pane */}
+            <div className="chat-pane">
+              {/* Channel header */}
+              {activeChannel && (
+                <div className="chat-header">
+                  <span className="chat-header__icon">{activeChannel.startsWith("dm-") ? "◎" : "#"}</span>
+                  <span className="chat-header__name">
+                    {formatChannelLabel(channels.find((c) => c.name === activeChannel) ?? { id: "", name: activeChannel, channel_type: "topic", message_count: 0, unread_count: 0 }, workers)}
+                  </span>
+                  <span className="chat-header__count">{messages.length} messages</span>
                 </div>
-              ) : (
-                <div className="empty-state">Select a message to view and reply</div>
               )}
+
+              {/* Messages feed */}
+              <div className="chat-feed">
+                {messages.length === 0 && (
+                  <div className="empty-state" style={{ marginTop: 60 }}>No messages in this channel yet</div>
+                )}
+                {messages.map((msg, i) => {
+                  const prev = messages[i - 1];
+                  const isGrouped = prev && prev.from_worker_id === msg.from_worker_id &&
+                    (new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime()) < 5 * 60 * 1000;
+                  return (
+                    <div key={msg.id} className={`chat-msg ${isGrouped ? "chat-msg--grouped" : ""} ${!msg.is_read ? "chat-msg--unread" : ""}`}>
+                      {isGrouped ? (
+                        <div className="chat-msg__gutter">
+                          <span className="chat-msg__hover-time">{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        </div>
+                      ) : (
+                        <div className="chat-msg__gutter">
+                          <Avatar name={msg.from_worker_name} size={36} />
+                        </div>
+                      )}
+                      <div className="chat-msg__body">
+                        {!isGrouped && (
+                          <div className="chat-msg__header">
+                            <span className="chat-msg__name">{msg.from_worker_name}</span>
+                            <span className="chat-msg__time">{formatRelativeTime(msg.created_at)}</span>
+                            {!msg.is_read && <span className="unread-dot" title="unread" />}
+                          </div>
+                        )}
+                        <div className="chat-msg__text">{msg.content}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={chatBottomRef} />
+              </div>
+
+              {/* Compose box */}
+              <div className="chat-compose">
+                <textarea
+                  className="chat-compose__input"
+                  placeholder={activeChannel ? `Message #${activeChannel}` : "Select a channel"}
+                  value={replyText}
+                  disabled={!activeChannel || messages.length === 0}
+                  rows={1}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                />
+                <button
+                  className="chat-compose__send"
+                  disabled={!replyText.trim() || sending}
+                  onClick={handleSend}
+                  title="Send (Enter)"
+                >
+                  {sending ? "…" : "↑"}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -367,9 +408,7 @@ export function BoardShell({ tab }: Props) {
           <div>
             <div className="section-title" style={{ marginBottom: 16 }}>{okrs.length} OKRs</div>
             {orgTree.length === 0 && <div className="empty-state">No active OKRs</div>}
-            {orgTree.map((node) => (
-              <OKRNode key={node.id} node={node} depth={0} />
-            ))}
+            {orgTree.map((node) => <OKRNode key={node.id} node={node} depth={0} />)}
           </div>
         )}
 
@@ -391,23 +430,9 @@ export function BoardShell({ tab }: Props) {
         )}
       </main>
 
-      {/* Toasts */}
       <div className="toast-container">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast toast--${t.type}`}>{t.message}</div>
-        ))}
+        {toasts.map((t) => <div key={t.id} className={`toast toast--${t.type}`}>{t.message}</div>)}
       </div>
     </div>
   );
-}
-
-function formatDmName(channelName: string, workers: WorkerInfo[]): string {
-  // dm-wrkr-XXX-wrkr-YYY → look up worker names
-  const parts = channelName.match(/wrkr-([a-z0-9]+)/g);
-  if (!parts || parts.length < 2) return channelName;
-  const names = parts.map((p) => {
-    const full = workers.find((w) => w.id.startsWith(p.replace("-", "-").slice(0, 12)));
-    return full?.name ?? p;
-  });
-  return `DM: ${names.join(" ↔ ")}`;
 }
