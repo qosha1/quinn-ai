@@ -639,13 +639,50 @@ class TestDecoratorStackingOrder:
             f"combined={_combined_output(result)!r}"
         )
 
-        # Crucial assertion: NO rule evaluation occurred → audit log is empty
-        # for this action. (Earlier permission errors do NOT append to it.)
-        entries = _read_audit_log(rules_org)
-        rule_entries_for_hire = [e for e in entries if e.get("action") == "qn-org.hire"]
-        assert rule_entries_for_hire == [], (
-            f"Permission denial must not trigger rule evaluation; "
-            f"got audit entries: {rule_entries_for_hire}"
+        # Audit log has NO entry for this action because the rule check was
+        # never reached. (zm8a §5: permission denial short-circuits eval.)
+        entries_after_unauth = _read_audit_log(rules_org)
+        unauth_rule_entries = [
+            e for e in entries_after_unauth if e.get("action") == "qn-org.hire"
+        ]
+
+        # Positive control: the CEO running the SAME action SHOULD trigger
+        # one rule evaluation and append exactly one audit log entry. This
+        # is what differentiates "audit log was empty because rule eval was
+        # skipped" from "audit log was empty because the engine isn't wired."
+        result_ceo = runner.invoke(
+            qn,
+            [
+                "--org-path", str(rules_org),
+                "org", "hire",
+                "--name", "Bob",
+                "--role", "engineer",
+                "--manager", "Alice",
+                "--cost", "30",
+            ],
+        )
+        # CEO is authorized, and SUGGESTED proceeds → exit 0.
+        assert result_ceo.exit_code == 0, (
+            f"CEO control invocation must succeed; "
+            f"combined={_combined_output(result_ceo)!r}"
+        )
+
+        entries_after_ceo = _read_audit_log(rules_org)
+        ceo_rule_entries = [
+            e for e in entries_after_ceo if e.get("action") == "qn-org.hire"
+        ]
+
+        # Critical: the unauthorized invocation produced ZERO entries; the
+        # authorized invocation produced AT LEAST one. Both halves required.
+        assert unauth_rule_entries == [], (
+            "Permission denial must not trigger rule evaluation; "
+            f"got entries during unauth call: {unauth_rule_entries}"
+        )
+        assert len(ceo_rule_entries) >= 1, (
+            "Authorized CEO invocation MUST trigger rule evaluation and "
+            "produce an audit-log entry. Without this positive control, the "
+            "unauthorized assertion is trivially true. "
+            f"got entries after CEO call: {ceo_rule_entries}"
         )
 
 
