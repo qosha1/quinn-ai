@@ -1,0 +1,107 @@
+# Canary scenario 04: full hierarchical org launch with delegated team-building
+# and a cross-level deliverable that bubbles back up to the CEO.
+#
+# What this proves end-to-end against a live LLM:
+#   1. CEO Alice autonomously hires Director Diana, allocates her budget, AND
+#      delegates hiring authority via `qn org delegate-authority`.
+#   2. Diana — operating in her own session, ONE LEVEL DOWN the org chart —
+#      autonomously hires TWO engineers (Eve + Frank) under herself, allocates
+#      them budgets, and starts their sessions.
+#   3. Eve drafts an architecture proposal in shared storage; Frank reviews it
+#      and DMs Eve back. Real artifact + real peer review across two ICs at
+#      org-chart depth 3.
+#   4. Diana then reports a status update UP THE CHAIN to Alice via DM.
+#
+# Why this is more sophisticated than canaries 01–03:
+#   - First canary that exercises `qn org delegate-authority` end-to-end.
+#   - First canary that produces an org chart with depth=3 (Alice→Diana→Eve/Frank).
+#   - First canary where a non-CEO autonomously hires + onboards reports.
+#   - First canary with bidirectional cross-level messaging (IC↔IC peer review
+#     PLUS Director→CEO upward status).
+#
+# Workaround note (same as canary 02 — until quinn-ai-3gwh is fully fixed):
+# kickstart messages tell each worker to set QUINN_WORKER_ID explicitly via
+# msgr's --worker-id flag. `qn org hire` and `qn org delegate-authority` are
+# not affected; they resolve the actor via --manager / --to args, not env.
+name: hierarchical_team_with_deliverable
+setup:
+  init:
+    ceo_name: Alice
+ops:
+  # CEO's bootstrap directive: stand up a Director + delegate authority.
+  - op: create_okr
+    objective: "ULTRA PRIORITY: Stand up the engineering organization via Director Diana"
+    owner: ceo
+    description: |
+      Run all of these autonomously, do NOT ask for confirmation:
+      1. qn org hire --name Diana --role director --manager alice --cost 50
+      2. qn org budget allocate diana 200
+      3. qn org delegate-authority --to diana --level team-lead --budget 200 --max-reports 5 --force
+      4. qn org start --worker diana   (REQUIRED — spawns Diana's session)
+      Without step 4, Diana exists in DB but has no live session; the canary
+      will hang waiting for her to act.
+  - { op: start_org }
+  - op: kickstart_ceo
+    message: "Read INITIAL_TASK.md and act on the highest-priority OKR right now. Hire Diana, allocate her budget, delegate authority, and start her session immediately."
+  # Wait for Diana to materialize (CEO + Diana = 2 workers).
+  - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+
+  # Diana now has a live session. Direct her to hire Eve + Frank under herself.
+  - op: kickstart_worker
+    worker: diana
+    message: |
+      You are Diana (worker id {self_id}), Director of Engineering. Do EXACTLY these steps in order, no clarifying questions, no preamble:
+      1. qn org hire --name Eve --role engineer --manager {self_id} --cost 30
+      2. qn org hire --name Frank --role engineer --manager {self_id} --cost 30
+      3. qn org budget allocate eve 50
+      4. qn org budget allocate frank 50
+      5. qn org start --worker eve     (REQUIRED — spawns Eve's session)
+      6. qn org start --worker frank   (REQUIRED — spawns Frank's session)
+
+  # Wait for full team online: Alice + Diana + Eve + Frank = 4 workers.
+  - { op: wait_until, predicate: { kind: worker_count, value: 4 }, timeout_seconds: 360, poll_interval_seconds: 5 }
+
+  # Eve drafts a proposal in shared storage and DMs Frank for review.
+  - op: kickstart_worker
+    worker: eve
+    other_worker: frank
+    message: |
+      You are Eve (worker id {self_id}), engineer. Do EXACTLY these steps in order:
+      1. mkdir -p $SHARED_STORAGE/teams/engineering
+      2. printf '# Architecture Proposal v0\n\nAuthor: Eve\n\nProposal: start with a single-process monolith. Extract services only when a clear scaling boundary appears (e.g. a hot path exceeding 50%% CPU or a domain that needs independent deploy cadence). Keep the data model normalized; denormalize at read-time via materialized views once query patterns stabilize.\n\nOpen questions:\n- Which observability stack? (otel vs. self-hosted)\n- Sync vs. async ingestion path for v1?\n' > $SHARED_STORAGE/teams/engineering/proposal.md
+      3. msgr --worker-id {self_id} send @{other_id} 'I drafted an architecture proposal at $SHARED_STORAGE/teams/engineering/proposal.md - please review and reply with feedback.'
+
+  # Frank reviews and DMs Eve back.
+  - op: kickstart_worker
+    worker: frank
+    other_worker: eve
+    message: |
+      You are Frank (worker id {self_id}), engineer. Do EXACTLY these steps in order:
+      1. cat $SHARED_STORAGE/teams/engineering/proposal.md
+      2. msgr --worker-id {self_id} send @{other_id} 'Reviewed the proposal. Approving v0 with one suggestion: define the migration trigger metrics quantitatively (e.g. p95 latency thresholds) so we have an objective extract-to-service signal. Otherwise solid - ship it.'
+
+  # Wait for the bidirectional peer-review loop to close.
+  - { op: wait_until, predicate: { kind: message_count_between, from: eve, to: frank, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+  - { op: wait_until, predicate: { kind: message_count_between, from: frank, to: eve, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+
+  # Diana reports status UP the chain to Alice.
+  - op: kickstart_worker
+    worker: diana
+    other_worker: alice
+    message: |
+      You are Diana (worker id {self_id}), Director of Engineering. Eve and Frank have completed their first peer-review cycle on the architecture proposal. Do EXACTLY this:
+      1. msgr --worker-id {self_id} send @{other_id} 'Status update: engineering team is online. Eve drafted v0 of the architecture proposal in shared/teams/engineering/proposal.md; Frank reviewed and approved with one suggestion (quantify migration trigger metrics). Ready for the next OKR.'
+
+  # Wait for status to land in Alice's inbox.
+  - { op: wait_until, predicate: { kind: message_count_between, from: diana, to: alice, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+
+assertions:
+  # Org shape: 4 workers, 3 levels deep, correct reporting lines.
+  - { kind: worker_count, value: 4 }
+  - { kind: org_chart_depth, value: 3 }
+  - { kind: manager_subordinates, manager: alice, expected: [diana] }
+  - { kind: manager_subordinates, manager: diana, expected: [eve, frank] }
+  # Cross-level messaging: peer review at depth 3, status report up to depth 1.
+  - { kind: message_count_between, from: eve,   to: frank, min: 1 }
+  - { kind: message_count_between, from: frank, to: eve,   min: 1 }
+  - { kind: message_count_between, from: diana, to: alice, min: 1 }
