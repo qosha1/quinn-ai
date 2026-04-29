@@ -72,6 +72,65 @@ def test_okr_set_creates_okr_in_beads_and_db(initialized_org, qn_runner):
     )
 
 
+def test_okr_close_updates_both_bead_and_sqlite_mirror(initialized_org, qn_runner):
+    """Regression: 'qn org okr close <id>' must close BOTH the bead and
+    the SQLite okrs row (quinn-ai-kljb).
+
+    Pre-fix: workers ran 'bd close <okr-id>' which silently no-op'd
+    relative to the SQLite mirror — okr.status stayed 'active'. The
+    new 'qn org okr close' command does both writes.
+    """
+    title = "Close-test OKR"
+    result = qn_runner(
+        [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set",
+            "--title", title,
+            "--owner", "ceo",
+        ],
+        timeout=30,
+    )
+    assert result.returncode == 0, f"set failed:\n{result.stderr}\n{result.stdout}"
+
+    # Pull the OKR id from sqlite for a deterministic close target
+    db_path = initialized_org / "live" / "quinn.db"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        row = conn.execute(
+            "SELECT id, status FROM okrs WHERE title = ?", (title,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None, "OKR row should exist after set"
+    okr_id, pre_status = row
+    assert pre_status == "active", f"new OKR should start 'active', got {pre_status}"
+
+    # Close it
+    close_result = qn_runner(
+        [
+            "--org-path", str(initialized_org),
+            "org", "okr", "close", okr_id,
+            "--reason", "verified by canary",
+        ],
+        timeout=30,
+    )
+    assert close_result.returncode == 0, (
+        f"close failed:\n{close_result.stderr}\n{close_result.stdout}"
+    )
+
+    # Both stores should reflect the closure now
+    conn = sqlite3.connect(str(db_path))
+    try:
+        post_status = conn.execute(
+            "SELECT status FROM okrs WHERE id = ?", (okr_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert post_status == "completed", (
+        f"SQLite okrs.status should be 'completed' after close, got {post_status!r}"
+    )
+
+
 def test_okr_add_is_alias_for_set(initialized_org, qn_runner):
     """`okr add` is an alias of `okr set`."""
     title = "Add Alias Verification"
