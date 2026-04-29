@@ -156,8 +156,23 @@ class ClaudeCodeSession(SessionInterface):
             self._agent_session._controller.on_state_change(self._on_agent_state_change)
             logger.debug("[ClaudeCodeSession] Callback registered successfully")
 
-            # Build shell command
-            shell_cmd = self._config.command
+            # Build shell command. claude_code (claude-CLI) uses its own
+            # auth (~/.claude/auth) and *warns about an auth conflict* if
+            # ANTHROPIC_API_KEY is set in the env when an OAuth login is
+            # also present (quinn-ai-4uvc). Strip the API-key envvars
+            # at two layers so claude-CLI sees only its own OAuth:
+            #   1. Drop them from the env dict we hand to the spawner.
+            #   2. Wrap the actual command with `env -u <KEYS> <cmd>` so
+            #      anything inherited from the tmux server (or a parent
+            #      shell) is also unset before claude exec's.
+            scrubbed_env = {
+                k: v for k, v in (self._config.env_vars or {}).items()
+                if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+            }
+            shell_cmd = (
+                "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN "
+                + self._config.command
+            )
 
             # Start with session config that includes our command and args
             from shared.pyterm.protocols import PytermSessionConfig
@@ -165,7 +180,7 @@ class ClaudeCodeSession(SessionInterface):
                 shell=shell_cmd,
                 args=self._config.args,
                 cwd=str(self._config.working_directory) if self._config.working_directory else None,
-                env=self._config.env_vars,
+                env=scrubbed_env,
                 cols=self._config.cols,
                 rows=self._config.rows,
             )

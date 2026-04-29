@@ -150,6 +150,60 @@ class TestClaudeCodeSessionSpawn:
 
         assert "Failed to start" in str(exc_info.value)
 
+    @patch("cli.core.sessions.claude_code.AgentSession")
+    @patch("cli.core.sessions.claude_code.AgentSessionConfig")
+    def test_spawn_strips_anthropic_api_key_to_avoid_oauth_conflict(
+        self, mock_config_class, mock_session_class, pyterm_config, mock_agent_session
+    ):
+        """Regression: claude_code spawn must NOT propagate ANTHROPIC_API_KEY
+        into the session env, and the shell command must wrap with
+        `env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN` so any inherited
+        value (e.g., from the tmux server's env) is also unset.
+
+        claude-CLI uses its own OAuth (~/.claude/auth) and warns about an
+        auth conflict if both are present (quinn-ai-4uvc).
+        """
+        mock_session_class.return_value = mock_agent_session
+        mock_config = MagicMock()
+        mock_config_class.create.return_value = mock_config
+
+        # Build a config that DOES carry ANTHROPIC_API_KEY in env_vars
+        cfg = SessionConfig(
+            worker_id="test-worker",
+            provider="claude_code",
+            command="claude",
+            args=["--dangerously-skip-permissions"],
+            working_directory=Path("/tmp/test"),
+            env_vars={
+                "ANTHROPIC_API_KEY": "sk-ant-leftover-from-shell",
+                "ANTHROPIC_AUTH_TOKEN": "should-also-be-stripped",
+                "QUINN_WORKER_ID": "test-worker",
+                "QUINN_ORG_PATH": "/tmp/test",
+            },
+        )
+
+        session = ClaudeCodeSession(cfg, pyterm_config)
+        session._spawn_process()
+
+        # The PytermSessionConfig handed to agent_session.start() should
+        # have the API-key envvars scrubbed.
+        call_args = mock_agent_session.start.call_args
+        spawn_cfg = call_args[0][0]  # first positional arg
+        assert "ANTHROPIC_API_KEY" not in spawn_cfg.env, (
+            f"ANTHROPIC_API_KEY leaked into spawn env: {spawn_cfg.env}"
+        )
+        assert "ANTHROPIC_AUTH_TOKEN" not in spawn_cfg.env, (
+            f"ANTHROPIC_AUTH_TOKEN leaked into spawn env: {spawn_cfg.env}"
+        )
+        # The other env vars should still be there.
+        assert spawn_cfg.env.get("QUINN_WORKER_ID") == "test-worker"
+        assert spawn_cfg.env.get("QUINN_ORG_PATH") == "/tmp/test"
+
+        # And the shell command should wrap with `env -u`.
+        assert spawn_cfg.shell.startswith(
+            "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN "
+        ), f"shell command should wrap with env -u; got: {spawn_cfg.shell!r}"
+
 
 class TestClaudeCodeSessionTerminate:
     """Test process termination."""
@@ -616,7 +670,13 @@ class TestClaudeCodeSessionEdgeCases:
         call_args = mock_agent_session.start.call_args
         session_cfg = call_args[0][0]
 
-        assert session_cfg.shell == "claude"
+        # Shell is wrapped with `env -u` to strip ANTHROPIC_API_KEY /
+        # ANTHROPIC_AUTH_TOKEN from the spawned process so claude-CLI
+        # uses its own OAuth without an auth-conflict warning
+        # (quinn-ai-4uvc).
+        assert session_cfg.shell == (
+            "env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN claude"
+        )
         assert session_cfg.args == ["--dangerously-skip-permissions"]
         assert session_cfg.cwd == "/tmp/test"
         assert session_cfg.cols == 120
