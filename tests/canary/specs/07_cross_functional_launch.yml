@@ -1,0 +1,94 @@
+# Canary 07: cross-functional product launch.
+#
+# CEO is given a launch goal whose deliverables are qualitatively different
+# kinds of work — code, tests, customer-facing docs, marketing changelog.
+# A solo CEO can technically write all 4 but they're different specialty
+# domains, and a real-life manager would split the work.
+#
+# Asserts verify:
+#   - 4 deliverables exist with role-distinct content
+#   - Tests file has 'def test_' AND assertions (real test, not stub)
+#   - Impl uses rate-limit terminology
+#   - Docs has BOTH code examples AND prose explanations
+#   - Changelog uses customer voice tropes (we / you / today / launch / now)
+#   - org_chart_depth >= 2 (CEO + at least one report — otherwise solo)
+#
+# Cost estimate: $1.50-3.50.
+name: cross_functional_launch
+setup:
+  init:
+    ceo_name: Alice
+ops:
+  - op: create_okr
+    objective: "Launch /v1/limits API endpoint with 100 req/min rate limit"
+    owner: ceo
+    priority: 0
+    description: |
+      You are the CEO of a small startup. The board (your boss) has asked
+      you to ship a customer-visible product launch by EOD.
+
+      The launch covers FOUR deliverables:
+
+        ENGINEERING
+          /tmp/canary07-impl.py — A Python implementation of a per-key
+          rate limiter (100 requests/minute/key). Should expose a class
+          or function suitable for use as a decorator or middleware.
+
+        QA
+          /tmp/canary07-tests.py — A pytest-style test suite that imports
+          the impl and verifies: under-limit allowed, over-limit denied,
+          window resets correctly, isolated keys don't share quota,
+          burst behavior. Each test must use 'def test_*' and 'assert'.
+
+        MARKETING / DOCS
+          /tmp/canary07-docs.md — A customer-facing API documentation
+          page. Includes: endpoint description, a full curl request
+          example, a Python client snippet, and prose explaining what
+          rate limiting means and how clients should respond to 429s.
+
+        MARKETING / COMMS
+          /tmp/canary07-changelog.md — A short release announcement
+          (300-700 words) written in customer-facing marketing voice
+          (use "we", "you", "today", "now", "introducing", "launching",
+          etc.). It should sell the value to customers, not document
+          implementation details.
+
+      These are FOUR different specialties (code, tests, docs, marketing).
+      A real CEO with a budget would assign different people to each
+      because they require different writing styles and skill sets.
+
+      You have 1000 credits. Hire whoever you need. Engineer cost 30,
+      QA cost 30, Writer/Marketer cost 20. Allocate 80 credits each.
+      Use beads to track. Coordinate via msgr.
+
+      Stop when all 4 files exist and look distinctly different in tone.
+      Report completion in #general.
+  - { op: start_org }
+  - op: kickstart_ceo
+    message: "Read INITIAL_TASK.md and act on the highest-priority OKR. You are running this org. Orchestrate the launch — hire whoever you need, delegate the work appropriately, ensure all 4 deliverables ship. Do NOT ask for confirmation. Just act."
+
+  # Wait for at least 2 reports under the CEO (org_chart_depth >= 2 means CEO has direct reports).
+  - { op: wait_until, predicate: { kind: worker_count, min: 3 }, timeout_seconds: 300, poll_interval_seconds: 10 }
+
+  # Wait for each deliverable. Generous timeouts since 4 sessions are working in parallel.
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary07-impl.py, substring: "def " }, timeout_seconds: 600, poll_interval_seconds: 10 }
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary07-tests.py, substring: "def test_" }, timeout_seconds: 600, poll_interval_seconds: 10 }
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary07-docs.md, substring: "curl" }, timeout_seconds: 600, poll_interval_seconds: 10 }
+  - { op: wait_until, predicate: { kind: file_contains_any, path: /tmp/canary07-changelog.md, substrings: ["launch", "introduce", "today", "we're", "we are"], case_insensitive: true }, timeout_seconds: 600, poll_interval_seconds: 10 }
+
+assertions:
+  - { kind: worker_count, min: 3 }                     # CEO + at least 2 hires
+  - { kind: org_chart_depth, value: 2 }                # CEO has direct reports (delegation actually happened)
+  # Engineering deliverable.
+  - { kind: file_contains, path: /tmp/canary07-impl.py, substring: "def " }
+  - { kind: file_contains_any, path: /tmp/canary07-impl.py, substrings: ["limit", "rate", "throttle"], case_insensitive: true }
+  # QA deliverable: real tests with assertions, not stubs.
+  - { kind: file_contains, path: /tmp/canary07-tests.py, substring: "def test_" }
+  - { kind: file_contains, path: /tmp/canary07-tests.py, substring: "assert" }
+  # Docs: code example AND prose.
+  - { kind: file_contains, path: /tmp/canary07-docs.md, substring: "curl" }
+  - { kind: file_contains_any, path: /tmp/canary07-docs.md, substrings: ["429", "rate limit", "rate-limit"], case_insensitive: true }
+  # Changelog: customer-facing voice. None of these tropes are present in
+  # engineering files; their presence is decent evidence the writer
+  # actually wrote marketing copy, not docs.
+  - { kind: file_contains_any, path: /tmp/canary07-changelog.md, substrings: ["launch", "introduce", "today", "we're", "we are", "customers"], case_insensitive: true }

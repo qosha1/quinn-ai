@@ -352,3 +352,80 @@ def pred_bead_count_closed_by(run: "ScenarioRun", a: dict[str, Any]) -> str | No
 
 
 PREDICATES["bead_count_closed_by"] = pred_bead_count_closed_by
+
+
+def pred_file_contains_any(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
+    """Filesystem assertion: file at `path` contains AT LEAST ONE of `substrings`.
+
+    Useful for tone/style checks where any of several markers indicate the
+    artifact is the intended kind of writing (e.g. marketing copy uses
+    'we'/'you'/'today'/'launch' etc.).
+
+    YAML: { kind: file_contains_any, path: /tmp/changelog.md, substrings: [we, you, today, launch], case_insensitive: true }
+    """
+    from pathlib import Path
+    path = Path(a["path"])
+    substrings = a["substrings"]
+    case_insensitive = bool(a.get("case_insensitive", False))
+
+    if not path.exists():
+        return f"file_contains_any: file does not exist at {path}"
+    try:
+        text = path.read_text()
+    except Exception as e:
+        return f"file_contains_any: could not read {path}: {e}"
+
+    haystack = text.lower() if case_insensitive else text
+    needles = [s.lower() if case_insensitive else s for s in substrings]
+    matches = [n for n in needles if n in haystack]
+    if not matches:
+        return (
+            f"file_contains_any({path}): none of {substrings!r} found "
+            f"(content sample: {text[:120]!r})"
+        )
+    return None
+
+
+PREDICATES["file_contains_any"] = pred_file_contains_any
+
+
+def pred_worker_role_contains(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
+    """Assert that ≥min workers have a role string containing any of substrings.
+
+    Used by canaries that test cross-functional staffing without prescribing
+    specific worker names — we don't care WHO the CEO hired, only that the
+    org now contains at least one worker whose role indicates the right
+    specialty (e.g. marketing/comms/PR for a customer-facing statement).
+
+    YAML:
+      - { kind: worker_role_contains, substrings: ["marketing","comms","pr"], min: 1 }
+      - { kind: worker_role_contains, substrings: ["qa","test"], min: 1, exclude_ceo: true }
+
+    Match is case-insensitive substring; 'exclude_ceo' (default true) skips
+    role='CEO' so 'comm' wildcards don't accidentally count the CEO if their
+    role contains the substring.
+    """
+    substrings = [s.lower() for s in a["substrings"]]
+    minimum = int(a.get("min", 1))
+    exclude_ceo = a.get("exclude_ceo", True)
+
+    rows = run.db.conn.execute(
+        "SELECT role FROM workers WHERE role IS NOT NULL"
+    ).fetchall()
+    matching = 0
+    for row in rows:
+        role = (row["role"] or "")
+        if exclude_ceo and role.upper() == "CEO":
+            continue
+        role_lower = role.lower()
+        if any(sub in role_lower for sub in substrings):
+            matching += 1
+    if matching < minimum:
+        return (
+            f"worker_role_contains({substrings}): expected ≥{minimum}, "
+            f"got {matching}"
+        )
+    return None
+
+
+PREDICATES["worker_role_contains"] = pred_worker_role_contains

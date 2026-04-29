@@ -1,0 +1,129 @@
+# Canary 08: production incident response under hard time pressure with a
+# mid-run escalation. Tests AUTONOMOUS DECISION-MAKING, not script-following.
+#
+# What this is meant to prove (vs every prior canary):
+#   - The CEO is given an OPEN-ENDED incident with no command list, no role
+#     assignments, no path prescriptions for HOW to fix it. Only OUTCOMES
+#     are specified (deliverables) plus authorship CONSTRAINTS (the fix
+#     verifier ≠ fix writer, the public statement must come from a
+#     marketing/comms-flavored role, not engineering).
+#   - The SLA + budget timer make solo execution unrealistic. The CEO must
+#     decide WHO to hire and HOW MANY, with no pre-listed names.
+#   - At T+~120s a MID-RUN ESCALATION arrives via a fresh CEO kickstart:
+#     the customer impact has grown and legal has tightened the rules.
+#     Tests whether the org can adapt mid-flight, not just execute a plan.
+#
+# Assertions verify outcomes (artifacts exist with the right shape, bead
+# closed, public statement broadcast), and ENFORCE specialty diversity via
+# pred_worker_role_contains — proving the CEO actually hired a
+# non-engineering specialist (marketing/comms/PR) rather than DIY-ing the
+# customer comms.
+#
+# Cost expectation: ~$1.00–1.50 per run. Variance is expected and useful;
+# this canary is meant to flush out brittle patterns.
+name: incident_under_pressure
+setup:
+  init:
+    ceo_name: Alice
+ops:
+  # Plant the incident first so it's available to claim/close.
+  - op: create_bead
+    title: "PROD-INCIDENT: customer orders disappearing intermittently"
+    type: bug
+    priority: 0
+    id_var: incident_id
+
+  # OKR carries the full situation + constraints. Outcome-only — no commands.
+  - op: create_okr
+    objective: "Resolve PROD-INCIDENT and broadcast a customer-facing status update before the SLA expires"
+    owner: ceo
+    description: |
+      Situation
+      =========
+      A production incident is in progress. Multiple customers have reported
+      that orders vanish between cart and confirmation, intermittently,
+      starting roughly 90 minutes ago. The PROD-INCIDENT bead has the details.
+
+      SLA constraints (HARD)
+      ======================
+      - A public-facing status update MUST be drafted and broadcast within
+        ~6 minutes of you reading this. The clock has already started.
+      - Acting alone is not realistic for an incident at this scope.
+        You have hiring authority + budget; bring in the right people.
+      - Authorship constraints (these are compliance rules, non-negotiable):
+          * The technical fix / postmortem must be VERIFIED or co-signed by
+            someone other than the person who wrote it.
+          * The customer-facing public statement MUST be drafted by a worker
+            whose role contains "marketing", "comms", "communications", or
+            "pr" — NOT by you, NOT by an engineer.
+      - The PROD-INCIDENT bead's close-reason must include a brief
+        postmortem (root cause + mitigation), even if one-paragraph.
+
+      Deliverables (final state required)
+      ===================================
+      1. /tmp/canary08-postmortem.md — technical postmortem, written by
+         your engineering lead. Must include 'root cause' and 'mitigation'.
+      2. /tmp/canary08-status-update.md — customer-facing status update,
+         drafted by your marketing/comms specialist. Must read in the
+         voice of a public statement (no internal jargon, no command-line
+         output, no engineering diagnosis details).
+      3. A msgr broadcast to the #status channel announcing the public
+         update.
+      4. PROD-INCIDENT bead closed with a substantive close reason.
+
+      How you organize the team, what you call them, and how you sequence
+      the work is your call. Just hit the deliverables before the clock.
+
+  - { op: start_org }
+  - op: kickstart_ceo
+    message: "Production incident is live. Read PROD-INCIDENT and your top OKR, then run this incident the way you think it needs to be run. The clock is ticking and you don't have time to do everything yourself."
+
+  # Phase 1: CEO must make the first hire fast. Tight timeout creates real
+  # urgency — fail-fast if she stalls.
+  - { op: wait_until, predicate: { kind: worker_count, min: 2 }, timeout_seconds: 150, poll_interval_seconds: 3 }
+
+  # MID-RUN ESCALATION (fires immediately after first hire). Re-fires
+  # kickstart_ceo with a fresh prompt that materially changes the situation.
+  - op: kickstart_ceo
+    message: "ESCALATION: just got off the phone with the customer rep. Three MORE customers reported the same disappearing-orders bug in the last 90 seconds — this is now an enterprise-tier issue. Legal called and re-stated the rules with teeth: the public statement MUST come from a worker whose role explicitly contains 'marketing', 'comms', 'communications', or 'pr' — NOT engineers, NOT you. The fix verifier also CANNOT be the same person who wrote the fix. Re-evaluate your team and adjust as needed. The 6-minute SLA clock is unchanged."
+
+  # Phase 2: in response to the escalation, CEO must expand the team.
+  # Minimum 3 workers (CEO + ≥2) before deliverables can land per the
+  # authorship-separation rules.
+  - { op: wait_until, predicate: { kind: worker_count, min: 3 }, timeout_seconds: 300, poll_interval_seconds: 3 }
+
+  # Phase 3: deliverable artifacts land. Generous per-file timeouts because
+  # the LLM is doing real drafting work, not just shell.
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary08-postmortem.md, substring: "root cause" }, timeout_seconds: 360, poll_interval_seconds: 5 }
+  - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary08-status-update.md, substring: "" }, timeout_seconds: 240, poll_interval_seconds: 5 }
+
+  # Phase 4: incident bead closed.
+  - { op: wait_until, predicate: { kind: bead_status_is, bead_var: incident_id, value: closed }, timeout_seconds: 240, poll_interval_seconds: 5 }
+
+assertions:
+  # Org shape: CEO + ≥2 specialists. Authorship rules force diversity.
+  - { kind: worker_count, min: 3 }
+
+  # Specialty enforcement (the BIG one): a non-CEO worker exists whose role
+  # encodes marketing/comms specialty. Without this assertion, the CEO
+  # could trivially hire two engineers and have one ghost-write the comms.
+  # This catches that.
+  - kind: worker_role_contains
+    substrings: ["marketing", "comms", "communications", "pr"]
+    min: 1
+    exclude_ceo: true
+
+  # Deliverables exist with the right shape.
+  - { kind: file_contains, path: /tmp/canary08-postmortem.md, substring: "root cause" }
+  - { kind: file_contains, path: /tmp/canary08-postmortem.md, substring: "mitigation" }
+  # Customer-facing tone signals (any-of): one of these public-statement
+  # phrases should appear. We don't lock to a specific phrasing — just
+  # require the artifact reads like a customer comms doc, not an
+  # engineering log.
+  - kind: file_contains_any
+    path: /tmp/canary08-status-update.md
+    substrings: ["customers", "we are aware", "we apologize", "we have identified", "service interruption", "status update"]
+    case_insensitive: true
+
+  # Bead lifecycle.
+  - { kind: bead_status_is, bead_var: incident_id, value: closed }
