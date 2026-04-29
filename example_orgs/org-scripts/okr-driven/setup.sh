@@ -9,8 +9,10 @@ QN="$SCRIPT_DIR/../common/qn"
 echo "=== OKR-Driven: Setup ==="
 echo
 
-# Check prerequisites
-"$SCRIPT_DIR/../common/check-env.sh" || {
+# Check prerequisites — setup just runs 'qn org init' (no LLM session
+# spawn), so skip the provider API-key check here. run.sh re-runs
+# check-env.sh (full mode) when it's actually about to spawn sessions.
+"$SCRIPT_DIR/../common/check-env.sh" --setup-only || {
     echo
     echo "Fix the issues above before continuing."
     exit 1
