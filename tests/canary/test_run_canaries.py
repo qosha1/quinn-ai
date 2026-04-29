@@ -7,7 +7,12 @@ from shared.testing.canary import ProviderConfig, run_canary
 from shared.testing.scenarios import ScenarioSpec
 
 
+# Live canaries spawn real LLM sessions and routinely take 10-60 minutes;
+# the 30s default in pytest.ini will kill the run mid-flight without this.
+# Override matches the wall-clock cap in QUINNAI_CANARY_BUDGET_SECONDS so the
+# BudgetGuard remains the primary kill-switch.
 @pytest.mark.canary
+@pytest.mark.timeout(3600)
 def test_canary(canary_spec_path: Path):
     spec = ScenarioSpec.from_yaml(canary_spec_path)
     config = ProviderConfig.from_env()
