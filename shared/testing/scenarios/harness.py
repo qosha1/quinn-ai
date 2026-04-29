@@ -118,6 +118,12 @@ class ScenarioHarness:
 
     def __exit__(self, *exc) -> None:
         try:
+            # Capture per-worker tmux pane snapshots BEFORE db closes so we
+            # have forensic evidence of what each worker was doing at the
+            # moment the scenario ended (qim4: needed to diagnose canary 09's
+            # CEO-doesn't-act stall). Best-effort — never fails the scenario.
+            if hasattr(self, "_run") and self._tmpdir:
+                self._capture_post_mortem()
             if hasattr(self, "_run"):
                 self._run._close_db()
         finally:
@@ -126,6 +132,67 @@ class ScenarioHarness:
                 self._stack = None
 
     def _cleanup_tmpdir(self) -> None:
+        # When QUINNAI_SCENARIO_KEEP_TMPDIR=1 (qim4 diagnostic mode), preserve
+        # the org tmpdir so the operator can inspect post-mortem files +
+        # beads/db state after the run.
+        import os
+        if os.environ.get("QUINNAI_SCENARIO_KEEP_TMPDIR") == "1":
+            if self._tmpdir:
+                print(f"[harness] preserving tmpdir for post-mortem: {self._tmpdir}")
+            self._tmpdir = None
+            return
         if self._tmpdir and Path(self._tmpdir).exists():
             shutil.rmtree(self._tmpdir, ignore_errors=True)
         self._tmpdir = None
+
+    def _capture_post_mortem(self) -> None:
+        """Write each live worker's tmux pane scrollback to post_mortem/.
+
+        Called from __exit__ before cleanup so we capture state at the
+        moment the scenario ended (regardless of pass/fail). The captures
+        live inside the tmpdir so they're preserved when
+        QUINNAI_SCENARIO_KEEP_TMPDIR=1.
+        """
+        import subprocess
+        try:
+            run = self._run
+            db = run.db
+            # Workers table — get all known workers and their tmux session names.
+            rows = db.conn.execute(
+                "SELECT id, name, role FROM workers"
+            ).fetchall()
+        except Exception as e:
+            print(f"[harness] post-mortem db read failed: {e}")
+            return
+
+        post_mortem_dir = Path(self._tmpdir) / "post_mortem"
+        try:
+            post_mortem_dir.mkdir(exist_ok=True)
+        except Exception:
+            return
+
+        for row in rows:
+            worker_id = row["id"]
+            name = row["name"]
+            session = f"qn-{worker_id}"
+            try:
+                # Capture full scrollback (-S -). check=False so missing
+                # session = empty file with stderr captured.
+                result = subprocess.run(
+                    ["tmux", "capture-pane", "-t", session, "-p", "-S", "-"],
+                    capture_output=True, text=True, timeout=5, check=False,
+                )
+                content = result.stdout if result.returncode == 0 else (
+                    f"[capture-pane failed rc={result.returncode}: "
+                    f"{result.stderr.strip()!r}]\n"
+                )
+                safe_name = name.replace("/", "_").replace(" ", "_")
+                (post_mortem_dir / f"{worker_id}_{safe_name}.txt").write_text(content)
+            except Exception as e:
+                # Best-effort — don't break exit on any worker
+                try:
+                    (post_mortem_dir / f"{worker_id}_ERROR.txt").write_text(
+                        f"capture exception: {e}\n"
+                    )
+                except Exception:
+                    pass
