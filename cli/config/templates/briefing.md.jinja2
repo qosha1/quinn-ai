@@ -42,6 +42,53 @@ that you don't yet know enough; ask before filing.
 The cost of a 5-minute clarification round is much lower than the cost
 of shipping the wrong artifact and finding out at review time.
 
+## Active Board Rules
+
+{% if rules_by_severity %}
+Your actions are gated by the org's board rules. Each rule has a
+severity that determines how the engine responds when it fires:
+
+- **SUGGESTED** — stderr nudge, action proceeds.
+- **ENCOURAGED** — blocks unless you pass `--justify <bead-id>` pointing
+  to a worker-owned bead with a non-empty body (test output, report,
+  data, etc.).
+- **REQUIRED** — blocks unless you pass `--override <bead-id>` for an
+  approved bead whose approver is your direct manager.
+- **ABSOLUTE** — never overridable at runtime. The only path is to edit
+  `config/rules.yaml` and restart the org (audited via git).
+
+{% if rules_by_severity.SUGGESTED %}
+### SUGGESTED ({{ rules_by_severity.SUGGESTED|length }})
+{% for rule in rules_by_severity.SUGGESTED %}
+- `{{ rule.id }}` — {{ rule.description }}
+{% endfor %}
+{% endif %}
+{% if rules_by_severity.ENCOURAGED %}
+### ENCOURAGED ({{ rules_by_severity.ENCOURAGED|length }}) — needs `--justify <bead-id>`
+{% for rule in rules_by_severity.ENCOURAGED %}
+- `{{ rule.id }}` — {{ rule.description }}
+{% endfor %}
+{% endif %}
+{% if rules_by_severity.REQUIRED %}
+### REQUIRED ({{ rules_by_severity.REQUIRED|length }}) — needs `--override <bead-id>` from your direct manager
+{% for rule in rules_by_severity.REQUIRED %}
+- `{{ rule.id }}` — {{ rule.description }}
+{% endfor %}
+{% endif %}
+{% if rules_by_severity.ABSOLUTE %}
+### ABSOLUTE ({{ rules_by_severity.ABSOLUTE|length }}) — NEVER OVERRIDABLE AT RUNTIME
+{% for rule in rules_by_severity.ABSOLUTE %}
+- **`{{ rule.id }}`** — {{ rule.description }}
+{% endfor %}
+{% endif %}
+
+To inspect a rule's full definition: `qn org rules show <rule-id>`.
+To dry-run an action against the engine: `qn org rules test <action> [--body "..."]`.
+{% else %}
+No active rules loaded. (This is unusual; the bundled default catalog
+has 14 rules — check `qn org rules validate` if you expected rules here.)
+{% endif %}
+
 ## Your Responsibility
 
 {% if is_host_mode %}

@@ -15,6 +15,7 @@ from typing import Optional
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
 from cli.core.org import Org
+from cli.core.rules import requires_rule_check
 from cli.core.queries import (
     get_all_budget_pools,
     get_worker,
@@ -164,6 +165,7 @@ def _print_budget_tree(db, worker_id: str, worker_name: str, indent: int):
 @click.argument("worker_name")
 @click.argument("amount", type=float)
 @click.option("--from", "from_worker", help="Source worker (default: CEO)")
+@requires_rule_check("qn-org.budget-allocate")
 @pass_context
 def budget_allocate(ctx: Context, worker_name: str, amount: float, from_worker: Optional[str]):
     """Allocate budget to a worker.

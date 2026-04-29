@@ -55,26 +55,40 @@ rules:
 
   # ------------------------------------------------------------------------
   # REQUIRED — direct-manager approval before proceeding
+  #
+  # All REQUIRED rules in the default catalog are scoped to env=prod so
+  # they don't fire on dev/test workflows by default. Operators who want
+  # these to fire universally should remove the scope block in their copy
+  # of rules.yaml. The default action context env is "dev" (per
+  # cli/core/rules/decorators.py:_build_action_context).
   # ------------------------------------------------------------------------
   - id: no-fire-without-replacement-plan
     severity: REQUIRED
     actions: ["qn-org.fire"]
     description: "Firing a worker requires direct-manager approval with a succession plan."
+    scope:
+      env: prod
 
   - id: budget-allocation-cap
     severity: REQUIRED
     actions: ["qn-org.budget-allocate"]
     description: "Large budget allocations need direct-manager approval. Threshold lives in the rule's pattern (out of scope for v0)."
+    scope:
+      env: prod
 
   - id: cross-team-hire
     severity: REQUIRED
     actions: ["qn-org.hire"]
     description: "Hiring across team boundaries requires the requester's direct manager to approve."
+    scope:
+      env: prod
 
   - id: okr-set-mid-quarter
     severity: REQUIRED
     actions: ["qn-org.okr-set"]
     description: "Setting or replacing an OKR after quarter-start requires direct-manager approval."
+    scope:
+      env: prod
 
   # ------------------------------------------------------------------------
   # ABSOLUTE — never overridable at runtime

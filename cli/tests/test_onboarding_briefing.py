@@ -235,3 +235,126 @@ def test_first_actions_different_with_without_okrs():
 
     # With OKRs should focus on executing them
     assert any("Review" in a and "OKR" in a for a in with_okrs)
+
+
+# ----------------------------------------------------------------------------
+# BOARD-RULES briefing integration (quinn-ai-g8ng)
+# ----------------------------------------------------------------------------
+
+
+def test_briefing_renders_rules_section_from_default_catalog(tmp_path: Path) -> None:
+    """When no org rules.yaml exists, the briefing falls back to the bundled
+    14-rule default catalog and shows known rule ids per severity."""
+    from cli.core.db import open_database, get_org_db_path
+    from cli.core.org_init import OrgInitConfig, init_org
+    from cli.core.queries import get_worker_by_name
+    from cli.core.storage import StorageManager
+    from cli.core.worker import Worker
+
+    org_path = tmp_path / "org"
+    org_path.mkdir()
+    config = OrgInitConfig(
+        path=org_path,
+        name=org_path.name,
+        ceo_name="CEO",
+        ceo_role="CEO",
+    )
+    result = init_org(config)
+    assert result.success, result.error
+
+    db = open_database(get_org_db_path(org_path))
+    try:
+        ceo_data = get_worker_by_name(db, "ceo")
+        assert ceo_data is not None
+        ceo = Worker.get(db, ceo_data.id)
+        ceo._org_path = org_path
+
+        new_worker = ceo.hire(
+            name="Bob",
+            role="Engineer",
+            skills={"coding": 80},
+            cost=50,
+        )
+        new_worker._org_path = org_path
+
+        new_worker.start_onboarding()
+
+        storage = StorageManager(org_path, db)
+        worker_dir = storage.get_worker_path(new_worker.id)
+        briefing = (worker_dir / "BRIEFING.md").read_text()
+
+        # Section header is present.
+        assert "Active Board Rules" in briefing
+        # Severity headers render.
+        assert "SUGGESTED" in briefing
+        assert "ABSOLUTE" in briefing
+        # A known rule id from each severity tier of the default catalog
+        # is rendered.
+        assert "no-drop-database" in briefing  # ABSOLUTE
+        assert "tests-before-merge" in briefing  # ENCOURAGED
+        assert "no-fire-without-replacement-plan" in briefing  # REQUIRED
+        assert "pr-title-prefix" in briefing  # SUGGESTED
+
+        # ABSOLUTE rules should be visually distinguished. We render them
+        # with bold backticks (Markdown) — assert that combined token shows up.
+        assert "**`no-drop-database`**" in briefing
+    finally:
+        db.close()
+
+
+def test_briefing_renders_rules_section_from_custom_yaml(tmp_path: Path) -> None:
+    """When org has its own rules.yaml, the briefing reflects that file's
+    contents (not the default catalog)."""
+    from cli.core.db import open_database, get_org_db_path
+    from cli.core.org_init import OrgInitConfig, init_org
+    from cli.core.queries import get_worker_by_name
+    from cli.core.storage import StorageManager
+    from cli.core.worker import Worker
+
+    org_path = tmp_path / "org"
+    org_path.mkdir()
+    config = OrgInitConfig(
+        path=org_path,
+        name=org_path.name,
+        ceo_name="CEO",
+        ceo_role="CEO",
+    )
+    init_result = init_org(config)
+    assert init_result.success, init_result.error
+
+    # Seed a minimal custom rules.yaml AFTER init so it overrides the bundle.
+    (org_path / "config").mkdir(parents=True, exist_ok=True)
+    (org_path / "config" / "rules.yaml").write_text(
+        "version: 1\n"
+        "rules:\n"
+        "  - id: my-custom-suggested\n"
+        "    severity: SUGGESTED\n"
+        "    actions: ['msgr.send']\n"
+        "    description: 'A custom suggested rule for the test.'\n"
+    )
+
+    db = open_database(get_org_db_path(org_path))
+    try:
+        ceo_data = get_worker_by_name(db, "ceo")
+        assert ceo_data is not None
+        ceo = Worker.get(db, ceo_data.id)
+        ceo._org_path = org_path
+
+        worker = ceo.hire(
+            name="Carol",
+            role="Engineer",
+            skills={"coding": 80},
+            cost=50,
+        )
+        worker._org_path = org_path
+        worker.start_onboarding()
+
+        storage = StorageManager(org_path, db)
+        briefing = (storage.get_worker_path(worker.id) / "BRIEFING.md").read_text()
+
+        # Custom rule is in the briefing.
+        assert "my-custom-suggested" in briefing
+        # Default catalog rules are NOT (since rules.yaml took precedence).
+        assert "no-drop-database" not in briefing
+    finally:
+        db.close()

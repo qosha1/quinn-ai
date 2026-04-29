@@ -48,6 +48,8 @@ class Context:
         self._config: Optional[OrgConfig] = None
         self._org_context: Optional["OrgContext"] = None
         self._config_validated = False
+        self._rules = None
+        self._rules_audit = None
 
     def _require_org_path(self) -> Path:
         """Ensure org_path is set or raise ClickException."""
@@ -167,6 +169,45 @@ class Context:
                 )
 
         return self._org_context
+
+    @property
+    def rules_audit(self):
+        """Get the rules-engine audit logger (lazy load).
+
+        Writes JSONL one-line-per-evaluation to org/live/rules-audit.jsonl
+        per quinn-ai-t2zb §E.
+        """
+        if self._rules_audit is None:
+            from cli.core.rules.audit import AuditLogger
+
+            org_path = self._require_org_path()
+            audit_path = org_path / "live" / "rules-audit.jsonl"
+            self._rules_audit = AuditLogger(audit_path)
+        return self._rules_audit
+
+    @property
+    def rules(self):
+        """Get the rules engine (lazy load).
+
+        Loads org/config/rules.yaml (or default catalog if absent) and wires up
+        the RuleEngine with this Context's db + audit logger. Per quinn-ai-p286
+        §4 the kill-switch QUINNAI_RULES_DISABLED=1 swaps in a permissive engine.
+        """
+        if self._rules is None:
+            import os
+            from cli.core.rules.engine import RuleEngine
+            from cli.core.rules.loader import load_rules
+
+            org_path = self._require_org_path()
+
+            if os.environ.get("QUINNAI_RULES_DISABLED") == "1":
+                from cli.core.rules._disabled import DisabledRuleEngine
+
+                self._rules = DisabledRuleEngine(self.rules_audit)
+            else:
+                ruleset = load_rules(org_path)
+                self._rules = RuleEngine(ruleset, self.db, self.rules_audit)
+        return self._rules
 
     def close(self):
         """Close database connection and org context."""

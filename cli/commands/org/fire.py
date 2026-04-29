@@ -12,6 +12,7 @@ import click
 
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
+from cli.core.rules import requires_rule_check
 from cli.core.worker import Worker
 from cli.core.queries import resolve_worker
 from cli.core.org import Org
@@ -47,6 +48,7 @@ _logger = logging.getLogger(__name__)
     "reassign_to",
     help="Reassign pending work to this worker (optional).",
 )
+@requires_rule_check("qn-org.fire")
 @pass_context
 def fire_cmd(
     ctx: Context,

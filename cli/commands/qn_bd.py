@@ -105,6 +105,19 @@ def main():
 
     org_path = Path(our_args.org_path)
 
+    # Pre-pass: evaluate the rules engine on mutating bd verbs before shelling
+    # out. Per quinn-ai-t2zb §F.1 and zm8a §6, action names follow the
+    # format `qn-bd.<verb>` where verb ∈ {create, update, close, ...}.
+    # Read-only verbs (list, show, ready, etc.) are NOT subject to rule eval
+    # per t2zb §10 non-goal #9.
+    rule_decision_exit = _evaluate_qn_bd_action(
+        bd_args=bd_args,
+        org_path=org_path,
+        worker_id=our_args.worker_id,
+    )
+    if rule_decision_exit is not None:
+        sys.exit(rule_decision_exit)
+
     try:
         result = run_bd(
             args=bd_args,
@@ -121,3 +134,104 @@ def main():
     except LifecycleError as e:
         print(f"Lifecycle error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+_MUTATING_BD_VERBS = frozenset({"create", "update", "close", "comment"})
+_BD_TEXT_FLAGS = ("--title", "--description", "--notes", "--design", "--reason", "--body", "-t", "-d")
+
+
+def _evaluate_qn_bd_action(
+    *,
+    bd_args: list[str],
+    org_path: Path,
+    worker_id: Optional[str],
+) -> Optional[int]:
+    """Evaluate the rules engine on the qn-bd invocation.
+
+    Returns:
+        None if rules allow the action (or it's read-only / no rules apply).
+        An exit code (1) if the action is blocked by a rule.
+    """
+    # Find the verb (first non-flag token).
+    verb: Optional[str] = None
+    for token in bd_args:
+        if not token.startswith("-"):
+            verb = token
+            break
+
+    if verb is None or verb not in _MUTATING_BD_VERBS:
+        return None
+
+    # Extract free-text body from --description / --notes / --title / etc.
+    body_parts: list[str] = []
+    skip_next = False
+    for i, token in enumerate(bd_args):
+        if skip_next:
+            skip_next = False
+            continue
+        for flag in _BD_TEXT_FLAGS:
+            if token == flag:
+                if i + 1 < len(bd_args):
+                    body_parts.append(bd_args[i + 1])
+                skip_next = True
+                break
+            if token.startswith(f"{flag}="):
+                body_parts.append(token.split("=", 1)[1])
+                break
+    body = " ".join(body_parts)
+
+    # Lazy import to avoid cycles and keep startup cost low for read-only paths.
+    try:
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.rules.audit import AuditLogger
+        from cli.core.rules.engine import RuleEngine
+        from cli.core.rules.loader import load_rules
+        from cli.core.rules.types import DecisionKind
+    except ImportError:
+        return None
+
+    if os.environ.get("QUINNAI_RULES_DISABLED") == "1":
+        from cli.core.rules._disabled import DisabledRuleEngine
+
+        audit = AuditLogger(org_path / "live" / "rules-audit.jsonl")
+        engine = DisabledRuleEngine(audit)
+    else:
+        try:
+            ruleset = load_rules(org_path)
+        except Exception:
+            # Fail closed (per t2zb §10 non-goal #10): if rules can't load,
+            # refuse the action.
+            print("Error: rules engine failed to load — action refused.", file=sys.stderr)
+            return 1
+        try:
+            db = open_database(get_org_db_path(org_path))
+        except Exception:
+            db = None
+        audit = AuditLogger(org_path / "live" / "rules-audit.jsonl")
+        engine = RuleEngine(ruleset, db, audit)
+
+    action = f"qn-bd.{verb}"
+    context = {
+        "worker_id": worker_id,
+        "worker_role": None,
+        "worker_role_level": None,
+        "env": "dev",
+        "args": {},
+        "body": body,
+        "target_paths": [],
+        "command": " ".join(bd_args),
+    }
+
+    decision = engine.evaluate(action, context)
+
+    if decision.kind == DecisionKind.ALLOW:
+        return None
+    if decision.kind == DecisionKind.ALLOW_WITH_NUDGE:
+        print(decision.message, file=sys.stderr)
+        return None
+
+    msg = decision.message
+    if decision.remediation:
+        msg = f"{msg}\n{decision.remediation}"
+    print(msg, file=sys.stderr)
+    return 1

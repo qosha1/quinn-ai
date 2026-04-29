@@ -22,6 +22,7 @@ import click
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path, Database
 from cli.core.org import Org
+from cli.core.rules import requires_rule_check
 from cli.core.stop_controller import OrgStopController, OrgStopResult
 from cli.core.sessions import get_active_sessions, stop_all_sessions
 from cli.core.worker import Worker
@@ -71,6 +72,7 @@ _logger = logging.getLogger(__name__)
     default=False,
     help="Show detailed phase-by-phase progress.",
 )
+@requires_rule_check("qn-org.stop")
 @pass_context
 def stop_cmd(
     ctx: Context,

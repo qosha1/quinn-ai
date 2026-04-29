@@ -5,6 +5,7 @@ import click
 from cli.msgr.context import pass_context, MsgrContext
 from cli.msgr.utils import resolve_channel, ChannelResolutionError
 from cli.core.queries.channel import create_message_with_notifications
+from cli.core.rules import requires_rule_check
 
 
 @click.command()
@@ -22,6 +23,7 @@ from cli.core.queries.channel import create_message_with_notifications
     default="whenever",
     help="When message needs attention",
 )
+@requires_rule_check("msgr.send")
 @pass_context
 def send(
     ctx: MsgrContext,

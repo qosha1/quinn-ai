@@ -11,6 +11,7 @@ import click
 
 from cli.commands.context import pass_context, Context
 from cli.core.db import open_database, get_org_db_path
+from cli.core.rules import requires_rule_check
 from cli.core.worker import Worker, InsufficientHiringAuthority, MaxReportsExceeded
 from cli.core.queries import resolve_worker
 from shared.exceptions import WorkerNotFound
@@ -44,6 +45,7 @@ from shared.exceptions import WorkerNotFound
     default="{}",
     help='Skills as JSON object (e.g., \'{"coding": 80, "reasoning": 60}\').',
 )
+@requires_rule_check("qn-org.hire")
 @pass_context
 def hire_cmd(
     ctx: Context,

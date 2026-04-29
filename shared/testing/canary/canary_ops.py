@@ -6,6 +6,7 @@ actually respond to messages. In Tier 2 (FakeSpawner) they're no-ops.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from shared.testing.scenarios import OPS, PREDICATES
@@ -195,9 +196,70 @@ def op_kickstart_worker(run: "ScenarioRun", op: dict[str, Any]) -> None:
         subprocess.run(["tmux", "send-keys", "-t", tmux_session, "Enter"], check=False)
 
 
+def _seed_config_file(run: "ScenarioRun", filename: str, content: str) -> Path:
+    """Write `content` to <org>/config/<filename>, creating the dir if needed.
+
+    Used by rules_yaml_seed and templates_yaml_seed to plant configuration that
+    the org's loaders pick up at startup. Both ops must run BEFORE start_org so
+    the rules/templates engine sees the file when it boots.
+    """
+    config_dir = run.org_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    target = config_dir / filename
+    target.write_text(content)
+    return target
+
+
+def op_rules_yaml_seed(run: "ScenarioRun", op: dict[str, Any]) -> None:
+    """Seed <org>/config/rules.yaml so the rule engine loads it on org start.
+
+    YAML form:
+      - op: rules_yaml_seed
+        content: |
+          version: 1
+          rules:
+            - id: no-drop-database
+              severity: ABSOLUTE
+              ...
+
+    Must run BEFORE start_org. The op only writes the file — it does not
+    validate the YAML schema; the rule loader is responsible for that.
+    """
+    content = op.get("content")
+    if not isinstance(content, str):
+        raise ValueError(
+            "rules_yaml_seed: 'content' is required and must be a string"
+        )
+    _seed_config_file(run, "rules.yaml", content)
+
+
+def op_templates_yaml_seed(run: "ScenarioRun", op: dict[str, Any]) -> None:
+    """Seed <org>/config/templates.yaml so the templates registry loads it on org start.
+
+    YAML form:
+      - op: templates_yaml_seed
+        content: |
+          version: 1
+          templates:
+            - name: product_team
+              ...
+
+    Must run BEFORE start_org. The op only writes the file — it does not
+    validate the YAML schema; the templates loader is responsible for that.
+    """
+    content = op.get("content")
+    if not isinstance(content, str):
+        raise ValueError(
+            "templates_yaml_seed: 'content' is required and must be a string"
+        )
+    _seed_config_file(run, "templates.yaml", content)
+
+
 # Register into Tier 2's shared registry. Idempotent — safe to import multiple times.
 OPS.setdefault("start_org", op_start_org)
 OPS.setdefault("send_to_worker", op_send_to_worker)
 OPS.setdefault("wait_until", op_wait_until)
 OPS.setdefault("kickstart_ceo", op_kickstart_ceo)
 OPS.setdefault("kickstart_worker", op_kickstart_worker)
+OPS.setdefault("rules_yaml_seed", op_rules_yaml_seed)
+OPS.setdefault("templates_yaml_seed", op_templates_yaml_seed)

@@ -6,6 +6,7 @@ import click
 
 from cli.commands.context import Context, pass_context
 from cli.core.db import get_org_db_path, open_database
+from cli.core.rules import requires_rule_check
 
 from . import _helpers
 from ._helpers import _create_okr, _parse_kr_flag
@@ -46,6 +47,7 @@ def register(okr_group):
             "quantified; file a follow-up to revisit."
         ),
     )
+    @requires_rule_check("qn-org.okr-set")
     @pass_context
     def set_cmd(
         ctx: Context,

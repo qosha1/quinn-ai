@@ -425,6 +425,34 @@ def _create_briefing(
             is_host = True
             project_root_str = str(get_project_root(org_path))
 
+    # Active board rules (per quinn-ai-g8ng + p286 §3): load the active
+    # ruleset and group by severity for the template. We pass the data
+    # as Jinja context — the template never reaches into disk for it.
+    # Failure to load rules is non-fatal here; the worker's briefing
+    # should still render even if the rules file is malformed (the
+    # operator will see the error via `qn org rules validate`).
+    rules_by_severity: dict[str, list] = {}
+    if org_path is not None:
+        try:
+            from cli.core.rules.loader import load_rules
+            from cli.core.rules.types import Severity
+
+            ruleset = load_rules(org_path)
+            # Severity order matters in the briefing — render most
+            # severe last so workers leave with ABSOLUTE rules top of
+            # mind. Iterate over the enum to keep ordering stable.
+            for sev in (
+                Severity.SUGGESTED,
+                Severity.ENCOURAGED,
+                Severity.REQUIRED,
+                Severity.ABSOLUTE,
+            ):
+                bucket = [r for r in ruleset.rules if r.severity == sev]
+                if bucket:
+                    rules_by_severity[sev.value] = bucket
+        except Exception as e:  # noqa: BLE001 - non-fatal for briefing
+            _logger.debug(f"Failed to load rules for briefing: {e}")
+
     content = template.render(
         worker_id=ctx.worker_id,
         worker_name=ctx.worker_name,
@@ -443,6 +471,7 @@ def _create_briefing(
         timestamp=ctx.timestamp,
         first_actions=ctx.first_actions,
         escalation_timeout_minutes=ctx.escalation_timeout_minutes,
+        rules_by_severity=rules_by_severity,
     )
 
     (worker_dir / "BRIEFING.md").write_text(content)

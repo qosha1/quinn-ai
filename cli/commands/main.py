@@ -246,6 +246,7 @@ from cli.commands.org import (
     demote_cmd,
     delegations_cmd,
     provider_cmd,
+    rules_cmd,
 )
 
 org.add_command(init_cmd, name="init")
@@ -267,6 +268,7 @@ org.add_command(promote_cmd, name="promote")
 org.add_command(demote_cmd, name="demote")
 org.add_command(delegations_cmd, name="delegations")
 org.add_command(provider_cmd, name="provider")
+org.add_command(rules_cmd, name="rules")
 
 from cli.commands.wrkr import get_work_cmd, search_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd
 
