@@ -200,9 +200,22 @@ export function getMessages(dbPath: string, channelName: string = "board-channel
   }));
 }
 
-export function getAllChannels(dbPath: string): Array<{ id: string; name: string; channel_type: string }> {
+export function getAllChannels(dbPath: string): Array<{ id: string; name: string; channel_type: string; message_count: number; unread_count: number }> {
   const db = getConnection(dbPath);
-  return (db.prepare("SELECT id, name, type as channel_type FROM channels ORDER BY name").all() as Array<{ id: string; name: string; channel_type: string }>);
+  return (db.prepare(`
+    SELECT
+      c.id,
+      c.name,
+      c.type as channel_type,
+      COUNT(m.id) as message_count,
+      SUM(CASE WHEN nb.read_at IS NULL AND nb.actioned_at IS NULL AND m.id IS NOT NULL THEN 1 ELSE 0 END) as unread_count
+    FROM channels c
+    LEFT JOIN messages m ON c.id = m.channel_id
+    LEFT JOIN notification_beads nb ON nb.message_id = m.id
+    GROUP BY c.id
+    HAVING COUNT(m.id) > 0
+    ORDER BY MAX(m.created_at) DESC
+  `).all() as Array<{ id: string; name: string; channel_type: string; message_count: number; unread_count: number }>);
 }
 
 export function markMessageRead(dbPath: string, messageId: string): void {

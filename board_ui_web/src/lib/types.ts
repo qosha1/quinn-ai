@@ -95,3 +95,11 @@ export interface OrgDashboard {
   budget: BudgetSummary;
   health: HealthStatus;
 }
+
+export interface Channel {
+  id: string;
+  name: string;
+  channel_type: string;
+  message_count: number;
+  unread_count: number;
+}

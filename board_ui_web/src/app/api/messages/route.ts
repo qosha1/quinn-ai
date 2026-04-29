@@ -4,13 +4,13 @@ import { resolveDbPath, getMessages, getAllChannels } from "@/lib/db";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const channel = searchParams.get("channel") ?? "board-channel";
     const dbPath = resolveDbPath();
 
-    if (channel === "_channels") {
+    if (searchParams.get("channel") === "_channels") {
       return NextResponse.json({ channels: getAllChannels(dbPath) });
     }
 
+    const channel = searchParams.get("channel") ?? "general";
     const messages = getMessages(dbPath, channel);
     return NextResponse.json({ messages }, {
       headers: { "Cache-Control": "private, max-age=5, stale-while-revalidate=2" },
