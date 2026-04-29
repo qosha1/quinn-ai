@@ -87,10 +87,21 @@ def init_org(config: OrgInitConfig) -> OrgInitResult:
         try:
             # 8. Create CEO worker
             org = Org(db)
+            # skip_beads_init=True regardless of host_mode:
+            #   - greenfield: scaffolding.init_beads (called above) already
+            #     initialized .beads/ in Dolt mode with full metadata.
+            #     Letting Org._init_beads run again here re-runs `bd init
+            #     --prefix quinnai` with the bundled bd 0.43, which clobbers
+            #     metadata.json down to {"database": "dolt"} and leaves the
+            #     .beads/ unwritable (quinn-ai-16x4 — `bd create` then fails
+            #     with 'issue_prefix config is missing').
+            #   - host mode: project's existing .beads/ at project root is
+            #     authoritative; running bd init inside .quinnai/ would
+            #     create a parallel tracker we don't want.
             ceo = org.init(
                 config.ceo_name,
                 config.ceo_role,
-                skip_beads_init=config.host_mode,
+                skip_beads_init=True,
             )
 
             # 8.1. Record project_root in org_state for is_host_mode() detection.

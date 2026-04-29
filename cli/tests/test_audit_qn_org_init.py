@@ -71,6 +71,71 @@ def test_init_does_not_log_fk_constraint_warning(runner, temp_org):
     )
 
 
+def test_init_leaves_beads_writable_for_workers(runner, temp_org):
+    """Regression (quinn-ai-16x4): after `qn org init`, the org's
+    .beads/ must be in a state where `bd create` succeeds.
+
+    Pre-fix: scaffolding.init_beads ran first (Dolt-mode, complete
+    metadata.json with project_id + dolt_database), then Org._init_beads
+    ran a SECOND `bd init --prefix quinnai` using the bundled bd 0.43 —
+    which silently clobbered metadata.json down to {"database": "dolt"}
+    and left the .beads/ in a half-Dolt-half-SQLite state. Subsequent
+    `bd create` failed with 'database not initialized: issue_prefix
+    config is missing'. The canary CEO interpreted this as 'permission
+    denied' and abandoned bd as a planning tool, falling back to
+    in-band msgr DMs which lost the dependency graph.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    if shutil.which("bd") is None:
+        pytest.skip("bd binary required to verify .beads writability")
+
+    result = runner.invoke(qn, ["--org-path", str(temp_org), "org", "init", "--skip-okrs"])
+    assert result.exit_code == 0, result.output
+
+    beads_dir = temp_org / ".beads"
+    metadata_path = beads_dir / "metadata.json"
+    assert metadata_path.exists(), (
+        ".beads/metadata.json missing after init — beads not initialized"
+    )
+
+    metadata = json.loads(metadata_path.read_text())
+
+    # After init, metadata.json should preserve scaffolding's full Dolt
+    # config — project_id is what bd uses to identify the database.
+    # Pre-fix it was clobbered out by the second bd init.
+    assert "project_id" in metadata, (
+        f"metadata.json lost project_id (a second bd init likely "
+        f"clobbered scaffolding's Dolt-mode metadata). Got: {metadata}"
+    )
+
+    # Concrete writability check: bd create must succeed in the
+    # freshly-inited org's .beads. Pre-fix this errored with
+    # 'issue_prefix config is missing'.
+    env = os.environ.copy()
+    env["BEADS_DIR"] = str(beads_dir)
+    env["BEADS_SKIP_IDENTITY_CHECK"] = "1"  # cross-project local test
+    create_result = subprocess.run(
+        ["bd", "create",
+         "--title=writability-probe",
+         "--type=task",
+         "--description=regression probe for quinn-ai-16x4"],
+        cwd=str(temp_org),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert create_result.returncode == 0, (
+        f"bd create must succeed in a freshly-inited org's .beads "
+        f"(quinn-ai-16x4). Got rc={create_result.returncode}\n"
+        f"stdout: {create_result.stdout}\n"
+        f"stderr: {create_result.stderr}"
+    )
+
+
 def test_init_skip_okrs_creates_no_bootstrap_okr(runner, temp_org):
     """--skip-okrs must create zero OKRs (regression for quinn-ai-6odb).
 
