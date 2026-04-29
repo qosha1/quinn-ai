@@ -346,6 +346,113 @@ class TestTmuxSessionOperations:
             session.extract()
 
     @patch('subprocess.run')
+    def test_extract_returns_empty_on_transient_capture_failure(self, mock_run):
+        """quinn-ai-rt9l: capture-pane returning non-zero must NOT propagate
+        as CalledProcessError when the underlying session is still alive.
+
+        Background: at session startup, the tmux pane may not be ready yet
+        and capture-pane returns non-zero. The previous behavior used
+        check=True so this raised CalledProcessError, which the state
+        monitor wrapped as StateDetectionError, accumulated into
+        _consecutive_errors, and permanently stopped the monitor after 10
+        such errors. The org then went blind to that worker for the rest
+        of the session.
+
+        Fix: extract() uses check=False; on non-zero, falls back to
+        has-session to discriminate transient vs dead.
+        """
+        mock_run.side_effect = [
+            Mock(returncode=0),  # new-session
+            Mock(returncode=0, stdout="999\n"),  # display-message
+            Mock(returncode=1, stdout="", stderr="pane not ready"),  # capture-pane transient fail
+            Mock(returncode=0, stdout="test: 1 windows", stderr=""),  # has-session OK
+        ]
+
+        session = TmuxSession(session_name="test")
+        session.start()
+
+        output = session.extract()
+
+        assert isinstance(output, ExtractedOutput)
+        assert output.text == ""
+        # Session should still be RUNNING — the failure was transient.
+        assert session.state == PytermSessionState.RUNNING
+
+    @patch('subprocess.run')
+    def test_extract_does_not_trip_state_monitor_consecutive_errors(self, mock_run):
+        """quinn-ai-rt9l end-to-end: ClaudeCodeStateMonitor polling a
+        TmuxSession with capture-pane returning non-zero transiently must
+        NOT accumulate _consecutive_errors. The monitor must keep running.
+
+        This is the cascade we caught in canary 07 production logs:
+          extract() raised CalledProcessError
+          → poll() wrapped as StateDetectionError
+          → _consecutive_errors hit max_consecutive_errors (10)
+          → monitor permanently stopped, org went blind
+        """
+        from cli.core.sessions.monitors.claude_code import ClaudeCodeStateMonitor
+        from shared.pyterm.state_monitor import StateMonitorConfig, MonitoringMode
+
+        # Start session, then 15 capture-pane polls all returning non-zero
+        # transient (session still alive).
+        side_effects = [
+            Mock(returncode=0),  # new-session
+            Mock(returncode=0, stdout="999\n"),  # display-message
+        ]
+        for _ in range(15):
+            side_effects.append(
+                Mock(returncode=1, stdout="", stderr="pane not ready")
+            )
+            side_effects.append(
+                Mock(returncode=0, stdout="test: 1 windows", stderr="")
+            )
+        mock_run.side_effect = side_effects
+
+        session = TmuxSession(session_name="test")
+        session.start()
+
+        config = StateMonitorConfig(
+            mode=MonitoringMode.EXPLICIT,
+            poll_interval=0.01,
+            idle_timeout=1.0,
+            max_consecutive_errors=10,
+        )
+        monitor = ClaudeCodeStateMonitor(config, session)
+
+        # Poll 15 times — well past max_consecutive_errors.
+        for _ in range(15):
+            monitor.poll()
+
+        stats = monitor.get_stats()
+        assert stats["error_count"] == 0, f"unexpected errors: {stats}"
+        assert stats["consecutive_errors"] == 0
+        assert stats["poll_count"] == 15
+
+    @patch('subprocess.run')
+    def test_extract_marks_session_exited_when_session_gone(self, mock_run):
+        """quinn-ai-rt9l: when capture-pane fails AND has-session confirms
+        the tmux session is gone, extract() should:
+          - return empty ExtractedOutput (no raise)
+          - transition session state to EXITED so the monitor stops
+            cleanly rather than spinning on a dead session.
+        """
+        mock_run.side_effect = [
+            Mock(returncode=0),  # new-session
+            Mock(returncode=0, stdout="999\n"),  # display-message
+            Mock(returncode=1, stdout="", stderr="can't find session"),  # capture-pane: dead
+            Mock(returncode=1, stdout="", stderr=""),  # has-session: NO
+        ]
+
+        session = TmuxSession(session_name="test")
+        session.start()
+
+        output = session.extract()
+
+        assert isinstance(output, ExtractedOutput)
+        assert output.text == ""
+        assert session.state == PytermSessionState.EXITED
+
+    @patch('subprocess.run')
     def test_extract_history(self, mock_run):
         """Test extract_history() returns scrollback."""
         mock_run.side_effect = [

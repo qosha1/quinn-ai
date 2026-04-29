@@ -354,14 +354,47 @@ class TmuxSession:
             self._run_tmux("send-keys", "-t", self._id, key)
 
     def extract(self) -> ExtractedOutput:
-        """Extract current screen content."""
+        """Extract current screen content.
+
+        Robust to transient capture-pane failures (quinn-ai-rt9l): if the
+        tmux pane isn't ready yet (common at session startup), capture-pane
+        returns non-zero. We discriminate between two failure modes:
+
+          - Transient (pane not ready, server busy): session still exists,
+            return empty ExtractedOutput so the caller sees "no content
+            yet" rather than a fatal exception.
+          - Session died: has-session confirms the tmux session is gone.
+            Transition state to EXITED so monitors stop cleanly rather
+            than spinning on a dead session.
+        """
         if self._state != PytermSessionState.RUNNING:
             raise RuntimeError(f"Session {self._id} not running")
 
-        # capture-pane gets visible content
-        result = self._run_tmux(
-            "capture-pane", "-t", self._id, "-p"  # -p prints to stdout
-        )
+        # capture-pane gets visible content. Use check=False so non-zero
+        # returns don't raise CalledProcessError into the caller's monitor
+        # loop.
+        try:
+            result = self._run_tmux(
+                "capture-pane", "-t", self._id, "-p", check=False
+            )
+        except (subprocess.SubprocessError, OSError) as e:
+            logger.debug(f"capture-pane subprocess error on {self._id}: {e}")
+            return ExtractedOutput(text="", timestamp=time.time(), raw=None)
+
+        if result.returncode != 0:
+            # Discriminate transient-vs-dead via has-session.
+            if not self._session_exists():
+                logger.info(
+                    f"capture-pane reports session {self._id} is gone; "
+                    f"transitioning to EXITED"
+                )
+                self._state = PytermSessionState.EXITED
+            else:
+                logger.debug(
+                    f"capture-pane returned {result.returncode} on {self._id} "
+                    f"(session still exists; treating as transient)"
+                )
+            return ExtractedOutput(text="", timestamp=time.time(), raw=None)
 
         return ExtractedOutput(
             text=result.stdout,
