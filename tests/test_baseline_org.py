@@ -181,21 +181,57 @@ class TestOrgStart:
         assert result.returncode != 0
         assert "not initialized" in result.stdout.lower() or "not initialized" in result.stderr.lower() or "Run 'qn org init'" in result.stdout
 
-    def test_start_validates_config(self, temp_org_factory, qn_runner):
-        """Should validate provider configuration by default."""
-        org = temp_org_factory("start_validate")
+    def test_start_validates_config_when_provider_misconfigured(
+        self, temp_org_factory, qn_runner
+    ):
+        """Validation should fail when providers.yaml is genuinely broken.
+
+        Note (quinn-ai-18h1): the original test asserted that 'qn org start'
+        without --skip-config-validation should fail when no API key is set.
+        That assumption is wrong — the default provider 'claude_code' uses
+        the user's claude-CLI auth (api_key='not-needed-uses-system-auth')
+        and doesn't require any env var. So a fresh init produces a config
+        that validates cleanly even with no provider env vars set.
+
+        Test the actual contract instead: rewrite providers.yaml to point
+        at a provider whose config IS broken (e.g., 'openai' as default
+        with no api_key reference) and confirm validation fails.
+        """
+        org = temp_org_factory("start_validate_broken")
         qn_runner("org", "init", org_path=org)
 
-        # Start without skip flag should fail (no API key set)
+        # Break the providers.yaml: set default to a provider with an
+        # unresolvable api_key reference.
+        providers_yaml = org / "config" / "providers.yaml"
+        providers_yaml.write_text(
+            "default: openai\n"
+            "authorized_providers:\n"
+            "  - openai\n"
+            "providers:\n"
+            "  openai:\n"
+            "    enabled: true\n"
+            "    api_key: ${NO_SUCH_ENV_VAR_FOR_TEST}\n"
+            "    timeout: 60\n"
+            "    max_retries: 3\n"
+        )
+
         result = qn_runner(
             "org", "start",
             "--no-spawn-ceo",
             org_path=org,
-            check=False
+            check=False,
         )
 
-        assert result.returncode != 0
-        assert "api_key" in result.stdout.lower() or "api_key" in result.stderr.lower() or "configuration" in result.stdout.lower() or "configuration" in result.stderr.lower()
+        assert result.returncode != 0, (
+            f"start should fail with broken providers config; got success.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        out = (result.stdout + result.stderr).lower()
+        assert (
+            "api_key" in out
+            or "configuration" in out
+            or "no_such_env_var" in out
+        ), f"expected config error message, got:\n{result.stdout}\n{result.stderr}"
 
     def test_start_skip_validation_flag(self, temp_org_factory, qn_runner):
         """Should skip validation when --skip-config-validation provided."""
