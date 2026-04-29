@@ -73,8 +73,10 @@ class TmuxSession:
             True if session exists
         """
         try:
+            # stdin=DEVNULL: see _run_tmux docstring (quinn-ai-0bl3)
             result = subprocess.run(
                 ["tmux", "has-session", "-t", session_name],
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=TMUX_TIMEOUT,
@@ -108,8 +110,10 @@ class TmuxSession:
 
         # Try to get PID of the existing session
         try:
+            # stdin=DEVNULL: see _run_tmux docstring (quinn-ai-0bl3)
             result = subprocess.run(
                 ["tmux", "display-message", "-t", session_name, "-p", "#{pane_pid}"],
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=TMUX_TIMEOUT,
@@ -134,8 +138,10 @@ class TmuxSession:
             Current pane content, or empty string if capture fails
         """
         try:
+            # stdin=DEVNULL: see _run_tmux docstring (quinn-ai-0bl3)
             result = subprocess.run(
                 ["tmux", "capture-pane", "-t", session_name, "-p"],
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=TMUX_TIMEOUT,
@@ -178,10 +184,20 @@ class TmuxSession:
                 cb(old_state, new_state)
 
     def _run_tmux(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-        """Run a tmux command with timeout."""
+        """Run a tmux command with timeout.
+
+        stdin=DEVNULL prevents the tmux server from inheriting our stdin
+        fd, which under pytest without -s points at pytest's capture
+        buffer and breaks subsequent capture-pane reads (quinn-ai-0bl3).
+        """
         cmd = ["tmux"] + list(args)
         return subprocess.run(
-            cmd, capture_output=True, text=True, check=check, timeout=TMUX_TIMEOUT
+            cmd,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            check=check,
+            timeout=TMUX_TIMEOUT,
         )
 
     def _session_exists(self) -> bool:

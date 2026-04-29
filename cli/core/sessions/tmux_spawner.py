@@ -76,8 +76,16 @@ class TmuxSpawner(SpawnStrategy):
             cmd.extend(["-S", str(self._socket_path)])
         cmd.extend(args)
 
+        # stdin=DEVNULL: when the first tmux call here starts the tmux
+        # server, the server forks and inherits our stdin fd. Under pytest
+        # without -s, that fd points at pytest's capture buffer; the server
+        # holds it open for its lifetime, and later capture-pane reads
+        # block or error because the buffer is closed/reused. Detaching
+        # stdin to /dev/null prevents the inheritance entirely
+        # (quinn-ai-0bl3). capture_output already handles stdout/stderr.
         return subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             capture_output=capture,
             text=True,
             timeout=10,
