@@ -431,6 +431,60 @@ class TestPhase5Kickstart:
         captured = capsys.readouterr()
         assert "Warning" in captured.err or "warning" in captured.err.lower()
 
+    @patch('subprocess.run')
+    def test_kickstart_initial_task_has_unambiguous_framing(
+        self, mock_subprocess, initialized_org, temp_org_dir
+    ):
+        """Regression (quinn-ai-hdd8): INITIAL_TASK.md must open with an
+        unambiguous "this is YOUR active prompt" framing block.
+
+        Pre-fix, the template started with "You are {self_intro}. You've
+        just been onboarded." — claude read the file as documentation
+        about a different worker (the kickstart was cat'd into an active
+        session, so the model interpreted it as 3rd-person reference
+        material) and refused to act. Result: 30-min canary, 0 hires,
+        0 messages.
+        """
+        from cli.commands.org.start import _send_initial_prompt_to_ceo
+
+        worker_dir = temp_org_dir / "storage" / "workers" / "ceo"
+        worker_dir.mkdir(parents=True, exist_ok=True)
+
+        mock_subprocess.return_value = Mock()
+
+        _send_initial_prompt_to_ceo(initialized_org.ceo, worker_dir)
+
+        content = (worker_dir / "INITIAL_TASK.md").read_text()
+
+        # Must START with the framing — claude reads top-down, so a
+        # framing block buried mid-file would be too late.
+        assert content.startswith("=== EXECUTE THIS NOW"), (
+            "INITIAL_TASK.md must open with the '=== EXECUTE THIS NOW ===' "
+            "framing block (quinn-ai-hdd8). Got first line:\n"
+            + content.splitlines()[0]
+        )
+
+        # Must contain the explicit "you ARE that worker" disambiguation.
+        assert "You ARE the worker described" in content, (
+            "INITIAL_TASK.md must explicitly tell claude 'You ARE the "
+            "worker described below' to prevent 3rd-person dissociation "
+            "(quinn-ai-hdd8)."
+        )
+
+        # Must contain the anti-summarization rule.
+        assert "Do not summarize" in content, (
+            "INITIAL_TASK.md must instruct claude NOT to summarize the "
+            "prompt — otherwise it returns a description instead of acting "
+            "(quinn-ai-hdd8)."
+        )
+
+        # Must counter the specific failure mode observed in the canary.
+        assert "script for another worker" in content, (
+            "INITIAL_TASK.md must explicitly counter the 'this is a "
+            "script for another worker, not for me' interpretation that "
+            "the canary CEO produced verbatim (quinn-ai-hdd8)."
+        )
+
 
 # =============================================================================
 # PHASE 6: READINESS TESTS

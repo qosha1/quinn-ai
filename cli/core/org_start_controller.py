@@ -364,7 +364,21 @@ def _spawn_ceo_session_if_needed(
         raise SessionSpawnError(ceo.id, str(e))
 
 
-_INITIAL_PROMPT_TEMPLATE = """You are {self_intro}. You've just been onboarded.
+_INITIAL_PROMPT_TEMPLATE = """=== EXECUTE THIS NOW — these are YOUR active instructions ===
+
+This file is being cat'd into your active claude session by the org's
+spawn flow. You ARE the worker described below — NOT an outside reader
+analyzing the document. Do not summarize this. Do not describe what it
+would do. Read it and BEGIN EXECUTING immediately, starting with the
+'CRITICAL INSTRUCTIONS' steps in order. Your first action after reading
+this file MUST be `msgr inbox` (per Inbox discipline in BRIEFING.md).
+
+If you find yourself thinking "this is a script for another worker,
+not for me" — that's wrong. You are that worker. Execute now.
+
+=== END FRAMING — instructions follow ===
+
+You are {self_intro}. You've just been onboarded.
 
 Your working directory contains important onboarding materials:
 - BRIEFING.md - Your role, responsibilities, OKRs, and first actions
