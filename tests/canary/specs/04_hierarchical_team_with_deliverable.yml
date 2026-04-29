@@ -12,17 +12,17 @@
 #      org-chart depth 3.
 #   4. Diana then reports a status update UP THE CHAIN to Alice via DM.
 #
-# Why this is more sophisticated than canaries 01–03:
-#   - First canary that exercises `qn org delegate-authority` end-to-end.
-#   - First canary that produces an org chart with depth=3 (Alice→Diana→Eve/Frank).
-#   - First canary where a non-CEO autonomously hires + onboards reports.
-#   - First canary with bidirectional cross-level messaging (IC↔IC peer review
-#     PLUS Director→CEO upward status).
+# Performance design:
+#   - Each worker's commands are batched into a SINGLE `bash -c "cmd1 && cmd2"`
+#     so the LLM only round-trips once per phase. Without this batching the
+#     CEO alone takes 4+ LLM "think → run → read → think" cycles just to
+#     hire-allocate-delegate-start Diana, blowing the runtime past 5 min.
+#   - Run with QUINNAI_CANARY_MODEL=claude-haiku-4-5 for ~10x speedup vs sonnet.
 #
 # Workaround note (same as canary 02 — until quinn-ai-3gwh is fully fixed):
-# kickstart messages tell each worker to set QUINN_WORKER_ID explicitly via
-# msgr's --worker-id flag. `qn org hire` and `qn org delegate-authority` are
-# not affected; they resolve the actor via --manager / --to args, not env.
+# msgr commands explicitly pass --worker-id {self_id}. `qn org hire` and
+# `qn org delegate-authority` resolve the actor via --manager / --to args, not
+# env, so they aren't affected.
 name: hierarchical_team_with_deliverable
 setup:
   init:
@@ -33,67 +33,59 @@ ops:
     objective: "ULTRA PRIORITY: Stand up the engineering organization via Director Diana"
     owner: ceo
     description: |
-      Run all of these autonomously, do NOT ask for confirmation:
-      1. qn org hire --name Diana --role director --manager alice --cost 50
-      2. qn org budget allocate diana 200
-      3. qn org delegate-authority --to diana --level team-lead --budget 200 --max-reports 5 --force
-      4. qn org start --worker diana   (REQUIRED — spawns Diana's session)
-      Without step 4, Diana exists in DB but has no live session; the canary
-      will hang waiting for her to act.
+      Run this ONE bash command immediately, do NOT ask for confirmation, do NOT explain — just run it:
+
+      bash -c "qn org hire --name Diana --role director --manager alice --cost 50 && qn org budget allocate diana 200 && qn org delegate-authority --to diana --level team-lead --budget 200 --max-reports 5 --force && qn org start --worker diana"
   - { op: start_org }
   - op: kickstart_ceo
-    message: "Read INITIAL_TASK.md and act on the highest-priority OKR right now. Hire Diana, allocate her budget, delegate authority, and start her session immediately."
+    message: "Read your top OKR and run the single bash command in its description right now. Do not ask, do not explain, just run it."
   # Wait for Diana to materialize (CEO + Diana = 2 workers).
-  - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+  - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 180, poll_interval_seconds: 2 }
 
   # Diana now has a live session. Direct her to hire Eve + Frank under herself.
   - op: kickstart_worker
     worker: diana
     message: |
-      You are Diana (worker id {self_id}), Director of Engineering. Do EXACTLY these steps in order, no clarifying questions, no preamble:
-      1. qn org hire --name Eve --role engineer --manager {self_id} --cost 30
-      2. qn org hire --name Frank --role engineer --manager {self_id} --cost 30
-      3. qn org budget allocate eve 50
-      4. qn org budget allocate frank 50
-      5. qn org start --worker eve     (REQUIRED — spawns Eve's session)
-      6. qn org start --worker frank   (REQUIRED — spawns Frank's session)
+      You are Diana (worker id {self_id}), Director of Engineering. Run this ONE bash command immediately, no preamble, no questions:
+
+      bash -c "qn org hire --name Eve --role engineer --manager {self_id} --cost 30 && qn org hire --name Frank --role engineer --manager {self_id} --cost 30 && qn org budget allocate eve 50 && qn org budget allocate frank 50 && qn org start --worker eve && qn org start --worker frank"
 
   # Wait for full team online: Alice + Diana + Eve + Frank = 4 workers.
-  - { op: wait_until, predicate: { kind: worker_count, value: 4 }, timeout_seconds: 360, poll_interval_seconds: 5 }
+  - { op: wait_until, predicate: { kind: worker_count, value: 4 }, timeout_seconds: 240, poll_interval_seconds: 2 }
 
-  # Eve drafts a proposal in shared storage and DMs Frank for review.
+  # Eve drafts a proposal in shared storage and DMs Frank for review (single batched command).
   - op: kickstart_worker
     worker: eve
     other_worker: frank
     message: |
-      You are Eve (worker id {self_id}), engineer. Do EXACTLY these steps in order:
-      1. mkdir -p $SHARED_STORAGE/teams/engineering
-      2. printf '# Architecture Proposal v0\n\nAuthor: Eve\n\nProposal: start with a single-process monolith. Extract services only when a clear scaling boundary appears (e.g. a hot path exceeding 50%% CPU or a domain that needs independent deploy cadence). Keep the data model normalized; denormalize at read-time via materialized views once query patterns stabilize.\n\nOpen questions:\n- Which observability stack? (otel vs. self-hosted)\n- Sync vs. async ingestion path for v1?\n' > $SHARED_STORAGE/teams/engineering/proposal.md
-      3. msgr --worker-id {self_id} send @{other_id} 'I drafted an architecture proposal at $SHARED_STORAGE/teams/engineering/proposal.md - please review and reply with feedback.'
+      You are Eve (worker id {self_id}), engineer. Run this ONE bash command immediately, no preamble:
 
-  # Frank reviews and DMs Eve back.
+      bash -c "mkdir -p \$SHARED_STORAGE/teams/engineering && printf '# Architecture Proposal v0\n\nAuthor: Eve\n\nProposal: start with a single-process monolith. Extract services only when a clear scaling boundary appears (hot path > 50%% CPU, or domain needing independent deploy cadence). Normalize the data model; denormalize at read-time via materialized views once query patterns stabilize.\n\nOpen questions:\n- Observability stack: otel vs. self-hosted?\n- Sync vs. async ingestion path for v1?\n' > \$SHARED_STORAGE/teams/engineering/proposal.md && msgr --worker-id {self_id} send @{other_id} 'Drafted shared/teams/engineering/proposal.md - please review and reply with feedback.'"
+
+  # Frank reviews and DMs Eve back (single batched command).
   - op: kickstart_worker
     worker: frank
     other_worker: eve
     message: |
-      You are Frank (worker id {self_id}), engineer. Do EXACTLY these steps in order:
-      1. cat $SHARED_STORAGE/teams/engineering/proposal.md
-      2. msgr --worker-id {self_id} send @{other_id} 'Reviewed the proposal. Approving v0 with one suggestion: define the migration trigger metrics quantitatively (e.g. p95 latency thresholds) so we have an objective extract-to-service signal. Otherwise solid - ship it.'
+      You are Frank (worker id {self_id}), engineer. Run this ONE bash command immediately, no preamble:
+
+      bash -c "cat \$SHARED_STORAGE/teams/engineering/proposal.md && msgr --worker-id {self_id} send @{other_id} 'Reviewed proposal. Approving v0 with one suggestion: define migration trigger metrics quantitatively (e.g. p95 latency thresholds) so we have an objective extract-to-service signal. Otherwise solid - ship it.'"
 
   # Wait for the bidirectional peer-review loop to close.
-  - { op: wait_until, predicate: { kind: message_count_between, from: eve, to: frank, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
-  - { op: wait_until, predicate: { kind: message_count_between, from: frank, to: eve, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+  - { op: wait_until, predicate: { kind: message_count_between, from: eve, to: frank, min: 1 }, timeout_seconds: 180, poll_interval_seconds: 2 }
+  - { op: wait_until, predicate: { kind: message_count_between, from: frank, to: eve, min: 1 }, timeout_seconds: 180, poll_interval_seconds: 2 }
 
-  # Diana reports status UP the chain to Alice.
+  # Diana reports status UP the chain to Alice (single command).
   - op: kickstart_worker
     worker: diana
     other_worker: alice
     message: |
-      You are Diana (worker id {self_id}), Director of Engineering. Eve and Frank have completed their first peer-review cycle on the architecture proposal. Do EXACTLY this:
-      1. msgr --worker-id {self_id} send @{other_id} 'Status update: engineering team is online. Eve drafted v0 of the architecture proposal in shared/teams/engineering/proposal.md; Frank reviewed and approved with one suggestion (quantify migration trigger metrics). Ready for the next OKR.'
+      You are Diana (worker id {self_id}), Director of Engineering. Eve and Frank completed their first peer-review cycle. Run this ONE command immediately, no preamble:
+
+      msgr --worker-id {self_id} send @{other_id} 'Status update: engineering team online. Eve drafted v0 architecture proposal; Frank reviewed and approved with one suggestion (quantify migration trigger metrics). Ready for the next OKR.'
 
   # Wait for status to land in Alice's inbox.
-  - { op: wait_until, predicate: { kind: message_count_between, from: diana, to: alice, min: 1 }, timeout_seconds: 240, poll_interval_seconds: 5 }
+  - { op: wait_until, predicate: { kind: message_count_between, from: diana, to: alice, min: 1 }, timeout_seconds: 120, poll_interval_seconds: 2 }
 
 assertions:
   # Org shape: 4 workers, 3 levels deep, correct reporting lines.

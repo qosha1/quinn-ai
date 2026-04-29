@@ -140,13 +140,13 @@ class TeamView(VerticalScroll):
             # Manager name
             manager = manager_names.get(worker.manager_id, "None") if worker.manager_id else "None"
 
-            # Actions - different options based on worker type
+            # Actions cell — single click target that opens an action menu
+            # modal. Avoids the click-X-position ambiguity of inline
+            # bracketed buttons (quinn-ai-dl3); Chat is in the menu.
             if worker.is_ceo:
-                actions = "[Chat]"
-            elif worker.manager_id is None:  # Manager (non-CEO)
-                actions = "[Chat] [Fire] [Demote]"
-            else:  # Regular worker
-                actions = "[Chat] [Fire] [Promote]"
+                actions = "[Chat ▸]"
+            else:
+                actions = "[Actions ▸]"
 
             table.add_row(
                 status_icon,
@@ -242,29 +242,24 @@ class TeamView(VerticalScroll):
             await self._hire_worker()
 
     async def on_data_table_cell_selected(self, event: DataTable.CellSelected) -> None:
-        """Handle cell selection - detect which action was clicked."""
-        if event.coordinate.column == 5:  # Actions column
-            # Get worker ID from row key - need to access .value attribute
-            worker_id = event.cell_key.row_key.value
+        """Handle cell selection in the Actions column.
 
-            # Find worker by ID
+        The actions cell is a single click target ([Chat ▸] for CEO,
+        [Actions ▸] for everyone else). For the CEO, the click jumps
+        straight into chat (only action available). For others, it opens
+        the action menu modal.
+        """
+        if event.coordinate.column == 5:  # Actions column
+            worker_id = event.cell_key.row_key.value
             worker = next((w for w in self._workers if w.id == worker_id), None)
             if not worker:
                 self.app.notify(f"Worker {worker_id} not found", severity="error")
                 return
 
-            # Get cell value to determine which action
-            cell_value = event.value
-
-            # Parse action from cell text
-            if "[Chat]" in cell_value:
-                # TODO(quinn-ai-dl3): parse click X position to distinguish
-                # inline [Chat]/[Fire]/[Promote] buttons. For now, [Chat] wins.
+            if worker.is_ceo:
+                # CEO has only one action — jump straight into chat
                 await self._open_worker_chat(worker)
-            elif "[Fire]" in cell_value:
-                # Show menu or directly fire (for now, let's show a confirmation)
-                await self._show_worker_actions_menu(worker)
-            elif "[Promote]" in cell_value or "[Demote]" in cell_value:
+            else:
                 await self._show_worker_actions_menu(worker)
 
     async def _cleanup_stale_session(self, worker: WorkerInfo) -> bool:
@@ -421,10 +416,15 @@ class TeamView(VerticalScroll):
             )
 
     async def _show_worker_actions_menu(self, worker: WorkerInfo) -> None:
-        """Show a Fire/Promote/Demote modal for a worker."""
+        """Show a Chat/Fire/Promote/Demote modal for a worker.
+
+        Chat is always offered (jump into the worker's session). Fire is
+        offered for non-CEO. Promote is offered for direct reports
+        (workers under a manager). Demote is offered for managers.
+        """
         from ._modals import WorkerActionsModal
 
-        actions: list[str] = []
+        actions: list[str] = ["chat"]
         if not worker.is_ceo:
             actions.append("fire")
         # Promote: only meaningful for non-CEO workers that aren't already managers
@@ -434,17 +434,15 @@ class TeamView(VerticalScroll):
         elif worker.manager_id is not None:
             actions.append("promote")
 
-        if not actions:
-            self.app.notify(f"No actions available for {worker.name}", severity="information")
-            return
-
         choice = await self.app.push_screen_wait(
             WorkerActionsModal(worker.name, actions)
         )
         if choice is None:
             return
 
-        if choice == "fire":
+        if choice == "chat":
+            await self._open_worker_chat(worker)
+        elif choice == "fire":
             await self._fire_worker(worker)
         elif choice == "promote":
             await self._promote_worker(worker)

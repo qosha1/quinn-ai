@@ -40,8 +40,12 @@ class OrgTabBar(Widget):
     }
 
     .org-tab {
-        margin-right: 1;
         min-width: 12;
+    }
+
+    .org-tab-close {
+        min-width: 3;
+        margin-right: 1;
     }
 
     .org-tab-active {
@@ -56,6 +60,10 @@ class OrgTabBar(Widget):
 
     .org-tab-inactive:hover {
         background: $surface-lighten-1;
+    }
+
+    .org-tab-close:hover {
+        background: $error;
     }
 
     #add-org-btn {
@@ -119,18 +127,29 @@ class OrgTabBar(Widget):
             if child.id != "add-org-btn":
                 child.remove()
 
-        # Add tabs for each org (before the add button)
+        # Add tabs for each org (before the add button). Each org becomes
+        # TWO buttons: the name (selects the tab) and a separate × button
+        # (disconnects). Sharing one widget for both meant a click on the
+        # × switched tabs instead of closing — quinn-ai-dl3.
         for path, name in self._orgs.items():
             is_active = path == self._active_path
-            # Use counter for unique ID each time (avoid duplicate ID errors)
             self._tab_counter += 1
-            tab = Button(
-                f"{name} ×",
+            select_btn = Button(
+                name,
                 id=f"org-tab-{self._tab_counter}",
                 classes=f"org-tab {'org-tab-active' if is_active else 'org-tab-inactive'}",
             )
-            tab._org_path = path  # Store path on button
-            container.mount(tab, before=add_btn)
+            select_btn._org_path = path
+            select_btn._tab_action = "select"
+            close_btn = Button(
+                "×",
+                id=f"org-tab-close-{self._tab_counter}",
+                classes=f"org-tab-close {'org-tab-active' if is_active else 'org-tab-inactive'}",
+            )
+            close_btn._org_path = path
+            close_btn._tab_action = "close"
+            container.mount(select_btn, before=add_btn)
+            container.mount(close_btn, before=add_btn)
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle tab button presses."""
@@ -138,11 +157,11 @@ class OrgTabBar(Widget):
             self.post_message(self.AddOrgRequested())
             return
 
-        # Check if it's an org tab
         if hasattr(event.button, "_org_path"):
             org_path = event.button._org_path
+            action = getattr(event.button, "_tab_action", "select")
 
-            # TODO(quinn-ai-dl3): split the close (×) glyph into its own button
-            # widget per tab. For now, clicking anywhere on a tab switches to it.
-            if org_path != self._active_path:
+            if action == "close":
+                self.post_message(self.CloseOrgRequested(org_path))
+            elif action == "select" and org_path != self._active_path:
                 self.post_message(self.OrgSelected(org_path))
