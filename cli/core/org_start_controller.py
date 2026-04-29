@@ -379,8 +379,9 @@ Your working directory contains important onboarding materials:
    # Check available channels
    msgr channels
 
-   # Send your first message (required)
-   msgr send #general "Hi team! {chat_intro} Starting work now. Reading briefing and reviewing OKRs."
+   # Send your first message (required). NOTE: quote the channel name —
+   # bash treats unquoted '#' as a comment and the message will be lost.
+   msgr send '#general' "Hi team! {chat_intro} Starting work now. Reading briefing and reviewing OKRs."
 
    # Confirm message sent
    msgr inbox
@@ -399,17 +400,33 @@ You were started with `qn org start`, which means you should operate autonomousl
 - Only stop for CRITICAL blockers that prevent ALL progress
 - For non-critical questions: document in beads and proceed with reasonable default
 
-**COMMUNICATION REQUIREMENT:**
-Post status updates to #general as you work:
-- When starting a task
-- When completing a task
+**COMMUNICATION REQUIREMENT — INBOX DISCIPLINE (MANDATORY):**
+
+`msgr inbox` is a continuous polling queue, not a passive notification.
+After every action that ends a turn — finishing a task, replying to a
+DM, hitting a wait state — your NEXT action MUST be `msgr inbox`.
+Also re-check `msgr inbox` every ~5 minutes during long work.
+
+When inbox shows messages:
+- **Questions** → answer EVERY one. "No reply" is not a valid response.
+- **Directives** ("please pick up X", "next up — Y", "switch to Z") →
+  EXECUTE IMMEDIATELY. Do NOT reply with "Want me to proceed?". The
+  right reply is "On it, starting now" + immediate action.
+- **Status updates** → acknowledge with a one-line confirmation so the
+  sender knows the loop closed.
+
+Post status updates to '#general' as you work (note the quotes —
+bash strips unquoted '#general' as a comment):
+- When starting a task: msgr send '#general' "Starting: <title>"
+- When completing a task: msgr send '#general' "Completed: <title>"
 - Every 30-60 minutes with progress updates
 - When blocked on anything
 
 **YOUR FIRST TASK:**
 Send your introduction message above, then read BRIEFING.md and follow the "First Actions" section.
 
-Start by running: `msgr send #general "Hi team! {chat_intro} Starting work now. Reading briefing and reviewing OKRs."`"""
+Start by running: msgr send '#general' "Hi team! {chat_intro} Starting work now. Reading briefing and reviewing OKRs."
+"""
 
 
 def _capture_pane(tmux_session: str) -> str:

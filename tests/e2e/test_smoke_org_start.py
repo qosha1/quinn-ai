@@ -214,3 +214,61 @@ def test_org_start_onboarding_files_show_role_when_name_differs(
     assert "Role:    CEO" in welcome
     assert "Alice" in briefing
     assert "**Role:** CEO" in briefing
+
+
+def test_org_start_briefing_includes_inbox_discipline_section(
+    temp_org_dir, cli_runner
+):
+    """Regression: BRIEFING.md after spawn must contain the strong
+    inbox-discipline section (quinn-ai-wi5q). Pre-fix, the briefing
+    only said 'Check msgr inbox at least once per session', which
+    let the CEO + engineers idle after their first action and
+    cascading-stalled the org (quinn-ai-srwt + quinn-ai-szn2).
+    """
+    cli_runner(
+        ["--org-path", str(temp_org_dir), "org", "init", "--ceo-name", "Alice"],
+        check=True,
+    )
+    cli_runner(
+        [
+            "--org-path", str(temp_org_dir),
+            "org", "start",
+            "--no-spawn-ceo",
+            "--skip-config-validation",
+        ],
+        check=True,
+    )
+
+    workers_dir = temp_org_dir / "storage" / "workers"
+    briefing = next(workers_dir.rglob("BRIEFING.md")).read_text()
+
+    # Header — must be in the briefing for every worker
+    assert "Inbox discipline (REQUIRED" in briefing, (
+        "BRIEFING.md must contain the 'Inbox discipline (REQUIRED' "
+        "section for the org to keep moving without manual nudges "
+        "(quinn-ai-wi5q). Got:\n" + briefing[:2000]
+    )
+
+    # Every-action poll rule
+    assert "After every action" in briefing, (
+        "BRIEFING.md inbox-discipline section must include the "
+        "'after every action' poll rule (quinn-ai-srwt)."
+    )
+
+    # Must-reply rule
+    assert "Answer EVERY one" in briefing or "answer EVERY one" in briefing, (
+        "BRIEFING.md must enforce 'answer every question' on inbox reads "
+        "(quinn-ai-srwt round-3 evidence: CEO read inbox without replying)."
+    )
+
+    # Directives execute immediately
+    assert "Execute IMMEDIATELY" in briefing or "execute IMMEDIATELY" in briefing, (
+        "BRIEFING.md must instruct workers to execute directive DMs "
+        "immediately, not ask for confirmation (quinn-ai-szn2)."
+    )
+
+    # Channel-name quoting (incidental fix for quinn-ai-w2yb)
+    assert "'#general'" in briefing, (
+        "BRIEFING.md examples must single-quote channel names so "
+        "bash doesn't strip '#general' as a comment (quinn-ai-w2yb)."
+    )

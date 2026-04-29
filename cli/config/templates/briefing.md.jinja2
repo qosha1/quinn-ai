@@ -160,15 +160,19 @@ Shows unread messages from all channels. Check this regularly to stay coordinate
 
 ### Send messages
 ```bash
-# To a channel
-msgr send #general 'Team update here'
+# To a channel — quote the channel name; bash treats unquoted # as a comment
+msgr send '#general' 'Team update here'
 
 # Direct message a worker
 msgr send @{{ manager_id }} 'Quick question'
 
 # With priority (for urgent issues)
-msgr send #board-channel 'Blocker needs attention' --priority=1
+msgr send '#board-channel' 'Blocker needs attention' --priority=1
 ```
+
+**IMPORTANT — quote channel names.** `msgr send #general 'msg'` fails
+because bash parses `#general` as a comment. Always single-quote
+channel names: `msgr send '#general' 'msg'`.
 
 ### Discover channels
 ```bash
@@ -189,8 +193,62 @@ Shows available channels you can join.
 ### Communication guidelines
 - Use channels for team visibility (others can learn from discussions)
 - Use DMs for 1:1 questions or private matters
-- Check `msgr inbox` at least once per session
 - Mark messages as read with `msgr read <msg-id>` to keep inbox clean
+
+## Inbox discipline (REQUIRED — do not skip this section)
+
+Treat `msgr inbox` as a continuous polling queue, not a passive
+notification system. Workers who only check inbox "at the start" stall
+the org — your manager's next assignment, an engineer's question, a
+blocker escalation all sit unread until somebody manually pings you.
+
+**Mandatory inbox-check moments:**
+
+1. **After every action that ends a turn** — finishing a task,
+   committing a fix, hitting a wait state, replying to one DM.
+   Your next action MUST be `msgr inbox`.
+2. **Every 5 minutes during long work** — even if nothing's happened
+   on your end, the rest of the org may be waiting on you.
+3. **Before declaring "session complete"** — silence is not done;
+   confirm there are no open DMs aimed at you.
+
+**When inbox shows messages:**
+
+- **Questions →** Answer EVERY one. "No reply" is not a valid response.
+  If you don't know the answer, reply with what you DO know and
+  what's needed to resolve.
+- **Directives** ("please pick up X", "take on Y", "switch to Z",
+  "next up — Z") → Execute IMMEDIATELY. Do NOT reply with
+  "Want me to proceed?" — confirmation questions belong to
+  ambiguous scope or breaking-change decisions, not to clear
+  assignments. The right reply to a clear directive is "On it,
+  starting now" + immediate action.
+- **Status updates** ("shipped X", "blocked on Y") → Acknowledge
+  with a one-line "Received, X next" so the sender knows the loop
+  closed. If you owe them a follow-up direction, send it in the
+  same reply.
+- **Ambiguity-resolution** is the ONLY case where a question-back
+  is the right reply. Be specific about the decision you need;
+  meanwhile keep working on what's already clear.
+
+**Anti-pattern (do not do this):**
+
+```
+[CEO sends]: "Take raise-simpli-3hy next."
+[You read inbox, then internally]: "OK noted." [end turn]
+```
+
+That stalls the org. The CEO and other workers cannot tell you
+received the directive. Instead:
+
+```
+[You read inbox]
+[You DM CEO]: "On raise-simpli-3hy now."
+[You start the work]
+```
+
+The org's throughput depends on you closing inbox loops, not on
+your manager re-prompting you.
 
 ### When to Post Status Updates
 
