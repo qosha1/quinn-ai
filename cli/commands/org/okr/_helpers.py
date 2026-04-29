@@ -18,6 +18,102 @@ from cli.core.db import get_org_db_path, open_database
 
 _logger = logging.getLogger(__name__)
 
+# Tokens that indicate the OKR author is shipping a placeholder, not a
+# concrete outcome. Refusing these at the CLI surface forces the CEO to
+# resolve ambiguity (ask clarifying questions of the requester) BEFORE
+# work spins up against an unclear target.
+_PLACEHOLDER_TOKENS = ("TBD", "TODO", "FIXME", "PLACEHOLDER", "TBA", "<TODO>", "XXX")
+
+
+def _parse_kr_flag(s: str) -> "KeyResult":
+    """Parse a --kr 'metric:target:unit' value into a KeyResult.
+
+    Lazy-import KeyResult so this module stays light at top-level.
+    """
+    from cli.core.queries.okr import KeyResult
+
+    parts = s.split(":")
+    if len(parts) != 3:
+        raise click.ClickException(
+            f"--kr must be 'metric:target:unit' (got {s!r}).\n"
+            "Example: --kr 'test_coverage:80:percent'"
+        )
+    metric_raw, target_raw, unit_raw = parts
+    metric = metric_raw.strip()
+    unit = unit_raw.strip()
+    if not metric or not unit:
+        raise click.ClickException(
+            f"--kr metric and unit must be non-empty (got {s!r})."
+        )
+    try:
+        target = float(target_raw.strip())
+    except ValueError:
+        raise click.ClickException(
+            f"--kr target must be numeric (got {target_raw.strip()!r}).\n"
+            "Example: --kr 'test_coverage:80:percent'"
+        )
+    return KeyResult(metric=metric, target=target, unit=unit, current=0.0)
+
+
+def _validate_okr_inputs(
+    title: str,
+    description: Optional[str],
+    key_results: list,
+    no_krs_needed: bool,
+) -> None:
+    """Refuse OKRs that are too vague to act on.
+
+    Implements the schema-level guardrail (quinn-ai-XXX) so the CEO can't
+    ship a goal without measurable success criteria, can't ship a title
+    that is itself a placeholder, and can't bury 'TODO' / 'TBD' content
+    in the description and call it specced.
+
+    Workers downstream rely on the OKR being concrete; the system itself
+    enforces that contract here rather than hoping the LLM will.
+    """
+    # Title placeholder check (case-insensitive token match — we want to
+    # catch 'TBD title here' but not legitimate prose containing 'todo' as
+    # a substring of e.g. 'todoist'; tokenize on word boundaries).
+    title_tokens = {t.upper().strip(",.:;!?()[]{}\"'") for t in title.split()}
+    bad_in_title = title_tokens & set(_PLACEHOLDER_TOKENS)
+    if bad_in_title:
+        raise click.ClickException(
+            f"OKR title contains placeholder text: {sorted(bad_in_title)}.\n"
+            "An OKR title must name a concrete outcome. Resolve the ambiguity\n"
+            "(ask the requester what this is actually about) before filing."
+        )
+
+    if description:
+        desc_tokens = {
+            t.upper().strip(",.:;!?()[]{}\"'") for t in description.split()
+        }
+        bad_in_desc = desc_tokens & set(_PLACEHOLDER_TOKENS)
+        if bad_in_desc:
+            raise click.ClickException(
+                f"OKR description contains placeholder text: {sorted(bad_in_desc)}.\n"
+                "OKR descriptions must describe a concrete outcome, not a\n"
+                "promise to fill in details later. Ask clarifying questions\n"
+                "of the requester before filing."
+            )
+
+    if not no_krs_needed:
+        if not key_results:
+            raise click.ClickException(
+                "OKR has no measurable key results.\n\n"
+                "An OKR without quantifiable KRs is just a vibe. Pass at least one:\n"
+                "    --kr 'metric:target:unit'    "
+                "(e.g. --kr 'test_coverage:80:percent')\n\n"
+                "If this OKR is genuinely exploratory and you cannot yet quantify\n"
+                "success, pass --no-krs-needed and file a follow-up to revisit\n"
+                "once you have enough information to set real KRs."
+            )
+        for kr in key_results:
+            if not kr.metric or not kr.unit:
+                raise click.ClickException(
+                    f"KR has empty metric or unit (metric={kr.metric!r}, "
+                    f"unit={kr.unit!r}). Both must be set."
+                )
+
 
 def _create_okr(
     ctx: Context,
@@ -28,9 +124,14 @@ def _create_okr(
     label: tuple,
     due: Optional[str],
     parent: Optional[str],
+    key_results: Optional[list] = None,
+    no_krs_needed: bool = False,
 ):
     """Shared implementation for the set/add subcommands."""
     from cli.core.queries import create_okr, get_worker_by_name
+
+    key_results = key_results or []
+    _validate_okr_inputs(title, description, key_results, no_krs_needed)
 
     org_path = ctx.org_path
     db_path = get_org_db_path(org_path)
@@ -103,6 +204,7 @@ def _create_okr(
                     status="active",
                     okr_id=okr_id,
                     due_date=due_date,
+                    key_results=key_results or None,
                 )
         except sqlite3.Error as e:
             # SQLite mirror is secondary — don't fail if it errors

@@ -200,7 +200,8 @@ class TestOkrSetCommand:
         """Should require org to be initialized."""
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
-            "org", "okr", "set", "--title=Test OKR"
+            "org", "okr", "set", "--title=Test OKR",
+            "--kr", "milestones:1:count",
         ])
         assert result.exit_code != 0
         assert "not initialized" in result.output.lower() or "Run 'qn org init'" in result.output
@@ -225,10 +226,11 @@ class TestOkrSetCommand:
 
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
-            "org", "okr", "set", "--title=Test OKR"
+            "org", "okr", "set", "--title=Test OKR",
+            "--kr", "milestones:1:count",
         ])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
         assert "Created" in result.output
 
         # Verify bd was called with correct args
@@ -257,10 +259,11 @@ class TestOkrSetCommand:
             "--label=q1",
             "--label=critical",
             "--due=+3m",
-            "--parent=okr-parent"
+            "--parent=okr-parent",
+            "--kr", "monthly_recurring_revenue:120000:usd",
         ])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
 
         call_args = mock_run_bd.call_args[0][0]
         assert "--description" in call_args or "Grow by 50%" in str(call_args)
@@ -284,10 +287,11 @@ class TestOkrAddCommand:
 
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
-            "org", "okr", "add", "--title=New OKR"
+            "org", "okr", "add", "--title=New OKR",
+            "--kr", "milestones:1:count",
         ])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
         assert "Created" in result.output
 
 
@@ -644,10 +648,11 @@ class TestOkrDatabaseIntegration:
             "org", "okr", "set",
             "--title", "DB Test OKR",
             "--owner", "TestCEO",
-            "--description", "Test description"
+            "--description", "Test description",
+            "--kr", "milestones:1:count",
         ])
 
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
 
         # Verify OKR was stored in database
         db = open_database(get_org_db_path(initialized_org))
@@ -843,3 +848,132 @@ class TestOkrCloseCommand:
         # is missing (legacy / direct-bd OKRs).
         assert result.exit_code == 0, result.output
         assert "Closed OKR ghost-okr-id" in result.output
+
+
+class TestOkrInputValidation:
+    """Schema-level guardrails that refuse vague OKRs at the CLI surface.
+
+    Every meaningful OKR must have measurable key results AND must not
+    contain placeholder content. The CEO has to ask clarifying questions
+    of the requester BEFORE filing — the system enforces it instead of
+    hoping the LLM will.
+    """
+
+    def test_set_without_kr_is_refused(self, runner, initialized_org):
+        """qn org okr set with no --kr and no --no-krs-needed must fail."""
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set", "--title", "Some clear goal",
+        ])
+        assert result.exit_code != 0
+        assert "no measurable key results" in result.output.lower()
+        assert "--kr" in result.output
+        assert "--no-krs-needed" in result.output
+
+    @patch('cli.commands.org.okr._helpers.run_bd')
+    def test_set_with_no_krs_needed_opt_out(
+        self, mock_run_bd, runner, initialized_org
+    ):
+        """--no-krs-needed bypasses the KR requirement for exploratory OKRs."""
+        mock_run_bd.return_value = MagicMock(
+            returncode=0, stdout="Created issue: okr-explore", stderr=""
+        )
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set", "--title", "Explore Q2 themes",
+            "--no-krs-needed",
+        ])
+        assert result.exit_code == 0, result.output
+
+    def test_set_rejects_tbd_in_title(self, runner, initialized_org):
+        """Title with TBD/TODO/PLACEHOLDER token must be refused."""
+        for marker in ["TBD", "TODO", "PLACEHOLDER", "FIXME"]:
+            result = runner.invoke(qn, [
+                "--org-path", str(initialized_org),
+                "org", "okr", "set",
+                "--title", f"{marker}: figure out the goal",
+                "--kr", "milestones:1:count",
+            ])
+            assert result.exit_code != 0, f"Should refuse '{marker}' in title"
+            assert "placeholder" in result.output.lower()
+
+    def test_set_rejects_tbd_in_description(self, runner, initialized_org):
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set",
+            "--title", "Concrete goal",
+            "--description", "Goal: ship by Q1. Details: TODO once we know more.",
+            "--kr", "milestones:1:count",
+        ])
+        assert result.exit_code != 0
+        assert "placeholder" in result.output.lower()
+
+    def test_set_accepts_legitimate_substring_of_placeholder_token(
+        self, runner, initialized_org
+    ):
+        """Words like 'todoist' should not trip the TODO check (token-boundary
+        match, not substring). We tokenize on whitespace + strip punctuation."""
+        with patch('cli.commands.org.okr._helpers.run_bd') as mock_run_bd:
+            mock_run_bd.return_value = MagicMock(
+                returncode=0, stdout="Created issue: okr-todo-int", stderr=""
+            )
+            result = runner.invoke(qn, [
+                "--org-path", str(initialized_org),
+                "org", "okr", "set",
+                "--title", "Integrate Todoist sync",
+                "--kr", "users_synced:500:count",
+            ])
+            assert result.exit_code == 0, result.output
+
+    def test_kr_flag_parsing_rejects_malformed(self, runner, initialized_org):
+        """--kr 'foo' (missing colons) must error with a useful message."""
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set",
+            "--title", "Concrete goal", "--kr", "just_a_metric_name",
+        ])
+        assert result.exit_code != 0
+        assert "metric:target:unit" in result.output
+
+    def test_kr_flag_parsing_rejects_non_numeric_target(
+        self, runner, initialized_org
+    ):
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set",
+            "--title", "Concrete goal", "--kr", "coverage:high:percent",
+        ])
+        assert result.exit_code != 0
+        assert "numeric" in result.output.lower()
+
+    @patch('cli.commands.org.okr._helpers.run_bd')
+    def test_kr_lands_in_sqlite_mirror(
+        self, mock_run_bd, runner, initialized_org
+    ):
+        """KRs passed via --kr should be stored in the okrs table for
+        later querying via qn org okr show / progress."""
+        from cli.core.db import open_database, get_org_db_path
+        from cli.core.queries import get_okr
+
+        mock_run_bd.return_value = MagicMock(
+            returncode=0, stdout="Created issue: okr-kr-test", stderr=""
+        )
+        result = runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set", "--title", "Q1 hiring",
+            "--kr", "engineers_hired:5:count",
+            "--kr", "ramp_time:60:days",
+        ])
+        assert result.exit_code == 0, result.output
+
+        db = open_database(get_org_db_path(initialized_org))
+        try:
+            okr = get_okr(db, "okr-kr-test")
+            assert okr is not None
+            metrics = {kr.metric: (kr.target, kr.unit) for kr in okr.key_results}
+            assert metrics == {
+                "engineers_hired": (5.0, "count"),
+                "ramp_time": (60.0, "days"),
+            }
+        finally:
+            db.close()

@@ -8,7 +8,7 @@ from cli.commands.context import Context, pass_context
 from cli.core.db import get_org_db_path, open_database
 
 from . import _helpers
-from ._helpers import _create_okr
+from ._helpers import _create_okr, _parse_kr_flag
 
 
 def register(okr_group):
@@ -26,6 +26,26 @@ def register(okr_group):
     @click.option("--label", "-l", multiple=True, help="Labels to apply (can be used multiple times)")
     @click.option("--due", help="Due date (e.g., +3m, 2025-03-31)")
     @click.option("--parent", help="Parent OKR ID for hierarchy (creates child OKR)")
+    @click.option(
+        "--kr",
+        "kr_flags",
+        multiple=True,
+        help=(
+            "Key result in 'metric:target:unit' form. Repeatable. "
+            "At least one --kr is required (or use --no-krs-needed for "
+            "exploratory OKRs). Example: --kr 'test_coverage:80:percent'"
+        ),
+    )
+    @click.option(
+        "--no-krs-needed",
+        is_flag=True,
+        default=False,
+        help=(
+            "Opt out of the at-least-one-KR requirement. Use ONLY for "
+            "genuinely exploratory OKRs where success cannot yet be "
+            "quantified; file a follow-up to revisit."
+        ),
+    )
     @pass_context
     def set_cmd(
         ctx: Context,
@@ -36,16 +56,25 @@ def register(okr_group):
         label: tuple,
         due: Optional[str],
         parent: Optional[str],
+        kr_flags: tuple,
+        no_krs_needed: bool,
     ):
         """Create or update an OKR.
 
         Creates an OKR bead that work items can link to via 'serves' dependency.
 
+        OKRs are required to have measurable key results — the system refuses
+        OKRs whose success cannot be quantified. This forces clarifying
+        questions BEFORE work spins up against an unclear target.
+
         \b
         Examples:
-          qn org okr set --title "Q1 Revenue Growth" --owner ceo
-          qn org okr set --title "Launch MVP" --due=+3m --parent=okr-abc
-          qn org okr set --title "Scale Team" -p 1 -l hiring -l growth
+          qn org okr set --title "Q1 Revenue Growth" --owner ceo \\
+              --kr "monthly_recurring_revenue:120000:usd" \\
+              --kr "logo_count:25:customers"
+          qn org okr set --title "Launch MVP" --due=+3m --parent=okr-abc \\
+              --kr "shipped:1:milestone"
+          qn org okr set --title "Scoping Q2 themes" --no-krs-needed   # exploratory
 
         \b
         OKR Description Format:
@@ -56,7 +85,12 @@ def register(okr_group):
           - Singular, calculable metrics
           - Not subjective measures
         """
-        _create_okr(ctx, title, description, owner, priority, label, due, parent)
+        key_results = [_parse_kr_flag(s) for s in kr_flags]
+        _create_okr(
+            ctx, title, description, owner, priority, label, due, parent,
+            key_results=key_results,
+            no_krs_needed=no_krs_needed,
+        )
 
     @okr_group.command("add")
     @click.option("--title", required=True, help="OKR objective title")
@@ -66,6 +100,8 @@ def register(okr_group):
     @click.option("--label", "-l", multiple=True, help="Labels")
     @click.option("--due", help="Due date")
     @click.option("--parent", help="Parent OKR ID")
+    @click.option("--kr", "kr_flags", multiple=True, help="Key result 'metric:target:unit'. Repeatable.")
+    @click.option("--no-krs-needed", is_flag=True, default=False, help="Exploratory OKR; defer KRs.")
     @pass_context
     def add_cmd(
         ctx: Context,
@@ -76,9 +112,16 @@ def register(okr_group):
         label: tuple,
         due: Optional[str],
         parent: Optional[str],
+        kr_flags: tuple,
+        no_krs_needed: bool,
     ):
         """Alias for 'set'. Create a new OKR."""
-        _create_okr(ctx, title, description, owner, priority, label, due, parent)
+        key_results = [_parse_kr_flag(s) for s in kr_flags]
+        _create_okr(
+            ctx, title, description, owner, priority, label, due, parent,
+            key_results=key_results,
+            no_krs_needed=no_krs_needed,
+        )
 
     @okr_group.command("link")
     @click.argument("work_id")
