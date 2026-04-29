@@ -429,3 +429,44 @@ def pred_worker_role_contains(run: "ScenarioRun", a: dict[str, Any]) -> str | No
 
 
 PREDICATES["worker_role_contains"] = pred_worker_role_contains
+
+
+def pred_command_succeeds(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
+    """Run a shell command and assert exit code 0.
+
+    Used by 'real platform' canaries where the gate is 'the workers'
+    artifact is correct enough to actually pass tests' — not just 'a file
+    with this name exists'. Runs in the harness process, NOT in any
+    worker session, so it sees the same filesystem (e.g. /tmp paths) the
+    workers wrote to.
+
+    YAML:
+      - { kind: command_succeeds, command: "pytest /tmp/canary10/test_x.py -q", timeout_seconds: 30 }
+      - { kind: command_succeeds, command: "python -c 'import x; assert x.f(1)==2'", timeout_seconds: 10 }
+
+    The harness times the command out at `timeout_seconds` (default 30) and
+    reports the tail of stdout+stderr on failure so the operator can see
+    why the command didn't pass.
+    """
+    import subprocess
+    cmd = a["command"]
+    timeout = int(a.get("timeout_seconds", 30))
+    try:
+        result = subprocess.run(
+            ["bash", "-c", cmd],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return f"command_succeeds({cmd!r}): timed out after {timeout}s"
+    if result.returncode != 0:
+        return (
+            f"command_succeeds({cmd!r}): exit {result.returncode}\n"
+            f"  stdout: {result.stdout[-300:]!r}\n"
+            f"  stderr: {result.stderr[-300:]!r}"
+        )
+    return None
+
+
+PREDICATES["command_succeeds"] = pred_command_succeeds

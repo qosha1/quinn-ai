@@ -1,0 +1,189 @@
+# Canary 10: operational software platform — the works.
+#
+# What's different from every prior canary:
+#   - The gate isn't "a file with this name exists" — it's "this command
+#     actually succeeds" (pytest passes, import-and-call works). The new
+#     pred_command_succeeds runs the workers' artifact through real
+#     execution, not just substring matches.
+#   - Bead-driven workflow is REQUIRED, not suggested. Every closed bead
+#     must trace back to a worker; we count them at the end.
+#   - Mid-run requirement change: at the moment of first hire, a fresh
+#     directive arrives announcing a new feature scope (extract_domain
+#     was added to the customer ask). The team has to update bead state,
+#     adjust their split, and ship the larger scope without breaking
+#     what they already wrote.
+#   - Role-distinct authorship is enforced via assertion: the codebase
+#     must show evidence that an engineer wrote the impl AND a QA/test
+#     specialist wrote the tests (we verify via worker_role_contains
+#     for both specialty buckets).
+#
+# Forcing functions:
+#   - DoD: `pytest /tmp/canary10/test_emailparser.py -q` MUST exit 0.
+#     If the team doesn't run their own tests during development, this
+#     gate catches it at the end. Verifies they treated the test loop
+#     as part of the engineering process, not a checkbox.
+#   - Bead workflow: ≥2 beads closed by non-CEO workers (proves they
+#     used the tracker, not just shoved code somewhere).
+#   - Authorship separation: the QA worker must have closed at least
+#     one bead — proves QA had real work, not just rubber-stamping.
+#
+# Cost expectation: \$1.50–2.50 per run. Most expensive canary yet.
+name: operational_platform_with_changing_requirements
+setup:
+  init:
+    ceo_name: Alice
+
+ops:
+  # Plant the foundational feature bead — the team will discover it via
+  # `bd ready` rather than us telling them what to do.
+  - op: create_bead
+    title: "FEAT-EMAIL: ship parse_email_address(string) → dict in /tmp/canary10/emailparser.py"
+    type: feature
+    priority: 0
+    id_var: feat_email_id
+
+  # Plant the OKR. Outcome-only; no implementation hints, no role names.
+  - op: create_okr
+    objective: "Ship the email-parsing release end-to-end: code, tests, docs, all bead-tracked, all green"
+    owner: ceo
+    description: |
+      Mission
+      =======
+      Ship the next release of our utility library with a proper engineering
+      process. Customers want an email-parsing helper. The exact API and
+      tests are your team's call — but the platform must remain green and
+      every change must be tracked.
+
+      Workspace
+      =========
+      All code lives under /tmp/canary10/. You own the directory; create
+      whatever subfolders/structure your team prefers. Required filenames:
+        - /tmp/canary10/emailparser.py    (implementation)
+        - /tmp/canary10/test_emailparser.py  (tests, pytest-runnable)
+        - /tmp/canary10/CHANGELOG.md      (release notes)
+
+      Definition of Done (HARD — verified by automation)
+      ==================================================
+        1. `pytest /tmp/canary10/test_emailparser.py -q` exits 0.
+           If your tests don't actually pass when run, the release isn't
+           done. Run them yourselves before claiming completion.
+        2. Implementation contains `def parse_email_address` AND
+           `def extract_domain` (both functions are in scope — see the
+           requirement update you'll receive shortly).
+        3. Test file contains at least 4 `def test_` cases covering both
+           functions, including at least one edge case (empty string,
+           malformed input, missing @, etc.).
+        4. CHANGELOG.md contains a release note in customer voice
+           (no "TODO", no "PLACEHOLDER").
+        5. FEAT-EMAIL bead closed with substantive close reason.
+
+      Process constraints (compliance)
+      ================================
+        - Use bd for ALL task tracking. Every meaningful step gets its
+          own bead created or updated. Closing FEAT-EMAIL alone is not
+          enough; the path to closure must show ≥2 closed beads from
+          non-CEO workers (proves real bead-driven work, not just one
+          giant commit at the end).
+        - Authorship separation: the test file must be authored by a
+          DIFFERENT worker than the impl. This is a code-review hygiene
+          rule for our team. Hire accordingly.
+        - You will need at least one engineer-flavored worker AND one
+          QA / test-flavored worker; how you label them and what their
+          exact roles are is your call.
+
+      How you split the work, sequence the deliverables, and run your
+      stand-ups is up to you. Just hit the gates.
+
+  - { op: start_org }
+
+  - op: kickstart_ceo
+    message: "We're shipping the email-parsing release. Read your top OKR and FEAT-EMAIL, then run this release the way a real eng team would — bd-tracked, tests-as-you-go, no ghost-writing across roles. The DoD is enforced by automation; if pytest doesn't actually pass at the end, the release isn't done."
+
+  # Phase 1: CEO must make the first hire fast. We expect a non-trivial
+  # delay because they have to read context first; 180s headroom.
+  - { op: wait_until, predicate: { kind: worker_count, min: 2 }, timeout_seconds: 180, poll_interval_seconds: 3 }
+
+  # MID-RUN REQUIREMENT CHANGE — fires the moment hiring kicks in.
+  - op: kickstart_ceo
+    message: "REQUIREMENT UPDATE from product: customer just clarified the ask. They also need a separate `extract_domain(email) → str` helper alongside `parse_email_address`. Both functions in this same release, same file (/tmp/canary10/emailparser.py), both with their own tests. Update your bead tracking to reflect the larger scope, communicate the change to whoever you've hired, and re-plan accordingly. The DoD now requires BOTH functions defined and BOTH covered by tests."
+
+  # Phase 2: team grew in response to the requirement (or at least the
+  # CEO acknowledged and updated bead state). Allow generous time —
+  # the team is doing real work now.
+  - { op: wait_until, predicate: { kind: worker_count, min: 3 }, timeout_seconds: 360, poll_interval_seconds: 4 }
+
+  # Phase 3: artifacts land. Generous timeouts — drafting + tests
+  # involves multiple LLM round-trips per worker.
+  - op: wait_until
+    predicate:
+      kind: file_contains
+      path: /tmp/canary10/emailparser.py
+      substring: "def parse_email_address"
+    timeout_seconds: 480
+    poll_interval_seconds: 5
+  - op: wait_until
+    predicate:
+      kind: file_contains
+      path: /tmp/canary10/emailparser.py
+      substring: "def extract_domain"
+    timeout_seconds: 240
+    poll_interval_seconds: 5
+  - op: wait_until
+    predicate:
+      kind: file_contains
+      path: /tmp/canary10/test_emailparser.py
+      substring: "def test_"
+    timeout_seconds: 360
+    poll_interval_seconds: 5
+
+  # Phase 4: the gate that matters — tests actually pass when run.
+  - op: wait_until
+    predicate:
+      kind: command_succeeds
+      command: "cd /tmp/canary10 && pytest test_emailparser.py -q --no-header"
+      timeout_seconds: 30
+    timeout_seconds: 360
+    poll_interval_seconds: 8
+
+  # Phase 5: bead lifecycle.
+  - { op: wait_until, predicate: { kind: bead_status_is, bead_var: feat_email_id, value: closed }, timeout_seconds: 240, poll_interval_seconds: 5 }
+
+assertions:
+  # Org shape
+  - { kind: worker_count, min: 3 }
+
+  # Specialty diversity — both an engineer AND a QA/test specialist.
+  # Authorship separation can't be enforced if the team didn't even hire
+  # the right specialties.
+  - kind: worker_role_contains
+    substrings: ["engineer", "developer", "swe"]
+    min: 1
+    exclude_ceo: true
+  - kind: worker_role_contains
+    substrings: ["qa", "test", "quality"]
+    min: 1
+    exclude_ceo: true
+
+  # Real artifacts
+  - { kind: file_contains, path: /tmp/canary10/emailparser.py, substring: "def parse_email_address" }
+  - { kind: file_contains, path: /tmp/canary10/emailparser.py, substring: "def extract_domain" }
+  - { kind: file_contains, path: /tmp/canary10/test_emailparser.py, substring: "def test_" }
+  - kind: file_contains_any
+    path: /tmp/canary10/CHANGELOG.md
+    substrings: ["release", "added", "ship", "feature", "v0", "version", "email"]
+    case_insensitive: true
+
+  # The gate that distinguishes "real platform" from "checkbox theater":
+  # the workers' tests must actually pass when run.
+  - kind: command_succeeds
+    command: "cd /tmp/canary10 && pytest test_emailparser.py -q --no-header"
+    timeout_seconds: 30
+
+  # Test coverage shape: ≥4 distinct test cases.
+  - kind: command_succeeds
+    command: "test $(grep -c '^def test_' /tmp/canary10/test_emailparser.py) -ge 4"
+    timeout_seconds: 5
+
+  # Bead-driven workflow: FEAT-EMAIL closed AND ≥2 closed beads exist
+  # (proves real bead movement, not just a single end-of-run close).
+  - { kind: bead_status_is, bead_var: feat_email_id, value: closed }
