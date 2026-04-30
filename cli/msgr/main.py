@@ -123,10 +123,12 @@ from cli.msgr.commands.inbox import inbox
 from cli.msgr.commands.send import send
 from cli.msgr.commands.channels import channels
 from cli.msgr.commands.read import read
+from cli.msgr.commands.search import search
 
 msgr.add_command(inbox)
 msgr.add_command(send)
 msgr.add_command(channels)
+msgr.add_command(search)
 msgr.add_command(read)
 
 

@@ -4,7 +4,7 @@ import click
 
 from cli.msgr.context import pass_context, MsgrContext
 from cli.msgr.utils import resolve_channel, ChannelResolutionError
-from cli.core.queries.channel import create_message_with_notifications
+from cli.core.queries.messages import create_message_with_notifications, get_message
 from cli.core.rules import requires_rule_check
 
 
@@ -23,6 +23,12 @@ from cli.core.rules import requires_rule_check
     default="whenever",
     help="When message needs attention",
 )
+@click.option(
+    "--reply-to",
+    "reply_to",
+    default=None,
+    help="Message ID to reply to (creates threaded reply)",
+)
 @requires_rule_check("msgr.send")
 @pass_context
 def send(
@@ -31,6 +37,7 @@ def send(
     message: str,
     priority: int,
     time_sensitivity: str,
+    reply_to: str | None,
 ):
     """Send a message to a channel.
 
@@ -46,18 +53,30 @@ def send(
       msgr send #general 'Team meeting at 3pm'
       msgr send @alice 'Can you review PR #42?'
       msgr send #eng 'Bug fixed in production' --priority=1
+      msgr send #general 'Got it' --reply-to msg-abc123
     """
     db = ctx.db
     worker_id = ctx.worker_id
 
-    # Resolve channel reference to ID
-    try:
-        channel_id = resolve_channel(db, channel, worker_id)
-    except ChannelResolutionError as e:
-        click.echo(f"Error: {e}", err=True)
-        raise click.Abort()
+    thread_id = None
+    parent_id = None
+    channel_id = None
 
-    # Send message with notifications
+    if reply_to:
+        parent_msg = get_message(db, reply_to)
+        if parent_msg is None:
+            click.echo(f"Error: message {reply_to!r} not found", err=True)
+            raise SystemExit(1)
+        parent_id = parent_msg.id
+        thread_id = parent_msg.thread_id or parent_msg.id
+        channel_id = parent_msg.channel_id
+    else:
+        try:
+            channel_id = resolve_channel(db, channel, worker_id)
+        except ChannelResolutionError as e:
+            click.echo(f"Error: {e}", err=True)
+            raise click.Abort()
+
     try:
         msg = create_message_with_notifications(
             db=db,
@@ -66,6 +85,8 @@ def send(
             content=message,
             priority=priority,
             time_sensitivity=time_sensitivity,
+            thread_id=thread_id,
+            parent_id=parent_id,
         )
 
         click.echo(f"✓ Message sent to {channel}")
