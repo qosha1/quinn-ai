@@ -410,7 +410,36 @@ button.danger:hover { background: rgba(248, 81, 73, 0.15); }
 .bead-card__assignee { color: var(--fg-muted); }
 .bead-card__id { color: var(--fg-muted); font-family: monospace; font-size: 10px; }
 
-/* OKRs */
+/* OKR cards (kanban style) */
+.okr-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.okr-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transform: translateY(-1px);
+}
+.okr-card__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.okr-card__owner { color: var(--accent); font-size: 11px; font-weight: 600; }
+.okr-card__due { color: var(--fg-muted); font-size: 11px; }
+.okr-card__title { color: var(--fg); font-size: 13px; font-weight: 600; line-height: 1.4; margin-bottom: 10px; }
+.okr-card__krs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.okr-kr { }
+.okr-kr__row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+.okr-kr__metric { color: var(--fg-muted); font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.okr-kr__value { color: var(--fg); font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.okr-kr__bar { background: var(--bg-elevated); border-radius: 2px; height: 4px; overflow: hidden; }
+.okr-kr__bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+.okr-card__footer { display: flex; align-items: center; gap: 8px; }
+.okr-card__overall { display: flex; align-items: center; gap: 6px; flex: 1; }
+.okr-card__overall-bar { background: var(--bg-elevated); border-radius: 2px; height: 4px; flex: 1; overflow: hidden; }
+.okr-card__children { color: var(--fg-muted); font-size: 11px; }
+
+/* OKRs tree (legacy) */
 .okr-node {
   border-left: 2px solid var(--border);
   margin: 4px 0;

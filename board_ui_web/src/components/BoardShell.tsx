@@ -3,16 +3,17 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WorkerRow } from "@/components/WorkerRow";
 import { WorkBoard } from "@/components/WorkBoard";
+import { OKRBoard } from "@/components/OKRBoard";
 import { formatCurrency, formatRelativeTime } from "@/lib/transforms";
-import type { OrgDashboard, WorkerInfo, Message, ActivityEntry, Channel } from "@/lib/types";
+import type { OrgDashboard, WorkerInfo, Message, OKRInfo, ActivityEntry, Channel } from "@/lib/types";
 import type { Bead, Dependency } from "@/lib/beads-db";
 
-export type Tab = "dashboard" | "team" | "messages" | "work" | "activity";
+export type Tab = "dashboard" | "team" | "messages" | "okrs" | "work" | "activity";
 
 interface Toast { id: number; message: string; type: "success" | "error" }
 
 const POLL_INTERVAL = 15000;
-const TABS: Tab[] = ["dashboard", "team", "messages", "work", "activity"];
+const TABS: Tab[] = ["dashboard", "team", "messages", "okrs", "work", "activity"];
 
 async function fetchWithRetry<T>(url: string, opts?: RequestInit, retries = 2): Promise<T> {
   for (let i = 0; i <= retries; i++) {
@@ -74,6 +75,7 @@ export function BoardShell({ tab }: Props) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [okrs, setOKRs] = useState<OKRInfo[]>([]);
   const [beads, setBeads] = useState<Bead[]>([]);
   const [beadDeps, setBeadDeps] = useState<Dependency[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -103,16 +105,18 @@ export function BoardShell({ tab }: Props) {
   const fetchAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [db, ws, chans, bd, act] = await Promise.all([
+      const [db, ws, chans, os, bd, act] = await Promise.all([
         fetchWithRetry<OrgDashboard>("/api/org"),
         fetchWithRetry<{ workers: WorkerInfo[] }>("/api/workers"),
         fetchWithRetry<{ channels: Channel[] }>("/api/messages?channel=_channels"),
+        fetchWithRetry<{ okrs: OKRInfo[] }>("/api/okrs"),
         fetchWithRetry<{ beads: Bead[]; dependencies: Dependency[] }>("/api/beads"),
         fetchWithRetry<{ activity: ActivityEntry[] }>("/api/activity"),
       ]);
       setDashboard(db);
       setWorkers(ws.workers);
       setChannels(chans.channels);
+      setOKRs(os.okrs ?? []);
       setBeads(bd.beads ?? []);
       setBeadDeps(bd.dependencies ?? []);
       setActivity(act.activity);
@@ -236,7 +240,8 @@ export function BoardShell({ tab }: Props) {
         {TABS.map((t) => (
           <button key={t} className={`tab ${tab === t ? "tab--active" : ""}`} onClick={() => router.push(`/${t}`)}>
             {t === "messages" && totalUnread > 0 ? `Messages (${totalUnread})` :
-             t === "work" ? `Work${beads.length > 0 ? ` (${beads.filter((b) => b.status !== "closed").length})` : ""}` :
+             t === "okrs" ? `OKRs${okrs.length > 0 ? ` (${okrs.filter((o) => o.status === "active").length})` : ""}` :
+             t === "work" ? `Work${beads.length > 0 ? ` (${beads.filter((b) => b.status !== "closed" && b.status !== "deferred").length})` : ""}` :
              t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
@@ -407,10 +412,11 @@ export function BoardShell({ tab }: Props) {
           </div>
         )}
 
+        {/* ── OKRs ── */}
+        {tab === "okrs" && <OKRBoard okrs={okrs} />}
+
         {/* ── WORK ── */}
-        {tab === "work" && (
-          <WorkBoard beads={beads} dependencies={beadDeps} />
-        )}
+        {tab === "work" && <WorkBoard beads={beads} dependencies={beadDeps} />}
 
         {/* ── ACTIVITY ── */}
         {tab === "activity" && (

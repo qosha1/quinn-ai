@@ -32,7 +32,7 @@ export function OKRNode({ node, depth = 0 }: Props) {
         <ul className="okr-node__krs">
           {node.key_results.map((kr, i) => (
             <li key={i} className="kr-item">
-              <span className="kr-item__title">{kr.title}</span>
+              <span className="kr-item__title">{kr.metric}</span>
               <span className="kr-item__value">{kr.current} / {kr.target}{kr.unit ? ` ${kr.unit}` : ""}</span>
               <div className="kr-item__bar">
                 <div

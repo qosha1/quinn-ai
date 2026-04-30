@@ -63,7 +63,7 @@ export interface Message {
 }
 
 export interface KeyResult {
-  title: string;
+  metric: string;
   current: number;
   target: number;
   unit?: string;

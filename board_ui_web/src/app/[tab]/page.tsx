@@ -1,13 +1,14 @@
 import { notFound } from "next/navigation";
 import { BoardShell, type Tab } from "@/components/BoardShell";
 
-const VALID_TABS = new Set(["dashboard", "team", "messages", "work", "activity"]);
+const VALID_TABS = new Set(["dashboard", "team", "messages", "okrs", "work", "activity"]);
 
 export function generateStaticParams() {
   return [
     { tab: "dashboard" },
     { tab: "team" },
     { tab: "messages" },
+    { tab: "okrs" },
     { tab: "work" },
     { tab: "activity" },
   ];
