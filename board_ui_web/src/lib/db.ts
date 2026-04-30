@@ -159,6 +159,18 @@ export function getWorkers(dbPath: string): WorkerInfo[] {
 export function getMessages(dbPath: string, channelName: string = "board-channel"): Message[] {
   const db = getConnection(dbPath);
 
+  // Check if notification_beads table exists (may be missing in some fixtures)
+  const hasNotifTable = (db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='notification_beads'"
+  ).get() as { name: string } | undefined) != null;
+
+  const readExpr = hasNotifTable
+    ? "CASE WHEN nb.read_at IS NOT NULL OR nb.actioned_at IS NOT NULL THEN 1 ELSE 0 END"
+    : "0";
+  const joinClause = hasNotifTable
+    ? "LEFT JOIN notification_beads nb ON nb.message_id = m.id"
+    : "";
+
   const rows = db.prepare(`
     SELECT
       m.id,
@@ -168,11 +180,11 @@ export function getMessages(dbPath: string, channelName: string = "board-channel
       m.content,
       m.priority,
       m.created_at,
-      CASE WHEN nb.read_at IS NOT NULL OR nb.actioned_at IS NOT NULL THEN 1 ELSE 0 END as is_read
+      ${readExpr} as is_read
     FROM messages m
     JOIN channels c ON m.channel_id = c.id
     LEFT JOIN workers w ON m.from_worker_id = w.id
-    LEFT JOIN notification_beads nb ON nb.message_id = m.id
+    ${joinClause}
     WHERE c.name = ?
     GROUP BY m.id
     ORDER BY m.created_at ASC
@@ -223,6 +235,172 @@ export function markMessageRead(dbPath: string, messageId: string): void {
   db.prepare(`
     UPDATE notification_beads SET read_at = datetime('now') WHERE message_id = ? AND read_at IS NULL
   `).run(messageId);
+}
+
+export interface PostedMessage {
+  id: string;
+  channel_id: string;
+  thread_id: string | null;
+  parent_id: string | null;
+  from_worker_id: string;
+  content: string;
+}
+
+export function postMessageToChannel(
+  dbPath: string,
+  channelId: string,
+  fromWorkerId: string,
+  content: string,
+  priority: number = 2,
+): PostedMessage {
+  const db = getConnection(dbPath);
+  const id = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  db.prepare(`
+    INSERT INTO messages (id, channel_id, thread_id, parent_id, from_worker_id, content, priority, time_sensitivity)
+    VALUES (?, ?, NULL, NULL, ?, ?, ?, 'whenever')
+  `).run(id, channelId, fromWorkerId, content, priority);
+  return { id, channel_id: channelId, thread_id: null, parent_id: null, from_worker_id: fromWorkerId, content };
+}
+
+export function getThreadMessages(dbPath: string, threadId: string): Message[] {
+  const db = getConnection(dbPath);
+  const rows = db.prepare(`
+    SELECT
+      m.id, m.from_worker_id,
+      COALESCE(w.name, m.from_worker_id) as from_worker_name,
+      c.name as channel_name,
+      m.content, m.priority, m.created_at,
+      m.thread_id, m.parent_id,
+      0 as is_read
+    FROM messages m
+    JOIN channels c ON m.channel_id = c.id
+    LEFT JOIN workers w ON m.from_worker_id = w.id
+    WHERE m.thread_id = ?
+    ORDER BY m.created_at ASC
+  `).all(threadId) as Array<{
+    id: string; from_worker_id: string; from_worker_name: string;
+    channel_name: string; content: string; priority: number;
+    created_at: string; thread_id: string | null; parent_id: string | null; is_read: number;
+  }>;
+  return rows.map((r) => ({ ...r, is_read: r.is_read === 1, priority: r.priority as Message["priority"] }));
+}
+
+export function markChannelRead(dbPath: string, channelName: string): void {
+  const db = getConnection(dbPath);
+  db.prepare(`
+    UPDATE notification_beads SET read_at = datetime('now')
+    WHERE read_at IS NULL
+    AND message_id IN (
+      SELECT m.id FROM messages m
+      JOIN channels c ON m.channel_id = c.id
+      WHERE c.name = ?
+    )
+  `).run(channelName);
+}
+
+export function searchMessages(
+  dbPath: string,
+  query: string,
+  channelFilter?: string,
+): Array<{ id: string; from_worker_name: string; channel_name: string; content: string; created_at: string }> {
+  const db = getConnection(dbPath);
+  // Use LIKE since FTS5 is set up in CLI but may not be in all fixture DBs
+  const sql = channelFilter
+    ? `SELECT m.id, COALESCE(w.name, m.from_worker_id) as from_worker_name,
+         c.name as channel_name, m.content, m.created_at
+       FROM messages m JOIN channels c ON m.channel_id = c.id
+       LEFT JOIN workers w ON m.from_worker_id = w.id
+       WHERE m.content LIKE ? AND c.name = ?
+       ORDER BY m.created_at DESC LIMIT 50`
+    : `SELECT m.id, COALESCE(w.name, m.from_worker_id) as from_worker_name,
+         c.name as channel_name, m.content, m.created_at
+       FROM messages m JOIN channels c ON m.channel_id = c.id
+       LEFT JOIN workers w ON m.from_worker_id = w.id
+       WHERE m.content LIKE ?
+       ORDER BY m.created_at DESC LIMIT 50`;
+  const like = `%${query}%`;
+  return (channelFilter
+    ? db.prepare(sql).all(like, channelFilter)
+    : db.prepare(sql).all(like)) as Array<{ id: string; from_worker_name: string; channel_name: string; content: string; created_at: string }>;
+}
+
+export function subscribeToChannel(dbPath: string, channelId: string, workerId: string): void {
+  const db = getConnection(dbPath);
+  db.prepare(`
+    INSERT OR IGNORE INTO channel_subscriptions (channel_id, worker_id)
+    VALUES (?, ?)
+  `).run(channelId, workerId);
+}
+
+export function unsubscribeFromChannel(dbPath: string, channelId: string, workerId: string): void {
+  const db = getConnection(dbPath);
+  db.prepare(`DELETE FROM channel_subscriptions WHERE channel_id = ? AND worker_id = ?`).run(channelId, workerId);
+}
+
+export function getChannelsWithSubscription(
+  dbPath: string,
+  workerId: string,
+): Array<{ id: string; name: string; channel_type: string; subscribed: boolean }> {
+  const db = getConnection(dbPath);
+  return (db.prepare(`
+    SELECT c.id, c.name, c.type as channel_type,
+      CASE WHEN cs.worker_id IS NOT NULL THEN 1 ELSE 0 END as subscribed
+    FROM channels c
+    LEFT JOIN channel_subscriptions cs ON c.id = cs.channel_id AND cs.worker_id = ?
+    ORDER BY c.name
+  `).all(workerId) as Array<{ id: string; name: string; channel_type: string; subscribed: number }>)
+    .map((r) => ({ ...r, subscribed: r.subscribed === 1 }));
+}
+
+export function createDirectChannel(
+  dbPath: string,
+  worker1Id: string,
+  worker2Id: string,
+): string {
+  const db = getConnection(dbPath);
+  const sorted = [worker1Id, worker2Id].sort();
+  const name = `dm-${sorted[0].slice(0, 8)}-${sorted[1].slice(0, 8)}`;
+
+  const existing = db.prepare("SELECT id FROM channels WHERE name = ?").get(name) as { id: string } | undefined;
+  if (existing) return existing.id;
+
+  const id = `chan-dm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  db.prepare(`INSERT INTO channels (id, name, type) VALUES (?, ?, 'direct')`).run(id, name);
+  // Subscribe both workers — try the real schema table, fall back to fixture alias
+  const subTable = (db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('channel_subscriptions','channel_members') LIMIT 1"
+  ).get() as { name: string } | undefined)?.name;
+  if (subTable) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO ${subTable} (channel_id, worker_id) VALUES (?, ?)`).run(id, worker1Id);
+      db.prepare(`INSERT OR IGNORE INTO ${subTable} (channel_id, worker_id) VALUES (?, ?)`).run(id, worker2Id);
+    } catch { /* ignore */ }
+  }
+  return id;
+}
+
+export function addReaction(dbPath: string, messageId: string, workerId: string, emoji: string): void {
+  const db = getConnection(dbPath);
+  db.prepare(`
+    INSERT OR IGNORE INTO message_reactions (message_id, worker_id, emoji) VALUES (?, ?, ?)
+  `).run(messageId, workerId, emoji);
+}
+
+export function removeReaction(dbPath: string, messageId: string, workerId: string, emoji: string): void {
+  const db = getConnection(dbPath);
+  db.prepare(`DELETE FROM message_reactions WHERE message_id = ? AND worker_id = ? AND emoji = ?`).run(messageId, workerId, emoji);
+}
+
+export function getReactionCounts(dbPath: string, messageId: string): Record<string, number> {
+  const db = getConnection(dbPath);
+  try {
+    const rows = db.prepare(`
+      SELECT emoji, COUNT(*) as count FROM message_reactions WHERE message_id = ? GROUP BY emoji
+    `).all(messageId) as Array<{ emoji: string; count: number }>;
+    return Object.fromEntries(rows.map((r) => [r.emoji, r.count]));
+  } catch {
+    return {};
+  }
 }
 
 export function sendReply(dbPath: string, originalMessageId: string, content: string): string {

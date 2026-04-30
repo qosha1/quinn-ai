@@ -143,6 +143,10 @@ export function BoardShell({ tab }: Props) {
     setActiveChannel(channelName);
     setReplyText("");
     fetchMessages(channelName);
+    // Auto-mark all messages in channel as read
+    fetch(`/api/messages/read-all?channel=${encodeURIComponent(channelName)}`, { method: "POST" })
+      .then(() => setChannels((prev) => prev.map((c) => c.name === channelName ? { ...c, unread_count: 0 } : c)))
+      .catch(() => { /* silent */ });
   }, [fetchMessages]);
 
   const handleWorkerAction = useCallback(async (workerId: string, action: "pause" | "resume" | "fire") => {
@@ -163,10 +167,10 @@ export function BoardShell({ tab }: Props) {
 
   const handleSend = useCallback(async () => {
     if (!replyText.trim() || !activeChannel || sending) return;
-    // Use the most recent message ID as the reply target, or a sentinel if none
-    const lastMsg = messages[messages.length - 1];
-    if (!lastMsg) return;
     setSending(true);
+    const activeChanObj = channels.find((c) => c.name === activeChannel);
+    if (!activeChanObj) { setSending(false); return; }
+
     const optimistic: Message = {
       id: `optimistic-${Date.now()}`,
       from_worker_id: "board-operator",
@@ -178,12 +182,13 @@ export function BoardShell({ tab }: Props) {
       is_read: true,
     };
     setMessages((prev) => [...prev, optimistic]);
+    const text = replyText;
     setReplyText("");
     setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     try {
-      await fetchWithRetry(`/api/messages/${lastMsg.id}`, {
+      await fetchWithRetry(`/api/channels/${activeChanObj.id}/messages`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: optimistic.content }),
+        body: JSON.stringify({ content: text }),
       });
       fetchMessages(activeChannel, false);
     } catch (err) {
@@ -192,7 +197,7 @@ export function BoardShell({ tab }: Props) {
     } finally {
       setSending(false);
     }
-  }, [replyText, activeChannel, sending, messages, toast, fetchMessages]);
+  }, [replyText, activeChannel, sending, channels, toast, fetchMessages]);
 
   const totalUnread = channels.reduce((sum, c) => sum + (c.unread_count ?? 0), 0);
 

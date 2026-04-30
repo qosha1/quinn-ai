@@ -60,6 +60,8 @@ export interface Message {
   priority: MessagePriority;
   created_at: string;
   is_read: boolean;
+  thread_id?: string | null;
+  parent_id?: string | null;
 }
 
 export interface KeyResult {
