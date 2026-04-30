@@ -269,6 +269,7 @@ export function getOKRs(dbPath: string, ownerId?: string): OKRInfo[] {
     parent_okr_id: string | null;
     key_results: string;
     due_date: string | null;
+    created_at: string | null;
     children_count: number;
   }>;
 
@@ -282,6 +283,7 @@ export function getOKRs(dbPath: string, ownerId?: string): OKRInfo[] {
     parent_id: row.parent_okr_id,
     key_results: safeParseJSON<KeyResult[]>(row.key_results, []),
     due_date: row.due_date,
+    created_at: row.created_at ?? null,
     children_count: row.children_count,
   }));
 }

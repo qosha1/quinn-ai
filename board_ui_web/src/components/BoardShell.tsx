@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WorkerRow } from "@/components/WorkerRow";
 import { WorkBoard } from "@/components/WorkBoard";
-import { OKRBoard } from "@/components/OKRBoard";
+import { OKRTimeline } from "@/components/OKRTimeline";
 import { formatCurrency, formatRelativeTime } from "@/lib/transforms";
 import type { OrgDashboard, WorkerInfo, Message, OKRInfo, ActivityEntry, Channel } from "@/lib/types";
 import type { Bead, Dependency } from "@/lib/beads-db";
@@ -247,7 +247,7 @@ export function BoardShell({ tab }: Props) {
         ))}
       </nav>
 
-      <main className="tab-content">
+      <main className={tab === "okrs" ? "tab-content--flush" : "tab-content"}>
 
         {/* ── DASHBOARD ── */}
         {tab === "dashboard" && dashboard && (
@@ -413,7 +413,7 @@ export function BoardShell({ tab }: Props) {
         )}
 
         {/* ── OKRs ── */}
-        {tab === "okrs" && <OKRBoard okrs={okrs} />}
+        {tab === "okrs" && <OKRTimeline okrs={okrs} />}
 
         {/* ── WORK ── */}
         {tab === "work" && <WorkBoard beads={beads} dependencies={beadDeps} />}

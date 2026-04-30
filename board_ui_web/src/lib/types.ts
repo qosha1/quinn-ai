@@ -79,6 +79,7 @@ export interface OKRInfo {
   parent_id: string | null;
   key_results: KeyResult[];
   due_date: string | null;
+  created_at: string | null;
   children_count: number;
 }
 
