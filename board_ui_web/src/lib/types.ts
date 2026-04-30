@@ -62,6 +62,7 @@ export interface Message {
   is_read: boolean;
   thread_id?: string | null;
   parent_id?: string | null;
+  reaction_counts?: Record<string, number>;
 }
 
 export interface KeyResult {

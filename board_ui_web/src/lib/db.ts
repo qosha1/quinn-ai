@@ -200,16 +200,24 @@ export function getMessages(dbPath: string, channelName: string = "board-channel
     is_read: number;
   }>;
 
-  return rows.map((row) => ({
-    id: row.id,
-    from_worker_id: row.from_worker_id,
-    from_worker_name: row.from_worker_name,
-    channel_name: row.channel_name,
-    content: row.content,
-    priority: row.priority as Message["priority"],
-    created_at: row.created_at,
-    is_read: row.is_read === 1,
-  }));
+  const hasReactionsTable = (db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='message_reactions'"
+  ).get() as { name: string } | undefined) != null;
+
+  return rows.map((row) => {
+    const reaction_counts = hasReactionsTable ? getReactionCounts(dbPath, row.id) : {};
+    return {
+      id: row.id,
+      from_worker_id: row.from_worker_id,
+      from_worker_name: row.from_worker_name,
+      channel_name: row.channel_name,
+      content: row.content,
+      priority: row.priority as Message["priority"],
+      created_at: row.created_at,
+      is_read: row.is_read === 1,
+      reaction_counts,
+    };
+  });
 }
 
 export function getAllChannels(dbPath: string): Array<{ id: string; name: string; channel_type: string; message_count: number; unread_count: number }> {
@@ -379,8 +387,21 @@ export function createDirectChannel(
   return id;
 }
 
+function ensureReactionsTable(db: Database.Database): void {
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS message_reactions (
+      message_id TEXT NOT NULL,
+      worker_id TEXT NOT NULL,
+      emoji TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (message_id, worker_id, emoji)
+    )
+  `).run();
+}
+
 export function addReaction(dbPath: string, messageId: string, workerId: string, emoji: string): void {
   const db = getConnection(dbPath);
+  ensureReactionsTable(db);
   db.prepare(`
     INSERT OR IGNORE INTO message_reactions (message_id, worker_id, emoji) VALUES (?, ?, ?)
   `).run(messageId, workerId, emoji);
@@ -388,12 +409,14 @@ export function addReaction(dbPath: string, messageId: string, workerId: string,
 
 export function removeReaction(dbPath: string, messageId: string, workerId: string, emoji: string): void {
   const db = getConnection(dbPath);
+  ensureReactionsTable(db);
   db.prepare(`DELETE FROM message_reactions WHERE message_id = ? AND worker_id = ? AND emoji = ?`).run(messageId, workerId, emoji);
 }
 
 export function getReactionCounts(dbPath: string, messageId: string): Record<string, number> {
   const db = getConnection(dbPath);
   try {
+    ensureReactionsTable(db);
     const rows = db.prepare(`
       SELECT emoji, COUNT(*) as count FROM message_reactions WHERE message_id = ? GROUP BY emoji
     `).all(messageId) as Array<{ emoji: string; count: number }>;

@@ -87,6 +87,7 @@ export function BoardShell({ tab }: Props) {
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const toastIdRef = useRef(0);
   const prevWorkersRef = useRef<WorkerInfo[]>([]);
+  const sseRef = useRef<EventSource | null>(null);
 
   const toast = useCallback((msg: string, type: "success" | "error" = "success") => {
     const id = ++toastIdRef.current;
@@ -134,6 +135,30 @@ export function BoardShell({ tab }: Props) {
   }, [fetchMessages]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // SSE for active channel — real-time message push, falls back to polling
+  useEffect(() => {
+    if (!activeChannel) return;
+    sseRef.current?.close();
+    const es = new EventSource(`/api/messages/stream?channel=${encodeURIComponent(activeChannel)}`);
+    sseRef.current = es;
+    es.addEventListener("messages", (e) => {
+      const { messages: newMsgs } = JSON.parse(e.data) as { messages: Message[] };
+      if (newMsgs.length > 0) {
+        setMessages((prev) => {
+          const ids = new Set(prev.map((m) => m.id));
+          const added = newMsgs.filter((m) => !ids.has(m.id));
+          if (!added.length) return prev;
+          setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+          return [...prev, ...added];
+        });
+      }
+    });
+    es.onerror = () => es.close();
+    return () => { es.close(); sseRef.current = null; };
+  }, [activeChannel]);
+
+  // Slower polling for everything else (workers, okrs, beads, activity, channel list)
   useEffect(() => {
     const iv = setInterval(() => fetchAll(true), POLL_INTERVAL);
     return () => clearInterval(iv);
