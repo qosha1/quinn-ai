@@ -353,7 +353,18 @@ export function BoardShell({ tab }: Props) {
                   <div className="empty-state" style={{ marginTop: 60 }}>No messages in this channel yet</div>
                 )}
                 {messages.map((msg, i) => {
-                  const prev = messages[i - 1];
+                  const isWelcome = msg.content.startsWith(`Welcome ${msg.from_worker_name}!`);
+                  if (isWelcome) {
+                    return (
+                      <div key={msg.id} className="chat-join">
+                        <Avatar name={msg.from_worker_name} size={20} />
+                        <span className="chat-join__name">{msg.from_worker_name}</span>
+                        <span className="chat-join__text">joined the channel</span>
+                        <span className="chat-join__time">{formatRelativeTime(msg.created_at)}</span>
+                      </div>
+                    );
+                  }
+                  const prev = messages.slice(0, i).reverse().find((m) => !m.content.startsWith(`Welcome ${m.from_worker_name}!`));
                   const isGrouped = prev && prev.from_worker_id === msg.from_worker_id &&
                     (new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime()) < 5 * 60 * 1000;
                   return (
