@@ -13,7 +13,7 @@
 # tools:
 #   - name: rc
 #     description: Remote compose — deploy and manage remote services
-#     install_cmd: brew install rc
+#     install_cmd: pipx install remote-compose
 #   - name: gh
 #     description: GitHub CLI — PRs, issues, and repo management
 #     install_cmd: brew install gh
