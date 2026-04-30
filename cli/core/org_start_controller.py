@@ -64,6 +64,7 @@ from cli.core.session import SessionConfig
 from cli.core.sessions.registry import get_default_registry
 from cli.core.storage import StorageManager
 from cli.core.worker import Worker
+from shared.core.tools import OrgToolsConfig, check_tool_presence
 from shared import (
     InvalidOrgTransition,
     ConfigurationError,
@@ -136,7 +137,24 @@ def _validate_preflight(org_path: Path, skip_config_validation: bool) -> Databas
                 f"Organization structure at {org_path} is incomplete."
             )
 
+    # 4. Verify CLI tool dependencies (warn on missing, don't fail)
+    _verify_cli_tools(org_path)
+
     return open_database(db_path)
+
+
+def _verify_cli_tools(org_path: Path) -> None:
+    """Warn if any declared org CLI tools are missing from PATH."""
+    tools_config = OrgToolsConfig.load_from_yaml(org_path / "config" / "tools.yaml")
+    if not tools_config.tools:
+        return
+    missing = [t for t in tools_config.tools if not check_tool_presence(t)]
+    if missing:
+        names = ", ".join(t.name for t in missing)
+        click.echo(f"Warning: missing CLI tools: {names}", err=True)
+        for t in missing:
+            if t.install_cmd:
+                click.echo(f"  Install {t.name}: {t.install_cmd}", err=True)
 
 
 def _determine_start_mode(org: Org) -> StartMode:

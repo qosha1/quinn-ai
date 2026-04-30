@@ -601,6 +601,38 @@ def get_worker_preferred_provider(db: Database, worker_id: str) -> Optional[str]
     return row["preferred_provider"]
 
 
+def set_worker_tools(db: Database, worker_id: str, tools: list[dict]) -> None:
+    """Persist a worker's extra CLI tool dependencies.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+        tools: List of tool dicts with keys name, description, install_cmd, check_cmd
+    """
+    now = datetime.now()
+    db.execute(
+        "UPDATE workers SET tools = ?, updated_at = ? WHERE id = ?",
+        (json.dumps(tools), now, worker_id),
+    )
+    db.connection.commit()
+
+
+def get_worker_tools(db: Database, worker_id: str) -> list[dict]:
+    """Retrieve a worker's extra CLI tool dependencies.
+
+    Args:
+        db: Database instance
+        worker_id: Worker ID
+
+    Returns:
+        List of tool dicts, or empty list if none set
+    """
+    row = db.fetchone("SELECT tools FROM workers WHERE id = ?", (worker_id,))
+    if not row or not row["tools"]:
+        return []
+    return json.loads(row["tools"])
+
+
 def get_worker_continuation_context(db: Database, worker_id: str) -> dict:
     """Get context data for continuation prompts.
 
@@ -667,5 +699,7 @@ __all__ = [
     "get_workers_by_runtime_status",
     "update_worker_preferred_provider",
     "get_worker_preferred_provider",
+    "set_worker_tools",
+    "get_worker_tools",
     "get_worker_continuation_context",
 ]

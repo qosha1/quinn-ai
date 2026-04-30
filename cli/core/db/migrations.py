@@ -652,6 +652,11 @@ def migrate_database(db: "Database", from_version: int, to_version: int) -> None
             "CREATE INDEX IF NOT EXISTS idx_teams_template_type ON teams(template_type) WHERE template_type IS NOT NULL",
             "CREATE INDEX IF NOT EXISTS idx_teams_status ON teams(status)",
         ],
+        # Version 25: Per-worker CLI tool dependencies
+        # tools: JSON array of {name, description, install_cmd, check_cmd} entries
+        25: [
+            "ALTER TABLE workers ADD COLUMN tools TEXT",
+        ],
     }
 
     for version in range(from_version + 1, to_version + 1):

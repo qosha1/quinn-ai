@@ -91,6 +91,10 @@ def copy_default_configs(org_path: Path) -> None:
     if templates_src.exists():
         shutil.copy(templates_src, config_dir / "worker-templates.yaml")
 
+    tools_src = template_path / "tools.yaml"
+    if tools_src.exists():
+        shutil.copy(tools_src, config_dir / "tools.yaml")
+
 
 def write_providers_config(
     org_path: Path,

@@ -1,0 +1,24 @@
+# CLI Tool Dependencies
+#
+# Declare the CLI tools your org's workers need. At org start, QuinnAI
+# will verify these are installed and include them in each worker's briefing.
+#
+# Fields:
+#   name        (required) — command name as it appears on PATH
+#   description (optional) — shown to workers in their briefing
+#   install_cmd (optional) — hint for how to install if missing
+#   check_cmd   (optional) — custom check command (default: which <name>)
+#
+# Example:
+# tools:
+#   - name: rc
+#     description: Remote compose — deploy and manage remote services
+#     install_cmd: brew install rc
+#   - name: gh
+#     description: GitHub CLI — PRs, issues, and repo management
+#     install_cmd: brew install gh
+#   - name: jq
+#     description: JSON processor for scripting and data inspection
+#     install_cmd: brew install jq
+
+tools: []

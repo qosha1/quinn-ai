@@ -406,6 +406,20 @@ No OKRs assigned yet. Check with your manager or create initial objectives.
   - `qn wrkr status` - Your current status
   - `qn wrkr list` - See all workers
 
+{% if available_tools %}
+## Available CLI Tools
+
+The following CLI tools are available in this org for you to use:
+
+{% for tool in available_tools %}
+- **{{ tool.name }}**{% if tool.description %} — {{ tool.description }}{% endif %}
+{% endfor %}
+{% if available_tools | selectattr('install_cmd') | list %}
+
+> If any tool is missing, install it: {% for tool in available_tools %}{% if tool.install_cmd %}`{{ tool.install_cmd }}`{% if not loop.last %}, {% endif %}{% endif %}{% endfor %}
+{% endif %}
+
+{% endif %}
 ## First Actions
 
 {% if first_actions %}

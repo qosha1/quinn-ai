@@ -44,7 +44,7 @@ DEFAULT_ACTIVITY_FEED_CHANNEL = "activity-feed"
 DEFAULT_DB_NAME = "quinn.db"
 """Default database filename."""
 
-DB_SCHEMA_VERSION = 24
+DB_SCHEMA_VERSION = 25
 """Current database schema version."""
 
 DEFAULT_DB_BUSY_TIMEOUT_MS = 5000

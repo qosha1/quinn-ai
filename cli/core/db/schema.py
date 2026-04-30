@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS workers (
     offboarding_ask_bead_id TEXT,
     -- Provider preference (v20)
     preferred_provider TEXT,
+    -- Per-worker CLI tool dependencies (v25): JSON array of {name, description, install_cmd, check_cmd}
+    tools TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE RESTRICT,

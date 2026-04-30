@@ -17,9 +17,10 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from cli.core.db import Database, get_org_db_path
 from cli.core.worker import Worker
-from cli.core.queries import get_team, get_worker, get_worker_allocated_budget, get_okrs_by_owner
+from cli.core.queries import get_team, get_worker, get_worker_allocated_budget, get_okrs_by_owner, get_worker_tools
 from cli.core.storage import StorageManager
 from cli.core.constants import SHARED_DIR, STORAGE_DIR
+from shared.core.tools import OrgToolsConfig, ToolDependency, merge_tool_lists
 from shared.exceptions import WorkerNotFound
 
 _logger = logging.getLogger(__name__)
@@ -45,6 +46,11 @@ class OnboardingContext:
     first_actions: list[str]  # Actionable first steps for worker
     escalation_timeout_minutes: int  # How long before idle triggers escalation
     team_template: Optional[str] = None  # Template name if hired via qn org hire-team (quinn-ai-x71x)
+    available_tools: list[ToolDependency] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.available_tools is None:
+            self.available_tools = []
 
 
 def prepare_worker_onboarding(
@@ -199,6 +205,9 @@ def _load_onboarding_context(
     # Get escalation timeout based on role (GAP 4 setup)
     escalation_timeout = _get_escalation_timeout(worker.role, is_ceo, is_manager)
 
+    # Load merged tool list (org baseline + worker additions)
+    available_tools = _load_available_tools(db, worker.id, org_path)
+
     return OnboardingContext(
         worker_id=worker.id,
         worker_name=worker.name,
@@ -216,7 +225,24 @@ def _load_onboarding_context(
         first_actions=first_actions,
         escalation_timeout_minutes=escalation_timeout,
         team_template=team_template,
+        available_tools=available_tools,
     )
+
+
+def _load_available_tools(db: Database, worker_id: str, org_path: Path) -> list[ToolDependency]:
+    """Load merged tool list from org config and worker-level additions."""
+    org_config = OrgToolsConfig.load_from_yaml(org_path / "config" / "tools.yaml")
+    raw_worker_tools = get_worker_tools(db, worker_id)
+    worker_tools = [
+        ToolDependency(
+            name=t["name"],
+            description=t.get("description", ""),
+            install_cmd=t.get("install_cmd", ""),
+            check_cmd=t.get("check_cmd", ""),
+        )
+        for t in raw_worker_tools
+    ]
+    return merge_tool_lists(org_config.tools, worker_tools)
 
 
 def _load_org_mission(org_path: Path) -> str:
@@ -486,6 +512,7 @@ def _create_briefing(
         first_actions=ctx.first_actions,
         escalation_timeout_minutes=ctx.escalation_timeout_minutes,
         rules_by_severity=rules_by_severity,
+        available_tools=ctx.available_tools,
     )
 
     (worker_dir / "BRIEFING.md").write_text(content)
