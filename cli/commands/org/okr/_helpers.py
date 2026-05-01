@@ -190,15 +190,18 @@ def _create_okr(
     output = result.stdout.strip()
     click.echo(output)
 
-    # Extract created ID from "Created issue: xxx" output
+    # Extract created ID from "✓ Created issue: <id> — <title>" output.
+    # Use the token immediately after "issue:" to avoid matching dates or
+    # hyphenated words from the title (e.g. "2026-06-30", "AI/dev-tools").
     okr_id = None
     for line in output.split("\n"):
-        if "Created" in line and "-" in line:
-            words = line.split()
-            for word in reversed(words):
-                if "-" in word and not word.startswith("-"):
-                    okr_id = word.strip()
-                    break
+        if "issue:" in line.lower():
+            parts = line.split("issue:", 1)
+            if len(parts) == 2:
+                # First whitespace-delimited token after "issue:"
+                candidate = parts[1].strip().split()[0].rstrip("—").strip()
+                if candidate:
+                    okr_id = candidate
             break
 
     # Mirror the OKR into the SQLite okrs table for query/progress
