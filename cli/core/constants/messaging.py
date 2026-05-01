@@ -174,43 +174,46 @@ CONTINUATION_ENGINE_POLL_INTERVAL = 60.0
 
 CONTINUATION_PROMPT_SOFT_CHECK = """
 ---
-⏱️  ACTIVITY CHECK (5 minutes since last progress)
+⏱️  WORK CYCLE (5 minutes since last progress)
 
-Are you making progress? If you're working, no action needed.
+Run your work cycle now:
 
-If blocked, please either:
-1. Update your current bead: bd update {current_task_id}
-2. Message your manager: msgr send @{manager_id} "status update"
-3. Post to team: msgr send #{team_channel} "working on X"
+1. msgr inbox
+2. bd ready
+3. Pick up the highest priority item and work it
 
-This is a gentle reminder - continue your work.
+If you're mid-task, continue — no action needed.
+If blocked: msgr send @{manager_id} "BLOCKED: [describe issue]"
 ---
 """
 
 CONTINUATION_PROMPT_STATUS_REQUEST = """
 ---
-📊 STATUS REQUEST (15 minutes since last progress)
+📊 WORK CYCLE CHECK (15 minutes since last progress)
 
-Please provide a brief status update using ONE of these:
+Run your work cycle:
 
-1. Update bead: bd update {current_task_id} --notes="working on X"
-2. Team message: msgr send #{team_channel} "Status: working on X, ETA Y"
-3. Manager DM: msgr send @{manager_id} "blocked on X, need help"
+1. msgr inbox
+2. bd ready
+3. Claim and work the highest priority item
 
-Status updates help your team know you're progressing.
+If genuinely blocked on everything: msgr send @{manager_id} "BLOCKED: [describe issue]" --priority=1
+Post a status: msgr send #{team_channel} "Status: [what you're working on]"
 ---
 """
 
 CONTINUATION_PROMPT_FINAL_WARNING = """
 ---
-🚨 URGENT: Final warning (25 minutes idle)
+🚨 URGENT: 25 minutes idle — escalation in 5 minutes
 
-You will be escalated to your manager in 5 minutes if no activity detected.
+Run your work cycle NOW:
 
-Please take action NOW:
-- Update bead: bd update {current_task_id} --notes="progress update"
-- If blocked: msgr send @{manager_id} "BLOCKED: [describe issue]" --priority=1
-- If done: bd close {current_task_id} && bd ready
+1. msgr inbox
+2. bd ready
+3. Claim and work something
+
+If done with current task: bd close {current_task_id} && bd ready
+If blocked: msgr send @{manager_id} "BLOCKED: [describe issue]" --priority=1
 
 Your manager will be notified automatically if no response.
 ---

@@ -22,6 +22,7 @@ from .promote import promote_cmd
 from .demote import demote_cmd
 from .delegations import delegations_cmd
 from .provider import provider_cmd
+from .watch import watch
 from cli.core.rules.cli import rules_cmd
 
 __all__ = [
@@ -46,5 +47,6 @@ __all__ = [
     "demote_cmd",
     "delegations_cmd",
     "provider_cmd",
+    "watch",
     "rules_cmd",
 ]

@@ -187,7 +187,7 @@ class TestSendSoftCheck:
         mock_run.assert_called_once()
         # Check that soft check prompt was sent
         call_args = mock_run.call_args[0][0]
-        assert "ACTIVITY CHECK" in call_args[4]
+        assert "WORK CYCLE" in call_args[4]
 
     @patch("cli.core.session_prompter.get_active_session_tmux_name")
     def test_fails_when_no_tmux_session(
@@ -227,7 +227,7 @@ class TestSendStatusRequest:
         mock_run.assert_called_once()
         # Check that status request prompt was sent
         call_args = mock_run.call_args[0][0]
-        assert "STATUS REQUEST" in call_args[4]
+        assert "WORK CYCLE CHECK" in call_args[4]
 
 
 class TestSendFinalWarning:
@@ -287,6 +287,5 @@ class TestPromptRendering:
         assert "{current_task_id}" not in prompt
         assert "{manager_id}" not in prompt
         assert "{team_channel}" not in prompt
-        assert "task-789" in prompt
+        # soft check no longer mentions current_task_id — it's a work-cycle prompt
         assert "manager-456" in prompt
-        assert "engineering" in prompt

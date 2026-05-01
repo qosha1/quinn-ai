@@ -433,6 +433,14 @@ You were started with `qn org start`, which means you should operate autonomousl
 - Only stop for CRITICAL blockers that prevent ALL progress
 - For non-critical questions: document in beads and proceed with reasonable default
 
+**WORK LOOP (run this after every task or turn ends):**
+```
+msgr inbox   # check for new messages and directives first
+bd ready     # see available work
+```
+Pick the highest priority item, work it to completion, then repeat. Never sit idle — if `bd ready` is empty, check `bd list --status=open` or ask your manager for direction.
+You can also use `/loop` to automate this cycle.
+
 **COMMUNICATION REQUIREMENT — INBOX DISCIPLINE (MANDATORY):**
 
 `msgr inbox` is a continuous polling queue, not a passive notification.
