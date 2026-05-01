@@ -55,6 +55,9 @@ COST_TIER_ADVANCED_MAX = 80
 # BUDGET
 # ===================
 
+DEFAULT_WORKER_BUDGET_ALLOCATION = 100
+"""Default credits auto-allocated to a new worker at hire time."""
+
 DEFAULT_BUDGET_PERIOD_DAYS = 30
 """Default budget period in days."""
 

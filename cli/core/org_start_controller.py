@@ -827,6 +827,56 @@ def _start_worker(
 # =============================================================================
 
 
+def _spawn_other_active_workers(
+    db: "Database",
+    org_path: Path,
+    provider: str,
+    session_command: str,
+    session_args: str,
+) -> None:
+    """Spawn sessions for all active non-CEO workers that have budget and no running session."""
+    from cli.core.queries import get_workers_by_status
+    from cli.core.budget.enforcer import check_budget
+    from cli.commands.org.session_utils import spawn_worker_session
+    from cli.core.onboarding import get_worker_env_vars, prepare_worker_onboarding
+    from cli.core.storage import StorageManager
+    from shared.exceptions import NoBudgetAllocationError
+
+    workers = get_workers_by_status(db, "active")
+    non_ceo = [w for w in workers if w.role.upper() != "CEO"]
+    if not non_ceo:
+        return
+
+    click.echo(f"Spawning sessions for {len(non_ceo)} active worker(s)...")
+    for worker_data in non_ceo:
+        worker_obj = Worker(db, worker_data.id, org_path=org_path)
+        if worker_obj.is_session_active:
+            continue
+        try:
+            check_budget(db, worker_obj.id, required_amount=0)
+        except NoBudgetAllocationError:
+            click.echo(f"  Skipping {worker_data.name} — no budget allocated")
+            continue
+        try:
+            storage = StorageManager(org_path, db)
+            worker_dir = storage.ensure_worker_storage(worker_obj.id)
+            onboarding_ctx = prepare_worker_onboarding(db, worker_obj.id, org_path)
+            env_vars = get_worker_env_vars(onboarding_ctx, org_path, db)
+            eff_provider = worker_obj.preferred_provider or provider
+            spawn_worker_session(
+                worker=worker_obj,
+                provider=eff_provider,
+                command=session_command,
+                args_str=session_args,
+                working_directory=resolve_session_cwd(org_path, worker_dir),
+                env_vars=env_vars,
+                force_restart=False,
+            )
+            click.echo(f"  Session started for {worker_data.name}")
+        except Exception as e:
+            click.echo(f"  Warning: could not start {worker_data.name}: {e}", err=True)
+
+
 def execute_start(
     ctx_org_path: Path,
     *,
@@ -897,6 +947,8 @@ def execute_start(
         if wait and spawn_ceo:
             click.echo("Phase 6: Waiting for session readiness...")
             _wait_for_ready(org.ceo, wait_timeout)
+
+        _spawn_other_active_workers(db, org_path, provider, session_command, session_args)
 
         click.echo(f"\nOrganization started at {org_path}")
         click.echo(f"  Status: {org.status}")

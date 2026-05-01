@@ -1,17 +1,11 @@
-"""Regression test for quinn-ai-41v.
+"""Regression tests for hire + budget UX.
 
-`qn org hire` against a fresh org auto-tries to spawn a session, but the
-new worker has no per-worker budget allocation. The original UX:
+Original bug (quinn-ai-41v): `qn org hire` against a fresh org failed with
+'Warning: Failed to start session: No budget allocation' — bad UX.
 
-  Hired alice (engineer)
-    ID: wrkr-...
-  Starting worker session...
-  Warning: Failed to start session: No budget allocation found for worker
-  You can start manually with: qn org start
-
-After the fix, the no-budget case should be a normal-looking informational
-message (not a 'Warning: Failed') and explicitly point at the right next
-step ('qn org budget allocate' before 'qn org start --worker NAME').
+First fix: showed informational message pointing at qn org budget allocate.
+Current fix: auto-allocates DEFAULT_WORKER_BUDGET_ALLOCATION credits from CEO
+and starts the session immediately — no manual step required.
 """
 
 import sqlite3
@@ -50,9 +44,9 @@ def _ceo_id(org_path: Path) -> str:
         conn.close()
 
 
-def test_hire_no_budget_does_not_say_warning_failed(runner, initialized_org):
-    """The no-budget path is expected on a fresh org — it should not be
-    framed as a 'Warning: Failed' (which implies something went wrong)."""
+def test_hire_starts_session_without_manual_budget_step(runner, initialized_org):
+    """Hiring a worker auto-allocates budget and starts the session immediately.
+    No manual 'qn org budget allocate' step required."""
     ceo_id = _ceo_id(initialized_org)
     result = runner.invoke(qn, [
         "--org-path", str(initialized_org),
@@ -61,17 +55,14 @@ def test_hire_no_budget_does_not_say_warning_failed(runner, initialized_org):
         "--manager", ceo_id, "--cost", "50",
     ])
     assert result.exit_code == 0, result.output
-    # Worker IS hired; session-spawn warning is a separate concern.
     assert "Hired 'alice'" in result.output
-    assert "Warning: Failed to start session" not in result.output, (
-        f"Expected the no-budget path to be informational, not 'Warning: Failed'. "
-        f"Output:\n{result.output}"
-    )
+    assert "Warning: Failed to start session" not in result.output
+    # Session should have started (auto-budget path)
+    assert "Session started for alice" in result.output
 
 
-def test_hire_no_budget_points_at_budget_allocate(runner, initialized_org):
-    """The fix message should explicitly mention the 'qn org budget allocate'
-    next step so users don't have to guess."""
+def test_hire_auto_allocates_budget(runner, initialized_org):
+    """Hire auto-allocates credits from CEO so session can start."""
     ceo_id = _ceo_id(initialized_org)
     result = runner.invoke(qn, [
         "--org-path", str(initialized_org),
@@ -80,7 +71,4 @@ def test_hire_no_budget_points_at_budget_allocate(runner, initialized_org):
         "--manager", ceo_id, "--cost", "50",
     ])
     assert result.exit_code == 0, result.output
-    assert "qn org budget allocate" in result.output, (
-        f"Expected the no-budget message to point at 'qn org budget allocate'. "
-        f"Output:\n{result.output}"
-    )
+    assert "Auto-allocated" in result.output or "Session started for bob" in result.output

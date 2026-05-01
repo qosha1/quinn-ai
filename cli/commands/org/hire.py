@@ -195,22 +195,36 @@ def hire_cmd(
         click.echo("")
         click.echo("Starting worker session...")
         from shared.exceptions import NoBudgetAllocationError
+        from cli.core.constants import DEFAULT_WORKER_BUDGET_ALLOCATION
         try:
             _start_workday_for_hire(ctx, new_worker)
             click.echo(f"Session started for {new_worker.name}")
         except NoBudgetAllocationError:
-            # Fresh-org case: managers haven't allocated per-worker budget yet.
-            # Not really a failure — frame it as the expected 2-step flow.
-            # Single copy-pasteable command so an autonomous CEO can chain it
-            # without remembering the order (quinn-ai-xdwo).
-            click.echo(
-                f"Worker created. Run this to give them a budget and bring "
-                f"the session online:"
-            )
-            click.echo(
-                f"  qn org budget allocate {new_worker.name} <amount> "
-                f"&& qn org start --worker {new_worker.name}"
-            )
+            # Auto-allocate a default budget from CEO so the worker can start.
+            try:
+                from cli.core.budget import BudgetService
+                from cli.core.org import Org
+                db = open_database(get_org_db_path(ctx.org_path))
+                try:
+                    org = Org.load(db)
+                    budget_service = BudgetService(db)
+                    budget_service.delegate_budget(
+                        source_worker_id=org.ceo.id,
+                        target_worker_id=new_worker.id,
+                        amount=DEFAULT_WORKER_BUDGET_ALLOCATION,
+                    )
+                    click.echo(
+                        f"Auto-allocated {DEFAULT_WORKER_BUDGET_ALLOCATION} credits to {new_worker.name}"
+                    )
+                    _start_workday_for_hire(ctx, new_worker)
+                    click.echo(f"Session started for {new_worker.name}")
+                finally:
+                    db.close()
+            except Exception as budget_err:
+                click.echo(f"Warning: Could not auto-allocate budget: {budget_err}")
+                click.echo(
+                    f"Run manually: qn org budget allocate {new_worker.name} {DEFAULT_WORKER_BUDGET_ALLOCATION}"
+                )
         except Exception as e:
             click.echo(f"Warning: Failed to start session: {e}")
             click.echo("You can start manually with: qn org start")
