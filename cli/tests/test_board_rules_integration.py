@@ -427,7 +427,10 @@ class TestRequiredSeverityOnFire:
         # tries to fire bob; charlie's direct manager is alice.
         charlie_id = _seed_worker(rules_org, name="Charlie", role="director", manager_name="Alice")
 
-        # Pre-create the override bead, status=approved, approver_id == alice.
+        # Pre-create the override bead, status=approved, approver_id == alice's UUID.
+        # The engine compares approver_id against db.get_direct_manager(charlie_id)
+        # which returns alice's actual UUID, not the literal name "alice".
+        alice_id = _resolve_ceo_id(rules_org)
         beads_dir = rules_org / ".beads"
         beads_dir.mkdir(parents=True, exist_ok=True)
         override_bead_id = "quinn-ai-override-1"
@@ -435,7 +438,7 @@ class TestRequiredSeverityOnFire:
             "id": override_bead_id,
             "owner": charlie_id,
             "status": "approved",
-            "approver_id": "alice",
+            "approver_id": alice_id,
             "body": "approved by manager alice",
         }
         (beads_dir / "issues.jsonl").write_text(json.dumps(bead_record) + "\n")
@@ -448,6 +451,7 @@ class TestRequiredSeverityOnFire:
                     "org", "fire",
                     bob_id,
                     "--reason", "reorg",
+                    "--force",
                     "--override", override_bead_id,
                 ],
             )

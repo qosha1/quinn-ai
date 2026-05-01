@@ -67,8 +67,9 @@ def _build_action_context(
     Per t2zb §C.1: keys include worker_id, worker_role, worker_role_level,
     env, args (flattened), body, target_paths.
     """
+    import os as _os
     org_ctx = getattr(ctx, "obj", None)
-    worker_id = getattr(org_ctx, "worker_id", None)
+    worker_id = getattr(org_ctx, "worker_id", None) or _os.environ.get("QUINN_WORKER_ID")
 
     # Body extraction: prefer common click param names that ship free text.
     body = (

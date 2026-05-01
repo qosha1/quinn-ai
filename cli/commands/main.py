@@ -323,5 +323,52 @@ from cli.commands.config import config as config_group
 qn.add_command(config_group, name="config")
 
 
+# qn-bd — rules-evaluated beads wrapper for workers
+from cli.commands.qn_bd import _evaluate_qn_bd_action
+from cli.core.bd_wrapper import BeadPermissionError, run_bd
+from cli.core.lifecycle import LifecycleError as _LifecycleError
+
+
+@qn.command(
+    name="qn-bd",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+@pass_context
+def qn_bd_cmd(ctx: Context, args: tuple[str, ...]) -> None:
+    """Run bd (beads) with rules-engine evaluation and org-scoped permissions."""
+    import os as _os
+    bd_args = list(args)
+    worker_id = _os.environ.get("QUINN_WORKER_ID")
+
+    rule_exit = _evaluate_qn_bd_action(
+        bd_args=bd_args,
+        org_path=ctx.org_path,
+        worker_id=worker_id,
+    )
+    if rule_exit is not None:
+        raise SystemExit(rule_exit)
+
+    try:
+        # Rules engine already evaluated access — skip the separate beads
+        # permission table check which is redundant for the worker-facing surface.
+        result = run_bd(
+            args=bd_args,
+            org_path=ctx.org_path,
+            worker_id=worker_id,
+            skip_permission_check=True,
+        )
+        raise SystemExit(result.returncode)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1)
+    except BeadPermissionError as e:
+        click.echo(f"Permission denied: {e}", err=True)
+        raise SystemExit(1)
+    except _LifecycleError as e:
+        click.echo(f"Lifecycle error: {e}", err=True)
+        raise SystemExit(1)
+
+
 if __name__ == "__main__":
     qn()

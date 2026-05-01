@@ -210,6 +210,34 @@ def _evaluate_qn_bd_action(
         audit = AuditLogger(org_path / "live" / "rules-audit.jsonl")
         engine = RuleEngine(ruleset, db, audit)
 
+    # Extract and STRIP --justify and --override flags before passing to bd.
+    # These are QuinnAI-only flags for the rules engine; bd doesn't know them.
+    justify_bead_id: Optional[str] = None
+    override_bead_id: Optional[str] = None
+    stripped_args: list[str] = []
+    i = 0
+    while i < len(bd_args):
+        tok = bd_args[i]
+        if tok == "--justify" and i + 1 < len(bd_args):
+            justify_bead_id = bd_args[i + 1]
+            i += 2
+            continue
+        if tok.startswith("--justify="):
+            justify_bead_id = tok.split("=", 1)[1]
+            i += 1
+            continue
+        if tok == "--override" and i + 1 < len(bd_args):
+            override_bead_id = bd_args[i + 1]
+            i += 2
+            continue
+        if tok.startswith("--override="):
+            override_bead_id = tok.split("=", 1)[1]
+            i += 1
+            continue
+        stripped_args.append(tok)
+        i += 1
+    bd_args[:] = stripped_args
+
     action = f"qn-bd.{verb}"
     context = {
         "worker_id": worker_id,
@@ -222,7 +250,7 @@ def _evaluate_qn_bd_action(
         "command": " ".join(bd_args),
     }
 
-    decision = engine.evaluate(action, context)
+    decision = engine.evaluate(action, context, justify_bead_id=justify_bead_id, override_bead_id=override_bead_id)
 
     if decision.kind == DecisionKind.ALLOW:
         return None

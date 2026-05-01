@@ -241,6 +241,45 @@ class Database:
         cursor = self.execute(sql, params)
         return cursor.fetchall()
 
+    def get_bead(self, bead_id: str) -> Optional[dict]:
+        """Fetch a bead by ID from the org's beads database.
+
+        Used by the rules engine to validate --justify and --override bead
+        references. Reads from the .beads/beads.db JSONL issues or SQLite
+        depending on backend; falls back to a direct filesystem read.
+        """
+        import json
+        from pathlib import Path
+
+        beads_dir = self.db_path.parent.parent / ".beads"
+        issues_file = beads_dir / "issues.jsonl"
+        if not issues_file.exists():
+            return None
+        try:
+            with issues_file.open() as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if record.get("id") == bead_id:
+                        return record
+        except OSError:
+            pass
+        return None
+
+    def get_direct_manager(self, worker_id: Optional[str]) -> Optional[str]:
+        """Return the manager_id of the given worker, or None."""
+        if not worker_id:
+            return None
+        row = self.fetchone(
+            "SELECT manager_id FROM workers WHERE id = ?", (worker_id,)
+        )
+        return row["manager_id"] if row else None
+
     def close(self) -> None:
         """Close database connection for the current thread.
 

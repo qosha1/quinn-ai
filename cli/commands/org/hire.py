@@ -4,7 +4,9 @@ qn org hire command.
 Create a new worker under a manager in the organization.
 """
 
+import functools
 import json
+import os
 from typing import Optional
 
 import click
@@ -15,6 +17,36 @@ from cli.core.rules import requires_rule_check
 from cli.core.worker import Worker, InsufficientHiringAuthority, MaxReportsExceeded
 from cli.core.queries import resolve_worker
 from shared.exceptions import WorkerNotFound
+
+
+def _requires_hiring_caller_authority(f):
+    """Pre-check: if QUINN_WORKER_ID is set, verify calling worker can hire.
+
+    Per zm8a §5, this permission gate runs BEFORE the rules engine so
+    unauthorized workers never produce audit-log noise.
+    """
+    @functools.wraps(f)
+    @click.pass_context
+    def wrapper(ctx, *args, **kwargs):
+        org_ctx = ctx.obj
+        caller_id = getattr(org_ctx, "worker_id", None) or os.environ.get("QUINN_WORKER_ID")
+        if caller_id:
+            try:
+                db = org_ctx.db
+                caller = Worker.get(db, caller_id)
+                if caller is not None:
+                    scope = caller.hiring_authority_scope
+                    if not scope.allowed_roles:
+                        raise click.ClickException(
+                            f"Permission denied: worker {caller_id} has no hiring authority."
+                        )
+            except click.ClickException:
+                raise
+            except Exception:
+                pass
+        return f(*args, **kwargs)
+
+    return wrapper
 
 
 @click.command()
@@ -45,6 +77,7 @@ from shared.exceptions import WorkerNotFound
     default="{}",
     help='Skills as JSON object (e.g., \'{"coding": 80, "reasoning": 60}\').',
 )
+@_requires_hiring_caller_authority
 @requires_rule_check("qn-org.hire")
 @pass_context
 def hire_cmd(
