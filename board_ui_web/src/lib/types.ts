@@ -13,6 +13,7 @@ export interface WorkerInfo {
   team_name: string;
   status: WorkerStatus;
   session_state: SessionState | null;
+  runtime_status: string | null;
   manager_id: string | null;
   current_task: string | null;
   is_ceo: boolean;

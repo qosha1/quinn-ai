@@ -1,9 +1,10 @@
 "use client";
-import { useMemo, useRef, useEffect } from "react";
+import { useMemo, useRef, useEffect, useState } from "react";
 import type { OKRInfo, KeyResult } from "@/lib/types";
 
 interface Props {
   okrs: OKRInfo[];
+  onKrUpdate?: (okrId: string, metric: string, current: number) => void;
 }
 
 const ROW_H = 48;
@@ -82,11 +83,34 @@ function buildRows(okrs: OKRInfo[], now: Date): OKRRow[] {
   }));
 }
 
-export function OKRTimeline({ okrs }: Props) {
+export function OKRTimeline({ okrs, onKrUpdate }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const now = useMemo(() => new Date(), []);
+  const [editingKr, setEditingKr] = useState<{ okrId: string; metric: string; current: number } | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const rows = useMemo(() => buildRows(okrs, now), [okrs, now]);
+
+  const handleKrSave = async () => {
+    if (!editingKr) return;
+    const val = parseFloat(editValue);
+    if (isNaN(val)) return;
+    setSaving(true);
+    try {
+      await fetch(`/api/okrs/${editingKr.okrId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metric: editingKr.metric, current: val }),
+      });
+      onKrUpdate?.(editingKr.okrId, editingKr.metric, val);
+      setEditingKr(null);
+    } catch {
+      // silent — user can retry
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const { rangeStart, rangeEnd, totalDays } = useMemo(() => {
     if (!rows.length) {
@@ -132,6 +156,8 @@ export function OKRTimeline({ okrs }: Props) {
     const raw = ((end.getTime() - start.getTime()) / 86400000 / totalDays) * 100;
     return Math.max(0.5, raw);
   }
+
+  const [selectedOkr, setSelectedOkr] = useState<OKRRow | null>(null);
 
   if (!okrs.length) {
     return <div className="empty-state" style={{ paddingTop: 60 }}>No OKRs yet</div>;
@@ -219,7 +245,8 @@ export function OKRTimeline({ okrs }: Props) {
                 <div
                   key={row.id}
                   className="okr-timeline__bar-wrap"
-                  style={{ top: i * ROW_H + BAR_Y_OFFSET, height: BAR_H, left: `${x}%`, width: `${w}%` }}
+                  style={{ top: i * ROW_H + BAR_Y_OFFSET, height: BAR_H, left: `${x}%`, width: `${w}%`, cursor: "pointer" }}
+                  onClick={() => setSelectedOkr(selectedOkr?.id === row.id ? null : row)}
                 >
                   {/* Background track */}
                   <div
@@ -251,6 +278,72 @@ export function OKRTimeline({ okrs }: Props) {
           </div>
         </div>
       </div>
+
+      {/* KR detail panel */}
+      {selectedOkr && (
+        <div style={{ margin: "12px 0 0", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+          <div style={{ fontWeight: 600, marginBottom: 10, display: "flex", justifyContent: "space-between" }}>
+            <span>{selectedOkr.title}</span>
+            <button style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => setSelectedOkr(null)}>✕</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {selectedOkr.key_results.map((kr) => {
+              const pct = kr.target > 0 ? Math.min(100, Math.round((kr.current / kr.target) * 100)) : 0;
+              const isEditing = editingKr?.okrId === selectedOkr.id && editingKr.metric === kr.metric;
+              return (
+                <div key={kr.metric} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ minWidth: 160, fontSize: 13, color: "var(--fg-muted)" }}>{kr.metric}</span>
+                  <div style={{ flex: 1, height: 6, background: "var(--bg-3)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${pct}%`, height: "100%", background: STATUS_COLORS[selectedOkr.status] ?? "#8b949e", borderRadius: 3 }} />
+                  </div>
+                  {isEditing ? (
+                    <>
+                      <input
+                        type="number"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleKrSave(); if (e.key === "Escape") setEditingKr(null); }}
+                        autoFocus
+                        style={{ width: 70, padding: "2px 6px", fontSize: 12, background: "var(--bg-3)", border: "1px solid var(--accent)", borderRadius: 4, color: "var(--fg)" }}
+                      />
+                      <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>/ {kr.target} {kr.unit}</span>
+                      <button style={{ fontSize: 11, padding: "2px 6px" }} disabled={saving} onClick={handleKrSave}>{saving ? "…" : "✓"}</button>
+                      <button style={{ fontSize: 11, padding: "2px 6px" }} onClick={() => setEditingKr(null)}>✕</button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 12, minWidth: 80 }}>{kr.current} / {kr.target} {kr.unit}</span>
+                      <button
+                        style={{ fontSize: 11, padding: "2px 6px", opacity: 0.7 }}
+                        title="Update current value"
+                        onClick={() => { setEditingKr({ okrId: selectedOkr.id, metric: kr.metric, current: kr.current }); setEditValue(String(kr.current)); }}
+                      >edit</button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* KR inline edit modal (fallback for narrow screens) */}
+      {editingKr && !selectedOkr && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setEditingKr(null)}>
+          <div style={{ background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 10, padding: 20, minWidth: 280 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontWeight: 600, marginBottom: 12 }}>Update: {editingKr.metric}</div>
+            <input type="number" value={editValue} onChange={(e) => setEditValue(e.target.value)} autoFocus
+              style={{ width: "100%", padding: "8px 10px", fontSize: 14, background: "var(--bg-3)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--fg)", boxSizing: "border-box" }}
+              onKeyDown={(e) => { if (e.key === "Enter") handleKrSave(); if (e.key === "Escape") setEditingKr(null); }}
+            />
+            <div style={{ marginTop: 10, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditingKr(null)}>Cancel</button>
+              <button className="primary" disabled={saving} onClick={handleKrSave}>{saving ? "Saving…" : "Save"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

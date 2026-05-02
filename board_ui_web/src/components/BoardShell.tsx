@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { WorkerRow } from "@/components/WorkerRow";
 import { WorkBoard } from "@/components/WorkBoard";
@@ -84,7 +84,21 @@ export function BoardShell({ tab }: Props) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Directive bar: ':' in Team view → DM a worker
+  const [directiveOpen, setDirectiveOpen] = useState(false);
+  const [directiveTarget, setDirectiveTarget] = useState<WorkerInfo | null>(null);
+  const [directiveText, setDirectiveText] = useState("");
+  const [directiveQuery, setDirectiveQuery] = useState("");
+  // ⌘K command palette
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
+  const [paletteIdx, setPaletteIdx] = useState(0);
+  // Activity filter
+  const [activityFilter, setActivityFilter] = useState<string>("all");
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const directiveInputRef = useRef<HTMLInputElement>(null);
+  const directiveMsgRef = useRef<HTMLTextAreaElement>(null);
+  const paletteInputRef = useRef<HTMLInputElement>(null);
   const toastIdRef = useRef(0);
   const prevWorkersRef = useRef<WorkerInfo[]>([]);
   const sseRef = useRef<EventSource | null>(null);
@@ -224,6 +238,79 @@ export function BoardShell({ tab }: Props) {
     }
   }, [replyText, activeChannel, sending, channels, toast, fetchMessages]);
 
+  // Send a DM to a worker from the directive bar
+  const handleDirectiveSend = useCallback(async () => {
+    if (!directiveText.trim() || !directiveTarget) return;
+    setSending(true);
+    try {
+      const dmRes = await fetchWithRetry<{ channel: string }>("/api/channels/dm", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ worker_id: directiveTarget.id }),
+      });
+      const chanId = typeof dmRes.channel === "object" ? (dmRes.channel as { id: string }).id : dmRes.channel;
+      await fetchWithRetry(`/api/channels/${chanId}/messages`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: directiveText.trim() }),
+      });
+      toast(`Directive sent to ${directiveTarget.name}`);
+      setDirectiveOpen(false);
+      setDirectiveText("");
+      setDirectiveTarget(null);
+      setDirectiveQuery("");
+    } catch (err) {
+      toast(`Failed: ${err}`, "error");
+    } finally {
+      setSending(false);
+    }
+  }, [directiveText, directiveTarget, toast]);
+
+  // ⌘K palette items
+  const paletteItems = useMemo(() => {
+    const q = paletteQuery.toLowerCase();
+    const items: Array<{ label: string; sub?: string; action: () => void }> = [];
+    // Tab jumps
+    TABS.forEach((t) => {
+      if (!q || t.includes(q)) items.push({ label: `Go to ${t.charAt(0).toUpperCase() + t.slice(1)}`, sub: "tab", action: () => { router.push(`/${t}`); setPaletteOpen(false); } });
+    });
+    // Workers
+    workers.filter((w) => !q || w.name.toLowerCase().includes(q) || w.role.toLowerCase().includes(q)).forEach((w) => {
+      items.push({ label: `DM ${w.name}`, sub: w.role, action: () => { setDirectiveTarget(w); setDirectiveText(""); setDirectiveOpen(true); setPaletteOpen(false); setTimeout(() => directiveMsgRef.current?.focus(), 50); } });
+    });
+    return items.slice(0, 8);
+  }, [paletteQuery, workers, router]);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // ⌘K / Ctrl+K → palette
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        setPaletteQuery("");
+        setPaletteIdx(0);
+        setTimeout(() => paletteInputRef.current?.focus(), 50);
+        return;
+      }
+      // ':' in team tab → directive bar
+      if (e.key === ":" && tab === "team" && !directiveOpen && !paletteOpen &&
+          !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+        e.preventDefault();
+        setDirectiveOpen(true);
+        setDirectiveTarget(null);
+        setDirectiveText("");
+        setDirectiveQuery("");
+        setTimeout(() => directiveInputRef.current?.focus(), 50);
+        return;
+      }
+      if (e.key === "Escape") {
+        setPaletteOpen(false);
+        setDirectiveOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [tab, directiveOpen, paletteOpen]);
+
   const totalUnread = channels.reduce((sum, c) => sum + (c.unread_count ?? 0), 0);
 
   if (loading) {
@@ -262,6 +349,7 @@ export function BoardShell({ tab }: Props) {
           </>
         )}
         <span style={{ marginLeft: "auto", color: "var(--fg-muted)", fontSize: 12 }}>refreshes every {POLL_INTERVAL / 1000}s</span>
+        <button style={{ fontSize: 12, padding: "2px 10px" }} title="Command palette (⌘K)" onClick={() => { setPaletteOpen(true); setTimeout(() => paletteInputRef.current?.focus(), 50); }}>⌘K</button>
         <button style={{ fontSize: 12, padding: "2px 10px" }} onClick={() => fetchAll(true)}>↺ Refresh</button>
       </header>
 
@@ -327,18 +415,31 @@ export function BoardShell({ tab }: Props) {
         {/* ── TEAM ── */}
         {tab === "team" && (
           <div>
-            <div className="section-title" style={{ marginBottom: 16 }}>{workers.length} workers</div>
+            <div className="section-title" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+              {workers.length} workers
+              <span style={{ fontSize: 12, color: "var(--fg-muted)", fontWeight: 400 }}>
+                Press <kbd style={{ background: "var(--bg-3)", padding: "1px 5px", borderRadius: 3, fontSize: 11 }}>:</kbd> or click a row to send a directive
+              </span>
+            </div>
             <table className="workers-table">
               <thead>
                 <tr>
-                  <th style={{ width: 24 }}></th>
+                  <th style={{ width: 16 }}></th>
+                  <th style={{ width: 16 }}></th>
                   <th>Name</th><th>Role</th><th>Team</th><th>Status</th>
                   <th style={{ width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {workers.map((w) => <WorkerRow key={w.id} worker={w} onAction={handleWorkerAction} />)}
-                {workers.length === 0 && <tr><td colSpan={6} className="empty-state">No workers found</td></tr>}
+                {workers.map((w) => (
+                  <WorkerRow
+                    key={w.id}
+                    worker={w}
+                    onAction={handleWorkerAction}
+                    onClick={() => { setDirectiveTarget(w); setDirectiveText(""); setDirectiveOpen(true); setTimeout(() => directiveMsgRef.current?.focus(), 50); }}
+                  />
+                ))}
+                {workers.length === 0 && <tr><td colSpan={7} className="empty-state">No workers found</td></tr>}
               </tbody>
             </table>
           </div>
@@ -454,7 +555,21 @@ export function BoardShell({ tab }: Props) {
         )}
 
         {/* ── OKRs ── */}
-        {tab === "okrs" && <OKRTimeline okrs={okrs} />}
+        {tab === "okrs" && (
+          <OKRTimeline
+            okrs={okrs}
+            onKrUpdate={(okrId, metric, current) => {
+              setOKRs((prev) => prev.map((o) =>
+                o.id !== okrId ? o : {
+                  ...o,
+                  key_results: o.key_results.map((kr) =>
+                    kr.metric === metric ? { ...kr, current } : kr
+                  ),
+                }
+              ));
+            }}
+          />
+        )}
 
         {/* ── WORK ── */}
         {tab === "work" && <WorkBoard beads={beads} dependencies={beadDeps} />}
@@ -462,20 +577,148 @@ export function BoardShell({ tab }: Props) {
         {/* ── ACTIVITY ── */}
         {tab === "activity" && (
           <div>
-            <div className="section-title" style={{ marginBottom: 16 }}>Recent activity (last 60 min)</div>
+            <div className="section-title" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
+              Recent activity
+              <select
+                value={activityFilter}
+                onChange={(e) => setActivityFilter(e.target.value)}
+                style={{ fontSize: 12, padding: "2px 6px", background: "var(--bg-2)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 4 }}
+              >
+                <option value="all">All workers</option>
+                {workers.map((w) => <option key={w.id} value={w.name}>{w.name}</option>)}
+              </select>
+            </div>
             {activity.length === 0 && <div className="empty-state">No recent activity</div>}
             <div className="activity-list">
-              {activity.map((entry, i) => (
-                <div key={i} className="activity-item">
-                  <span className="activity-item__time">{formatRelativeTime(entry.timestamp)}</span>
-                  <span className="activity-item__worker">{entry.worker_name}</span>
-                  <span className="activity-item__summary">{entry.summary}</span>
-                </div>
-              ))}
+              {activity
+                .filter((e) => activityFilter === "all" || e.worker_name === activityFilter)
+                .map((entry, i) => (
+                  <div key={i} className="activity-item">
+                    <span className="activity-item__time">{formatRelativeTime(entry.timestamp)}</span>
+                    <span className="activity-item__worker">{entry.worker_name}</span>
+                    <span className="activity-item__summary">{entry.summary}</span>
+                  </div>
+                ))}
+              {activity.filter((e) => activityFilter === "all" || e.worker_name === activityFilter).length === 0 && (
+                <div className="empty-state">No activity for {activityFilter}</div>
+              )}
             </div>
           </div>
         )}
       </main>
+
+      {/* ── DIRECTIVE BAR ── */}
+      {directiveOpen && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200,
+          display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "0 0 80px",
+        }} onClick={() => setDirectiveOpen(false)}>
+          <div style={{
+            background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 10,
+            padding: 20, width: "min(560px, 90vw)", boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 12, color: "var(--fg-muted)", marginBottom: 10 }}>
+              Send directive to worker
+            </div>
+            {/* Worker selector */}
+            {!directiveTarget ? (
+              <>
+                <input
+                  ref={directiveInputRef}
+                  placeholder="Search worker…"
+                  value={directiveQuery}
+                  onChange={(e) => setDirectiveQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && setDirectiveOpen(false)}
+                  style={{ width: "100%", padding: "8px 12px", fontSize: 14, background: "var(--bg-3)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--fg)", outline: "none", boxSizing: "border-box" }}
+                />
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {workers
+                    .filter((w) => !directiveQuery || w.name.toLowerCase().includes(directiveQuery.toLowerCase()) || w.role.toLowerCase().includes(directiveQuery.toLowerCase()))
+                    .slice(0, 6)
+                    .map((w) => (
+                      <button key={w.id} style={{ textAlign: "left", padding: "6px 10px", background: "var(--bg-3)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--fg)", cursor: "pointer", fontSize: 13 }}
+                        onClick={() => { setDirectiveTarget(w); setTimeout(() => directiveMsgRef.current?.focus(), 30); }}>
+                        <strong>{w.name}</strong> <span style={{ color: "var(--fg-muted)", fontSize: 11 }}>{w.role}</span>
+                      </button>
+                    ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                  <Avatar name={directiveTarget.name} size={24} />
+                  <span style={{ fontWeight: 600 }}>{directiveTarget.name}</span>
+                  <span style={{ color: "var(--fg-muted)", fontSize: 12 }}>{directiveTarget.role}</span>
+                  <button style={{ marginLeft: "auto", fontSize: 11, padding: "2px 8px" }} onClick={() => setDirectiveTarget(null)}>change</button>
+                </div>
+                <textarea
+                  ref={directiveMsgRef}
+                  placeholder={`Message to ${directiveTarget.name}…`}
+                  value={directiveText}
+                  rows={3}
+                  onChange={(e) => setDirectiveText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleDirectiveSend(); }
+                    if (e.key === "Escape") setDirectiveOpen(false);
+                  }}
+                  style={{ width: "100%", padding: "8px 12px", fontSize: 14, background: "var(--bg-3)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--fg)", outline: "none", resize: "none", boxSizing: "border-box", fontFamily: "inherit" }}
+                />
+                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button onClick={() => setDirectiveOpen(false)}>Cancel</button>
+                  <button className="primary" disabled={!directiveText.trim() || sending} onClick={handleDirectiveSend}>
+                    {sending ? "Sending…" : "Send ↑"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── ⌘K PALETTE ── */}
+      {paletteOpen && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200,
+          display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 120,
+        }} onClick={() => setPaletteOpen(false)}>
+          <div style={{
+            background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 10,
+            width: "min(520px, 90vw)", boxShadow: "0 8px 40px rgba(0,0,0,0.5)", overflow: "hidden",
+          }} onClick={(e) => e.stopPropagation()}>
+            <input
+              ref={paletteInputRef}
+              placeholder="Jump to… (tab, worker, action)"
+              value={paletteQuery}
+              onChange={(e) => { setPaletteQuery(e.target.value); setPaletteIdx(0); }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") { e.preventDefault(); setPaletteIdx((i) => Math.min(i + 1, paletteItems.length - 1)); }
+                if (e.key === "ArrowUp") { e.preventDefault(); setPaletteIdx((i) => Math.max(i - 1, 0)); }
+                if (e.key === "Enter" && paletteItems[paletteIdx]) { paletteItems[paletteIdx].action(); }
+                if (e.key === "Escape") setPaletteOpen(false);
+              }}
+              style={{ width: "100%", padding: "14px 16px", fontSize: 15, background: "transparent", border: "none", borderBottom: "1px solid var(--border)", color: "var(--fg)", outline: "none", boxSizing: "border-box" }}
+            />
+            <div>
+              {paletteItems.map((item, i) => (
+                <div key={i} onClick={item.action} style={{
+                  padding: "10px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
+                  background: i === paletteIdx ? "var(--bg-3)" : "transparent",
+                  borderLeft: i === paletteIdx ? "2px solid var(--accent)" : "2px solid transparent",
+                }}>
+                  <span style={{ fontSize: 14 }}>{item.label}</span>
+                  {item.sub && <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{item.sub}</span>}
+                </div>
+              ))}
+              {paletteItems.length === 0 && (
+                <div style={{ padding: "16px", color: "var(--fg-muted)", fontSize: 13 }}>No results</div>
+              )}
+            </div>
+            <div style={{ padding: "6px 12px", borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--fg-muted)", display: "flex", gap: 12 }}>
+              <span>↑↓ navigate</span><span>↵ select</span><span>Esc close</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="toast-container">
         {toasts.map((t) => <div key={t.id} className={`toast toast--${t.type}`}>{t.message}</div>)}

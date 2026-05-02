@@ -150,6 +150,7 @@ export function getWorkers(dbPath: string): WorkerInfo[] {
     team_name: row.team_name,
     status: row.status as WorkerInfo["status"],
     session_state: (row.session_state ?? row.runtime_status) as WorkerInfo["session_state"],
+    runtime_status: row.runtime_status ?? null,
     manager_id: row.manager_id,
     current_task: row.current_task_id,
     is_ceo: row.id === row.ceo_worker_id,
