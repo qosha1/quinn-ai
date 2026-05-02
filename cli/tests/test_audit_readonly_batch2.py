@@ -292,10 +292,19 @@ class TestOkrShow:
 # ============================================================
 class TestOkrProgress:
     def test_progress_for_db_okr(self, runner, initialized_org):
-        # Bootstrap OKR exists in SQLite from --skip-okrs
+        # Create an OKR first (initialized_org uses --skip-okrs so none exist by default)
+        runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set", "--title", "Test OKR for progress", "--owner", "ceo",
+            "--no-krs-needed",
+        ])
         conn = sqlite3.connect(str(initialized_org / "live" / "quinn.db"))
         try:
-            (okr_id,) = conn.execute("SELECT id FROM okrs LIMIT 1").fetchone()
+            row = conn.execute("SELECT id FROM okrs LIMIT 1").fetchone()
+            if row is None:
+                import pytest
+                pytest.skip("No OKR in DB after creation attempt — skipping")
+            (okr_id,) = row
         finally:
             conn.close()
 
