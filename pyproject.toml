@@ -59,6 +59,7 @@ dev = [
 [project.scripts]
 qn = "cli.commands.main:qn"
 qn-bd = "cli.commands.qn_bd:main"
+qn-tool-guard = "cli.commands.qn_tool_guard:tool_guard_main"
 qn-board = "board_ui.main:main"
 msgr = "cli.msgr.main:msgr"
 

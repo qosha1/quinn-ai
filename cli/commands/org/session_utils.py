@@ -72,6 +72,20 @@ def spawn_worker_session(
             "Use --provider to specify a valid session provider."
         )
 
+    # Inject tool guard hook before spawn so the session starts with it active.
+    if working_directory is not None:
+        try:
+            from cli.core.session.tool_guard import write_tool_guard_hook_config
+            org_path = env_vars.get("QUINN_ORG_PATH") or env_vars.get("ORG_PATH") if env_vars else None
+            if org_path:
+                write_tool_guard_hook_config(
+                    working_dir=Path(working_directory),
+                    org_path=Path(org_path),
+                    worker_id=worker.id,
+                )
+        except Exception:
+            pass  # Hook injection is best-effort — don't block spawn
+
     worker.set_registry(registry)
     worker.spawn(config)
 

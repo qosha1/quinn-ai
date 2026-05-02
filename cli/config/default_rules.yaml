@@ -95,8 +95,8 @@ rules:
   # ------------------------------------------------------------------------
   - id: no-drop-database
     severity: ABSOLUTE
-    actions: ["qn-bd.create", "qn-bd.update"]
-    description: "Bead bodies containing destructive SQL (DROP TABLE, DROP DATABASE, TRUNCATE) are refused."
+    actions: ["qn-bd.create", "qn-bd.update", "shell.bash"]
+    description: "Destructive SQL (DROP TABLE, DROP DATABASE, TRUNCATE) is refused in bead bodies and direct shell commands."
     pattern:
       kind: regex
       target: body
@@ -104,8 +104,8 @@ rules:
 
   - id: no-rm-rf-storage
     severity: ABSOLUTE
-    actions: ["qn-bd.create", "qn-bd.update"]
-    description: "Bead bodies containing `rm -rf` against the storage tree are refused."
+    actions: ["qn-bd.create", "qn-bd.update", "shell.bash"]
+    description: "`rm -rf` against the storage tree is refused in bead bodies and direct shell commands."
     pattern:
       kind: regex
       target: body
@@ -113,8 +113,8 @@ rules:
 
   - id: no-force-push-main
     severity: ABSOLUTE
-    actions: ["qn-bd.create", "qn-bd.update"]
-    description: "Bead bodies referencing a force-push to main are refused."
+    actions: ["qn-bd.create", "qn-bd.update", "shell.bash"]
+    description: "Force-push to main is refused in bead bodies and direct shell commands."
     pattern:
       kind: regex
       target: body
@@ -122,8 +122,8 @@ rules:
 
   - id: no-secret-commit
     severity: ABSOLUTE
-    actions: ["qn-bd.create", "qn-bd.update"]
-    description: "Bead bodies referencing commits of credential files (.env, *.pem, *.key) are refused."
+    actions: ["qn-bd.create", "qn-bd.update", "shell.bash", "session.write", "session.edit"]
+    description: "Credential files (.env, *.pem, *.key) are refused in bead bodies, shell commands, and file writes."
     pattern:
       kind: regex
       target: body

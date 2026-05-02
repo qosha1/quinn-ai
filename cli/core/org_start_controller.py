@@ -25,8 +25,11 @@ cli/core/stop_controller.py's purer separation).
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import time
+
+_logger = logging.getLogger(__name__)
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -350,6 +353,18 @@ def _spawn_ceo_session_if_needed(
 
     env_vars = get_worker_env_vars(onboarding_ctx, org_path, db)
 
+    # Inject tool guard hook into CEO working directory before spawn.
+    session_cwd = resolve_session_cwd(org_path, worker_dir)
+    try:
+        from cli.core.session.tool_guard import write_tool_guard_hook_config
+        write_tool_guard_hook_config(
+            working_dir=session_cwd,
+            org_path=org_path,
+            worker_id=ceo.id,
+        )
+    except Exception as _tg_err:
+        _logger.debug(f"Tool guard hook injection failed (non-fatal): {_tg_err}")
+
     click.echo("Phase 4: Spawning CEO session...")
     config = SessionConfig(
         worker_id=ceo.id,
@@ -357,7 +372,7 @@ def _spawn_ceo_session_if_needed(
         command=command,
         args=args,
         model=model,
-        working_directory=resolve_session_cwd(org_path, worker_dir),
+        working_directory=session_cwd,
         env_vars=env_vars,
     )
 
