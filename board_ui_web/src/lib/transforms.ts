@@ -77,3 +77,23 @@ export function formatAbsoluteTimestamp(isoString: string): string {
 export function priorityLabel(priority: number): string {
   return ["P0 Critical", "P1 High", "P2 Medium", "P3 Low", "P4 Backlog"][priority] ?? "Unknown";
 }
+
+export function formatElapsed(isoString: string | null): string {
+  if (!isoString) return "";
+  const ms = Date.now() - new Date(isoString).getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return "<1m";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
+}
+
+export function formatCurrencyShort(n: number): string {
+  if (n === 0) return "$0";
+  if (n < 0.01) return `<$0.01`;
+  if (n < 1) return `$${n.toFixed(2)}`;
+  if (n < 1000) return `$${Math.round(n)}`;
+  return `$${(n / 1000).toFixed(1)}k`;
+}

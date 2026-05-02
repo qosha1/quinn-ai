@@ -120,13 +120,18 @@ export function getWorkers(dbPath: string): WorkerInfo[] {
       COALESCE(t.name, '') as team_name,
       COALESCE(ws.runtime_status, 'stopped') as runtime_status,
       ws.current_task_id,
+      ws.started_at as session_started_at,
+      ws.last_activity,
       s.state as session_state,
-      o.ceo_worker_id
+      o.ceo_worker_id,
+      COALESCE(bb.spent, 0) as spend_used,
+      COALESCE(bb.allocated, 0) as spend_allocated
     FROM workers w
     LEFT JOIN teams t ON w.team_id = t.id
     LEFT JOIN worker_state ws ON w.id = ws.worker_id
     LEFT JOIN sessions s ON w.id = s.worker_id AND s.state IN ('running','starting','idle')
     LEFT JOIN org_state o ON o.id = 'default'
+    LEFT JOIN budget_balances bb ON w.id = bb.worker_id
     WHERE w.status NOT IN ('terminated')
     GROUP BY w.id
     ORDER BY CASE w.role WHEN 'CEO' THEN 0 WHEN 'Director' THEN 1 WHEN 'Manager' THEN 2 ELSE 3 END, w.name
@@ -139,8 +144,12 @@ export function getWorkers(dbPath: string): WorkerInfo[] {
     team_name: string;
     runtime_status: string;
     current_task_id: string | null;
+    session_started_at: string | null;
+    last_activity: string | null;
     session_state: string | null;
     ceo_worker_id: string | null;
+    spend_used: number;
+    spend_allocated: number;
   }>;
 
   return rows.map((row) => ({
@@ -151,6 +160,10 @@ export function getWorkers(dbPath: string): WorkerInfo[] {
     status: row.status as WorkerInfo["status"],
     session_state: (row.session_state ?? row.runtime_status) as WorkerInfo["session_state"],
     runtime_status: row.runtime_status ?? null,
+    session_started_at: row.session_started_at ?? null,
+    last_activity: row.last_activity ?? null,
+    spend_used: row.spend_used,
+    spend_allocated: row.spend_allocated,
     manager_id: row.manager_id,
     current_task: row.current_task_id,
     is_ceo: row.id === row.ceo_worker_id,

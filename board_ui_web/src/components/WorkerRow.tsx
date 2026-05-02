@@ -6,9 +6,11 @@ interface Props {
   worker: WorkerInfo;
   onAction: (workerId: string, action: "pause" | "resume" | "fire") => void;
   onClick?: () => void;
+  focused?: boolean;
+  sessionInfo?: string;
 }
 
-export function WorkerRow({ worker, onAction, onClick }: Props) {
+export function WorkerRow({ worker, onAction, onClick, focused, sessionInfo }: Props) {
   const color = sessionStateColor(worker.session_state);
   const label = workerStatusLabel(worker.status, worker.session_state);
   const roleDisplay = worker.is_ceo ? `★ ${worker.role.toUpperCase()}` : worker.role.toUpperCase();
@@ -18,7 +20,15 @@ export function WorkerRow({ worker, onAction, onClick }: Props) {
     : "#6e7681";
 
   return (
-    <tr className="worker-row" onClick={onClick} style={onClick ? { cursor: "pointer" } : undefined}>
+    <tr
+      className="worker-row"
+      onClick={onClick}
+      style={{
+        cursor: onClick ? "pointer" : undefined,
+        background: focused ? "rgba(88,166,255,0.08)" : undefined,
+        outline: focused ? "1px solid rgba(88,166,255,0.3)" : undefined,
+      }}
+    >
       <td>
         <span
           className={`status-dot status-dot--${color}`}
@@ -35,6 +45,7 @@ export function WorkerRow({ worker, onAction, onClick }: Props) {
       <td className="worker-role">{roleDisplay}</td>
       <td className="worker-team">{worker.team_name}</td>
       <td className="worker-status">{label}</td>
+      <td style={{ fontSize: 11, color: "var(--fg-muted)", whiteSpace: "nowrap" }}>{sessionInfo ?? ""}</td>
       <td>
         <details className="action-menu" onClick={(e) => e.stopPropagation()}>
           <summary role="button" aria-label="Actions">⋮</summary>

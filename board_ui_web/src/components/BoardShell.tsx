@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { WorkerRow } from "@/components/WorkerRow";
 import { WorkBoard } from "@/components/WorkBoard";
 import { OKRTimeline } from "@/components/OKRTimeline";
-import { formatCurrency, formatRelativeTime } from "@/lib/transforms";
+import { formatCurrency, formatRelativeTime, formatElapsed, formatCurrencyShort } from "@/lib/transforms";
 import type { OrgDashboard, WorkerInfo, Message, OKRInfo, ActivityEntry, Channel } from "@/lib/types";
 import type { Bead, Dependency } from "@/lib/beads-db";
 
@@ -95,6 +95,9 @@ export function BoardShell({ tab }: Props) {
   const [paletteIdx, setPaletteIdx] = useState(0);
   // Activity filter
   const [activityFilter, setActivityFilter] = useState<string>("all");
+  // Team keyboard nav
+  const [teamFocusIdx, setTeamFocusIdx] = useState<number>(-1);
+  const [teamFilter, setTeamFilter] = useState<string>("");
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const directiveInputRef = useRef<HTMLInputElement>(null);
   const directiveMsgRef = useRef<HTMLTextAreaElement>(null);
@@ -238,9 +241,41 @@ export function BoardShell({ tab }: Props) {
     }
   }, [replyText, activeChannel, sending, channels, toast, fetchMessages]);
 
+  const filteredWorkers = useMemo(() =>
+    !teamFilter ? workers : workers.filter((w) => w.name.toLowerCase().includes(teamFilter.toLowerCase()) || w.role.toLowerCase().includes(teamFilter.toLowerCase())),
+    [workers, teamFilter]
+  );
+
+  // Broadcast @all: send directive to every worker
+  const handleBroadcast = useCallback(async (text: string) => {
+    if (!text.trim() || sending) return;
+    setSending(true);
+    let sent = 0;
+    for (const w of workers) {
+      try {
+        const dmRes = await fetchWithRetry<{ channel: string }>("/api/channels/dm", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ worker_id: w.id }),
+        });
+        const chanId = typeof dmRes.channel === "object" ? (dmRes.channel as { id: string }).id : dmRes.channel;
+        await fetchWithRetry(`/api/channels/${chanId}/messages`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: text.trim() }),
+        });
+        sent++;
+      } catch { /* continue */ }
+    }
+    toast(`Broadcast sent to ${sent}/${workers.length} workers`);
+    setSending(false);
+    setDirectiveOpen(false);
+    setDirectiveText("");
+    setDirectiveTarget(null);
+  }, [workers, sending, toast]);
+
   // Send a DM to a worker from the directive bar
   const handleDirectiveSend = useCallback(async () => {
     if (!directiveText.trim() || !directiveTarget) return;
+    if (directiveTarget.id === "@all") { await handleBroadcast(directiveText); return; }
     setSending(true);
     try {
       const dmRes = await fetchWithRetry<{ channel: string }>("/api/channels/dm", {
@@ -262,7 +297,16 @@ export function BoardShell({ tab }: Props) {
     } finally {
       setSending(false);
     }
-  }, [directiveText, directiveTarget, toast]);
+  }, [directiveText, directiveTarget, toast, handleBroadcast]);
+
+  const SLASH_COMMANDS = [
+    { cmd: "/loop", desc: "Start autonomous work loop" },
+    { cmd: "/ultrareview", desc: "Multi-agent cloud code review" },
+    { cmd: "/feature-lifecycle", desc: "TDD-driven feature planning" },
+    { cmd: "/reality-check", desc: "Verify claims with evidence" },
+    { cmd: "/fast", desc: "Toggle fast mode (Opus 4.6)" },
+    { cmd: "/clear", desc: "Clear conversation context" },
+  ];
 
   // ⌘K palette items
   const paletteItems = useMemo(() => {
@@ -272,12 +316,20 @@ export function BoardShell({ tab }: Props) {
     TABS.forEach((t) => {
       if (!q || t.includes(q)) items.push({ label: `Go to ${t.charAt(0).toUpperCase() + t.slice(1)}`, sub: "tab", action: () => { router.push(`/${t}`); setPaletteOpen(false); } });
     });
+    // Broadcast
+    if (!q || "broadcast all workers".includes(q)) {
+      items.push({ label: "Broadcast to all workers", sub: "@all", action: () => { setDirectiveTarget(null); setDirectiveQuery("@all"); setDirectiveOpen(true); setPaletteOpen(false); setTimeout(() => directiveInputRef.current?.focus(), 50); } });
+    }
     // Workers
     workers.filter((w) => !q || w.name.toLowerCase().includes(q) || w.role.toLowerCase().includes(q)).forEach((w) => {
       items.push({ label: `DM ${w.name}`, sub: w.role, action: () => { setDirectiveTarget(w); setDirectiveText(""); setDirectiveOpen(true); setPaletteOpen(false); setTimeout(() => directiveMsgRef.current?.focus(), 50); } });
     });
-    return items.slice(0, 8);
-  }, [paletteQuery, workers, router]);
+    // Slash commands
+    SLASH_COMMANDS.filter(({ cmd, desc }) => !q || cmd.includes(q) || desc.toLowerCase().includes(q)).forEach(({ cmd, desc }) => {
+      items.push({ label: cmd, sub: desc, action: () => { navigator.clipboard?.writeText(cmd).catch(() => {}); toast(`Copied ${cmd}`); setPaletteOpen(false); } });
+    });
+    return items.slice(0, 9);
+  }, [paletteQuery, workers, router, toast]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -291,20 +343,35 @@ export function BoardShell({ tab }: Props) {
         setTimeout(() => paletteInputRef.current?.focus(), 50);
         return;
       }
+      const inInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
       // ':' in team tab → directive bar
-      if (e.key === ":" && tab === "team" && !directiveOpen && !paletteOpen &&
-          !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+      if (e.key === ":" && tab === "team" && !directiveOpen && !paletteOpen && !inInput) {
         e.preventDefault();
+        const target = teamFocusIdx >= 0 ? filteredWorkers[teamFocusIdx] ?? null : null;
         setDirectiveOpen(true);
-        setDirectiveTarget(null);
+        setDirectiveTarget(target);
         setDirectiveText("");
         setDirectiveQuery("");
-        setTimeout(() => directiveInputRef.current?.focus(), 50);
+        setTimeout(() => (target ? directiveMsgRef.current : directiveInputRef.current)?.focus(), 50);
         return;
+      }
+      // j/k vim nav in team tab
+      if (tab === "team" && !directiveOpen && !paletteOpen && !inInput) {
+        if (e.key === "j") { e.preventDefault(); setTeamFocusIdx((i) => Math.min(i + 1, filteredWorkers.length - 1)); return; }
+        if (e.key === "k") { e.preventDefault(); setTeamFocusIdx((i) => Math.max(i - 1, 0)); return; }
+        if (e.key === "Enter" && teamFocusIdx >= 0) {
+          e.preventDefault();
+          const w = filteredWorkers[teamFocusIdx];
+          if (w) { setDirectiveTarget(w); setDirectiveText(""); setDirectiveOpen(true); setTimeout(() => directiveMsgRef.current?.focus(), 50); }
+          return;
+        }
+        if (e.key === "/" ) { e.preventDefault(); /* focus handled by filter input rendered in team tab */ return; }
       }
       if (e.key === "Escape") {
         setPaletteOpen(false);
         setDirectiveOpen(false);
+        setTeamFilter("");
+        setTeamFocusIdx(-1);
       }
     };
     window.addEventListener("keydown", handler);
@@ -395,16 +462,61 @@ export function BoardShell({ tab }: Props) {
             {dashboard.health.issues.length > 0 && (
               <div className="health-panel">
                 <div className="health-panel__title">Health Issues ({dashboard.health.workers_with_issues}/{dashboard.health.total_workers} workers)</div>
-                {dashboard.health.issues.map((issue, i) => (
-                  <div key={i} className={`health-issue health-issue--${issue.severity}`}>
-                    <span className="health-issue__icon">{issue.severity === "error" ? "●" : "○"}</span>
-                    <span className="health-issue__message">{issue.message}</span>
-                  </div>
-                ))}
+                {dashboard.health.issues.map((issue, i) => {
+                  const fixAction = issue.issue_type === "no_okrs"
+                    ? { label: "Tell worker to set OKRs →", handler: () => {
+                        const w = workers.find((x) => x.id === issue.worker_id);
+                        if (w) { setDirectiveTarget(w); setDirectiveText("Please create an OKR for your role with at least one measurable key result using: qn org okr set"); setDirectiveOpen(true); router.push("/team"); }
+                      }}
+                    : issue.issue_type === "no_session"
+                    ? { label: "Resume session →", handler: () => handleWorkerAction(issue.worker_id ?? "", "resume") }
+                    : null;
+                  return (
+                    <div key={i} className={`health-issue health-issue--${issue.severity}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div>
+                        <span className="health-issue__icon">{issue.severity === "error" ? "●" : "○"}</span>
+                        <span className="health-issue__message">{issue.message}</span>
+                      </div>
+                      {fixAction && (
+                        <button
+                          style={{ fontSize: 11, padding: "2px 8px", marginLeft: 12, whiteSpace: "nowrap", opacity: 0.85 }}
+                          onClick={fixAction.handler}
+                        >
+                          {fixAction.label}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {/* Spend by worker mini-chart */}
+            {workers.filter((w) => w.spend_used > 0).length > 0 && (
+              <div style={{ marginTop: 20 }}>
+                <div className="section-title" style={{ marginBottom: 10 }}>Spend by worker</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[...workers].sort((a, b) => b.spend_used - a.spend_used).filter((w) => w.spend_used > 0 || w.spend_allocated > 0).slice(0, 8).map((w) => {
+                    const maxSpend = Math.max(...workers.map((x) => x.spend_allocated || x.spend_used || 1));
+                    const pct = maxSpend > 0 ? Math.min(100, (w.spend_used / maxSpend) * 100) : 0;
+                    const allocPct = maxSpend > 0 ? Math.min(100, (w.spend_allocated / maxSpend) * 100) : 0;
+                    return (
+                      <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ minWidth: 60, fontSize: 12, color: "var(--fg-muted)", textAlign: "right" }}>{w.name}</span>
+                        <div style={{ flex: 1, height: 14, background: "var(--bg-3)", borderRadius: 3, position: "relative", overflow: "hidden" }}>
+                          {allocPct > 0 && <div style={{ position: "absolute", inset: 0, width: `${allocPct}%`, background: "rgba(88,166,255,0.1)", borderRight: "1px dashed rgba(88,166,255,0.3)" }} />}
+                          <div style={{ position: "absolute", inset: 0, width: `${pct}%`, background: w.spend_used / (w.spend_allocated || 1) > 0.8 ? "var(--red)" : "#3fb950", borderRadius: 3 }} />
+                        </div>
+                        <span style={{ fontSize: 11, color: "var(--fg-muted)", minWidth: 70, textAlign: "right" }}>
+                          {formatCurrencyShort(w.spend_used)} / {formatCurrencyShort(w.spend_allocated)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
             {dashboard.org.started_at && (
-              <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>
+              <div style={{ color: "var(--fg-muted)", fontSize: 12, marginTop: 12 }}>
                 Started {formatRelativeTime(dashboard.org.started_at)}
                 {dashboard.org.ceo_worker_id && ` · CEO: ${workers.find((w) => w.id === dashboard.org.ceo_worker_id)?.name ?? dashboard.org.ceo_worker_id}`}
               </div>
@@ -415,10 +527,16 @@ export function BoardShell({ tab }: Props) {
         {/* ── TEAM ── */}
         {tab === "team" && (
           <div>
-            <div className="section-title" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
-              {workers.length} workers
-              <span style={{ fontSize: 12, color: "var(--fg-muted)", fontWeight: 400 }}>
-                Press <kbd style={{ background: "var(--bg-3)", padding: "1px 5px", borderRadius: 3, fontSize: 11 }}>:</kbd> or click a row to send a directive
+            <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                placeholder="/ filter workers…"
+                value={teamFilter}
+                onChange={(e) => { setTeamFilter(e.target.value); setTeamFocusIdx(-1); }}
+                onKeyDown={(e) => { if (e.key === "Escape") { setTeamFilter(""); setTeamFocusIdx(-1); } }}
+                style={{ fontSize: 12, padding: "4px 10px", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--fg)", outline: "none", width: 180 }}
+              />
+              <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>
+                {filteredWorkers.length} workers · <kbd style={{ background: "var(--bg-3)", padding: "1px 4px", borderRadius: 3, fontSize: 11 }}>j/k</kbd> navigate · <kbd style={{ background: "var(--bg-3)", padding: "1px 4px", borderRadius: 3, fontSize: 11 }}>:</kbd> directive
               </span>
             </div>
             <table className="workers-table">
@@ -426,20 +544,28 @@ export function BoardShell({ tab }: Props) {
                 <tr>
                   <th style={{ width: 16 }}></th>
                   <th style={{ width: 16 }}></th>
-                  <th>Name</th><th>Role</th><th>Team</th><th>Status</th>
+                  <th>Name</th><th>Role</th><th>Team</th><th>Status</th><th>Session</th>
                   <th style={{ width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {workers.map((w) => (
-                  <WorkerRow
-                    key={w.id}
-                    worker={w}
-                    onAction={handleWorkerAction}
-                    onClick={() => { setDirectiveTarget(w); setDirectiveText(""); setDirectiveOpen(true); setTimeout(() => directiveMsgRef.current?.focus(), 50); }}
-                  />
-                ))}
-                {workers.length === 0 && <tr><td colSpan={7} className="empty-state">No workers found</td></tr>}
+                {filteredWorkers.map((w, i) => {
+                  const elapsed = w.session_started_at ? formatElapsed(w.session_started_at) : "";
+                  const cost = w.spend_used > 0 ? formatCurrencyShort(w.spend_used) : "";
+                  const sessionInfo = [elapsed, cost].filter(Boolean).join(" · ");
+                  const isFocused = teamFocusIdx === i;
+                  return (
+                    <WorkerRow
+                      key={w.id}
+                      worker={w}
+                      onAction={handleWorkerAction}
+                      onClick={() => { setTeamFocusIdx(i); setDirectiveTarget(w); setDirectiveText(""); setDirectiveOpen(true); setTimeout(() => directiveMsgRef.current?.focus(), 50); }}
+                      focused={isFocused}
+                      sessionInfo={sessionInfo}
+                    />
+                  );
+                })}
+                {filteredWorkers.length === 0 && <tr><td colSpan={8} className="empty-state">No workers match "{teamFilter}"</td></tr>}
               </tbody>
             </table>
           </div>
@@ -632,9 +758,16 @@ export function BoardShell({ tab }: Props) {
                   style={{ width: "100%", padding: "8px 12px", fontSize: 14, background: "var(--bg-3)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--fg)", outline: "none", boxSizing: "border-box" }}
                 />
                 <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {/* @all broadcast option */}
+                  {(!directiveQuery || "@all".includes(directiveQuery.toLowerCase()) || "all workers".includes(directiveQuery.toLowerCase())) && (
+                    <button style={{ textAlign: "left", padding: "6px 10px", background: "var(--bg-3)", border: "1px solid #d29922", borderRadius: 6, color: "var(--fg)", cursor: "pointer", fontSize: 13 }}
+                      onClick={() => { setDirectiveTarget({ id: "@all", name: "All Workers", role: "broadcast" } as unknown as WorkerInfo); setTimeout(() => directiveMsgRef.current?.focus(), 30); }}>
+                      <strong>@all</strong> <span style={{ color: "#d29922", fontSize: 11 }}>Broadcast to {workers.length} workers</span>
+                    </button>
+                  )}
                   {workers
                     .filter((w) => !directiveQuery || w.name.toLowerCase().includes(directiveQuery.toLowerCase()) || w.role.toLowerCase().includes(directiveQuery.toLowerCase()))
-                    .slice(0, 6)
+                    .slice(0, 5)
                     .map((w) => (
                       <button key={w.id} style={{ textAlign: "left", padding: "6px 10px", background: "var(--bg-3)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--fg)", cursor: "pointer", fontSize: 13 }}
                         onClick={() => { setDirectiveTarget(w); setTimeout(() => directiveMsgRef.current?.focus(), 30); }}>
@@ -646,14 +779,18 @@ export function BoardShell({ tab }: Props) {
             ) : (
               <>
                 <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-                  <Avatar name={directiveTarget.name} size={24} />
+                  {directiveTarget.id === "@all"
+                    ? <span style={{ fontSize: 18 }}>📢</span>
+                    : <Avatar name={directiveTarget.name} size={24} />}
                   <span style={{ fontWeight: 600 }}>{directiveTarget.name}</span>
-                  <span style={{ color: "var(--fg-muted)", fontSize: 12 }}>{directiveTarget.role}</span>
+                  {directiveTarget.id === "@all"
+                    ? <span style={{ color: "#d29922", fontSize: 12 }}>→ {workers.length} workers via DM</span>
+                    : <span style={{ color: "var(--fg-muted)", fontSize: 12 }}>{directiveTarget.role}</span>}
                   <button style={{ marginLeft: "auto", fontSize: 11, padding: "2px 8px" }} onClick={() => setDirectiveTarget(null)}>change</button>
                 </div>
                 <textarea
                   ref={directiveMsgRef}
-                  placeholder={`Message to ${directiveTarget.name}…`}
+                  placeholder={directiveTarget.id === "@all" ? "Message to all workers…" : `Message to ${directiveTarget.name}…`}
                   value={directiveText}
                   rows={3}
                   onChange={(e) => setDirectiveText(e.target.value)}

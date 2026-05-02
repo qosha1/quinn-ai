@@ -14,6 +14,10 @@ export interface WorkerInfo {
   status: WorkerStatus;
   session_state: SessionState | null;
   runtime_status: string | null;
+  session_started_at: string | null;
+  last_activity: string | null;
+  spend_used: number;
+  spend_allocated: number;
   manager_id: string | null;
   current_task: string | null;
   is_ceo: boolean;
