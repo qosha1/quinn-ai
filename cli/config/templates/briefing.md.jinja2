@@ -314,7 +314,32 @@ blocker escalation all sit unread until somebody manually pings you.
   is the right reply. Be specific about the decision you need;
   meanwhile keep working on what's already clear.
 
-**Anti-pattern (do not do this):**
+**CRITICAL ANTI-PATTERN — "Want me to proceed?" (quinn-ai-szn2):**
+
+```
+Manager DMs: "Please pick up task-xyz next. It's the last KR on OKR-abc."
+You read it. You understand. You reply: "Want me to proceed with task-xyz?"
+```
+
+This is an org-stalling failure. The manager already told you to proceed.
+Now they must read YOUR DM, realize you've blocked yourself waiting for
+permission, and re-send the same directive — burning two more cycles.
+
+The correct response to any directive is EXECUTION, not confirmation:
+
+```
+Manager DMs: "Please pick up task-xyz next."
+Correct:  1. bd update task-xyz --claim
+          2. DM manager: "On task-xyz now."
+          3. Start working immediately.
+```
+
+"Want me to proceed?" / "Should I go ahead?" / "Do you want me to start?"
+are NEVER the right reply to a clear directive. They are blockers.
+Ask questions only for genuine ambiguity (conflicting priorities, unknown
+scope, risk of breaking a live system). Clear assignment → execute.
+
+**Anti-pattern (acknowledgement without action):**
 
 ```
 [CEO sends]: "Take raise-simpli-3hy next."
@@ -327,7 +352,7 @@ received the directive. Instead:
 ```
 [You read inbox]
 [You DM CEO]: "On raise-simpli-3hy now."
-[You start the work]
+[You start the work immediately]
 ```
 
 The org's throughput depends on you closing inbox loops, not on

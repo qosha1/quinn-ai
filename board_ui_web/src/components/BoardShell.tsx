@@ -98,6 +98,9 @@ export function BoardShell({ tab }: Props) {
   // Team keyboard nav
   const [teamFocusIdx, setTeamFocusIdx] = useState<number>(-1);
   const [teamFilter, setTeamFilter] = useState<string>("");
+  // Global search results in palette
+  const [searchResults, setSearchResults] = useState<Array<{ type: string; id: string; title: string; subtitle: string; tab: string }>>([]);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const directiveInputRef = useRef<HTMLInputElement>(null);
   const directiveMsgRef = useRef<HTMLTextAreaElement>(null);
@@ -299,6 +302,20 @@ export function BoardShell({ tab }: Props) {
     }
   }, [directiveText, directiveTarget, toast, handleBroadcast]);
 
+  // Debounced global search
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (!paletteQuery || paletteQuery.length < 2) { setSearchResults([]); return; }
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(paletteQuery)}`);
+        const data = await res.json() as { results: Array<{ type: string; id: string; title: string; subtitle: string; tab: string }> };
+        setSearchResults(data.results ?? []);
+      } catch { setSearchResults([]); }
+    }, 200);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [paletteQuery]);
+
   const SLASH_COMMANDS = [
     { cmd: "/loop", desc: "Start autonomous work loop" },
     { cmd: "/ultrareview", desc: "Multi-agent cloud code review" },
@@ -308,10 +325,26 @@ export function BoardShell({ tab }: Props) {
     { cmd: "/clear", desc: "Clear conversation context" },
   ];
 
-  // ⌘K palette items
+  // ⌘K palette items — search results take priority when query is 2+ chars
   const paletteItems = useMemo(() => {
     const q = paletteQuery.toLowerCase();
-    const items: Array<{ label: string; sub?: string; action: () => void }> = [];
+    const items: Array<{ label: string; sub?: string; icon?: string; action: () => void }> = [];
+
+    // Global search results (messages, workers, OKRs)
+    if (searchResults.length > 0) {
+      const icons: Record<string, string> = { message: "#", worker: "@", okr: "◎" };
+      searchResults.forEach((r) => {
+        items.push({
+          label: r.title,
+          sub: r.subtitle,
+          icon: icons[r.type] ?? "·",
+          action: () => { router.push(`/${r.tab}`); setPaletteOpen(false); },
+        });
+      });
+      return items.slice(0, 9);
+    }
+
+    // Default items when no search query
     // Tab jumps
     TABS.forEach((t) => {
       if (!q || t.includes(q)) items.push({ label: `Go to ${t.charAt(0).toUpperCase() + t.slice(1)}`, sub: "tab", action: () => { router.push(`/${t}`); setPaletteOpen(false); } });
@@ -329,7 +362,7 @@ export function BoardShell({ tab }: Props) {
       items.push({ label: cmd, sub: desc, action: () => { navigator.clipboard?.writeText(cmd).catch(() => {}); toast(`Copied ${cmd}`); setPaletteOpen(false); } });
     });
     return items.slice(0, 9);
-  }, [paletteQuery, workers, router, toast]);
+  }, [paletteQuery, searchResults, workers, router, toast]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -824,7 +857,7 @@ export function BoardShell({ tab }: Props) {
           }} onClick={(e) => e.stopPropagation()}>
             <input
               ref={paletteInputRef}
-              placeholder="Jump to… (tab, worker, action)"
+              placeholder="Search messages, workers, OKRs — or jump to tab…"
               value={paletteQuery}
               onChange={(e) => { setPaletteQuery(e.target.value); setPaletteIdx(0); }}
               onKeyDown={(e) => {
@@ -838,12 +871,15 @@ export function BoardShell({ tab }: Props) {
             <div>
               {paletteItems.map((item, i) => (
                 <div key={i} onClick={item.action} style={{
-                  padding: "10px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "9px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
                   background: i === paletteIdx ? "var(--bg-3)" : "transparent",
                   borderLeft: i === paletteIdx ? "2px solid var(--accent)" : "2px solid transparent",
                 }}>
-                  <span style={{ fontSize: 14 }}>{item.label}</span>
-                  {item.sub && <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{item.sub}</span>}
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}>
+                    {item.icon && <span style={{ color: "var(--fg-muted)", fontSize: 12, minWidth: 12 }}>{item.icon}</span>}
+                    {item.label}
+                  </span>
+                  {item.sub && <span style={{ fontSize: 11, color: "var(--fg-muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.sub}</span>}
                 </div>
               ))}
               {paletteItems.length === 0 && (

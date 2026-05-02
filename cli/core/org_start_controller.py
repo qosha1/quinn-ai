@@ -451,8 +451,10 @@ Also re-check `msgr inbox` every ~5 minutes during long work.
 When inbox shows messages:
 - **Questions** → answer EVERY one. "No reply" is not a valid response.
 - **Directives** ("please pick up X", "next up — Y", "switch to Z") →
-  EXECUTE IMMEDIATELY. Do NOT reply with "Want me to proceed?". The
-  right reply is "On it, starting now" + immediate action.
+  EXECUTE IMMEDIATELY. **NEVER reply "Want me to proceed?" or "Should I
+  go ahead?" — those phrases are blockers.** The right reply is "On it,
+  starting now" + immediate action. Confirmation questions are only for
+  genuine ambiguity (conflicting priorities, risk of breaking live systems).
 - **Status updates** → acknowledge with a one-line confirmation so the
   sender knows the loop closed.
 
