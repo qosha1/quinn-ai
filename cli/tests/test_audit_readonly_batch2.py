@@ -251,10 +251,11 @@ class TestBudgetTransactions:
 # ============================================================
 class TestOkrShow:
     def test_show_existing_okr(self, runner, initialized_org):
-        # Create one
+        # Create one (--no-krs-needed required since KR enforcement was added)
         runner.invoke(qn, [
             "--org-path", str(initialized_org),
             "org", "okr", "set", "--title", "ShowMe", "--owner", "ceo",
+            "--no-krs-needed",
         ])
         # Find the bd id from list
         list_result = runner.invoke(qn, [
