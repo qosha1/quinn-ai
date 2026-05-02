@@ -102,7 +102,10 @@ def prepare_worker_onboarding(
     # 7. Symlink architecture docs
     _link_architecture_docs(worker_dir, org_path)
 
-    # 8. Record onboarding initialization marker
+    # 8. Write bd→qn-bd shim so all bead operations go through the rules engine
+    _write_bd_shim(worker_dir)
+
+    # 9. Record onboarding initialization marker
     marker_path = onboarding_dir / "initialized"
     if not marker_path.exists():
         marker_path.write_text(context.timestamp)
@@ -227,6 +230,25 @@ def _load_onboarding_context(
         team_template=team_template,
         available_tools=available_tools,
     )
+
+
+def _write_bd_shim(worker_dir: Path) -> None:
+    """Write a bd→qn-bd wrapper into the worker's bin/ dir.
+
+    When WORKER_STORAGE/bin/ is prepended to PATH, the worker's `bd`
+    resolves to this shim, routing all bead operations through qn-bd
+    and thus the rules engine. Idempotent.
+    """
+    import stat as _stat
+    bin_dir = worker_dir / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    shim = bin_dir / "bd"
+    shim.write_text(
+        "#!/bin/sh\n"
+        "# QuinnAI shim: route bd → qn-bd so the rules engine evaluates every bead op.\n"
+        'exec qn-bd "$@"\n'
+    )
+    shim.chmod(shim.stat().st_mode | _stat.S_IXUSR | _stat.S_IXGRP | _stat.S_IXOTH)
 
 
 def _load_available_tools(db: Database, worker_id: str, org_path: Path) -> list[ToolDependency]:
@@ -745,18 +767,20 @@ def get_worker_env_vars(
         "QUINN_SESSION_MODE": session_mode,
     }
 
-    # Host mode (host-mode-init): expose PROJECT_ROOT and prepend
-    # .quinnai/bin/ to PATH so workers' `bd` resolves to the trust-boundary
-    # shim. Greenfield orgs leave PATH and PROJECT_ROOT untouched.
+    # Always prepend WORKER_STORAGE/bin/ to PATH so the bd→qn-bd shim
+    # written at onboarding time routes all bead ops through the rules engine.
+    existing_path = os.environ.get("PATH", "")
+    worker_bin = worker_dir / "bin"
+    env["PATH"] = f"{worker_bin}:{existing_path}" if existing_path else str(worker_bin)
+
+    # Host mode (host-mode-init): also expose PROJECT_ROOT and the
+    # .quinnai/bin/ trust-boundary shim (takes priority over worker bin).
     from cli.core.host_mode import is_host_mode, get_project_root
     if is_host_mode(org_path):
         project_root = get_project_root(org_path)
         env["PROJECT_ROOT"] = str(project_root)
-        shim_dir = project_root / ".quinnai" / "bin"
-        existing_path = os.environ.get("PATH", "")
-        env["PATH"] = (
-            f"{shim_dir}:{existing_path}" if existing_path else str(shim_dir)
-        )
+        host_shim_dir = project_root / ".quinnai" / "bin"
+        env["PATH"] = f"{host_shim_dir}:{env['PATH']}"
 
     return env
 
