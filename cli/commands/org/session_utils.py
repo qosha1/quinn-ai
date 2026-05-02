@@ -38,6 +38,7 @@ def spawn_worker_session(
     env_vars: Optional[dict[str, str]] = None,
     welcome_message: Optional[str] = None,
     force_restart: bool = False,
+    model: Optional[str] = "claude-sonnet-4-6",
 ) -> None:
     """Spawn a worker session with optional restart.
 
@@ -56,6 +57,7 @@ def spawn_worker_session(
         provider=provider,
         command=command,
         args=args,
+        model=model,
         working_directory=Path(working_directory) if working_directory else None,
         env_vars=env_vars or {},
         welcome_message=welcome_message,

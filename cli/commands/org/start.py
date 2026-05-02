@@ -79,14 +79,13 @@ from cli.core.sessions.registry import get_default_registry  # noqa: F401
 @click.option(
     "--model",
     "model",
-    default=None,
-    envvar="QUINNAI_CANARY_MODEL",
+    default="claude-sonnet-4-6",
+    envvar="QUINNAI_MODEL",
     help=(
-        "Pin the LLM model for the spawned CEO session (e.g., "
+        "LLM model for the spawned CEO session (e.g., "
         "'claude-sonnet-4-6', 'claude-opus-4-7', or aliases like "
         "'sonnet'/'opus'). For claude_code, this becomes '--model <id>' "
-        "on the claude CLI. Defaults to \\$QUINNAI_CANARY_MODEL or, if "
-        "unset, whatever model the user is logged into. (quinn-ai-875q)"
+        "on the claude CLI. Defaults to claude-sonnet-4-6 or \\$QUINNAI_MODEL."
     ),
 )
 @click.option(

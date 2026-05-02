@@ -16,10 +16,16 @@ if TYPE_CHECKING:
 
 
 def op_start_org(run: "ScenarioRun", op: dict[str, Any]) -> None:
-    """qn org start — boots the CEO session via the configured provider."""
+    """qn org start — boots the CEO session via the configured provider.
+
+    Defaults to claude-sonnet-4-6 unless QUINNAI_MODEL is set, so canary
+    runs are deterministic and don't drift with the user's Claude Max default.
+    """
+    import os
     from shared.testing.scenarios.ops import _run_qn
 
-    _run_qn(run, ["org", "start"])
+    model = os.environ.get("QUINNAI_MODEL", "claude-sonnet-4-6")
+    _run_qn(run, ["org", "start", "--model", model])
 
 
 def op_send_to_worker(run: "ScenarioRun", op: dict[str, Any]) -> None:
