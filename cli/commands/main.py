@@ -255,6 +255,7 @@ from cli.commands.org import (
     snapshot_cmd,
     audit_cmd,
     env_cmd,
+    tail_cmd,
     rules_cmd,
 )
 
@@ -286,6 +287,7 @@ org.add_command(gc_cmd, name="gc")
 org.add_command(snapshot_cmd, name="snapshot")
 org.add_command(audit_cmd, name="audit")
 org.add_command(env_cmd, name="env")
+org.add_command(tail_cmd, name="tail")
 org.add_command(rules_cmd, name="rules")
 
 from cli.commands.wrkr import get_work_cmd, search_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd, exec_cmd, inspect_cmd, pause_cmd, resume_cmd

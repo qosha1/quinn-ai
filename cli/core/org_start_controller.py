@@ -469,6 +469,68 @@ Send your introduction message above, then read BRIEFING.md and follow the "Firs
 Start by running: msgr send '#general' "Hi team! {chat_intro} Starting work now. Reading briefing and reviewing OKRs."
 """
 
+# Host-mode variant: CEO inherits an existing human backlog. They must survey
+# first and never auto-claim a pre-existing human bead (quinn-ai-jd0g, quinn-ai-llvh).
+_INITIAL_PROMPT_TEMPLATE_HOST_MODE = """=== EXECUTE THIS NOW — these are YOUR active instructions ===
+
+This file is being cat'd into your active claude session by the org's
+spawn flow. You ARE the worker described below — NOT an outside reader.
+Read it and BEGIN EXECUTING immediately.
+
+=== END FRAMING — instructions follow ===
+
+You are {self_intro}. You've just been onboarded into a HOST-MODE org —
+meaning this project already has an existing codebase and backlog owned by
+human developers. Your job is to assist, not to take over.
+
+Your working directory contains onboarding materials:
+- BRIEFING.md - Your role, responsibilities, and host-mode context
+- STORAGE.md - Storage architecture
+- CLAUDE.md - Development guidelines
+
+**CRITICAL: SURVEY FIRST — DO NOT CLAIM BEADS YET**
+
+HOST MODE MEANS: humans own this backlog. Before doing ANY work, orient
+yourself by running the survey sequence below. Post your findings to
+#general so the team knows you've arrived and what you see.
+
+**STEP 1 — Survey the backlog (read-only):**
+```bash
+cat "$WORKER_STORAGE/BRIEFING.md"   # your onboarding context
+msgr inbox                           # any messages waiting for you
+bd ready                             # what's unblocked (don't claim yet)
+bd list --status=open --limit=20     # full open backlog overview
+```
+
+**STEP 2 — Identify who owns what:**
+```bash
+bd list --assignee=$(qn org status --json | python3 -c "import sys,json; d=json.load(sys.stdin); [print(w['name']) for w in d.get('workers',[])]" 2>/dev/null || echo "")
+# Or just: bd list --status=in_progress
+```
+
+**STEP 3 — Post your survey summary to #general:**
+```bash
+msgr send '#general' "Hi team! {chat_intro} I've reviewed the backlog. Here's what I see: [summarize bd ready output]. Standing by for direction, or I'll start with my own OKR if no guidance by EOD."
+```
+
+**STEP 4 — Wait for direction OR proceed with your own OKR:**
+- If someone replies with a task → pick it up immediately (no confirmation needed)
+- If inbox is quiet → read BRIEFING.md and start on your assigned OKR
+- NEVER auto-claim a bead assigned to a human without being told to
+
+**WORK LOOP (after initial survey):**
+```
+msgr inbox   # always check messages first
+bd ready     # then look for work
+```
+Use `/loop` to automate this cycle.
+
+**COMMUNICATION — INBOX DISCIPLINE (MANDATORY):**
+After every turn: `msgr inbox`. For directives → execute immediately without asking "Want me to proceed?".
+
+Start now with Step 1: `cat "$WORKER_STORAGE/BRIEFING.md"`
+"""
+
 
 def _capture_pane(tmux_session: str) -> str:
     """Capture current pane content from a tmux session, or return ''."""
@@ -625,7 +687,18 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
         else:
             self_intro = f"{ceo.name}, the {ceo.role} of this organization"
             chat_intro = f"I'm {ceo.name}, {ceo.role}."
-        formatted_prompt = _INITIAL_PROMPT_TEMPLATE.format(
+        # Select template: host-mode CEOs get the survey-first variant
+        # (quinn-ai-jd0g) so they never auto-claim human-owned beads.
+        try:
+            from cli.core.host_mode import is_host_mode as _is_host_mode
+            _use_host_template = _is_host_mode(ceo._org_path)
+        except Exception:
+            _use_host_template = False
+        template = (
+            _INITIAL_PROMPT_TEMPLATE_HOST_MODE if _use_host_template
+            else _INITIAL_PROMPT_TEMPLATE
+        )
+        formatted_prompt = template.format(
             self_intro=self_intro,
             chat_intro=chat_intro,
         )
@@ -957,5 +1030,58 @@ def execute_start(
             if org.ceo.is_session_active:
                 click.echo(f"  CEO Session: {org.ceo.runtime_status}")
 
+        # Spawn the continuation engine as a detached background daemon so
+        # workers get nudged when idle even after this process exits.
+        # Without this, the engine is never started and CEOs stop polling
+        # their inbox after the first delegation cycle (quinn-ai-srwt).
+        _spawn_continuation_daemon(org_path)
+
     finally:
         db.close()
+
+
+def _spawn_continuation_daemon(org_path: Path) -> None:
+    """Start a detached continuation engine daemon for this org.
+
+    Spawns `qn org tail --no-color` in a new session so it outlives this
+    process. Idempotent: does nothing if a daemon for this org is already
+    running (detected via pid-file).
+    """
+    import subprocess
+    import sys
+
+    pid_file = org_path / "live" / "continuation-engine.pid"
+
+    # Check if already running
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text().strip())
+            # Signal 0 checks existence without killing
+            import os
+            os.kill(pid, 0)
+            return  # daemon already alive
+        except (ValueError, ProcessLookupError, PermissionError, OSError):
+            pid_file.unlink(missing_ok=True)
+
+    try:
+        log_path = org_path / "live" / "continuation-engine.log"
+        with open(log_path, "a") as log_fh:
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "cli.commands.continuation_daemon",
+                 "--org-path", str(org_path)],
+                stdout=log_fh,
+                stderr=log_fh,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        pid_file.write_text(str(proc.pid))
+        click.echo(f"  Continuation engine: running (pid {proc.pid})")
+    except Exception as e:
+        click.echo(
+            f"  Warning: could not start continuation engine daemon: {e}",
+            err=True,
+        )
+        click.echo(
+            "  Run 'qn org tail' in a background pane to supervise workers.",
+            err=True,
+        )

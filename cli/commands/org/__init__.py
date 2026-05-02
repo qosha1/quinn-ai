@@ -29,6 +29,7 @@ from .gc import gc_cmd
 from .snapshot import snapshot_cmd
 from .audit import audit_cmd
 from .env import env_cmd
+from .tail import tail_cmd
 from cli.core.rules.cli import rules_cmd
 
 __all__ = [
@@ -60,5 +61,6 @@ __all__ = [
     "snapshot_cmd",
     "audit_cmd",
     "env_cmd",
+    "tail_cmd",
     "rules_cmd",
 ]
