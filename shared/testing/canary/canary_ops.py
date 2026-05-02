@@ -264,40 +264,56 @@ def op_templates_yaml_seed(run: "ScenarioRun", op: dict[str, Any]) -> None:
 def op_invoke_qn_bd(run: "ScenarioRun", op: dict[str, Any]) -> None:
     """Directly invoke qn-bd from the harness (not via CEO) to test rules engine.
 
-    Runs `qn-bd <args...>` with the org_path set correctly so the rules
-    engine is invoked. Does NOT spawn a session.
+    Calls qn_bd.main() with patched sys.argv so the rules engine evaluates
+    the action against the scenario org. Does NOT spawn a CEO session.
 
     YAML form:
       - op: invoke_qn_bd
-        args: ["create", "--type=task", "--title=foo", "--notes=DROP TABLE bar"]
+        args: ["create", "--type=task", "--title=foo", "--notes=ARCH-FREEZE tag"]
         expect_exit: 1   # optional; if set, asserts the exit code matches
 
-    Use this to probe the rules engine directly without relying on the CEO
-    to run the command. The audit log is written regardless of exit code.
+    Use this to probe the rules engine directly without relying on the CEO.
+    The audit log is written regardless of exit code.
     """
-    import subprocess
+    import os
     import sys
+    from cli.commands.qn_bd import main as qn_bd_main
 
     bd_args = op.get("args", [])
     expected_exit = op.get("expect_exit")
 
-    # Find the qn-bd entrypoint
-    qn_bd = sys.executable.replace("python3", "qn-bd").replace("python", "qn-bd")
-    # More reliably: use the same Python that's running to invoke the module
-    cmd = [sys.executable, "-m", "cli.commands.qn_bd"] + list(bd_args)
+    ceo = run.db.find_worker_by_name("ceo")
+    worker_id = ceo["id"] if ceo else "test-harness"
 
-    env = {
-        **__import__("os").environ,
-        "QUINN_ORG_PATH": str(run.org_path),
-        "QUINN_WORKER_ID": run.db.find_worker_by_name("ceo")["id"] if run.db.find_worker_by_name("ceo") else "test-harness",
-    }
+    # Patch sys.argv and env, call main(), capture SystemExit.
+    saved_argv = sys.argv[:]
+    old_env = {}
+    for k in ("QUINN_ORG_PATH", "QUINN_WORKER_ID"):
+        old_env[k] = os.environ.get(k)
 
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
+    actual_exit = 0
+    try:
+        sys.argv = [
+            "qn-bd",
+            "--org-path", str(run.org_path),
+            "--worker-id", worker_id,
+        ] + list(bd_args)
+        os.environ["QUINN_ORG_PATH"] = str(run.org_path)
+        os.environ["QUINN_WORKER_ID"] = worker_id
+        qn_bd_main()
+    except SystemExit as e:
+        actual_exit = int(e.code) if e.code is not None else 0
+    finally:
+        sys.argv = saved_argv
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
-    if expected_exit is not None and result.returncode != int(expected_exit):
+    if expected_exit is not None and actual_exit != int(expected_exit):
         raise RuntimeError(
-            f"invoke_qn_bd: expected exit {expected_exit}, got {result.returncode}.\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            f"invoke_qn_bd: expected exit {expected_exit}, got {actual_exit}."
         )
 
 
