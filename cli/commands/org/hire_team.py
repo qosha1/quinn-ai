@@ -75,10 +75,10 @@ def _parse_overrides(
     help="Parent team name (required iff template has 'requires').",
 )
 @click.option(
-    "--override",
+    "--role-override",
     "overrides",
     multiple=True,
-    help="Repeatable: <role>:<count> or <role>:cost=<n>.",
+    help="Repeatable: <role>:<count> or <role>:cost=<n>. (use --role-override, not --override which is reserved for rules engine)",
 )
 @click.option(
     "--worker-names",
