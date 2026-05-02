@@ -23,6 +23,12 @@ from .demote import demote_cmd
 from .delegations import delegations_cmd
 from .provider import provider_cmd
 from .watch import watch
+from .ps import ps_cmd
+from .broadcast import broadcast_cmd
+from .gc import gc_cmd
+from .snapshot import snapshot_cmd
+from .audit import audit_cmd
+from .env import env_cmd
 from cli.core.rules.cli import rules_cmd
 
 __all__ = [
@@ -48,5 +54,11 @@ __all__ = [
     "delegations_cmd",
     "provider_cmd",
     "watch",
+    "ps_cmd",
+    "broadcast_cmd",
+    "gc_cmd",
+    "snapshot_cmd",
+    "audit_cmd",
+    "env_cmd",
     "rules_cmd",
 ]

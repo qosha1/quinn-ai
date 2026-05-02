@@ -249,6 +249,12 @@ from cli.commands.org import (
     delegations_cmd,
     provider_cmd,
     watch,
+    ps_cmd,
+    broadcast_cmd,
+    gc_cmd,
+    snapshot_cmd,
+    audit_cmd,
+    env_cmd,
     rules_cmd,
 )
 
@@ -274,9 +280,15 @@ org.add_command(demote_cmd, name="demote")
 org.add_command(delegations_cmd, name="delegations")
 org.add_command(provider_cmd, name="provider")
 org.add_command(watch, name="watch")
+org.add_command(ps_cmd, name="ps")
+org.add_command(broadcast_cmd, name="broadcast")
+org.add_command(gc_cmd, name="gc")
+org.add_command(snapshot_cmd, name="snapshot")
+org.add_command(audit_cmd, name="audit")
+org.add_command(env_cmd, name="env")
 org.add_command(rules_cmd, name="rules")
 
-from cli.commands.wrkr import get_work_cmd, search_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd
+from cli.commands.wrkr import get_work_cmd, search_cmd, status_cmd as wrkr_status_cmd, delegate_cmd, report_cmd, cleanup_cmd as wrkr_cleanup_cmd, restart_cmd, exec_cmd, inspect_cmd, pause_cmd, resume_cmd
 
 wrkr.add_command(get_work_cmd, name="get-work")
 wrkr.add_command(search_cmd, name="search")
@@ -285,6 +297,10 @@ wrkr.add_command(delegate_cmd, name="delegate")
 wrkr.add_command(report_cmd, name="report")
 wrkr.add_command(wrkr_cleanup_cmd, name="cleanup")
 wrkr.add_command(restart_cmd, name="restart")
+wrkr.add_command(exec_cmd, name="exec")
+wrkr.add_command(inspect_cmd, name="inspect")
+wrkr.add_command(pause_cmd, name="pause")
+wrkr.add_command(resume_cmd, name="resume")
 
 
 # Board commands - human oversight when org is off-track
