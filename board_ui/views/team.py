@@ -13,12 +13,14 @@ from typing import Optional
 
 from textual import work
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.widgets import Button, DataTable, Label, Static
 from textual.widget import Widget
 
 from ..interfaces.org_connection import WorkerInfo, SessionState
 from ..logging_config import get_board_logger
+from ..widgets.worker_detail import WorkerDetailPanel
 from ._org_access import get_org_connection
 
 logger = get_board_logger(__name__)
@@ -26,6 +28,10 @@ logger = get_board_logger(__name__)
 
 class TeamView(VerticalScroll):
     """Team view with worker list and jump-in buttons."""
+
+    BINDINGS = [
+        Binding("a", "attach_session", "Attach to session", show=True),
+    ]
 
     DEFAULT_CSS = """
     TeamView {
@@ -69,10 +75,12 @@ class TeamView(VerticalScroll):
                 yield Button("Idle", id="filter-idle", classes="filter-btn")
                 yield Button("+ Hire Worker", id="hire-worker-btn", variant="success", classes="filter-btn")
 
-        with Container(id="workers-table"):
-            table = DataTable(id="workers-data")
-            table.add_columns("Status", "Name", "Role", "Team", "Manager", "Actions")
-            yield table
+        with Horizontal(id="team-body"):
+            with Container(id="workers-table"):
+                table = DataTable(id="workers-data", cursor_type="row")
+                table.add_columns("Status", "Name", "Role", "Team", "Manager", "Actions")
+                yield table
+            yield WorkerDetailPanel(id="worker-detail-panel")
 
     async def on_mount(self) -> None:
         """Load workers when view mounts.
@@ -243,6 +251,72 @@ class TeamView(VerticalScroll):
             # Run as a Textual worker — _hire_worker uses push_screen_wait
             # which requires a worker context (NoActiveWorker otherwise).
             self._hire_worker()
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Update detail panel when cursor moves to a new worker row."""
+        if event.row_key is None:
+            return
+        worker_id = event.row_key.value
+        worker = next((w for w in self._workers if w.id == worker_id), None)
+        if worker:
+            self._load_worker_detail(worker_id)
+
+    @work(thread=True)
+    def _load_worker_detail(self, worker_id: str) -> None:
+        """Load worker detail in background and update panel."""
+        conn = get_org_connection(self.app)
+        if conn is None:
+            return
+        detail = conn.get_worker_detail(worker_id)
+        if detail is not None:
+            panel = self.query_one("#worker-detail-panel", WorkerDetailPanel)
+            self.app.call_from_thread(panel.update_worker, detail)
+
+    def action_attach_session(self) -> None:
+        """Attach to the currently selected worker's tmux session."""
+        table = self.query_one("#workers-data", DataTable)
+        if table.cursor_row < 0:
+            self.app.notify("Select a worker first", severity="warning")
+            return
+        row_key = table.get_row_at(table.cursor_row)
+        # row_key is list of cell values; worker_id is stored as row key
+        cursor_key = table.coordinate_to_cell_key((table.cursor_row, 0))
+        worker_id = cursor_key.row_key.value if cursor_key else None
+        if not worker_id:
+            return
+        worker = next((w for w in self._workers if w.id == worker_id), None)
+        if not worker or not worker.tmux_session_name:
+            self.app.notify(
+                f"No active session for {worker.name if worker else worker_id}",
+                severity="warning",
+            )
+            return
+        self._do_attach(worker.tmux_session_name, worker.name)
+
+    @work(thread=True)
+    def _do_attach(self, tmux_session_name: str, worker_name: str) -> None:
+        """Suspend Textual, attach to tmux session, then resume."""
+        from ..services.session_attach import attach_to_worker_session
+
+        def _attach() -> None:
+            attach_to_worker_session(tmux_session_name)
+
+        try:
+            with self.app.suspend():
+                _attach()
+        except Exception:
+            # suspend() not available (older Textual) — fall back to new window
+            conn = get_org_connection(self.app)
+            if conn:
+                from ..terminals import get_terminal_provider
+                terminal = get_terminal_provider()
+                terminal.attach_to_session(
+                    title=f"Session: {worker_name}",
+                    session_name=tmux_session_name,
+                )
+        self.app.call_from_thread(
+            self.app.notify, f"Detached from {worker_name}'s session"
+        )
 
     async def on_data_table_cell_selected(self, event: DataTable.CellSelected) -> None:
         """Handle cell selection in the Actions column.

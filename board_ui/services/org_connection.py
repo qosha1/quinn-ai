@@ -23,6 +23,7 @@ from ..interfaces.org_connection import (
     OrgInfo,
     OrgStatus,
     WorkerInfo,
+    WorkerDetail,
     WorkerStatus,
     SessionState,
     BudgetSummary,
@@ -265,6 +266,13 @@ class QuinnAIOrgConnection(OrgConnection):
         """Get a specific worker by ID."""
         self._ensure_connected()
         return self._reader.get_worker(worker_id)
+
+    def get_worker_detail(self, worker_id: str) -> Optional[WorkerDetail]:
+        """Get rich per-worker context for the detail panel."""
+        self._ensure_connected()
+        from .readers.worker_detail import WorkerDetailReader
+        reader = WorkerDetailReader(db=self._db, org_path=self._org_path)
+        return reader.get_worker_detail(worker_id)
 
     def get_ceo(self) -> Optional[WorkerInfo]:
         """Get the CEO worker."""

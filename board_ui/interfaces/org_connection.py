@@ -135,6 +135,17 @@ class HealthStatus:
     last_checked: Optional[datetime] = None
 
 
+@dataclass
+class WorkerDetail:
+    """Rich per-worker context for the worker detail panel."""
+    worker_id: str
+    tools: list[dict]
+    storage_tree: dict
+    active_beads: list[dict]
+    recent_messages: list[dict]
+    briefing_excerpt: str
+
+
 class OrgConnection(ABC):
     """Abstract interface for connecting to organizations.
 
@@ -433,6 +444,17 @@ class OrgConnection(ABC):
             True if briefing was updated and CEO notified successfully
         """
         ...
+
+    def get_worker_detail(self, worker_id: str) -> Optional["WorkerDetail"]:
+        """Return rich per-worker context for the detail panel.
+
+        Args:
+            worker_id: Worker ID
+
+        Returns:
+            WorkerDetail or None if worker not found
+        """
+        return None
 
     # ==================
     # SUBSCRIPTIONS (FOR REAL-TIME UPDATES)

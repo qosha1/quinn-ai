@@ -84,3 +84,23 @@ TabPane {
 .hidden {
     display: none;
 }
+
+/* Board OS: Team view split layout */
+#team-body {
+    height: 1fr;
+}
+
+#workers-table {
+    width: 60%;
+    height: 100%;
+    overflow-y: auto;
+}
+
+#worker-detail-panel {
+    width: 40%;
+    height: 100%;
+    border-left: solid $primary;
+    padding: 1 2;
+    overflow-y: auto;
+    background: $surface;
+}
