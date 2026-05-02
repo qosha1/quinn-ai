@@ -98,6 +98,9 @@ export function BoardShell({ tab }: Props) {
   // Team keyboard nav
   const [teamFocusIdx, setTeamFocusIdx] = useState<number>(-1);
   const [teamFilter, setTeamFilter] = useState<string>("");
+  // Worker detail panel
+  const [selectedWorker, setSelectedWorker] = useState<WorkerInfo | null>(null);
+  const [workerBeads, setWorkerBeads] = useState<{ in_progress: unknown[]; open: unknown[] } | null>(null);
   // Global search results in palette
   const [searchResults, setSearchResults] = useState<Array<{ type: string; id: string; title: string; subtitle: string; tab: string }>>([]);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -585,15 +588,31 @@ export function BoardShell({ tab }: Props) {
                 {filteredWorkers.map((w, i) => {
                   const elapsed = w.session_started_at ? formatElapsed(w.session_started_at) : "";
                   const cost = w.spend_used > 0 ? formatCurrencyShort(w.spend_used) : "";
-                  const sessionInfo = [elapsed, cost].filter(Boolean).join(" · ");
+                  const stale = w.last_activity
+                    ? (Date.now() - new Date(w.last_activity).getTime()) / 60000
+                    : null;
+                  const staleStr = stale !== null && stale > 30
+                    ? `idle ${stale > 120 ? `${Math.round(stale / 60)}h` : `${Math.round(stale)}m`}`
+                    : null;
+                  const sessionInfo = [elapsed, cost, staleStr].filter(Boolean).join(" · ");
                   const isFocused = teamFocusIdx === i;
+                  const isSelected = selectedWorker?.id === w.id;
                   return (
                     <WorkerRow
                       key={w.id}
                       worker={w}
                       onAction={handleWorkerAction}
-                      onClick={() => { setTeamFocusIdx(i); setDirectiveTarget(w); setDirectiveText(""); setDirectiveOpen(true); setTimeout(() => directiveMsgRef.current?.focus(), 50); }}
-                      focused={isFocused}
+                      onClick={() => {
+                        setTeamFocusIdx(i);
+                        if (isSelected) { setSelectedWorker(null); setWorkerBeads(null); return; }
+                        setSelectedWorker(w);
+                        setWorkerBeads(null);
+                        fetch(`/api/workers/${w.id}/beads`)
+                          .then((r) => r.json())
+                          .then((d) => setWorkerBeads(d))
+                          .catch(() => {});
+                      }}
+                      focused={isFocused || isSelected}
                       sessionInfo={sessionInfo}
                     />
                   );
@@ -601,6 +620,56 @@ export function BoardShell({ tab }: Props) {
                 {filteredWorkers.length === 0 && <tr><td colSpan={8} className="empty-state">No workers match "{teamFilter}"</td></tr>}
               </tbody>
             </table>
+
+            {/* Worker detail panel */}
+            {selectedWorker && (
+              <div style={{ marginTop: 16, background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <Avatar name={selectedWorker.name} size={28} />
+                  <div>
+                    <span style={{ fontWeight: 600 }}>{selectedWorker.name}</span>
+                    <span style={{ color: "var(--fg-muted)", fontSize: 12, marginLeft: 8 }}>{selectedWorker.role}</span>
+                  </div>
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                    <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => { setDirectiveTarget(selectedWorker); setDirectiveText(""); setDirectiveOpen(true); setTimeout(() => directiveMsgRef.current?.focus(), 50); }}>
+                      Send directive
+                    </button>
+                    <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => { setSelectedWorker(null); setWorkerBeads(null); }}>✕</button>
+                  </div>
+                </div>
+                {selectedWorker.last_activity && (
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)", marginBottom: 10 }}>
+                    Last activity: {formatRelativeTime(selectedWorker.last_activity)}
+                    {selectedWorker.session_started_at && ` · Session running ${formatElapsed(selectedWorker.session_started_at)}`}
+                    {selectedWorker.spend_used > 0 && ` · ${formatCurrencyShort(selectedWorker.spend_used)} spent`}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "var(--fg-muted)" }}>Active work</div>
+                {!workerBeads ? (
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>Loading beads…</div>
+                ) : (workerBeads.in_progress as Array<{ id: string; title: string; status: string; updated_at?: string }>).length === 0 && (workerBeads.open as unknown[]).length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>No open beads assigned</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {(workerBeads.in_progress as Array<{ id: string; title: string; status: string; updated_at?: string }>).map((b) => (
+                      <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "rgba(35,134,54,0.1)", border: "1px solid rgba(35,134,54,0.3)", borderRadius: 6 }}>
+                        <span style={{ fontSize: 10, background: "#238636", color: "#fff", padding: "1px 5px", borderRadius: 3 }}>IN PROGRESS</span>
+                        <span style={{ fontSize: 13, flex: 1 }}>{b.title}</span>
+                        <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{b.id}</span>
+                        {b.updated_at && <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{formatRelativeTime(b.updated_at)}</span>}
+                      </div>
+                    ))}
+                    {(workerBeads.open as Array<{ id: string; title: string }>).slice(0, 3).map((b) => (
+                      <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px", background: "var(--bg-3)", borderRadius: 6 }}>
+                        <span style={{ fontSize: 10, color: "var(--fg-muted)", minWidth: 28 }}>open</span>
+                        <span style={{ fontSize: 12, flex: 1, color: "var(--fg-muted)" }}>{b.title}</span>
+                        <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{b.id}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
