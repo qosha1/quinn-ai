@@ -101,6 +101,9 @@ export function BoardShell({ tab }: Props) {
   // Worker detail panel
   const [selectedWorker, setSelectedWorker] = useState<WorkerInfo | null>(null);
   const [workerBeads, setWorkerBeads] = useState<{ in_progress: unknown[]; open: unknown[] } | null>(null);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalContent, setTerminalContent] = useState<string>("");
+  const terminalSseRef = useRef<EventSource | null>(null);
   // Global search results in palette
   const [searchResults, setSearchResults] = useState<Array<{ type: string; id: string; title: string; subtitle: string; tab: string }>>([]);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -304,6 +307,19 @@ export function BoardShell({ tab }: Props) {
       setSending(false);
     }
   }, [directiveText, directiveTarget, toast, handleBroadcast]);
+
+  // Terminal SSE for selected worker
+  useEffect(() => {
+    terminalSseRef.current?.close();
+    if (!terminalOpen || !selectedWorker) { setTerminalContent(""); return; }
+    const es = new EventSource(`/api/workers/${selectedWorker.id}/terminal?lines=30`);
+    terminalSseRef.current = es;
+    es.onmessage = (e) => {
+      try { setTerminalContent(JSON.parse(e.data).content ?? ""); } catch { /* ignore */ }
+    };
+    es.onerror = () => es.close();
+    return () => { es.close(); terminalSseRef.current = null; };
+  }, [terminalOpen, selectedWorker?.id]);
 
   // Debounced global search
   useEffect(() => {
@@ -604,9 +620,10 @@ export function BoardShell({ tab }: Props) {
                       onAction={handleWorkerAction}
                       onClick={() => {
                         setTeamFocusIdx(i);
-                        if (isSelected) { setSelectedWorker(null); setWorkerBeads(null); return; }
+                        if (isSelected) { setSelectedWorker(null); setWorkerBeads(null); setTerminalOpen(false); return; }
                         setSelectedWorker(w);
                         setWorkerBeads(null);
+                        setTerminalOpen(false);
                         fetch(`/api/workers/${w.id}/beads`)
                           .then((r) => r.json())
                           .then((d) => setWorkerBeads(d))
@@ -631,10 +648,17 @@ export function BoardShell({ tab }: Props) {
                     <span style={{ color: "var(--fg-muted)", fontSize: 12, marginLeft: 8 }}>{selectedWorker.role}</span>
                   </div>
                   <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                    <button
+                      style={{ fontSize: 11, padding: "3px 10px", background: terminalOpen ? "var(--accent)" : undefined }}
+                      onClick={() => setTerminalOpen((v) => !v)}
+                      title="Toggle live session view"
+                    >
+                      {terminalOpen ? "Hide session" : "View session"}
+                    </button>
                     <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => { setDirectiveTarget(selectedWorker); setDirectiveText(""); setDirectiveOpen(true); setTimeout(() => directiveMsgRef.current?.focus(), 50); }}>
                       Send directive
                     </button>
-                    <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => { setSelectedWorker(null); setWorkerBeads(null); }}>✕</button>
+                    <button style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => { setSelectedWorker(null); setWorkerBeads(null); setTerminalOpen(false); }}>✕</button>
                   </div>
                 </div>
                 {selectedWorker.last_activity && (
@@ -642,6 +666,22 @@ export function BoardShell({ tab }: Props) {
                     Last activity: {formatRelativeTime(selectedWorker.last_activity)}
                     {selectedWorker.session_started_at && ` · Session running ${formatElapsed(selectedWorker.session_started_at)}`}
                     {selectedWorker.spend_used > 0 && ` · ${formatCurrencyShort(selectedWorker.spend_used)} spent`}
+                  </div>
+                )}
+                {terminalOpen && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, color: "var(--fg-muted)", marginBottom: 4 }}>
+                      Live session · updates every 2s · read-only
+                    </div>
+                    <pre style={{
+                      background: "#0d1117", color: "#c9d1d9", fontFamily: "monospace",
+                      fontSize: 11, lineHeight: 1.4, padding: "10px 12px",
+                      borderRadius: 6, border: "1px solid #30363d",
+                      maxHeight: 280, overflowY: "auto", whiteSpace: "pre-wrap",
+                      wordBreak: "break-all", margin: 0,
+                    }}>
+                      {terminalContent || "Connecting to session…"}
+                    </pre>
                   </div>
                 )}
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: "var(--fg-muted)" }}>Active work</div>

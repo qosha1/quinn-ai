@@ -32,6 +32,26 @@ def _writable_db(run: "ScenarioRun") -> sqlite3.Connection:
     return sqlite3.connect(str(db_path))
 
 
+def _mark_host_mode(run: "ScenarioRun") -> None:
+    """Set org_state.project_root so is_host_mode() returns True.
+
+    In production, 'qn org init --host-mode' sets this. The harness
+    writes it directly so scenarios can opt into host-mode without a
+    separate CLI path (quinn-ai-jofi).
+    """
+    # org_path for host-mode is <project_root>/.quinnai/ — parent is the root.
+    project_root = run.org_path.parent
+    conn = _writable_db(run)
+    try:
+        conn.execute(
+            "UPDATE org_state SET project_root = ? WHERE id = 'default'",
+            (str(project_root),),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Op implementations
 # ---------------------------------------------------------------------------
@@ -42,10 +62,13 @@ def op_init(run: "ScenarioRun", op: dict[str, Any]) -> None:
     args = ["org", "init", "--skip-okrs"]
     if "ceo_name" in setup:
         args += ["--ceo-name", setup["ceo_name"]]
-    # 'qn org init' does not expose --ceo-role at the CLI by design; the
-    # underlying Org.init() Python API still accepts a ceo_role kwarg.
-    # Scenario YAML 'ceo_role' is intentionally silently dropped.
+    # Host-mode: mark the org as host-mode so is_host_mode() returns True.
+    # qn org init doesn't expose --host-mode at CLI level; we write the
+    # marker file directly after init so the harness scenario mirrors what
+    # 'qn org init --host-mode' does in production (quinn-ai-jofi).
     _run_qn(run, args)
+    if run.spec.setup.get("host_mode"):
+        _mark_host_mode(run)
 
 
 def op_hire(run: "ScenarioRun", op: dict[str, Any]) -> None:

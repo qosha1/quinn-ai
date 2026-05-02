@@ -89,8 +89,18 @@ class ScenarioHarness:
         try:
             # Tmp dir for the org
             self._tmpdir = tempfile.mkdtemp(prefix=f"scenario-{self.spec.name}-")
-            org_path = Path(self._tmpdir) / "org"
-            org_path.mkdir()
+
+            host_mode = bool(self.spec.setup.get("host_mode", False))
+            if host_mode:
+                # Host-mode layout: <tmpdir>/project/ is the project root,
+                # <tmpdir>/project/.quinnai/ is the org metadata dir.
+                project_root = Path(self._tmpdir) / "project"
+                project_root.mkdir()
+                org_path = project_root / ".quinnai"
+                org_path.mkdir()
+            else:
+                org_path = Path(self._tmpdir) / "org"
+                org_path.mkdir()
 
             spawner = None
             if self.use_fake_spawner:

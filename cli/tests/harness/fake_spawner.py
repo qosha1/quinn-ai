@@ -67,6 +67,10 @@ class FakeSpawner(SpawnStrategy):
         self._counter += 1
         sid = f"{self._prefix}-{self._counter:04d}"
         self._sessions[sid] = _FakeSession()
+        # Record the config as-is. working_directory is set by the caller
+        # using resolve_session_cwd (host-mode aware) before reaching here.
+        # Scenario tests can assert on spawned[i].working_directory to verify
+        # host-mode produces project_root cwd (quinn-ai-jofi).
         self.spawned.append(config)
         return SpawnResult(success=True, pid=10000 + self._counter, session_id=sid)
 
