@@ -23,6 +23,13 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Installation
 
+**Homebrew (macOS — recommended):**
+```bash
+brew tap qosha1/quinnai
+brew install quinnai
+```
+This installs `qn`, `qn-bd`, and `msgr` to your PATH via a virtualenv.
+
 **Recommended — pipx (isolated venv, scripts on PATH):**
 ```bash
 pipx install "quinn-ai[board]"  # CLI + Board UI (most users)
