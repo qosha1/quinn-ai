@@ -261,6 +261,46 @@ def op_templates_yaml_seed(run: "ScenarioRun", op: dict[str, Any]) -> None:
     _seed_config_file(run, "templates.yaml", content)
 
 
+def op_invoke_qn_bd(run: "ScenarioRun", op: dict[str, Any]) -> None:
+    """Directly invoke qn-bd from the harness (not via CEO) to test rules engine.
+
+    Runs `qn-bd <args...>` with the org_path set correctly so the rules
+    engine is invoked. Does NOT spawn a session.
+
+    YAML form:
+      - op: invoke_qn_bd
+        args: ["create", "--type=task", "--title=foo", "--notes=DROP TABLE bar"]
+        expect_exit: 1   # optional; if set, asserts the exit code matches
+
+    Use this to probe the rules engine directly without relying on the CEO
+    to run the command. The audit log is written regardless of exit code.
+    """
+    import subprocess
+    import sys
+
+    bd_args = op.get("args", [])
+    expected_exit = op.get("expect_exit")
+
+    # Find the qn-bd entrypoint
+    qn_bd = sys.executable.replace("python3", "qn-bd").replace("python", "qn-bd")
+    # More reliably: use the same Python that's running to invoke the module
+    cmd = [sys.executable, "-m", "cli.commands.qn_bd"] + list(bd_args)
+
+    env = {
+        **__import__("os").environ,
+        "QUINN_ORG_PATH": str(run.org_path),
+        "QUINN_WORKER_ID": run.db.find_worker_by_name("ceo")["id"] if run.db.find_worker_by_name("ceo") else "test-harness",
+    }
+
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
+
+    if expected_exit is not None and result.returncode != int(expected_exit):
+        raise RuntimeError(
+            f"invoke_qn_bd: expected exit {expected_exit}, got {result.returncode}.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+
 # Register into Tier 2's shared registry. Idempotent — safe to import multiple times.
 OPS.setdefault("start_org", op_start_org)
 OPS.setdefault("send_to_worker", op_send_to_worker)
@@ -269,3 +309,4 @@ OPS.setdefault("kickstart_ceo", op_kickstart_ceo)
 OPS.setdefault("kickstart_worker", op_kickstart_worker)
 OPS.setdefault("rules_yaml_seed", op_rules_yaml_seed)
 OPS.setdefault("templates_yaml_seed", op_templates_yaml_seed)
+OPS.setdefault("invoke_qn_bd", op_invoke_qn_bd)
