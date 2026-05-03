@@ -101,31 +101,38 @@ class TestBudgetStatus:
 # ============================================================
 class TestOkrList:
     def test_lists_bootstrap_okr_in_beads_view(self, runner, initialized_org):
-        # After quinn-ai-lxp, --skip-okrs creates the bootstrap OKR as a bead
-        # AND in SQLite (same id). `qn org okr list` (reads beads) should
-        # surface the bootstrap OKR.
+        # Create an OKR so the list has something to show.
+        runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set", "--title", "Establish team velocity",
+            "--no-krs-needed",
+        ])
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
             "org", "okr", "list",
         ])
         assert result.exit_code == 0, result.output
         assert "Establish" in result.output, (
-            f"Expected bootstrap OKR title in beads view. Got:\n{result.output}"
+            f"Expected OKR title in beads view. Got:\n{result.output}"
         )
 
     def test_from_db_shows_bootstrap_okr(self, runner, initialized_org):
+        # Create an OKR with a KR so --from-db has something to show
+        runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set", "--title", "Establish velocity",
+            "--kr", "team_size:5:people",
+        ])
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
             "org", "okr", "list", "--from-db",
         ])
         assert result.exit_code == 0, result.output
-        # The bootstrap OKR is auto-created during init
         assert "OKR:" in result.output
-        # Bootstrap OKR has KRs (team_size, processes_documented per _create_bootstrap_okr)
         assert "Key Results:" in result.output
 
     def test_lists_okr_after_set(self, runner, initialized_org):
-        # Create an OKR via qn org okr set
+        # Create an OKR via qn org okr set (--no-krs-needed required since KR enforcement added)
         runner.invoke(qn, [
             "--org-path", str(initialized_org),
             "org", "okr", "set",
@@ -133,6 +140,7 @@ class TestOkrList:
             "-d", "audit description",
             "--owner", "ceo",
             "-p", "1",
+            "--no-krs-needed",
         ])
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
