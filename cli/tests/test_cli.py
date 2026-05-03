@@ -90,12 +90,12 @@ class TestOrgGroup:
 
     def test_org_init_already_initialized(self, runner, temp_org):
         """qn org init should fail if already initialized."""
-        # First init
-        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init"])
-        # Second init should fail
+        # First init (--no-host to prevent host-mode auto-detection redirecting to subdirectory)
+        runner.invoke(qn, ["--org-path", str(temp_org), "org", "init", "--no-host"])
+        # Second init should fail (same path, same mode)
         result = runner.invoke(qn, [
             "--org-path", str(temp_org),
-            "org", "init"
+            "org", "init", "--no-host"
         ])
         assert result.exit_code != 0
         assert "already initialized" in result.output
