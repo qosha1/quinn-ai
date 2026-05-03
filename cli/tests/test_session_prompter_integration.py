@@ -128,13 +128,14 @@ class TestSessionPrompterIntegration:
 
     def test_prompt_rendering_with_real_context(self, test_db, test_org):
         """Test that prompts render correctly with real database context."""
-        from cli.core.constants import CONTINUATION_PROMPT_SOFT_CHECK
+        from cli.core.constants import CONTINUATION_PROMPT_FINAL_WARNING
 
         worker = test_org["worker"]
         prompter = SessionPrompter(test_db, test_org["org_path"])
 
         context = prompter._get_worker_context(worker.id)
-        prompt = CONTINUATION_PROMPT_SOFT_CHECK.format(**context)
+        # Use FINAL_WARNING which includes {current_task_id}
+        prompt = CONTINUATION_PROMPT_FINAL_WARNING.format(**context)
 
         # Verify no template placeholders remain
         assert "{worker_id}" not in prompt

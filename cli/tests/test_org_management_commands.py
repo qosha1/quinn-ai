@@ -1422,7 +1422,8 @@ class TestOkrSet:
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "org", "okr", "set",
-                "--title", "Q1 Revenue Growth"
+                "--title", "Q1 Revenue Growth",
+                "--no-krs-needed",
             ])
         assert result.exit_code == 0
         call_args = mock_bd.call_args[0][0]
@@ -1443,7 +1444,8 @@ class TestOkrSet:
                 "--owner", "TestCEO",
                 "--priority", "1",
                 "--label", "growth",
-                "--due", "2026-06-30"
+                "--due", "2026-06-30",
+                "--no-krs-needed",
             ])
         assert result.exit_code == 0
 
@@ -1458,7 +1460,8 @@ class TestOkrSet:
                 "--org-path", str(initialized_org),
                 "org", "okr", "set",
                 "--title", "ISO Date OKR",
-                "--due", "2026-03-31"
+                "--due", "2026-03-31",
+                "--no-krs-needed",
             ])
         assert result.exit_code == 0
 
@@ -1473,7 +1476,8 @@ class TestOkrSet:
                 "--org-path", str(initialized_org),
                 "org", "okr", "set",
                 "--title", "Relative Date OKR",
-                "--due", "+3m"
+                "--due", "+3m",
+                "--no-krs-needed",
             ])
         assert result.exit_code == 0
 
@@ -1488,7 +1492,8 @@ class TestOkrSet:
             result = runner.invoke(qn, [
                 "--org-path", str(initialized_org),
                 "org", "okr", "add",
-                "--title", "Add Alias OKR"
+                "--title", "Add Alias OKR",
+                "--no-krs-needed",
             ])
         assert result.exit_code == 0
 

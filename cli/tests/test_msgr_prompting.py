@@ -71,7 +71,8 @@ class TestMsgrPrompting:
         source = _INITIAL_PROMPT_TEMPLATE
 
         # Verify the prompt includes explicit msgr usage as FIRST step
-        assert 'msgr send #general' in source, \
+        # Template uses '#general' (quoted) so bash doesn't strip it as a comment
+        assert ('msgr send #general' in source or "msgr send '#general'" in source), \
             "Initial prompt must include msgr send command"
         assert 'FIRST:' in source or 'first message' in source.lower(), \
             "msgr usage must be marked as FIRST task"

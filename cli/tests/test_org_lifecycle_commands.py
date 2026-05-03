@@ -111,9 +111,11 @@ class TestOrgInit:
 
     def test_org_init_already_initialized_raises_error(self, runner, initialized_org):
         """qn org init on an already-initialized org should fail."""
+        # --no-host forces the same path (without it, host-mode auto-detection
+        # redirects the second init to a .quinnai/ subdirectory).
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
-            "org", "init", "--skip-okrs",
+            "org", "init", "--skip-okrs", "--no-host",
         ])
         assert result.exit_code != 0
         assert "already initialized" in result.output.lower()
