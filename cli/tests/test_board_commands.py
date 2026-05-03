@@ -451,24 +451,13 @@ class TestBoardUICommand:
         """qn board ui --help should show options."""
         result = runner.invoke(qn, ["board", "ui", "--help"])
         assert result.exit_code == 0
-        assert "--terminal" in result.output
         assert "--org-path" in result.output
+        assert "--port" in result.output
 
+    @pytest.mark.skip(reason="board UI is now web-based; old board_ui import path no longer relevant")
     def test_ui_import_error_shows_helpful_message(self, runner, temp_org):
         """board ui should show install message when board_ui not available."""
-        with patch("builtins.__import__", side_effect=ImportError("No module named 'board_ui'")):
-            # This is tricky to test cleanly; use a simpler approach via patching the import
-            pass
-
-        # Patch the specific import inside ui_cmd
-        with patch.dict("sys.modules", {"board_ui.app": None, "board_ui.config": None, "board_ui.interfaces.terminal": None}):
-            result = runner.invoke(qn, [
-                "--org-path", str(temp_org),
-                "board", "ui"
-            ])
-            # Should show import error message or abort
-            # The command catches ImportError and shows helpful message
-            assert result.exit_code != 0 or "board_ui" in result.output.lower() or "install" in result.output.lower()
+        pass
 
     def test_ui_single_org_path_passed_to_config(self, runner, initialized_org):
         """board ui -o should pass org path to BoardConfig."""
@@ -526,6 +515,7 @@ class TestBoardUICommand:
                         org_paths = call_kwargs[1].get("org_paths", [])
                         assert len(org_paths) >= 2
 
+    @pytest.mark.skip(reason="_parse_terminal removed when board migrated from Textual to web UI")
     def test_parse_terminal_kitty(self, runner):
         """board ui --terminal kitty should map to TerminalType.KITTY."""
         from cli.commands.board.ui import _parse_terminal
@@ -543,6 +533,7 @@ class TestBoardUICommand:
             result = _parse_terminal("kitty")
             assert result == mock_terminal.KITTY
 
+    @pytest.mark.skip(reason="_parse_terminal removed when board migrated from Textual to web UI")
     def test_parse_terminal_iterm(self, runner):
         """board ui --terminal iterm should map to TerminalType.ITERM2."""
         from cli.commands.board.ui import _parse_terminal
@@ -560,6 +551,7 @@ class TestBoardUICommand:
             result = _parse_terminal("iterm")
             assert result == mock_terminal.ITERM2
 
+    @pytest.mark.skip(reason="_parse_terminal removed when board migrated from Textual to web UI")
     def test_parse_terminal_macos(self, runner):
         """board ui --terminal terminal should map to TerminalType.MACOS_TERMINAL."""
         from cli.commands.board.ui import _parse_terminal
@@ -577,6 +569,7 @@ class TestBoardUICommand:
             result = _parse_terminal("terminal")
             assert result == mock_terminal.MACOS_TERMINAL
 
+    @pytest.mark.skip(reason="_parse_terminal removed when board migrated from Textual to web UI")
     def test_parse_terminal_auto_returns_none(self, runner):
         """board ui --terminal auto should map to None preferred_terminal."""
         from cli.commands.board.ui import _parse_terminal
@@ -590,6 +583,7 @@ class TestBoardUICommand:
             result = _parse_terminal("auto")
             assert result is None
 
+    @pytest.mark.skip(reason="_parse_terminal removed when board migrated from Textual to web UI")
     def test_parse_terminal_import_error_returns_none(self):
         """_parse_terminal should return None when board_ui not installed."""
         from cli.commands.board.ui import _parse_terminal
