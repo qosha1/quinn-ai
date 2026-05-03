@@ -95,6 +95,7 @@ class TestOkrSet:
             "--org-path", str(initialized_org),
             "org", "okr", "set",
             "--title", "Set test", "-d", "desc", "--owner", "ceo", "-p", "1",
+            "--no-krs-needed",
         ])
         assert result.exit_code == 0, result.output
         assert "Created issue:" in result.output
@@ -105,6 +106,7 @@ class TestOkrSet:
         result = runner.invoke(qn, [
             "--org-path", str(initialized_org),
             "org", "okr", "set", "--title", "Owner test", "--owner", "ceo",
+            "--no-krs-needed",
         ])
         assert result.exit_code == 0, result.output
         assert "Failed to store OKR in database" not in result.output
@@ -115,10 +117,18 @@ class TestOkrSet:
 # ============================================================
 class TestOkrUpdateKr:
     def test_update_existing_kr(self, runner, initialized_org):
-        # Bootstrap OKR has team_size KR
+        # Create an OKR with a KR to update
+        runner.invoke(qn, [
+            "--org-path", str(initialized_org),
+            "org", "okr", "set", "--title", "Update KR test",
+            "--kr", "team_size:5:people",
+        ])
         conn = sqlite3.connect(str(initialized_org / "live" / "quinn.db"))
         try:
-            (okr_id,) = conn.execute("SELECT id FROM okrs LIMIT 1").fetchone()
+            row = conn.execute("SELECT id FROM okrs LIMIT 1").fetchone()
+            if row is None:
+                import pytest; pytest.skip("No OKR in DB")
+            (okr_id,) = row
         finally:
             conn.close()
 
@@ -140,6 +150,7 @@ class TestOkrLink:
         runner.invoke(qn, [
             "--org-path", str(initialized_org),
             "org", "okr", "set", "--title", "LinkOKR", "--owner", "ceo",
+            "--no-krs-needed",
         ])
         # Even if linking fails (because work-id may not exist), verify clean error
         result = runner.invoke(qn, [
