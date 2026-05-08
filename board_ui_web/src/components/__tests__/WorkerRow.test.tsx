@@ -10,6 +10,7 @@ const mockWorker: WorkerInfo = {
   team_name: "Engineering",
   status: "active",
   session_state: "running",
+  runtime_status: "running",
   manager_id: null,
   current_task: "Reviewing proposals",
   is_ceo: true,
@@ -33,7 +34,7 @@ describe("WorkerRow", () => {
 
   it("shows running status indicator", () => {
     render(<WorkerRow worker={mockWorker} onAction={() => {}} />);
-    expect(screen.getByTitle(/running/i)).toBeInTheDocument();
+    expect(screen.getAllByTitle(/running/i).length).toBeGreaterThan(0);
   });
 
   it("renders action menu button", () => {

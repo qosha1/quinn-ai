@@ -171,6 +171,19 @@ function createFixtureDb(dbPath: string): Database.Database {
       changed_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE budget_balances (
+      allocation_id TEXT PRIMARY KEY,
+      worker_id TEXT NOT NULL,
+      allocated REAL NOT NULL,
+      spent REAL NOT NULL,
+      reserved REAL NOT NULL,
+      available REAL NOT NULL,
+      delegated REAL NOT NULL,
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Seed data
     INSERT INTO org_state VALUES ('default', 'test-org', 'running', 'worker-ceo-1', datetime('now'), NULL, datetime('now'), datetime('now'));
 
