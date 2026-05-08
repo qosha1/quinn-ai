@@ -32,9 +32,9 @@ describe("WorkerRow", () => {
     expect(screen.getByText("Engineering")).toBeInTheDocument();
   });
 
-  it("shows running status indicator", () => {
+  it("shows a single status dot with label", () => {
     render(<WorkerRow worker={mockWorker} onAction={() => {}} />);
-    expect(screen.getAllByTitle(/running/i).length).toBeGreaterThan(0);
+    expect(screen.getByTitle("Working")).toBeInTheDocument();
   });
 
   it("renders action menu button", () => {

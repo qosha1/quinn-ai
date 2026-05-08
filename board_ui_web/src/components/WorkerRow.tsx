@@ -11,12 +11,12 @@ interface Props {
 }
 
 export function WorkerRow({ worker, onAction, onClick, focused, sessionInfo }: Props) {
-  const color = sessionStateColor(worker.session_state);
   const label = workerStatusLabel(worker.status, worker.session_state);
   const roleDisplay = worker.is_ceo ? `★ ${worker.role.toUpperCase()}` : worker.role.toUpperCase();
 
-  const runtimeDot = worker.runtime_status === "running" ? "#3fb950"
+  const dotColor = worker.runtime_status === "running" ? "#3fb950"
     : worker.runtime_status === "idle" ? "#d29922"
+    : worker.session_state === "crashed" ? "#f85149"
     : "#6e7681";
 
   return (
@@ -31,14 +31,8 @@ export function WorkerRow({ worker, onAction, onClick, focused, sessionInfo }: P
     >
       <td>
         <span
-          className={`status-dot status-dot--${color}`}
-          title={`${label} · runtime: ${worker.runtime_status ?? "unknown"}`}
-        />
-      </td>
-      <td>
-        <span
-          style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: runtimeDot, verticalAlign: "middle" }}
-          title={`Runtime: ${worker.runtime_status ?? "unknown"}`}
+          style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: dotColor, verticalAlign: "middle" }}
+          title={label}
         />
       </td>
       <td className="worker-name">{worker.name}</td>
