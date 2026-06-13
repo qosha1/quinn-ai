@@ -28,6 +28,8 @@ from cli.core.constants import (
     ORG_SPEC_MEMBERSHIP_LEAD,
     ORG_SPEC_MEMBERSHIP_MEMBER,
     ORG_SPEC_OWNER_CEO,
+    PROFILE_FILE,
+    TOOLCHAIN_FILE,
     WORKER_HANDLE_SEP,
 )
 from cli.core.org_init import init_org
@@ -85,6 +87,7 @@ def apply_org_spec(spec: OrgSpec, target_path: Optional[Path] = None) -> ApplyRe
         ctx = SimpleNamespace(db=db, org_path=org_path, worker_id=None)
 
         _apply_profile(spec, org_path, result)
+        _apply_toolchain(spec, org_path)
 
         for team in spec.teams:
             _apply_team(db, ctx, team, init_result.ceo_id, result)
@@ -172,7 +175,25 @@ def _apply_profile(spec: OrgSpec, org_path: Path, result: ApplyResult) -> None:
 
     config_dir = get_org_config_path(org_path)
     config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "profile.yaml").write_text(overlay_src.read_text())
+    (config_dir / PROFILE_FILE).write_text(overlay_src.read_text())
+
+
+def _apply_toolchain(spec: OrgSpec, org_path: Path) -> None:
+    """Persist the declared toolchain contract for the org-start preflight."""
+    if spec.toolchain is None:
+        return
+
+    import yaml
+
+    from cli.core.config import get_org_config_path
+
+    config_dir = get_org_config_path(org_path)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "require": list(spec.toolchain.require),
+        "optional": list(spec.toolchain.optional),
+    }
+    (config_dir / TOOLCHAIN_FILE).write_text(yaml.safe_dump(payload, sort_keys=False))
 
 
 def _apply_delegations(db: Any, spec: OrgSpec, result: ApplyResult) -> None:

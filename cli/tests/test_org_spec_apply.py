@@ -216,6 +216,45 @@ def test_apply_persists_profile_overlay(tmp_path):
     assert not result.warnings, result.warnings
 
 
+TOOLCHAIN_ORG_YML = """
+    apiVersion: quinnai/v1
+    metadata: { name: toolorg }
+    providers: { $ref: config/providers.yaml }
+    toolchain: { require: [node, pnpm], optional: [docker] }
+    ceo: { name: Quinn, role: CEO }
+"""
+
+
+def test_apply_persists_toolchain_contract(tmp_path):
+    """org.yml toolchain is persisted for the org-start preflight (quinn-ai-a3pg.1.2)."""
+    import yaml
+
+    from cli.core.org_spec import apply_org_spec, load_org_spec
+
+    src = tmp_path / "src"
+    _write(
+        src / "config" / "providers.yaml",
+        """
+        default: claude_code
+        authorized_providers: [claude_code]
+        providers:
+          claude_code: { enabled: true }
+        """,
+    )
+    _write(src / "org.yml", TOOLCHAIN_ORG_YML)
+
+    spec = load_org_spec(src / "org.yml")
+    org_dir = tmp_path / "org"
+    org_dir.mkdir(parents=True)
+    apply_org_spec(spec, target_path=org_dir)
+
+    persisted = org_dir / "config" / "toolchain.yaml"
+    assert persisted.exists()
+    data = yaml.safe_load(persisted.read_text())
+    assert data["require"] == ["node", "pnpm"]
+    assert data["optional"] == ["docker"]
+
+
 def test_init_from_cli(tmp_path):
     """E2E: `qn org init --from org.yml` builds the declared org (quinn-ai-a3pg.3.6)."""
     from click.testing import CliRunner

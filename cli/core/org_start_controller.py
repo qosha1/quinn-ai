@@ -125,6 +125,12 @@ def _validate_preflight(org_path: Path, skip_config_validation: bool) -> Databas
                 "Check config/providers.yaml for valid provider settings."
             )
 
+    # 2b. Validate the declared toolchain contract (fail fast on missing
+    #     REQUIRED CLIs; warn on missing optional). Gated by the same flag
+    #     as provider validation so tests/advanced users can bypass.
+    if not skip_config_validation:
+        _verify_required_toolchain(org_path)
+
     # 3. Validate org directory structure
     required_dirs = [
         CONFIG_DIR,
@@ -144,6 +150,33 @@ def _validate_preflight(org_path: Path, skip_config_validation: bool) -> Databas
     _verify_cli_tools(org_path)
 
     return open_database(db_path)
+
+
+def _verify_required_toolchain(org_path: Path) -> None:
+    """Fail fast if any REQUIRED toolchain CLI is missing; warn on optional.
+
+    The contract is the org.yml `toolchain` block persisted by the loader to
+    <org config>/toolchain.yaml (quinn-ai-a3pg.1.2). No contract -> no-op.
+
+    Raises:
+        click.ClickException: If a required tool is not on PATH.
+    """
+    from cli.core.toolchain import check_toolchain, load_toolchain
+
+    require, optional = load_toolchain(org_path)
+    if not require and not optional:
+        return
+    report = check_toolchain(require, optional)
+    if report.missing_optional:
+        click.echo(
+            f"Warning: missing optional tools: {', '.join(report.missing_optional)}",
+            err=True,
+        )
+    if not report.ok:
+        raise click.ClickException(
+            f"Missing required tools: {', '.join(report.missing_required)}\n"
+            "Install them, or re-run with --skip-config-validation to bypass."
+        )
 
 
 def _verify_cli_tools(org_path: Path) -> None:

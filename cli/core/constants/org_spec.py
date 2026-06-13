@@ -48,3 +48,7 @@ ORG_SPEC_OWNER_CEO = "ceo"
 # omit them.
 ORG_SPEC_DEFAULT_DELEGATION_BUDGET = 100
 ORG_SPEC_DEFAULT_MAX_COST = 50
+
+# Persisted-config filenames written by the loader into <org>/config/.
+PROFILE_FILE = "profile.yaml"
+TOOLCHAIN_FILE = "toolchain.yaml"
