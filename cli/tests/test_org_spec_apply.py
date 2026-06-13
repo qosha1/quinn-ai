@@ -322,6 +322,111 @@ def test_load_org_spec_rejects_baked_secret_value(tmp_path):
         load_org_spec(src / "org.yml")
 
 
+def _worker_count(db_path):
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return conn.execute(
+            "SELECT COUNT(*) FROM workers WHERE status != 'terminated'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def _count(db_path, table):
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_apply_is_idempotent(tmp_path):
+    """Re-applying the same spec adds no duplicates (quinn-ai-a3pg.4.3.4)."""
+    from cli.core.org_spec import apply_org_spec, load_org_spec
+
+    src = tmp_path / "src"
+    _write(
+        src / "config" / "providers.yaml",
+        "default: claude_code\nproviders: { claude_code: { enabled: true } }\n",
+    )
+    _write(src / "org.yml", ORG_YML)
+    spec = load_org_spec(src / "org.yml")
+
+    org_dir = tmp_path / "org"
+    org_dir.mkdir(parents=True)
+    apply_org_spec(spec, target_path=org_dir)  # first apply (init)
+    db_path = org_dir / "live" / "quinn.db"
+    first_workers = _worker_count(db_path)
+    first_teams = _count(db_path, "teams")
+    first_okrs = _count(db_path, "okrs")
+    assert first_workers == 4
+    assert first_okrs == 1  # exactly the one declared OKR (no bootstrap)
+
+    # second apply with update=True -> no new workers/teams/okrs
+    apply_org_spec(spec, target_path=org_dir, update=True)
+    assert _worker_count(db_path) == first_workers
+    assert _count(db_path, "teams") == first_teams
+    assert _count(db_path, "okrs") == first_okrs
+
+
+def test_apply_adds_delta(tmp_path):
+    """Applying an edited spec adds only the new pieces (quinn-ai-a3pg.4.3.4)."""
+    from cli.core.org_spec import apply_org_spec, load_org_spec
+
+    src = tmp_path / "src"
+    _write(
+        src / "config" / "providers.yaml",
+        "default: claude_code\nproviders: { claude_code: { enabled: true } }\n",
+    )
+    _write(src / "org.yml", ORG_YML)
+    org_dir = tmp_path / "org"
+    org_dir.mkdir(parents=True)
+    apply_org_spec(load_org_spec(src / "org.yml"), target_path=org_dir)
+    db_path = org_dir / "live" / "quinn.db"
+    base = _worker_count(db_path)
+    base_teams = _count(db_path, "teams")
+
+    # add a new team to the spec, re-apply
+    delta_yml = """
+        apiVersion: quinnai/v1
+        metadata: { name: testorg }
+        providers: { $ref: config/providers.yaml }
+        ceo: { name: Quinn, role: CEO }
+        structure:
+          teams:
+            - name: core
+              manager: { name: Dana, role: Director }
+              members:
+                - { role: engineer, cost: 60 }
+            - { name: app, manager: { name: Remy, role: Lead }, selfForm: true }
+            - { name: data, manager: { name: Dex, role: Lead }, selfForm: true }
+        okrs:
+          - { title: "Reliability", owner: core/Dana, keyResults: [{ metric: coverage, target: 80, unit: "%" }] }
+    """
+    _write(src / "org.yml", delta_yml)
+    apply_org_spec(load_org_spec(src / "org.yml"), target_path=org_dir, update=True)
+    assert _worker_count(db_path) == base + 1  # just Dex
+    assert _count(db_path, "teams") == base_teams + 1  # just the data team
+
+
+def test_apply_without_update_on_existing_raises(tmp_path):
+    import pytest
+
+    from cli.core.org_spec import OrgSpecError, apply_org_spec, load_org_spec
+
+    src = tmp_path / "src"
+    _write(
+        src / "config" / "providers.yaml",
+        "default: claude_code\nproviders: { claude_code: { enabled: true } }\n",
+    )
+    _write(src / "org.yml", ORG_YML)
+    org_dir = tmp_path / "org"
+    org_dir.mkdir(parents=True)
+    apply_org_spec(load_org_spec(src / "org.yml"), target_path=org_dir)
+    with pytest.raises(OrgSpecError):
+        apply_org_spec(load_org_spec(src / "org.yml"), target_path=org_dir)  # update=False
+
+
 def test_init_from_cli(tmp_path):
     """E2E: `qn org init --from org.yml` builds the declared org (quinn-ai-a3pg.3.6)."""
     from click.testing import CliRunner

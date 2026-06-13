@@ -228,6 +228,7 @@ def wrkr(ctx, org_path: Optional[Path], worker_id: Optional[str]):
 # Import and register subcommands
 from cli.commands.org import (
     init_cmd,
+    apply_cmd,
     start_cmd,
     stop_cmd,
     restart_cmd,
@@ -260,6 +261,7 @@ from cli.commands.org import (
 )
 
 org.add_command(init_cmd, name="init")
+org.add_command(apply_cmd, name="apply")
 org.add_command(start_cmd, name="start")
 org.add_command(stop_cmd, name="stop")
 org.add_command(restart_cmd, name="restart")

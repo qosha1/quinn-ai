@@ -3,6 +3,7 @@ Organization management commands.
 """
 
 from .init import init_cmd
+from .apply import apply_cmd
 from .start import start_cmd
 from .stop import stop_cmd
 from .restart import restart_cmd
@@ -34,6 +35,7 @@ from cli.core.rules.cli import rules_cmd
 
 __all__ = [
     "init_cmd",
+    "apply_cmd",
     "start_cmd",
     "stop_cmd",
     "restart_cmd",

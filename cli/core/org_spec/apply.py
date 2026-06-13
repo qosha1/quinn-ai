@@ -60,45 +60,87 @@ class ApplyResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def apply_org_spec(spec: OrgSpec, target_path: Optional[Path] = None) -> ApplyResult:
-    """Instantiate an org from a validated OrgSpec.
+def apply_org_spec(
+    spec: OrgSpec, target_path: Optional[Path] = None, *, update: bool = False
+) -> ApplyResult:
+    """Instantiate (or idempotently update) an org from a validated OrgSpec.
+
+    All stages are existence-guarded, so applying the same spec twice is a
+    no-op and applying an edited spec adds only the delta. With update=False
+    against an already-initialized org this raises (matching `qn org init`);
+    with update=True it skips init and reconciles against the existing org
+    (`qn org apply`).
 
     Args:
         spec: The parsed/validated org spec (see load_org_spec).
-        target_path: Required for greenfield specs (no host.project_root);
-            the directory the new org is created in. Ignored in host mode.
+        target_path: Required for greenfield specs (no host.project_root).
+        update: Reconcile against an existing org instead of erroring.
 
     Returns:
-        An ApplyResult describing what was created.
+        An ApplyResult describing the resulting org.
 
     Raises:
-        OrgSpecError: If the init phase fails.
+        OrgSpecError: If init fails, or the org exists and update is False.
     """
-    init_result = init_org(spec.to_org_init_config(target_path))
-    if not init_result.success:
-        raise OrgSpecError(f"org init failed: {init_result.error}")
-
     from cli.core.db import get_org_db_path, open_database
 
-    org_path = init_result.org_path
-    db = open_database(get_org_db_path(org_path))
+    cfg = spec.to_org_init_config(target_path)
+    metadata_root = (cfg.path / ".quinnai") if cfg.host_mode else cfg.path
+    db_path = get_org_db_path(metadata_root)
+    already_initialized = db_path.exists()
+
+    if already_initialized and not update:
+        raise OrgSpecError(
+            f"organization already initialized at {metadata_root}; "
+            "use 'qn org apply' to reconcile an existing org"
+        )
+
+    if already_initialized:
+        org_path = metadata_root
+        ceo_id = _existing_ceo_id(db_path, open_database)
+    else:
+        init_result = init_org(cfg)
+        if not init_result.success:
+            raise OrgSpecError(f"org init failed: {init_result.error}")
+        org_path = init_result.org_path
+        ceo_id = init_result.ceo_id
+
+    db = open_database(db_path)
     try:
-        result = ApplyResult(org_path=org_path, ceo_id=init_result.ceo_id)
-        result.worker_ids[ORG_SPEC_OWNER_CEO] = init_result.ceo_id
+        result = ApplyResult(org_path=org_path, ceo_id=ceo_id)
+        result.worker_ids[ORG_SPEC_OWNER_CEO] = ceo_id
         ctx = SimpleNamespace(db=db, org_path=org_path, worker_id=None)
 
+        # Config overlays are idempotent (re-persisted each apply).
         _apply_profile(spec, org_path, result)
         _apply_toolchain(spec, org_path)
         _apply_secrets_scope(spec, org_path)
 
         for team in spec.teams:
-            _apply_team(db, ctx, team, init_result.ceo_id, result)
+            _apply_team(db, ctx, team, ceo_id, result)
 
         _apply_delegations(db, spec, result)
         _apply_okrs(db, ctx, spec, result)
         return result
     finally:
         db.close()
+
+
+def _existing_ceo_id(db_path: Path, open_database) -> str:
+    """Read the CEO id from an already-initialized org."""
+    db = open_database(db_path)
+    try:
+        row = db.execute("SELECT id FROM workers WHERE role='CEO' LIMIT 1").fetchone()
+    finally:
+        db.close()
+    if not row:
+        raise OrgSpecError("existing org has no CEO; cannot apply")
+    return row[0]
+
+
+def _existing_team_id(db: Any, name: str) -> Optional[str]:
+    row = db.execute("SELECT id FROM teams WHERE name = ?", (name,)).fetchone()
+    return row[0] if row else None
 
 
 def _apply_team(
@@ -108,30 +150,41 @@ def _apply_team(
     ceo_id: str,
     result: ApplyResult,
 ) -> None:
-    """Create a team, hire its manager, and (unless self_form) its members."""
+    """Create a team, hire its manager, and (unless self_form) its members.
+
+    Existence-guarded: an existing team/worker (by name) is reused, not
+    duplicated, so re-applying a spec is idempotent.
+    """
+    from cli.core.queries import resolve_worker
     from cli.core.queries.team import add_team_member, create_team
     from cli.core.templates._helpers import hire_worker
 
-    team_row = create_team(
-        db, name=team.name, parent_team_id=None, lead_id=None, auto_create_channel=False
-    )
-    team_id = _row_id(team_row)
+    team_id = _existing_team_id(db, team.name)
+    if team_id is None:
+        team_row = create_team(
+            db, name=team.name, parent_team_id=None, lead_id=None, auto_create_channel=False
+        )
+        team_id = _row_id(team_row)
     result.team_ids[team.name] = team_id
 
     manager_id = ceo_id
     if team.manager is not None:
-        manager = hire_worker(
-            db,
-            ctx,
-            name=team.manager.name,
-            role=team.manager.role,
-            manager_id=ceo_id,
-            cost=team.manager.cost or ORG_SPEC_DEFAULT_WORKER_COST,
-        )
-        manager_id = _worker_id(manager)
-        add_team_member(db, team_id, manager_id, ORG_SPEC_MEMBERSHIP_LEAD)
-        db.execute("UPDATE teams SET lead_id = ? WHERE id = ?", (manager_id, team_id))
-        db.connection.commit()
+        existing_manager = resolve_worker(db, team.manager.name)
+        if existing_manager is not None:
+            manager_id = existing_manager.id
+        else:
+            manager = hire_worker(
+                db,
+                ctx,
+                name=team.manager.name,
+                role=team.manager.role,
+                manager_id=ceo_id,
+                cost=team.manager.cost or ORG_SPEC_DEFAULT_WORKER_COST,
+            )
+            manager_id = _worker_id(manager)
+            add_team_member(db, team_id, manager_id, ORG_SPEC_MEMBERSHIP_LEAD)
+            db.execute("UPDATE teams SET lead_id = ? WHERE id = ?", (manager_id, team_id))
+            db.connection.commit()
         result.worker_ids[_handle(team.name, team.manager.name)] = manager_id
 
     if team.self_form:
@@ -139,6 +192,10 @@ def _apply_team(
 
     for index, member in enumerate(team.members):
         member_name = member.name or f"{member.role}-{team.name}-{index + 1}"
+        existing_member = resolve_worker(db, member_name)
+        if existing_member is not None:
+            result.worker_ids[_handle(team.name, member_name)] = existing_member.id
+            continue
         worker = hire_worker(
             db,
             ctx,
@@ -263,6 +320,9 @@ def _apply_delegations(db: Any, spec: OrgSpec, result: ApplyResult) -> None:
             budget = grant.budget if grant.budget is not None else ORG_SPEC_DEFAULT_DELEGATION_BUDGET
 
         delegate = Worker(db, delegate_id)
+        # Idempotent: skip if the delegate already carries hiring authority.
+        if delegate.hiring_authority_scope.allowed_roles:
+            continue
         delegator.delegate_authority(
             report=delegate,
             budget=int(budget),
@@ -276,6 +336,13 @@ def _apply_okrs(db: Any, ctx: Any, spec: OrgSpec, result: ApplyResult) -> None:
     from cli.core.templates._helpers import create_okr
 
     for okr in spec.okrs:
+        # Idempotent: skip an OKR whose title already exists.
+        existing = db.execute(
+            "SELECT id FROM okrs WHERE title = ?", (okr.title,)
+        ).fetchone()
+        if existing:
+            result.okr_ids.append(existing[0])
+            continue
         owner_id = _resolve_owner(okr.owner, result)
         if owner_id is None:
             owner_id = result.ceo_id
