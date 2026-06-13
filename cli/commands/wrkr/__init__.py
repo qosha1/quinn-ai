@@ -12,6 +12,7 @@ from .restart import restart_cmd
 from .exec import exec_cmd
 from .inspect import inspect_cmd
 from .pause import pause_cmd, resume_cmd
+from .ship import ship_cmd
 
 __all__ = [
     "get_work_cmd",
@@ -25,4 +26,5 @@ __all__ = [
     "inspect_cmd",
     "pause_cmd",
     "resume_cmd",
+    "ship_cmd",
 ]
