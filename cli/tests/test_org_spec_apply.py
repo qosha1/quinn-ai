@@ -109,3 +109,47 @@ def test_apply_builds_declared_structure(tmp_path):
     assert "app/Remy" in result.worker_ids
     assert not any(h.startswith("app/") and h != "app/Remy" for h in result.worker_ids)
     assert result.okr_ids
+
+
+def test_init_from_cli(tmp_path):
+    """E2E: `qn org init --from org.yml` builds the declared org (quinn-ai-a3pg.3.6)."""
+    from click.testing import CliRunner
+
+    from cli.commands.main import qn
+
+    src = tmp_path / "src"
+    _write(
+        src / "config" / "providers.yaml",
+        """
+        default: claude_code
+        authorized_providers: [claude_code]
+        providers:
+          claude_code: { enabled: true }
+        """,
+    )
+    _write(src / "org.yml", ORG_YML)
+
+    org_dir = tmp_path / "org"
+    org_dir.mkdir(parents=True)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        qn,
+        ["--org-path", str(org_dir), "org", "init", "--from", str(src / "org.yml")],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "testorg" in result.output
+
+    conn = sqlite3.connect(str(org_dir / "live" / "quinn.db"))
+    try:
+        worker_count = conn.execute(
+            "SELECT COUNT(*) FROM workers WHERE status != 'terminated'"
+        ).fetchone()[0]
+        assert worker_count == 4, result.output
+        team_count = conn.execute("SELECT COUNT(*) FROM teams").fetchone()[0]
+        assert team_count >= 2
+        okr_count = conn.execute("SELECT COUNT(*) FROM okrs").fetchone()[0]
+        assert okr_count == 1
+    finally:
+        conn.close()

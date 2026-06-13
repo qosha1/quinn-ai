@@ -153,6 +153,17 @@ def _prompt_for_okrs() -> List[ObjectiveConfig]:
         "target path. Use --no-host to force greenfield."
     ),
 )
+@click.option(
+    "--from",
+    "from_spec",
+    type=click.Path(exists=False),
+    default=None,
+    help=(
+        "Path to a declarative org.yml. Builds the whole org from the spec "
+        "(teams, managers, declared members, seeded OKRs); self-form teams "
+        "get their manager seat only. Other init options are ignored."
+    ),
+)
 @pass_context
 def init_cmd(
     ctx: Context,
@@ -161,6 +172,7 @@ def init_cmd(
     skip_okrs: bool,
     reuse_beads: bool,
     host_mode_flag: Optional[bool],
+    from_spec: Optional[str],
 ):
     """Initialize a new organization.
 
@@ -182,6 +194,32 @@ def init_cmd(
     # (walk up looking for live/quinn.db) can't help. Fall back to cwd —
     # mirrors `git init` semantics.
     org_path = ctx.org_path or Path.cwd()
+
+    # Declarative path: build the whole org from an org.yml spec. In host mode
+    # the spec's host.project_root is authoritative; greenfield uses org_path.
+    if from_spec:
+        from cli.core.org_spec import OrgSpecError, apply_org_spec, load_org_spec
+
+        try:
+            spec = load_org_spec(Path(from_spec))
+            result = apply_org_spec(spec, target_path=org_path)
+        except OrgSpecError as e:
+            raise click.ClickException(str(e))
+
+        click.echo(f"Initialized organization '{spec.name}' at {result.org_path}")
+        click.echo(f"Created CEO: {spec.ceo_name}")
+        click.echo(
+            f"Teams: {len(result.team_ids)}  "
+            f"Workers: {len(result.worker_ids)}  "
+            f"OKRs: {len(result.okr_ids)}"
+        )
+        for warning in result.warnings:
+            click.echo(f"Warning: {warning}", err=True)
+        click.echo("")
+        click.echo("Next steps:")
+        click.echo("  1. Review config/providers.yaml")
+        click.echo("  2. Run 'qn org start' to start the organization")
+        return
 
     # Resolve host mode (host-mode-init):
     #   --host         → True (explicit)
