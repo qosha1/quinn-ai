@@ -440,6 +440,61 @@ def get_org_beads_dir(org_path: Path) -> Path:
     return org_path / BEADS_DIR
 
 
+def find_nearest_beads_dir(start: Path, stop: Optional[Path] = None) -> Optional[Path]:
+    """Walk up from ``start`` to the nearest directory containing ``.beads``.
+
+    Args:
+        start: Directory to begin the search from.
+        stop: Optional inclusive upper bound; the walk does not go above it.
+
+    Returns:
+        The nearest ``<dir>/.beads`` directory, or None if none is found
+        within the bounded range.
+    """
+    current = Path(start).resolve()
+    boundary = Path(stop).resolve() if stop is not None else None
+    while True:
+        candidate = current / BEADS_DIR
+        if candidate.is_dir():
+            return candidate
+        if (boundary is not None and current == boundary) or current.parent == current:
+            return None
+        current = current.parent
+
+
+def resolve_beads_dir(org_path: Path, cwd: Optional[Path] = None) -> Path:
+    """Resolve the .beads directory for a bd invocation, monorepo-aware.
+
+    In host mode (quinn-ai-a3pg.1.1), a worker operating inside an app subtree
+    (e.g. apps/raise/) should target that app's own .beads, not the meta-repo
+    tracker. Walks up from ``cwd`` to the nearest .beads bounded by the project
+    root, falling back to the project root's .beads. Outside host mode, returns
+    the org's .beads unchanged (current behavior).
+
+    Args:
+        org_path: Org metadata root.
+        cwd: Working directory the bd call originates from (defaults to the
+            process cwd — the worker's location when invoked via the shim).
+
+    Returns:
+        The .beads directory to point bd at.
+    """
+    from cli.core.host_mode import get_project_root, is_host_mode
+
+    if not is_host_mode(org_path):
+        return get_org_beads_dir(org_path)
+
+    project_root = Path(get_project_root(org_path)).resolve()
+    start = Path(cwd).resolve() if cwd is not None else Path.cwd().resolve()
+    try:
+        start.relative_to(project_root)
+    except ValueError:
+        # cwd is outside the project — use the meta-repo tracker.
+        return project_root / BEADS_DIR
+    found = find_nearest_beads_dir(start, stop=project_root)
+    return found if found is not None else project_root / BEADS_DIR
+
+
 def is_dolt_backend(beads_dir: Path) -> bool:
     """Detect whether an org's beads is in dolt-embedded mode.
 
@@ -628,6 +683,7 @@ def run_bd(
     skip_lifecycle_check: bool = False,
     skip_okr_check: bool = False,
     timeout: Optional[float] = None,
+    beads_dir: Optional[Path] = None,
 ) -> subprocess.CompletedProcess:
     """Run beads command with org context.
 
@@ -677,7 +733,9 @@ def run_bd(
     # Get bd binary. Dolt-mode orgs need a 1.x+ bd; the bundled 0.43.x bd
     # doesn't fully support dolt with --sandbox. Prefer system bd in that
     # case. (quinn-ai-k9ff)
-    beads_dir_for_detection = get_org_beads_dir(org_path)
+    beads_dir_for_detection = (
+        beads_dir if beads_dir is not None else get_org_beads_dir(org_path)
+    )
     dolt_mode = is_dolt_backend(beads_dir_for_detection)
     bd_path = get_bundled_bd_path(prefer_system=dolt_mode)
 

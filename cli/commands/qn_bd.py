@@ -118,11 +118,20 @@ def main():
     if rule_decision_exit is not None:
         sys.exit(rule_decision_exit)
 
+    # Monorepo per-app .beads routing (quinn-ai-a3pg.1.1): in host mode, a
+    # worker invoking qn-bd from inside an app subtree (e.g. apps/raise/) hits
+    # that app's own tracker, not the meta-repo .beads. Outside host mode this
+    # resolves to the org's .beads (unchanged). cwd is the worker's location.
+    from cli.core.bd_wrapper import resolve_beads_dir
+
+    beads_dir = resolve_beads_dir(org_path)
+
     try:
         result = run_bd(
             args=bd_args,
             org_path=org_path,
             worker_id=our_args.worker_id,
+            beads_dir=beads_dir,
         )
         sys.exit(result.returncode)
     except FileNotFoundError as e:
