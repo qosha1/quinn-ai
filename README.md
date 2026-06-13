@@ -78,6 +78,8 @@ msgr send #engineering "deploying"
 
 ## How it works
 
+![Architecture](./assets/architecture.svg)
+
 QuinnAI runs a hierarchy of AI worker sessions. The CEO holds hiring authority by default and can delegate scoped authority down the tree. Every worker has:
 
 - **Dual state machines** — lifecycle (`pending → onboarding → active → terminated`) and runtime (`starting → running ⇄ idle → stopped`)

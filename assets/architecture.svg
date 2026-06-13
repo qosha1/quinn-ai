@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="760" viewBox="0 0 1040 760" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#7d8590"/>
+    </marker>
+    <style>
+      .layer    { fill:#0d1117; stroke:#30363d; stroke-width:1.5; rx:10; }
+      .layerlbl { fill:#7d8590; font-size:12px; font-weight:700; letter-spacing:2px; }
+      .box      { rx:8; stroke-width:1.5; }
+      .title    { fill:#e6edf3; font-size:14px; font-weight:700; }
+      .sub      { fill:#8b949e; font-size:11px; }
+      .edge     { stroke:#7d8590; stroke-width:1.6; fill:none; }
+      .edgelbl  { fill:#7d8590; font-size:10.5px; font-style:italic; }
+    </style>
+  </defs>
+
+  <rect width="1040" height="760" fill="#010409"/>
+  <text x="32" y="42" fill="#e6edf3" font-size="24" font-weight="800">QuinnAI — Main Components</text>
+  <text x="32" y="64" fill="#8b949e" font-size="13">Hierarchical AI-worker org platform · provider-agnostic · beads-tracked</text>
+
+  <!-- ============ INTERFACES LAYER ============ -->
+  <rect class="layer" x="24" y="88" width="992" height="118"/>
+  <text class="layerlbl" x="40" y="110">INTERFACES</text>
+
+  <!-- Board UI -->
+  <rect class="box" x="60" y="120" width="270" height="70" fill="#161b22" stroke="#1f6feb"/>
+  <text class="title" x="76" y="146">Board UI</text>
+  <text class="sub" x="76" y="164">Next.js 15 + React 19 · :7842</text>
+  <text class="sub" x="76" y="180">Dashboard · Team · Msgs · OKRs · Work</text>
+
+  <!-- qn CLI -->
+  <rect class="box" x="385" y="120" width="270" height="70" fill="#161b22" stroke="#1f6feb"/>
+  <text class="title" x="401" y="146">qn  CLI</text>
+  <text class="sub" x="401" y="164">Click · org/ wrkr/ board/ config</text>
+  <text class="sub" x="401" y="180">init·start·hire·fire·delegate·okr</text>
+
+  <!-- msgr / qn-bd -->
+  <rect class="box" x="710" y="120" width="270" height="70" fill="#161b22" stroke="#1f6feb"/>
+  <text class="title" x="726" y="146">msgr · qn-bd</text>
+  <text class="sub" x="726" y="164">in-session worker CLIs</text>
+  <text class="sub" x="726" y="180">messaging · org-scoped beads</text>
+
+  <text x="42" y="146" fill="#3fb950" font-size="11" font-weight="700">HUMAN</text>
+  <text x="694" y="146" fill="#d29922" font-size="11" font-weight="700">WORKER</text>
+
+  <!-- ============ PLATFORM CORE ============ -->
+  <rect class="layer" x="24" y="232" width="992" height="148"/>
+  <text class="layerlbl" x="40" y="254">PLATFORM CORE  (Python)</text>
+
+  <!-- cli/core -->
+  <rect class="box" x="60" y="266" width="430" height="98" fill="#161b22" stroke="#8957e5"/>
+  <text class="title" x="76" y="292">cli/core — engine</text>
+  <text class="sub" x="76" y="312">org lifecycle · storage (hier.) · onboarding</text>
+  <text class="sub" x="76" y="330">session capture · activity · escalation monitor</text>
+  <text class="sub" x="76" y="348">host mode · continuation engine · bd wrapper</text>
+
+  <!-- shared -->
+  <rect class="box" x="550" y="266" width="430" height="98" fill="#161b22" stroke="#8957e5"/>
+  <text class="title" x="566" y="292">shared — pure logic</text>
+  <text class="sub" x="566" y="312">wrkr · comms · escalation · queue</text>
+  <text class="sub" x="566" y="330">pyterm (tmux + parsers) · bd client</text>
+  <text class="sub" x="566" y="348">state_machines · enums · exceptions</text>
+
+  <!-- ============ SESSION / PROVIDER ============ -->
+  <rect class="layer" x="24" y="406" width="992" height="150"/>
+  <text class="layerlbl" x="40" y="428">SESSIONS &amp; PROVIDERS</text>
+
+  <!-- registry -->
+  <rect class="box" x="60" y="440" width="920" height="44" fill="#161b22" stroke="#db6d28"/>
+  <text class="title" x="76" y="467">Session Registry</text>
+  <text class="sub" x="240" y="467">config-selected adapter · 1 session : 1 worker · no string-dispatch</text>
+
+  <!-- adapters / sessions -->
+  <rect class="box" x="60" y="498" width="290" height="46" fill="#161b22" stroke="#db6d28"/>
+  <text class="title" x="76" y="520">claude_code</text>
+  <text class="sub" x="76" y="536">tmux: qn-wrkr-ceo · Anthropic 4.x</text>
+
+  <rect class="box" x="375" y="498" width="290" height="46" fill="#161b22" stroke="#484f58"/>
+  <text class="title" x="391" y="520">cursor</text>
+  <text class="sub" x="391" y="536">tmux session · OpenAI</text>
+
+  <rect class="box" x="690" y="498" width="290" height="46" fill="#161b22" stroke="#484f58"/>
+  <text class="title" x="706" y="520">aider · …</text>
+  <text class="sub" x="706" y="536">extensible adapters</text>
+
+  <!-- ============ STATE / TRACKING ============ -->
+  <rect class="layer" x="24" y="582" width="992" height="150"/>
+  <text class="layerlbl" x="40" y="604">STATE &amp; TRACKING</text>
+
+  <!-- sqlite -->
+  <rect class="box" x="60" y="616" width="430" height="98" fill="#161b22" stroke="#2ea043"/>
+  <text class="title" x="76" y="642">live/quinn.db  (SQLite)</text>
+  <text class="sub" x="76" y="662">workers · sessions · messages · activity log</text>
+  <text class="sub" x="76" y="680">okrs · budget / spend</text>
+  <text class="sub" x="76" y="700">Board UI reads this directly (better-sqlite3)</text>
+
+  <!-- beads -->
+  <rect class="box" x="550" y="616" width="430" height="98" fill="#161b22" stroke="#2ea043"/>
+  <text class="title" x="566" y="642">beads  (bd CLI)</text>
+  <text class="sub" x="566" y="662">work tracking · issues · OKRs (epic+okr)</text>
+  <text class="sub" x="566" y="680">JSONL + SQLite cache · org-aware perms</text>
+  <text class="sub" x="566" y="700">qn-bd wraps bd with org scoping</text>
+
+  <!-- ============ EDGES ============ -->
+  <!-- board ui -> sqlite (down the left, dashed direct read) -->
+  <path class="edge" d="M195,190 L195,616" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+  <text class="edgelbl" x="200" y="410" transform="rotate(90 200 410)">reads SQLite directly</text>
+
+  <!-- qn cli -> core -->
+  <path class="edge" d="M520,190 L520,232" marker-end="url(#arrow)"/>
+  <!-- msgr/qn-bd -> shared -->
+  <path class="edge" d="M845,190 L845,232" marker-end="url(#arrow)"/>
+
+  <!-- core <-> shared -->
+  <path class="edge" d="M490,315 L550,315"/>
+  <path class="edge" d="M550,335 L490,335" marker-end="url(#arrow)"/>
+
+  <!-- core -> registry (spawns) -->
+  <path class="edge" d="M275,364 L275,440" marker-end="url(#arrow)"/>
+  <text class="edgelbl" x="282" y="404">spawns sessions</text>
+
+  <!-- registry -> adapters -->
+  <path class="edge" d="M205,484 L205,498" marker-end="url(#arrow)"/>
+  <path class="edge" d="M520,484 L520,498" marker-end="url(#arrow)"/>
+  <path class="edge" d="M835,484 L835,498" marker-end="url(#arrow)"/>
+
+  <!-- core -> sqlite (writes) -->
+  <path class="edge" d="M400,364 L400,582" marker-end="url(#arrow)"/>
+  <text class="edgelbl" x="406" y="500">writes state</text>
+
+  <!-- shared/qn-bd -> beads -->
+  <path class="edge" d="M765,364 L765,616" marker-end="url(#arrow)"/>
+  <text class="edgelbl" x="771" y="500">tracks work</text>
+</svg>
