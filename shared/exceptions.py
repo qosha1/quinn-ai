@@ -100,6 +100,18 @@ class ConfigurationError(Exception):
         super().__init__(full_message)
 
 
+class OrgSpecError(ConfigurationError):
+    """Raised when a declarative org.yml spec is invalid or unresolvable.
+
+    Covers schema-version mismatch, missing required fields, unresolvable
+    $ref pointers, and malformed structure/delegations/okrs. Subclasses
+    ConfigurationError so it sits in the configuration-error hierarchy.
+    """
+
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
 class OrgStartError(Exception):
     """Base error for org start failures."""
     pass
