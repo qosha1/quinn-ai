@@ -807,6 +807,12 @@ def get_worker_env_vars(
     worker_bin = worker_dir / "bin"
     env["PATH"] = f"{worker_bin}:{existing_path}" if existing_path else str(worker_bin)
 
+    # Per-layer credential scoping (quinn-ai-a3pg.1.5): default-deny. A worker
+    # receives only the credential env vars its team is scoped for in the org's
+    # secrets-scope policy (env var NAMES declared in org.yml). No policy -> {}.
+    from cli.core.secrets_scope import scoped_env_for_team
+    env.update(scoped_env_for_team(org_path, ctx.team_name))
+
     # Host mode (host-mode-init): also expose PROJECT_ROOT and the
     # .quinnai/bin/ trust-boundary shim (takes priority over worker bin).
     from cli.core.host_mode import is_host_mode, get_project_root

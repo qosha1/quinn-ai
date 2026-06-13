@@ -121,6 +121,9 @@ class OrgSpec:
     teams: list[TeamSpec] = field(default_factory=list)
     delegations: list[DelegationSpec] = field(default_factory=list)
     okrs: list[OkrSpec] = field(default_factory=list)
+    # Per-team credential scopes: team -> list of env var NAMES (never values).
+    # '*' applies to every worker. Default-deny; see cli/core/secrets_scope.py.
+    secrets: dict = field(default_factory=dict)
     source_path: Optional[Path] = None
 
     def to_org_init_config(self, target_path: Optional[Path] = None) -> OrgInitConfig:

@@ -29,6 +29,7 @@ from cli.core.constants import (
     ORG_SPEC_MEMBERSHIP_MEMBER,
     ORG_SPEC_OWNER_CEO,
     PROFILE_FILE,
+    SECRETS_SCOPE_FILE,
     TOOLCHAIN_FILE,
     WORKER_HANDLE_SEP,
 )
@@ -88,6 +89,7 @@ def apply_org_spec(spec: OrgSpec, target_path: Optional[Path] = None) -> ApplyRe
 
         _apply_profile(spec, org_path, result)
         _apply_toolchain(spec, org_path)
+        _apply_secrets_scope(spec, org_path)
 
         for team in spec.teams:
             _apply_team(db, ctx, team, init_result.ceo_id, result)
@@ -194,6 +196,22 @@ def _apply_toolchain(spec: OrgSpec, org_path: Path) -> None:
         "optional": list(spec.toolchain.optional),
     }
     (config_dir / TOOLCHAIN_FILE).write_text(yaml.safe_dump(payload, sort_keys=False))
+
+
+def _apply_secrets_scope(spec: OrgSpec, org_path: Path) -> None:
+    """Persist the per-team credential scope policy (env var NAMES only)."""
+    if not spec.secrets:
+        return
+
+    import yaml
+
+    from cli.core.config import get_org_config_path
+
+    config_dir = get_org_config_path(org_path)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / SECRETS_SCOPE_FILE).write_text(
+        yaml.safe_dump(spec.secrets, sort_keys=False)
+    )
 
 
 def _apply_delegations(db: Any, spec: OrgSpec, result: ApplyResult) -> None:

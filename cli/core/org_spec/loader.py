@@ -24,6 +24,7 @@ from cli.core.constants import (
     ORG_SPEC_KEY_OKRS,
     ORG_SPEC_KEY_PROVIDERS,
     ORG_SPEC_KEY_ROLES,
+    ORG_SPEC_KEY_SECRETS,
     ORG_SPEC_KEY_STRUCTURE,
     ORG_SPEC_KEY_TEAM_TEMPLATES,
     ORG_SPEC_KEY_TOOLCHAIN,
@@ -97,6 +98,7 @@ def load_org_spec(path: Path) -> OrgSpec:
         teams=_parse_teams(raw.get(ORG_SPEC_KEY_STRUCTURE)),
         delegations=_parse_delegations(raw.get(ORG_SPEC_KEY_DELEGATIONS)),
         okrs=_parse_okrs(raw.get(ORG_SPEC_KEY_OKRS)),
+        secrets=_parse_secrets(raw.get(ORG_SPEC_KEY_SECRETS)),
         source_path=path,
     )
 
@@ -292,6 +294,37 @@ def _parse_okrs(value: Any) -> list[OkrSpec]:
             )
         )
     return okrs
+
+
+def _parse_secrets(value: Any) -> dict:
+    """Parse the secrets-scope block: {team: [ENV_VAR_NAMES]}.
+
+    Values must be env var NAMES only — reject anything that looks like a baked
+    secret value (we never store secret values in the spec).
+    """
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise OrgSpecError(f"secrets must be a mapping, got {type(value).__name__}")
+    scopes: dict[str, list] = {}
+    for team, names in value.items():
+        if not isinstance(names, list):
+            raise OrgSpecError(f"secrets[{team!r}] must be a list of env var names")
+        clean: list[str] = []
+        for name in names:
+            if not isinstance(name, str) or not name:
+                raise OrgSpecError(f"secrets[{team!r}] entries must be env var names")
+            # Must be a valid env var NAME, not a baked value/path. Env var
+            # names are identifiers ([A-Za-z_][A-Za-z0-9_]*); a secret value
+            # ("sk-...", a URL, a path) fails this and is rejected.
+            if not name.isidentifier():
+                raise OrgSpecError(
+                    f"secrets[{team!r}] entry {name!r} is not a valid env var name; "
+                    f"declare env var NAMES only (values come from ${{ENV}})"
+                )
+            clean.append(name)
+        scopes[str(team)] = clean
+    return scopes
 
 
 def _parse_key_results(value: Any, okr_index: int) -> list[KeyResultSpec]:

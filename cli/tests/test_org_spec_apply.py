@@ -255,6 +255,73 @@ def test_apply_persists_toolchain_contract(tmp_path):
     assert data["optional"] == ["docker"]
 
 
+SECRETS_ORG_YML = """
+    apiVersion: quinnai/v1
+    metadata: { name: secorg }
+    providers: { $ref: config/providers.yaml }
+    ceo: { name: Quinn, role: CEO }
+    secrets:
+      "*": [ANTHROPIC_API_KEY]
+      raise: [SIMPLI_API_TOKEN, VERCEL_TOKEN]
+"""
+
+
+def test_apply_persists_secrets_scope(tmp_path):
+    """org.yml secrets block is persisted as a scope policy (quinn-ai-a3pg.1.5)."""
+    import yaml
+
+    from cli.core.org_spec import apply_org_spec, load_org_spec
+
+    src = tmp_path / "src"
+    _write(
+        src / "config" / "providers.yaml",
+        """
+        default: claude_code
+        authorized_providers: [claude_code]
+        providers:
+          claude_code: { enabled: true }
+        """,
+    )
+    _write(src / "org.yml", SECRETS_ORG_YML)
+
+    spec = load_org_spec(src / "org.yml")
+    org_dir = tmp_path / "org"
+    org_dir.mkdir(parents=True)
+    apply_org_spec(spec, target_path=org_dir)
+
+    persisted = org_dir / "config" / "secrets-scope.yaml"
+    assert persisted.exists()
+    data = yaml.safe_load(persisted.read_text())
+    assert data["raise"] == ["SIMPLI_API_TOKEN", "VERCEL_TOKEN"]
+    assert data["*"] == ["ANTHROPIC_API_KEY"]
+
+
+def test_load_org_spec_rejects_baked_secret_value(tmp_path):
+    """A value (not an env var name) in secrets is rejected (no baked secrets)."""
+    import pytest
+
+    from cli.core.org_spec import OrgSpecError, load_org_spec
+
+    src = tmp_path / "src"
+    _write(
+        src / "config" / "providers.yaml",
+        "default: claude_code\nproviders: { claude_code: { enabled: true } }\n",
+    )
+    _write(
+        src / "org.yml",
+        """
+        apiVersion: quinnai/v1
+        metadata: { name: bad }
+        providers: { $ref: config/providers.yaml }
+        ceo: { name: Q }
+        secrets:
+          raise: ["sk-secret-value-baked-in"]
+        """,
+    )
+    with pytest.raises(OrgSpecError):
+        load_org_spec(src / "org.yml")
+
+
 def test_init_from_cli(tmp_path):
     """E2E: `qn org init --from org.yml` builds the declared org (quinn-ai-a3pg.3.6)."""
     from click.testing import CliRunner

@@ -30,6 +30,7 @@ ORG_SPEC_KEY_CEO = "ceo"
 ORG_SPEC_KEY_STRUCTURE = "structure"
 ORG_SPEC_KEY_DELEGATIONS = "delegations"
 ORG_SPEC_KEY_OKRS = "okrs"
+ORG_SPEC_KEY_SECRETS = "secrets"
 
 # Default CEO role when org.yml omits ceo.role.
 ORG_SPEC_DEFAULT_CEO_ROLE = "CEO"
@@ -52,3 +53,7 @@ ORG_SPEC_DEFAULT_MAX_COST = 50
 # Persisted-config filenames written by the loader into <org>/config/.
 PROFILE_FILE = "profile.yaml"
 TOOLCHAIN_FILE = "toolchain.yaml"
+SECRETS_SCOPE_FILE = "secrets-scope.yaml"
+
+# Wildcard team key in a secrets-scope policy: credentials every worker gets.
+SECRETS_SCOPE_WILDCARD = "*"
