@@ -9,6 +9,7 @@ Public surface:
 
 from shared.exceptions import OrgSpecError
 
+from .apply import ApplyResult, apply_org_spec
 from .loader import load_org_spec
 from .types import (
     DelegationSpec,
@@ -24,6 +25,8 @@ from .types import (
 
 __all__ = [
     "load_org_spec",
+    "apply_org_spec",
+    "ApplyResult",
     "OrgSpec",
     "OrgSpecError",
     "HostSpec",

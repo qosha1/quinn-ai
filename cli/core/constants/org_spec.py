@@ -33,3 +33,13 @@ ORG_SPEC_KEY_OKRS = "okrs"
 
 # Default CEO role when org.yml omits ceo.role.
 ORG_SPEC_DEFAULT_CEO_ROLE = "CEO"
+
+# Default worker cost (0-100) when a seat omits an explicit cost.
+ORG_SPEC_DEFAULT_WORKER_COST = 50
+
+# Team-member membership roles (membership type, not the worker's job role).
+ORG_SPEC_MEMBERSHIP_LEAD = "lead"
+ORG_SPEC_MEMBERSHIP_MEMBER = "member"
+
+# The reserved owner handle that resolves to the org's CEO.
+ORG_SPEC_OWNER_CEO = "ceo"
