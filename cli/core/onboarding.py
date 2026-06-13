@@ -515,6 +515,11 @@ def _create_briefing(
         except Exception as e:  # noqa: BLE001 - non-fatal for briefing
             _logger.debug(f"Failed to load rules for briefing: {e}")
 
+    # Optional domain profile overlay (quinn-ai-a3pg.4.4): a profile.yaml in
+    # the org config injects domain-specific conventions into the briefing.
+    # Absent profile -> renders exactly as before.
+    profile = _load_profile(org_path) if org_path is not None else None
+
     content = template.render(
         worker_id=ctx.worker_id,
         worker_name=ctx.worker_name,
@@ -535,9 +540,38 @@ def _create_briefing(
         escalation_timeout_minutes=ctx.escalation_timeout_minutes,
         rules_by_severity=rules_by_severity,
         available_tools=ctx.available_tools,
+        profile=profile,
     )
 
     (worker_dir / "BRIEFING.md").write_text(content)
+
+
+def _load_profile(org_path: Path) -> dict | None:
+    """Load the org's domain profile overlay, if any.
+
+    Reads <org config>/profile.yaml (written by the org.yml loader when the
+    spec declares metadata.profile). Returns the parsed dict or None when no
+    profile is present. Non-fatal on parse errors — the briefing still renders.
+
+    Args:
+        org_path: Org metadata root.
+
+    Returns:
+        The profile dict, or None if absent/unreadable.
+    """
+    import yaml
+
+    from cli.core.config import get_org_config_path
+
+    profile_path = get_org_config_path(org_path) / "profile.yaml"
+    if not profile_path.exists():
+        return None
+    try:
+        data = yaml.safe_load(profile_path.read_text())
+    except Exception as e:  # noqa: BLE001 - non-fatal for briefing
+        _logger.debug(f"Failed to load profile overlay: {e}")
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def _create_storage_guide(worker_dir: Path, ctx: OnboardingContext) -> None:

@@ -84,6 +84,8 @@ def apply_org_spec(spec: OrgSpec, target_path: Optional[Path] = None) -> ApplyRe
         result.worker_ids[ORG_SPEC_OWNER_CEO] = init_result.ceo_id
         ctx = SimpleNamespace(db=db, org_path=org_path, worker_id=None)
 
+        _apply_profile(spec, org_path, result)
+
         for team in spec.teams:
             _apply_team(db, ctx, team, init_result.ceo_id, result)
 
@@ -143,6 +145,34 @@ def _apply_team(
         worker_id = _worker_id(worker)
         add_team_member(db, team_id, worker_id, ORG_SPEC_MEMBERSHIP_MEMBER)
         result.worker_ids[_handle(team.name, member_name)] = worker_id
+
+
+def _apply_profile(spec: OrgSpec, org_path: Path, result: ApplyResult) -> None:
+    """Persist the declared domain profile overlay into the org config.
+
+    Resolves profiles/<name>.yaml next to the org.yml and copies it to
+    <org config>/profile.yaml, where onboarding picks it up to inject
+    conventions into every worker briefing. Missing overlay is a warning,
+    not a failure.
+    """
+    if not spec.profile:
+        return
+    if spec.source_path is None:
+        result.warnings.append(
+            f"profile {spec.profile!r} declared but spec has no source path; skipped"
+        )
+        return
+
+    overlay_src = spec.source_path.parent / "profiles" / f"{spec.profile}.yaml"
+    if not overlay_src.is_file():
+        result.warnings.append(f"profile overlay not found: {overlay_src}; skipped")
+        return
+
+    from cli.core.config import get_org_config_path
+
+    config_dir = get_org_config_path(org_path)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "profile.yaml").write_text(overlay_src.read_text())
 
 
 def _apply_delegations(db: Any, spec: OrgSpec, result: ApplyResult) -> None:

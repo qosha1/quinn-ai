@@ -165,6 +165,57 @@ def test_apply_applies_delegations(tmp_path):
         db.close()
 
 
+PROFILE_ORG_YML = """
+    apiVersion: quinnai/v1
+    metadata: { name: proforg, profile: simpli }
+    providers: { $ref: config/providers.yaml }
+    ceo: { name: Quinn, role: CEO }
+"""
+
+
+def test_apply_persists_profile_overlay(tmp_path):
+    """org.yml profile resolves profiles/<name>.yaml and persists it to org config.
+
+    Write-first for quinn-ai-a3pg.4.4 — fails until _apply_profile lands.
+    """
+    import yaml
+
+    from cli.core.org_spec import apply_org_spec, load_org_spec
+
+    src = tmp_path / "src"
+    _write(
+        src / "config" / "providers.yaml",
+        """
+        default: claude_code
+        authorized_providers: [claude_code]
+        providers:
+          claude_code: { enabled: true }
+        """,
+    )
+    _write(
+        src / "profiles" / "simpli.yaml",
+        """
+        profile: simpli
+        conventions:
+          - "Shared packages over app src"
+          - "camelCase on the wire"
+        """,
+    )
+    _write(src / "org.yml", PROFILE_ORG_YML)
+
+    spec = load_org_spec(src / "org.yml")
+    org_dir = tmp_path / "org"
+    org_dir.mkdir(parents=True)
+    result = apply_org_spec(spec, target_path=org_dir)
+
+    persisted = org_dir / "config" / "profile.yaml"
+    assert persisted.exists(), "profile overlay should be persisted to org config"
+    data = yaml.safe_load(persisted.read_text())
+    assert data["profile"] == "simpli"
+    assert "Shared packages over app src" in data["conventions"]
+    assert not result.warnings, result.warnings
+
+
 def test_init_from_cli(tmp_path):
     """E2E: `qn org init --from org.yml` builds the declared org (quinn-ai-a3pg.3.6)."""
     from click.testing import CliRunner

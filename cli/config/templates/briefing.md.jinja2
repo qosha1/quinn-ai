@@ -108,6 +108,21 @@ No active rules loaded. (This is unusual; the bundled default catalog
 has 14 rules — check `qn org rules validate` if you expected rules here.)
 {% endif %}
 
+{% if profile %}
+## Conventions{% if profile.profile %} ({{ profile.profile }} profile){% endif %}
+
+Follow these conventions in everything you build:
+{% for convention in profile.conventions or [] %}
+- {{ convention }}
+{% endfor %}
+{% if profile.references %}
+Key references:
+{% for ref_key, ref_value in profile.references.items() %}
+- **{{ ref_key }}**: {{ ref_value }}
+{% endfor %}
+{% endif %}
+
+{% endif %}
 ## Your Responsibility
 
 {% if is_host_mode %}
