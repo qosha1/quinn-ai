@@ -43,3 +43,8 @@ ORG_SPEC_MEMBERSHIP_MEMBER = "member"
 
 # The reserved owner handle that resolves to the org's CEO.
 ORG_SPEC_OWNER_CEO = "ceo"
+
+# Defaults for a delegation grant when the level preset / explicit fields
+# omit them.
+ORG_SPEC_DEFAULT_DELEGATION_BUDGET = 100
+ORG_SPEC_DEFAULT_MAX_COST = 50

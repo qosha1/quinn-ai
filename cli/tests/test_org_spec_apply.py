@@ -111,6 +111,60 @@ def test_apply_builds_declared_structure(tmp_path):
     assert result.okr_ids
 
 
+DELEGATION_ORG_YML = """
+    apiVersion: quinnai/v1
+    metadata: { name: delorg }
+    providers: { $ref: config/providers.yaml }
+    ceo: { name: Quinn, role: CEO }
+    structure:
+      teams:
+        - { name: app, manager: { name: Remy, role: Lead }, selfForm: true }
+    delegations:
+      - { to: app/Remy, level: team-lead, budget: 500 }
+"""
+
+
+def test_apply_applies_delegations(tmp_path):
+    """org.yml delegations grant the delegate authority+budget so they can hire.
+
+    Write-first for quinn-ai-a3pg.4.3.3.1 — fails until _apply_delegations lands.
+    """
+    from cli.core.db import get_org_db_path, open_database
+    from cli.core.org_spec import apply_org_spec, load_org_spec
+    from cli.core.worker import Worker
+
+    src = tmp_path / "src"
+    _write(
+        src / "config" / "providers.yaml",
+        """
+        default: claude_code
+        authorized_providers: [claude_code]
+        providers:
+          claude_code: { enabled: true }
+        """,
+    )
+    _write(src / "org.yml", DELEGATION_ORG_YML)
+
+    spec = load_org_spec(src / "org.yml")
+    org_dir = tmp_path / "org"
+    org_dir.mkdir(parents=True)
+    result = apply_org_spec(spec, target_path=org_dir)
+
+    remy_id = result.worker_ids["app/Remy"]
+    db = open_database(get_org_db_path(result.org_path))
+    try:
+        remy = Worker(db, remy_id)
+        scope = remy.hiring_authority_scope
+        assert set(scope.allowed_roles) == {"engineer", "designer", "qa"}, scope.allowed_roles
+        assert scope.max_cost == 60
+        assert remy.delegated_budget == 500
+        # The whole point: the self-form Lead can now hire an IC.
+        can_hire, reason = remy.can_hire("engineer", 50)
+        assert can_hire, reason
+    finally:
+        db.close()
+
+
 def test_init_from_cli(tmp_path):
     """E2E: `qn org init --from org.yml` builds the declared org (quinn-ai-a3pg.3.6)."""
     from click.testing import CliRunner

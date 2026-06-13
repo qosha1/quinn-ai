@@ -87,6 +87,7 @@ def apply_org_spec(spec: OrgSpec, target_path: Optional[Path] = None) -> ApplyRe
         for team in spec.teams:
             _apply_team(db, ctx, team, init_result.ceo_id, result)
 
+        _apply_delegations(db, spec, result)
         _apply_okrs(db, ctx, spec, result)
         return result
     finally:
@@ -142,6 +143,63 @@ def _apply_team(
         worker_id = _worker_id(worker)
         add_team_member(db, team_id, worker_id, ORG_SPEC_MEMBERSHIP_MEMBER)
         result.worker_ids[_handle(team.name, member_name)] = worker_id
+
+
+def _apply_delegations(db: Any, spec: OrgSpec, result: ApplyResult) -> None:
+    """Apply authority+budget grants so delegates (e.g. self-form Leads) can hire.
+
+    The CEO is the delegator. Each grant resolves its target handle, builds a
+    HiringScope from the level preset (or explicit roles/max_cost), grants the
+    authority + delegated budget, and flips can_delegate so the delegate can
+    sub-allocate to their own reports. Reuses the same Worker.delegate_authority
+    path as `qn org delegate-authority`.
+    """
+    if not spec.delegations:
+        return
+
+    from cli.core.constants import (
+        DELEGATION_PRESETS,
+        ORG_SPEC_DEFAULT_DELEGATION_BUDGET,
+        ORG_SPEC_DEFAULT_MAX_COST,
+    )
+    from cli.core.queries.budget import set_allocation_can_delegate
+    from cli.core.worker import HiringScope, Worker
+
+    delegator = Worker(db, result.ceo_id)
+    for grant in spec.delegations:
+        delegate_id = _resolve_owner(grant.to, result)
+        if delegate_id is None:
+            result.warnings.append(
+                f"delegation target {grant.to!r} did not resolve; skipped"
+            )
+            continue
+
+        if grant.level:
+            preset = DELEGATION_PRESETS.get(grant.level)
+            if preset is None:
+                result.warnings.append(
+                    f"unknown delegation level {grant.level!r} for {grant.to!r}; skipped"
+                )
+                continue
+            allowed_roles = list(preset["allowed_roles"])
+            max_cost = preset["max_cost"]
+            budget = (
+                grant.budget
+                if grant.budget is not None
+                else preset.get("max_budget", ORG_SPEC_DEFAULT_DELEGATION_BUDGET)
+            )
+        else:
+            allowed_roles = list(grant.roles or [])
+            max_cost = grant.max_cost if grant.max_cost is not None else ORG_SPEC_DEFAULT_MAX_COST
+            budget = grant.budget if grant.budget is not None else ORG_SPEC_DEFAULT_DELEGATION_BUDGET
+
+        delegate = Worker(db, delegate_id)
+        delegator.delegate_authority(
+            report=delegate,
+            budget=int(budget),
+            scope=HiringScope(allowed_roles=allowed_roles, max_cost=max_cost),
+        )
+        set_allocation_can_delegate(db, delegate_id, can_delegate=True)
 
 
 def _apply_okrs(db: Any, ctx: Any, spec: OrgSpec, result: ApplyResult) -> None:
