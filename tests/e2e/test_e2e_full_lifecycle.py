@@ -52,6 +52,7 @@ def test_full_lifecycle_init_okrs_hire_intervene_fire_stop(temp_org_dir, qn_runn
             "org", "okr", "set",
             "--title", "Lifecycle test OKR",
             "--owner", "ceo",
+            "--no-krs-needed",
         ),
         timeout=30,
     )
