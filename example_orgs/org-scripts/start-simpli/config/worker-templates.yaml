@@ -1,0 +1,142 @@
+# Worker Templates — start-simpli org
+#
+# Role profiles for the start-simpli monorepo (pnpm + Django).
+# Matches the canonical worker-templates.yaml shape:
+#   each role -> description, skills{coding/reasoning/research/management/strategy},
+#               cost, authority{can_hire/can_fire/can_delegate/budget_limit/escalation_path}
+#
+# Skills: 0-100 per capability.
+# Cost:   0-100 model-tier value passed through to `qn org hire --cost <n>`.
+#         0-30 budget, 31-60 standard, 61-80 advanced, 81-100 premium.
+
+templates:
+  # ── Leadership / managers ────────────────────────────────────────────────
+  ceo:
+    description: "Chief Executive Officer - strategic leadership for the Simpli platform"
+    skills:
+      coding: 40
+      reasoning: 90
+      research: 70
+      management: 95
+      strategy: 100
+    cost: 100
+    authority:
+      can_hire: true
+      can_fire: true
+      can_delegate: true
+      budget_limit: null  # Unlimited
+      escalation_path: [board]
+
+  director:
+    description: "Director - leads the Core Infra team (auth host, API, shared packages)"
+    skills:
+      coding: 65
+      reasoning: 85
+      research: 75
+      management: 85
+      strategy: 80
+    cost: 85
+    authority:
+      can_hire: true
+      can_fire: true
+      can_delegate: true
+      budget_limit: 20000
+      escalation_path: [ceo, board]
+
+  lead:
+    description: "Team lead - drives a self-forming app group (raise, market); hires its ICs"
+    skills:
+      coding: 80
+      reasoning: 80
+      research: 75
+      management: 75
+      strategy: 60
+    cost: 75
+    authority:
+      can_hire: true
+      can_fire: false
+      can_delegate: true
+      budget_limit: 5000
+      escalation_path: [director, ceo, board]
+
+  # ── Core Infra ICs ───────────────────────────────────────────────────────
+  backend-engineer:
+    description: "Backend engineer - Django/DRF, Postgres, Celery in start-simpli-api"
+    skills:
+      coding: 88
+      reasoning: 80
+      research: 65
+      management: 25
+      strategy: 35
+    cost: 70
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 1000
+      escalation_path: [director, ceo, board]
+
+  platform-engineer:
+    description: "Platform engineer - auth-web central host, CI/CD, infra, cross-app wiring"
+    skills:
+      coding: 85
+      reasoning: 82
+      research: 70
+      management: 30
+      strategy: 45
+    cost: 70
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 1000
+      escalation_path: [director, ceo, board]
+
+  package-maintainer:
+    description: "Package maintainer - shared @startsimpli/* packages (ui, auth, billing, api, hooks, forms, funnels, utils)"
+    skills:
+      coding: 86
+      reasoning: 78
+      research: 70
+      management: 25
+      strategy: 40
+    cost: 60
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 1000
+      escalation_path: [director, ceo, board]
+
+  # ── App-group ICs (hired on demand by self-forming Leads) ─────────────────
+  app-engineer:
+    description: "App engineer - builds a customer-facing Next.js app (raise/market/vault) on the shared packages"
+    skills:
+      coding: 85
+      reasoning: 72
+      research: 60
+      management: 20
+      strategy: 25
+    cost: 60
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 500
+      escalation_path: [lead, ceo, board]
+
+  app-designer:
+    description: "App designer - UI/UX for a customer-facing app, composing @startsimpli/ui primitives"
+    skills:
+      coding: 60
+      reasoning: 65
+      research: 70
+      management: 20
+      strategy: 30
+    cost: 45
+    authority:
+      can_hire: false
+      can_fire: false
+      can_delegate: false
+      budget_limit: 500
+      escalation_path: [lead, ceo, board]

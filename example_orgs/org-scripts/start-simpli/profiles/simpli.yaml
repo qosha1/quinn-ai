@@ -1,0 +1,33 @@
+# Profile overlay — simpli
+#
+# Conventions injected into every worker's briefing for the start-simpli org.
+# Referenced by org.yml metadata.profile: simpli.
+#
+# These encode how the start-simpli monorepo expects code to be written so
+# workers (especially self-forming app-group ICs) inherit house rules without
+# re-deriving them each session.
+
+profile: simpli
+
+conventions:
+  - "Shared packages over app src: put reusable logic in packages/@startsimpli/* (ui, auth, billing, api, hooks, forms, funnels, utils), not in an individual app's src/. Apps consume packages; they do not fork them."
+  - "camelCase on the wire: the Django DRF backend serializes camelCase and @startsimpli/api consumes camelCase. Do not introduce snake_case across the API boundary."
+  - "TypeScript must compile after every change: run the type-check before considering any TS/TSX edit done. A change that breaks `tsc` is not done."
+  - "MCP browser verification is the default for UI changes: any visible UI/UX change is verified in a real browser via the DebuggAI MCP (probe_page or check_app_in_browser) against the running app — not asserted from code review alone."
+  - "Server-side pagination for all tables: every table/list view paginates on the server. Never load an unbounded result set into the client."
+  - "Generic, reusable data models: model entities generically so they serve multiple apps and tenants; avoid app-specific one-off schemas baked into the shared layer."
+  - "Foundry is the control plane: apps/foundry provisions and manages per-tenant stacks. Tenant provisioning, stack lifecycle, and environment wiring go through foundry — do not hand-roll per-tenant infra inside an app."
+
+references:
+  project_root: /Users/qosha/Repos/start-simpli
+  core_infra:
+    auth_host: auth-web                      # central Next.js auth host
+    api: start-simpli-api                     # Django / DRF / Postgres / Celery backend
+    shared_packages: packages/@startsimpli/*  # ui, auth, billing, api, hooks, forms, funnels, utils
+  app_groups:
+    raise: apps/raise     # VC fundraising
+    market: apps/market   # GTM / leads
+    vault: apps/vault     # secrets
+  control_plane: apps/foundry             # provisions tenant stacks
+  package_manager: pnpm
+  backend_stack: [django, drf, postgres, celery]

@@ -1,0 +1,44 @@
+# Team-template catalog — start-simpli org
+#
+# Matches the canonical default_team_templates.yaml shape:
+#   version, templates:[{name, description, members[], channel, requires,
+#                        initial_okrs?, ttl_hours?}]
+#
+# Rules enforced by the loader (cli/core/templates/loader.py):
+#   - Exactly ONE member with is_manager: true per template.
+#   - Costs are LLM-tier values (0-100); no salary/budget block here.
+#
+# Roles referenced below are defined in config/worker-templates.yaml.
+
+version: 1
+templates:
+  # Core Infra — declared in full at init: a Director plus three ICs that own
+  # the auth host, the Django/DRF API, and the shared @startsimpli/* packages.
+  - name: core-infra
+    description: "Platform team — central auth host, Django/DRF API, and shared @startsimpli/* packages."
+    members:
+      - {role: director,           count: 1, is_manager: true, cost: 85}
+      - {role: backend-engineer,   count: 1, cost: 70}
+      - {role: platform-engineer,  count: 1, cost: 70}
+      - {role: package-maintainer, count: 1, cost: 60}
+    channel:
+      auto_create: true
+      name_template: "infra-{team_name}"
+    requires: []
+    initial_okrs:
+      - title: "Platform reliability & shared-package health"
+        description: "Keep the shared packages and API healthy so every app group can build on them."
+        key_results:
+          - {metric: "shared package test coverage", target: 80, unit: "%"}
+          - {metric: "API p95 latency", target: 300, unit: "ms"}
+
+  # App Group — seeded with a Lead seat only. selfForm (set in org.yml) lets the
+  # Lead do discovery first, then hire app-engineer / app-designer ICs on demand.
+  - name: app-group
+    description: "Self-forming app pod — a Lead seeds the team, then hires ICs to ship a customer-facing Next.js app."
+    members:
+      - {role: lead, count: 1, is_manager: true, cost: 75}
+    channel:
+      auto_create: true
+      name_template: "app-{team_name}"
+    requires: []

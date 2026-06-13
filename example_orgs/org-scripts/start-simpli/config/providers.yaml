@@ -1,0 +1,59 @@
+# Provider Configuration — start-simpli org
+# Defines which AI providers are authorized and their settings.
+#
+# Environment variables can be used with ${VAR_NAME} syntax.
+# API keys must NEVER be committed — always use environment variables.
+
+# Default provider used when no preference specified
+default: claude_code
+
+# Authorized providers - which providers the org can use
+authorized_providers:
+  - claude_code
+  - anthropic
+
+# Available providers
+providers:
+  claude_code:
+    enabled: true
+    api_key: "not-needed-uses-system-auth"
+    timeout: 60
+    max_retries: 3
+
+  anthropic:
+    enabled: true
+    api_key: ${ANTHROPIC_API_KEY}      # set in env, never inline a literal
+    timeout: 60
+    max_retries: 3
+
+# Model selection thresholds
+# Determine when specific capabilities are required based on worker skills.
+thresholds:
+  coding: 80      # skill score above which coding capability is required
+  reasoning: 60   # skill score above which reasoning capability is required
+  research: 80    # skill score above which research capability is required
+
+# Cost tiers mapping - maps skill levels to model tiers
+cost_tiers:
+  0-20:
+    tier: "economy"
+    max_cost_per_request: 0.01
+  21-50:
+    tier: "standard"
+    max_cost_per_request: 0.05
+  51-80:
+    tier: "premium"
+    max_cost_per_request: 0.20
+  81-100:
+    tier: "enterprise"
+    max_cost_per_request: 1.00
+
+# Fallback configuration
+fallback:
+  enabled: true
+  order:
+    - preferred_provider
+    - default_provider
+    - any_authorized
+  retry_count: 3
+  retry_delay_ms: 1000

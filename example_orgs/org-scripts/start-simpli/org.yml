@@ -1,0 +1,77 @@
+# start-simpli — declarative org spec (quinnai/v1)
+#
+# Runs in HOST MODE against the start-simpli monorepo. Workers operate
+# directly inside the existing repo at host.project_root rather than a
+# sandboxed scratch dir.
+#
+# Two-layer structure:
+#   - Core Infra: a DECLARED team (manager + ICs) that owns the central
+#     auth host, the Django/DRF API, and the shared @startsimpli/* packages.
+#   - App Groups: SELF-FORMING teams (raise, market) seeded with only a Lead.
+#     Each Lead does discovery first, then hires its own ICs as needed.
+#
+# Loaded via:  qn org init --from org.yml   (loader: bead quinn-ai-a3pg.2.4.3)
+
+apiVersion: quinnai/v1
+
+metadata:
+  name: simpli
+  profile: simpli                       # overlay in profiles/simpli.yaml
+
+# Host mode: point the org at the live monorepo (absolute path).
+host:
+  project_root: /Users/qosha/Repos/start-simpli
+
+# Toolchain the org expects on the host. `require` must be present;
+# `optional` is best-effort (warn, don't fail).
+toolchain:
+  require: [node, pnpm, python, poetry, git, gh]
+  optional: [docker, vercel]
+
+# Provider + role + team-template catalogs live in sibling config files.
+providers:     {$ref: config/providers.yaml}
+roles:         {$ref: config/worker-templates.yaml}
+teamTemplates: {$ref: config/templates.yaml}
+
+# The CEO seat (always hired at init).
+ceo:
+  name: Quinn
+  role: CEO
+
+structure:
+  teams:
+    # Core Infra — fully declared up front. Owns shared packages + API + auth.
+    - template: core-infra
+      name: core-infra
+      manager: {name: Dana, role: Director}
+      members:
+        - {role: backend-engineer,  cost: 70}   # Django/DRF/Postgres/Celery
+        - {role: platform-engineer, cost: 70}   # auth-web host, CI, infra
+        - {role: package-maintainer, cost: 60}  # @startsimpli/* shared pkgs
+
+    # App Groups — seeded with a Lead only; selfForm lets each Lead do
+    # discovery (sensemaking first) and hire its own ICs from the catalog.
+    - {template: app-group, name: raise,  manager: {name: Remy, role: Lead}, selfForm: true}
+    - {template: app-group, name: market, manager: {name: Mara, role: Lead}, selfForm: true}
+
+# Budget + authority delegated from CEO down the chart.
+delegations:
+  - {to: core-infra/Dana, level: director,  budget: 20000}
+  - {to: raise/Remy,      level: team-lead, budget: 5000}
+  - {to: market/Mara,     level: team-lead, budget: 5000}
+
+# Strategic objectives, one owner per OKR.
+okrs:
+  - title: "Platform reliability & shared-package health"
+    owner: core-infra/Dana
+    keyResults:
+      - {metric: "shared package test coverage", target: 80, unit: "%"}
+      - {metric: "API p95 latency", target: 300, unit: "ms"}
+  - title: "Ship raise iteration"
+    owner: raise/Remy
+    keyResults:
+      - {metric: "conversion rate", target: 5, unit: "%"}
+  - title: "Ship market iteration"
+    owner: market/Mara
+    keyResults:
+      - {metric: "qualified leads", target: 100, unit: "count"}
