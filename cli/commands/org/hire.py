@@ -244,9 +244,9 @@ def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
     from cli.core.config.loaders import load_providers_config
     from cli.core.onboarding import (
         get_worker_env_vars,
+        get_worker_session_working_directory,
         prepare_worker_onboarding,
     )
-    from cli.core.storage import StorageManager
     from cli.providers.registry import load_providers_from_config
     from cli.commands.org.session_utils import spawn_worker_session
 
@@ -288,15 +288,19 @@ def _start_workday_for_hire(ctx: Context, worker: Worker) -> None:
     # worker errors with 'QUINN_WORKER_ID not set'. The CEO already gets
     # these via qn org start; mirror that here for hired workers.
     onboarding_ctx = prepare_worker_onboarding(ctx.db, worker.id, ctx.org_path)
-    storage = StorageManager(ctx.org_path, ctx.db)
-    worker_dir = storage.get_worker_path(worker.id)
     env_vars = get_worker_env_vars(onboarding_ctx, ctx.org_path, ctx.db)
+
+    # Session cwd must be host-mode-aware: in host mode hired workers (e.g.
+    # app-group engineers) operate ON the project root, not their private
+    # storage — same rule the CEO gets via `qn org start`. Greenfield is
+    # unchanged (returns the worker's storage dir).
+    session_cwd = get_worker_session_working_directory(ctx.org_path, worker.id)
 
     spawn_worker_session(
         worker=worker,
         provider=provider_name,
         command=cli_command,
         args_str="--dangerously-skip-permissions",
-        working_directory=worker_dir,
+        working_directory=session_cwd,
         env_vars=env_vars,
     )

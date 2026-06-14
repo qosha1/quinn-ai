@@ -11,10 +11,10 @@ ops:
   # CEO delegates: hire an engineer, then have them make a change and ship it.
   - op: kickstart_ceo
     message: >
-      Hire an engineer named Eng by running:
-      qn org hire --name Eng --role engineer --manager ceo
-      Then tell Eng to append 'export const SHIPPED = true;' to
-      packages/utils/src/index.ts and ship it on a branch.
+      Your environment is already configured (QUINN_ORG_PATH is set correctly).
+      Run EXACTLY this one command, with NO environment-variable overrides and
+      NO --org-path flag: qn org hire --name Eng --role engineer --manager ceo
+      Once that command succeeds you are done.
   # Wait for the worker to be hired (CEO acted).
   - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 300, poll_interval_seconds: 10 }
   # Direct the freshly-hired worker to make the change and ship a PR (push a
