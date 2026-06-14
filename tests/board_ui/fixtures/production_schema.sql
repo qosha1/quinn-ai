@@ -5,9 +5,14 @@ CREATE TABLE org_state (
     ceo_worker_id TEXT,
     started_at DATETIME,
     stopped_at DATETIME,
+    -- Host mode (host-mode-init): when this org overlays an existing project,
+    -- project_root holds the absolute path to that project. NULL for greenfield orgs.
+    -- is_host_mode := (project_root IS NOT NULL)
+    project_root TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE TABLE teams (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -15,12 +20,19 @@ CREATE TABLE teams (
     lead_id TEXT,
     channel_id TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    template_type TEXT,
+    ttl_hours INTEGER,
+    ttl_started_at DATETIME,
+    status TEXT NOT NULL DEFAULT 'active',
     FOREIGN KEY (parent_team_id) REFERENCES teams(id) ON DELETE SET NULL,
     FOREIGN KEY (lead_id) REFERENCES workers(id) ON DELETE SET NULL,
     FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE SET NULL
 );
+
 CREATE INDEX idx_teams_parent ON teams(parent_team_id);
+
 CREATE INDEX idx_teams_lead ON teams(lead_id);
+
 CREATE TABLE workers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -42,16 +54,24 @@ CREATE TABLE workers (
     offboarding_ask_bead_id TEXT,
     -- Provider preference (v20)
     preferred_provider TEXT,
+    -- Per-worker CLI tool dependencies (v25): JSON array of {name, description, install_cmd, check_cmd}
+    tools TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE RESTRICT,
     FOREIGN KEY (manager_id) REFERENCES workers(id) ON DELETE SET NULL
 );
+
 CREATE INDEX idx_workers_team ON workers(team_id);
+
 CREATE INDEX idx_workers_status ON workers(status);
+
 CREATE INDEX idx_workers_manager ON workers(manager_id);
+
 CREATE INDEX idx_workers_delegated_by ON workers(delegated_by) WHERE delegated_by IS NOT NULL;
+
 CREATE INDEX idx_workers_delegation_expires ON workers(delegation_expires_at) WHERE delegation_expires_at IS NOT NULL;
+
 CREATE TABLE worker_state (
     worker_id TEXT PRIMARY KEY,
     runtime_status TEXT NOT NULL CHECK(runtime_status IN ('starting', 'running', 'idle', 'stopped', 'crashed')),
@@ -64,7 +84,9 @@ CREATE TABLE worker_state (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_worker_state_status ON worker_state(runtime_status);
+
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
     worker_id TEXT NOT NULL UNIQUE,
@@ -84,9 +106,13 @@ CREATE TABLE sessions (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_sessions_worker ON sessions(worker_id);
+
 CREATE INDEX idx_sessions_state ON sessions(state);
+
 CREATE INDEX idx_sessions_last_activity ON sessions(last_activity);
+
 CREATE TABLE channels (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -95,8 +121,11 @@ CREATE TABLE channels (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_channels_type ON channels(type);
+
 CREATE INDEX idx_channels_team ON channels(team_id);
+
 CREATE TABLE channel_subscriptions (
     channel_id TEXT NOT NULL,
     worker_id TEXT NOT NULL,
@@ -105,7 +134,9 @@ CREATE TABLE channel_subscriptions (
     FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_channel_subs_worker ON channel_subscriptions(worker_id);
+
 CREATE TABLE messages (
     id TEXT PRIMARY KEY,
     channel_id TEXT NOT NULL,
@@ -121,12 +152,19 @@ CREATE TABLE messages (
     FOREIGN KEY (from_worker_id) REFERENCES workers(id) ON DELETE RESTRICT,
     FOREIGN KEY (parent_id) REFERENCES messages(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_messages_channel ON messages(channel_id);
+
 CREATE INDEX idx_messages_thread ON messages(thread_id);
+
 CREATE INDEX idx_messages_from_worker ON messages(from_worker_id);
+
 CREATE INDEX idx_messages_created_at ON messages(created_at);
+
 CREATE INDEX idx_messages_priority ON messages(priority);
+
 CREATE INDEX idx_messages_parent ON messages(parent_id);
+
 CREATE TABLE message_refs (
     message_id TEXT NOT NULL,
     ref_type TEXT NOT NULL,
@@ -134,30 +172,31 @@ CREATE TABLE message_refs (
     PRIMARY KEY (message_id, ref_type, ref_id),
     FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
 );
+
 CREATE TABLE config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
 CREATE VIRTUAL TABLE messages_fts USING fts5(
     content,
     content='messages',
     content_rowid='rowid'
-)
-/* messages_fts(content) */;
-CREATE TABLE IF NOT EXISTS 'messages_fts_data'(id INTEGER PRIMARY KEY, block BLOB);
-CREATE TABLE IF NOT EXISTS 'messages_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS 'messages_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB);
-CREATE TABLE IF NOT EXISTS 'messages_fts_config'(k PRIMARY KEY, v) WITHOUT ROWID;
+);
+
 CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
     INSERT INTO messages_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
 END;
+
 CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
     INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', OLD.rowid, OLD.content);
 END;
+
 CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
     INSERT INTO messages_fts(messages_fts, rowid, content) VALUES('delete', OLD.rowid, OLD.content);
     INSERT INTO messages_fts(messages_fts, rowid, content) VALUES (NEW.rowid, NEW.content);
 END;
+
 CREATE TABLE team_members (
     team_id TEXT NOT NULL,
     worker_id TEXT NOT NULL,
@@ -167,7 +206,9 @@ CREATE TABLE team_members (
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_team_members_worker ON team_members(worker_id);
+
 CREATE TABLE permissions (
     id TEXT PRIMARY KEY,
     bead_id TEXT,
@@ -178,8 +219,11 @@ CREATE TABLE permissions (
     granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(bead_id, grantee_type, grantee_id)
 );
+
 CREATE INDEX idx_permissions_bead ON permissions(bead_id);
+
 CREATE INDEX idx_permissions_grantee ON permissions(grantee_type, grantee_id);
+
 CREATE TABLE effective_permissions (
     worker_id TEXT NOT NULL,
     bead_id TEXT NOT NULL,
@@ -188,7 +232,9 @@ CREATE TABLE effective_permissions (
     PRIMARY KEY (worker_id, bead_id),
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_effective_perm_level ON effective_permissions(level);
+
 CREATE TABLE permission_audit (
     id TEXT PRIMARY KEY,
     action TEXT NOT NULL CHECK(action IN ('grant', 'revoke', 'check', 'deny')),
@@ -198,10 +244,15 @@ CREATE TABLE permission_audit (
     details TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE INDEX idx_perm_audit_bead ON permission_audit(bead_id);
+
 CREATE INDEX idx_perm_audit_worker ON permission_audit(worker_id);
+
 CREATE INDEX idx_perm_audit_action ON permission_audit(action);
+
 CREATE INDEX idx_perm_audit_time ON permission_audit(created_at);
+
 CREATE TABLE notification_beads (
     id TEXT PRIMARY KEY,
     worker_id TEXT NOT NULL,
@@ -219,14 +270,23 @@ CREATE TABLE notification_beads (
     FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
     UNIQUE(worker_id, message_id)
 );
+
 CREATE INDEX idx_notif_beads_worker ON notification_beads(worker_id);
+
 CREATE INDEX idx_notif_beads_status ON notification_beads(status);
+
 CREATE INDEX idx_notif_beads_worker_status ON notification_beads(worker_id, status);
+
 CREATE INDEX idx_notif_beads_priority ON notification_beads(priority);
+
 CREATE INDEX idx_notif_beads_closed_at ON notification_beads(closed_at);
+
 CREATE INDEX idx_notif_beads_expires_at ON notification_beads(expires_at);
+
 CREATE INDEX idx_notif_beads_message ON notification_beads(message_id);
+
 CREATE INDEX idx_notif_beads_channel ON notification_beads(channel_id);
+
 CREATE TABLE budget_pools (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -236,6 +296,7 @@ CREATE TABLE budget_pools (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE TABLE budget_allocations (
     id TEXT PRIMARY KEY,
 
@@ -277,10 +338,15 @@ CREATE TABLE budget_allocations (
     -- Can't spend more than allocated
     CHECK (spent_credits + reserved_credits <= allocated_credits)
 );
+
 CREATE INDEX idx_budget_allocations_worker ON budget_allocations(worker_id);
+
 CREATE INDEX idx_budget_allocations_source ON budget_allocations(source_worker_id);
+
 CREATE INDEX idx_budget_allocations_period ON budget_allocations(period_start, period_end);
+
 CREATE INDEX idx_budget_allocations_pool ON budget_allocations(pool_id);
+
 CREATE TABLE budget_transactions (
     id TEXT PRIMARY KEY,
     allocation_id TEXT NOT NULL,
@@ -320,11 +386,17 @@ CREATE TABLE budget_transactions (
     FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id) ON DELETE CASCADE,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_budget_transactions_allocation ON budget_transactions(allocation_id);
+
 CREATE INDEX idx_budget_transactions_worker ON budget_transactions(worker_id);
+
 CREATE INDEX idx_budget_transactions_type ON budget_transactions(type);
+
 CREATE INDEX idx_budget_transactions_created ON budget_transactions(created_at);
+
 CREATE INDEX idx_budget_transactions_provider ON budget_transactions(provider, model);
+
 CREATE TABLE budget_balances (
     allocation_id TEXT PRIMARY KEY,
     worker_id TEXT NOT NULL,
@@ -346,8 +418,11 @@ CREATE TABLE budget_balances (
     FOREIGN KEY (allocation_id) REFERENCES budget_allocations(id) ON DELETE CASCADE,
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_budget_balances_worker ON budget_balances(worker_id);
+
 CREATE INDEX idx_budget_balances_available ON budget_balances(available);
+
 CREATE TRIGGER update_budget_balance_on_transaction
 AFTER INSERT ON budget_transactions
 BEGIN
@@ -401,6 +476,7 @@ BEGIN
         updated_at = CURRENT_TIMESTAMP
     WHERE allocation_id = NEW.allocation_id;
 END;
+
 CREATE TABLE events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL,    -- worker.hired|worker.fired|okr.created|...
@@ -410,11 +486,15 @@ CREATE TABLE events (
     actor_id TEXT,               -- who triggered (optional)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE sqlite_sequence(name,seq);
+
 CREATE INDEX idx_events_type ON events(event_type);
+
 CREATE INDEX idx_events_entity ON events(entity_type, entity_id);
+
 CREATE INDEX idx_events_actor ON events(actor_id);
+
 CREATE INDEX idx_events_created_at ON events(created_at);
+
 CREATE TABLE okrs (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -429,9 +509,13 @@ CREATE TABLE okrs (
     FOREIGN KEY (owner_worker_id) REFERENCES workers(id) ON DELETE CASCADE,
     FOREIGN KEY (parent_okr_id) REFERENCES okrs(id) ON DELETE SET NULL
 );
+
 CREATE INDEX idx_okrs_owner ON okrs(owner_worker_id);
+
 CREATE INDEX idx_okrs_parent ON okrs(parent_okr_id);
+
 CREATE INDEX idx_okrs_status ON okrs(status);
+
 CREATE TABLE work_okr_links (
     work_id TEXT NOT NULL,
     okr_id TEXT NOT NULL,
@@ -440,8 +524,11 @@ CREATE TABLE work_okr_links (
     PRIMARY KEY (work_id, okr_id),
     FOREIGN KEY (okr_id) REFERENCES okrs(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_work_okr_links_okr ON work_okr_links(okr_id);
+
 CREATE INDEX idx_work_okr_links_work ON work_okr_links(work_id);
+
 CREATE TABLE escalations (
     id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL,
@@ -454,17 +541,24 @@ CREATE TABLE escalations (
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
     FOREIGN KEY (escalated_to_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_escalations_issue ON escalations(issue_id);
+
 CREATE INDEX idx_escalations_worker ON escalations(worker_id);
+
 CREATE INDEX idx_escalations_escalated_to ON escalations(escalated_to_id);
+
 CREATE INDEX idx_escalations_state ON escalations(state);
+
 CREATE INDEX idx_escalations_created_at ON escalations(created_at);
+
 CREATE TABLE lifecycle_configs (
     bead_type TEXT PRIMARY KEY,
     config TEXT NOT NULL,  -- JSON: {states: [], terminal_states: [], initial_state: str, transitions: {}}
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE TABLE delegation_grants (
     id TEXT PRIMARY KEY,
     delegator_id TEXT NOT NULL,           -- Who granted the authority
@@ -483,10 +577,15 @@ CREATE TABLE delegation_grants (
     CHECK (delegator_id != delegate_id),
     CHECK (budget_amount >= 0)
 );
+
 CREATE INDEX idx_delegation_grants_delegator ON delegation_grants(delegator_id);
+
 CREATE INDEX idx_delegation_grants_delegate ON delegation_grants(delegate_id);
+
 CREATE INDEX idx_delegation_grants_active ON delegation_grants(revoked_at) WHERE revoked_at IS NULL;
+
 CREATE INDEX idx_delegation_grants_expires ON delegation_grants(expires_at) WHERE expires_at IS NOT NULL AND revoked_at IS NULL;
+
 CREATE TABLE delegation_audit (
     id TEXT PRIMARY KEY,
     event_type TEXT NOT NULL CHECK(event_type IN (
@@ -508,21 +607,29 @@ CREATE TABLE delegation_audit (
     FOREIGN KEY (delegate_id) REFERENCES workers(id) ON DELETE RESTRICT,
     FOREIGN KEY (delegation_grant_id) REFERENCES delegation_grants(id) ON DELETE SET NULL
 );
+
 CREATE INDEX idx_delegation_audit_delegate ON delegation_audit(delegate_id);
+
 CREATE INDEX idx_delegation_audit_delegator ON delegation_audit(delegator_id);
+
 CREATE INDEX idx_delegation_audit_timestamp ON delegation_audit(timestamp);
+
 CREATE INDEX idx_delegation_audit_event_type ON delegation_audit(event_type);
+
 CREATE INDEX idx_delegation_audit_grant ON delegation_audit(delegation_grant_id);
+
 CREATE TRIGGER prevent_delegation_audit_modification
 BEFORE UPDATE ON delegation_audit
 BEGIN
     SELECT RAISE(ABORT, 'Delegation audit records are immutable');
 END;
+
 CREATE TRIGGER prevent_delegation_audit_deletion
 BEFORE DELETE ON delegation_audit
 BEGIN
     SELECT RAISE(ABORT, 'Delegation audit records cannot be deleted');
 END;
+
 CREATE TRIGGER revoke_delegations_on_termination
 AFTER UPDATE OF status ON workers
 FOR EACH ROW
@@ -552,6 +659,7 @@ BEGIN
         updated_at = CURRENT_TIMESTAMP
     WHERE id = NEW.id;
 END;
+
 CREATE TRIGGER log_delegation_grant
 AFTER INSERT ON delegation_grants
 FOR EACH ROW
@@ -580,6 +688,7 @@ BEGIN
         NEW.granted_at
     );
 END;
+
 CREATE TRIGGER log_delegation_revoke
 AFTER UPDATE OF revoked_at ON delegation_grants
 FOR EACH ROW
@@ -609,6 +718,7 @@ BEGIN
         NEW.revoked_at
     );
 END;
+
 CREATE TABLE worker_escalation_state (
     worker_id TEXT PRIMARY KEY,
     current_state TEXT NOT NULL DEFAULT 'normal'
@@ -622,9 +732,13 @@ CREATE TABLE worker_escalation_state (
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE,
     FOREIGN KEY (escalation_target_id) REFERENCES workers(id) ON DELETE SET NULL
 );
+
 CREATE INDEX idx_escalation_state_worker ON worker_escalation_state(worker_id);
+
 CREATE INDEX idx_escalation_state_status ON worker_escalation_state(current_state);
+
 CREATE INDEX idx_escalation_state_idle_since ON worker_escalation_state(idle_since) WHERE idle_since IS NOT NULL;
+
 CREATE TABLE status_changes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK(entity_type IN ('worker', 'worker_state', 'session')),
@@ -633,14 +747,19 @@ CREATE TABLE status_changes (
     new_status TEXT NOT NULL,
     changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE INDEX idx_status_changes_entity ON status_changes(entity_type, entity_id);
+
 CREATE INDEX idx_status_changes_changed_at ON status_changes(changed_at);
+
 CREATE INDEX idx_status_changes_id_asc ON status_changes(id ASC);
+
 CREATE TABLE status_change_cursors (
     client_id TEXT PRIMARY KEY,
     last_change_id INTEGER NOT NULL DEFAULT 0,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
 CREATE TRIGGER log_worker_status_change
 AFTER UPDATE OF status ON workers
 FOR EACH ROW
@@ -649,6 +768,7 @@ BEGIN
     INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
     VALUES ('worker', NEW.id, OLD.status, NEW.status, CURRENT_TIMESTAMP);
 END;
+
 CREATE TRIGGER log_worker_runtime_status_change
 AFTER UPDATE OF runtime_status ON worker_state
 FOR EACH ROW
@@ -657,6 +777,7 @@ BEGIN
     INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
     VALUES ('worker_state', NEW.worker_id, OLD.runtime_status, NEW.runtime_status, CURRENT_TIMESTAMP);
 END;
+
 CREATE TRIGGER log_session_state_change
 AFTER UPDATE OF state ON sessions
 FOR EACH ROW
@@ -665,6 +786,7 @@ BEGIN
     INSERT INTO status_changes (entity_type, entity_id, old_status, new_status, changed_at)
     VALUES ('session', NEW.id, OLD.state, NEW.state, CURRENT_TIMESTAMP);
 END;
+
 CREATE TABLE worker_resume_states (
     id TEXT PRIMARY KEY,
     worker_id TEXT NOT NULL UNIQUE,
@@ -695,20 +817,26 @@ CREATE TABLE worker_resume_states (
 
     FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
 );
+
 CREATE INDEX idx_worker_resume_worker ON worker_resume_states(worker_id);
+
 CREATE INDEX idx_worker_resume_expires ON worker_resume_states(expires_at) WHERE consumed_at IS NULL;
+
 CREATE INDEX idx_worker_resume_wrapup ON worker_resume_states(wrapup_requested_at) WHERE wrapup_acked_at IS NULL;
+
 CREATE TABLE activity_signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                worker_id TEXT NOT NULL,
-                activity_type TEXT NOT NULL CHECK(activity_type IN (
-                    'bead_update', 'message_sent', 'code_commit',
-                    'file_change', 'session_output', 'heartbeat'
-                )),
-                signal_strength INTEGER NOT NULL CHECK(signal_strength >= 1 AND signal_strength <= 5),
-                metadata TEXT,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
-            );
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_id TEXT NOT NULL,
+    activity_type TEXT NOT NULL CHECK(activity_type IN (
+        'bead_update', 'message_sent', 'code_commit',
+        'file_change', 'session_output', 'heartbeat'
+    )),
+    signal_strength INTEGER NOT NULL CHECK(signal_strength >= 1 AND signal_strength <= 5),
+    metadata TEXT,  -- JSON
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (worker_id) REFERENCES workers(id) ON DELETE CASCADE
+);
+
 CREATE INDEX idx_activity_signals_worker ON activity_signals(worker_id, created_at DESC);
+
 CREATE INDEX idx_activity_signals_recent ON activity_signals(created_at DESC);
