@@ -134,6 +134,11 @@ class ScenarioHarness:
             # CEO-doesn't-act stall). Best-effort — never fails the scenario.
             if hasattr(self, "_run") and self._tmpdir:
                 self._capture_post_mortem()
+            # Live canaries (use_fake_spawner=False) spawn REAL tmux/claude
+            # sessions; kill them on teardown so runs are repeatable and don't
+            # leak sessions (FakeSpawner runs have nothing to kill).
+            if hasattr(self, "_run") and not self.use_fake_spawner:
+                self._kill_live_sessions()
             if hasattr(self, "_run"):
                 self._run._close_db()
         finally:
@@ -154,6 +159,37 @@ class ScenarioHarness:
         if self._tmpdir and Path(self._tmpdir).exists():
             shutil.rmtree(self._tmpdir, ignore_errors=True)
         self._tmpdir = None
+
+    def _kill_live_sessions(self) -> None:
+        """Stop the org + kill its real tmux sessions (live canary teardown).
+
+        Reads the worker ids from the db and kills each qn-<id> tmux session,
+        plus runs `qn org stop --force` best-effort. Idempotent and never
+        raises — teardown must not fail the canary.
+        """
+        import subprocess
+        try:
+            run = self._run
+            rows = run.db.conn.execute("SELECT id FROM workers").fetchall()
+            worker_ids = [r["id"] for r in rows]
+        except Exception:
+            worker_ids = []
+        try:
+            subprocess.run(
+                ["qn", "--org-path", str(self._run.org_path), "org", "stop",
+                 "--force", "--yes"],
+                capture_output=True, text=True, timeout=60, check=False,
+            )
+        except Exception:
+            pass
+        for wid in worker_ids:
+            try:
+                subprocess.run(
+                    ["tmux", "kill-session", "-t", f"qn-{wid}"],
+                    capture_output=True, text=True, timeout=5, check=False,
+                )
+            except Exception:
+                pass
 
     def _capture_post_mortem(self) -> None:
         """Write each live worker's tmux pane scrollback to post_mortem/.

@@ -1,0 +1,33 @@
+# Host-mode multi-agent canary: a live CEO hires an app-group engineer and that
+# worker ships a PR — i.e. pushes a branch to the ISOLATED local bare remote.
+# Fully isolated: the only git remote is a throwaway local bare repo, so the
+# "PR push" has zero blast radius. Gated by QUINNAI_RUN_CANARY=1; budget-bounded.
+name: simpli_ceo_delegates_worker_ships_pr
+setup:
+  host_mode: true
+ops:
+  - { op: setup_host_repo }          # CEO-only; the CEO will hire the worker
+  - { op: start_org }
+  # CEO delegates: hire an engineer, then have them make a change and ship it.
+  - op: kickstart_ceo
+    message: >
+      Hire an engineer named Eng by running:
+      qn org hire --name Eng --role engineer --manager ceo
+      Then tell Eng to append 'export const SHIPPED = true;' to
+      packages/utils/src/index.ts and ship it on a branch.
+  # Wait for the worker to be hired (CEO acted).
+  - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 300, poll_interval_seconds: 10 }
+  # Direct the freshly-hired worker to make the change and ship a PR (push a
+  # branch to the local bare remote). --no-pr keeps it git-only (no gh/network).
+  - op: kickstart_worker
+    worker: Eng
+    message: >
+      Append the line 'export const SHIPPED = true;' to
+      packages/utils/src/index.ts in your current working directory, then run:
+      qn wrkr ship --bead canary --title "ship canary change" --no-pr
+  # Wait for the worker's branch to appear on the throwaway bare remote.
+  - { op: wait_until, predicate: { kind: branch_on_remote, pattern: "quinnai/" }, timeout_seconds: 360, poll_interval_seconds: 10 }
+assertions:
+  - { kind: worker_count, value: 2 }
+  - { kind: branch_on_remote, pattern: "quinnai/" }
+  - { kind: deliverable_contains, substring: "SHIPPED" }

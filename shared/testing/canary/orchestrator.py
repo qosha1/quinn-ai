@@ -9,6 +9,9 @@ from shared.testing.scenarios import ScenarioHarness, ScenarioSpec
 
 # Side-effect import: registers canary ops into the shared OPS dict.
 from . import canary_ops  # noqa: F401
+# Side-effect import: registers host-mode (isolated throwaway repo) ops +
+# the branch_on_remote predicate (quinn-ai-a3pg).
+from . import host_repo  # noqa: F401
 from .budget import BudgetExceeded, BudgetGuard, Pricing
 from .driver import build_live_session  # noqa: F401  (placeholder for direct-API flows)
 from .provider_config import ProviderConfig

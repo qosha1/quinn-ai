@@ -1,0 +1,23 @@
+# Host-mode canary: a live CEO, in an ISOLATED throwaway Simpli repo built from
+# a declarative org.yml, makes a real code change. 100% isolated — the repo and
+# its only git remote (a local bare repo) live under the harness tmpdir and are
+# removed on teardown. Gated by QUINNAI_RUN_CANARY=1; bounded by the budget guard.
+name: simpli_host_ceo_edits_file
+setup:
+  host_mode: true        # harness creates <tmp>/project + <tmp>/project/.quinnai
+ops:
+  # Build the throwaway Simpli repo + local bare remote, then build the host org
+  # from a generated org.yml (CEO-only, simpli profile). Deterministic / $0.
+  - { op: setup_host_repo }
+  # Boot the real CEO session (claude_code) in the project root.
+  - { op: start_org }
+  # Nudge the CEO with a concrete, cheap, verifiable task.
+  - op: kickstart_ceo
+    message: >
+      Append the exact line: export const CANARY_OK = true;
+      to the file packages/utils/src/index.ts in your current working directory,
+      then you are done. Do it yourself now.
+  # Wait for the real change to land (deliverable path resolved from context).
+  - { op: wait_until, predicate: { kind: deliverable_contains, substring: "CANARY_OK" }, timeout_seconds: 300, poll_interval_seconds: 10 }
+assertions:
+  - { kind: deliverable_contains, substring: "CANARY_OK" }
