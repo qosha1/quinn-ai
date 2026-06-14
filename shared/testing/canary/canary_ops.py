@@ -25,7 +25,11 @@ def op_start_org(run: "ScenarioRun", op: dict[str, Any]) -> None:
     from shared.testing.scenarios.ops import _run_qn
 
     model = os.environ.get("QUINNAI_MODEL", "claude-sonnet-4-6")
-    _run_qn(run, ["org", "start", "--model", model])
+    # --skip-config-validation: claude_code authenticates via its own OAuth
+    # (Claude Max), so the providers.yaml api_key requirement is a false
+    # failure here; config validation has its own dedicated tests. Canaries
+    # exercise live org behavior, not provider-config schema.
+    _run_qn(run, ["org", "start", "--model", model, "--skip-config-validation"])
 
 
 def op_send_to_worker(run: "ScenarioRun", op: dict[str, Any]) -> None:
