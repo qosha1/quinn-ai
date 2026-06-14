@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.1] - 2026-06-13
+
+### Added
+- Declarative org spec: `org.yml` (`cli/core/org_spec`) — unified spec that owns org structure and `$ref`s the existing config files (providers/worker-templates/templates). Schema + validation + loader (`apply_org_spec`): init → teams (declared core hires + self-form app-group seeding) → delegations (authority + budget) → seeded OKRs.
+- `qn org init --from <org.yml>` and idempotent `qn org apply` (existence-guarded re-runs add only the delta).
+- Generic briefing **profile overlay** (`metadata.profile` → `config/profile.yaml` → conventions injected into every BRIEFING.md).
+- **Toolchain contract** (`cli/core/toolchain`): `org.yml toolchain` persisted; org-start preflight fails fast on missing required CLIs, warns on optional.
+- **Per-layer secrets scoping** (`cli/core/secrets_scope`): default-deny credential allowlist per team (env var names only, never values).
+- Host-mode **per-app `.beads` routing** for monorepos (`resolve_beads_dir`): a worker in `apps/<x>/` targets that app's tracker.
+- Sanctioned worker **git→branch→commit→push→PR** flow (`cli/core/git_pr`, `qn wrkr ship`) with a trust boundary (configured remote names only).
+- **Foundry dry-run client** (`cli/core/foundry`): pure, gated, no-AWS model of start-simpli tenant provisioning.
+- `example_orgs/org-scripts/start-simpli/` reusable host-mode org template (org.yml + config + `simpli` profile), validated end-to-end.
+
+### Fixed
+- `qn org init` no longer host-redirects over an existing greenfield org (re-init now reports "already initialized").
+- bd pre-commit hook resilient to `bd sync` removal (falls back to `bd export`).
+- Refreshed the stale board_ui test schema fixture; updated OKR tests for KR enforcement.
+
+---
+
 ## [0.3.0] - 2026-04-29
 
 ### Added

@@ -224,9 +224,17 @@ def init_cmd(
     # Resolve host mode (host-mode-init):
     #   --host         → True (explicit)
     #   --no-host      → False (explicit greenfield)
-    #   neither passed → auto-detect: True iff .beads/ or .git/ exists.
+    #   neither passed → auto-detect: True iff .beads/ or .git/ exists AND
+    #                    there isn't already a greenfield org here. Without the
+    #                    second guard, re-running `qn org init` on a greenfield
+    #                    org (whose first init created .git/.beads) would
+    #                    silently host-redirect into .quinnai/ instead of
+    #                    reporting "already initialized" (quinn-ai re-init bug).
     if host_mode_flag is None:
-        host_mode = (
+        from cli.core.db import get_org_db_path
+
+        greenfield_already = get_org_db_path(org_path).exists()
+        host_mode = (not greenfield_already) and (
             (org_path / ".beads").exists() or (org_path / ".git").exists()
         )
         if host_mode:
