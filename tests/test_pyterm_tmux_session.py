@@ -53,6 +53,7 @@ class TestTmuxSessionClassMethods:
         assert result is True
         mock_run.assert_called_once_with(
             ["tmux", "has-session", "-t", "test-session"],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=TMUX_TIMEOUT,
@@ -123,6 +124,7 @@ class TestTmuxSessionClassMethods:
         assert output == "Hello world\n"
         mock_run.assert_called_once_with(
             ["tmux", "capture-pane", "-t", "test-session", "-p"],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=TMUX_TIMEOUT,

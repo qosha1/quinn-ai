@@ -108,7 +108,9 @@ def test_org_init_refuses_to_share_existing_beads_dir(tmp_path, cli_runner):
     (target / ".beads").mkdir()
 
     result = cli_runner(
-        ["--org-path", str(target), "org", "init"],
+        # --no-host: this asserts GREENFIELD .beads-refusal; without it the
+        # pre-existing .beads/ would auto-trigger host mode (which reuses it).
+        ["--org-path", str(target), "org", "init", "--no-host"],
     )
 
     assert result.returncode != 0, (
@@ -163,7 +165,9 @@ def test_org_init_reuse_beads_flag_lets_user_share_existing_tracker(
     (target / ".beads").mkdir()
 
     result = cli_runner(
-        ["--org-path", str(target), "org", "init", "--reuse-beads"],
+        # --no-host: exercise the GREENFIELD --reuse-beads path (a pre-existing
+        # .beads/ would otherwise auto-trigger host mode).
+        ["--org-path", str(target), "org", "init", "--reuse-beads", "--no-host"],
     )
 
     assert result.returncode == 0, (

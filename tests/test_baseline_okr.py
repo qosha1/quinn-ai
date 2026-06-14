@@ -29,6 +29,7 @@ class TestOKRSet:
 
         result = qn_runner(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Increase Revenue",
             "--owner", "ceo",
             org_path=org
@@ -44,6 +45,7 @@ class TestOKRSet:
 
         result = qn_runner(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Test OKR",
             "--owner", "ceo",
             org_path=org,
@@ -65,6 +67,7 @@ class TestOKRList:
         # Create an OKR
         qn_runner(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Improve Quality",
             "--owner", "ceo",
             org_path=org
@@ -118,6 +121,7 @@ class TestOKRShow:
         # Create OKR and capture ID
         result = qn_runner(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Launch Product",
             "--owner", "ceo",
             "--description", "Launch new product by Q2",
@@ -161,6 +165,7 @@ class TestOKRWorkflow:
         for okr_title in okrs:
             result = qn_runner(
                 "org", "okr", "set",
+                "--no-krs-needed",
                 "--title", okr_title,
                 "--owner", "ceo",
                 org_path=org
@@ -185,6 +190,7 @@ class TestOKRWorkflow:
         # Create OKR
         result = qn_runner(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Reduce Costs",
             "--owner", "ceo",
             org_path=org

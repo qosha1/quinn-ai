@@ -1097,6 +1097,7 @@ class TestOKRCascade:
 
         result = run_qn(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Q1 Revenue Growth",
             "--owner", "ceo",
             org_path=temp_org_dir
@@ -1111,6 +1112,7 @@ class TestOKRCascade:
 
         result = run_qn(
             "org", "okr", "add",
+            "--no-krs-needed",
             "--title", "Q2 Customer Growth",
             "--owner", "ceo",
             org_path=temp_org_dir
@@ -1122,7 +1124,7 @@ class TestOKRCascade:
     def test_okr_list_shows_created(self, temp_org_dir):
         """qn org okr list shows created OKRs."""
         run_qn("org", "init", org_path=temp_org_dir)
-        run_qn("org", "okr", "set", "--title", "Test OKR", org_path=temp_org_dir)
+        run_qn("org", "okr", "set", "--title", "Test OKR", "--no-krs-needed", org_path=temp_org_dir)
 
         result = run_qn("org", "okr", "list", org_path=temp_org_dir)
         assert result.returncode == 0
@@ -1152,6 +1154,7 @@ class TestOKRCascade:
         # Create parent OKR
         result1 = run_qn(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Company Goal",
             org_path=temp_org_dir
         )
@@ -1189,6 +1192,7 @@ class TestOKRCascade:
         # Create child OKR with --parent
         result2 = run_qn(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Team Goal",
             "--parent", parent_id,
             org_path=temp_org_dir
@@ -1203,6 +1207,7 @@ class TestOKRCascade:
         # Create OKR
         okr_result = run_qn(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Test OKR",
             org_path=temp_org_dir
         )
@@ -1257,6 +1262,7 @@ class TestOKRCascade:
         run_qn("org", "init", org_path=temp_org_dir)
         run_qn(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Detailed OKR",
             "--owner", "ceo",
             org_path=temp_org_dir
@@ -1285,7 +1291,7 @@ class TestOKRCascade:
         """qn org okr cascade shows hierarchy tree."""
         run_qn("org", "init", org_path=temp_org_dir)
         # Note: OKR creation will fail since beads not initialized, but cascade command should still work
-        run_qn("org", "okr", "set", "--title", "Root OKR", org_path=temp_org_dir)
+        run_qn("org", "okr", "set", "--title", "Root OKR", "--no-krs-needed", org_path=temp_org_dir)
 
         result = run_qn("org", "okr", "cascade", org_path=temp_org_dir)
         assert result.returncode == 0
@@ -1304,7 +1310,7 @@ class TestOKRCascade:
     def test_okr_cascade_with_root_filter(self, temp_org_dir):
         """qn org okr cascade --root filters to specific OKR tree."""
         run_qn("org", "init", org_path=temp_org_dir)
-        run_qn("org", "okr", "set", "--title", "Root OKR", org_path=temp_org_dir)
+        run_qn("org", "okr", "set", "--title", "Root OKR", "--no-krs-needed", org_path=temp_org_dir)
 
         # Get OKR ID
         from cli.core.bd_wrapper import run_bd
@@ -1331,6 +1337,7 @@ class TestOKRCascade:
 
         result = run_qn(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "High Priority OKR",
             "--priority", "0",
             org_path=temp_org_dir
@@ -1344,6 +1351,7 @@ class TestOKRCascade:
 
         result = run_qn(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Labeled OKR",
             "--label", "growth",
             "--label", "q1",
@@ -1358,6 +1366,7 @@ class TestOKRCascade:
 
         result = run_qn(
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "Described OKR",
             "--description", "This is the objective description with key results",
             org_path=temp_org_dir
@@ -1368,7 +1377,7 @@ class TestOKRCascade:
         """qn org okr list can filter by status."""
         run_qn("org", "init", org_path=temp_org_dir)
         # OKR creation will fail since beads not initialized, but list command should work
-        run_qn("org", "okr", "set", "--title", "Test OKR", org_path=temp_org_dir)
+        run_qn("org", "okr", "set", "--title", "Test OKR", "--no-krs-needed", org_path=temp_org_dir)
 
         # Filter by open status (default) - should return no OKRs since creation failed
         result = run_qn("org", "okr", "list", "--status", "open", org_path=temp_org_dir)
@@ -1378,7 +1387,7 @@ class TestOKRCascade:
         """qn org okr list --all includes all OKRs."""
         run_qn("org", "init", org_path=temp_org_dir)
         # OKR creation will fail since beads not initialized, but list command should work
-        run_qn("org", "okr", "set", "--title", "Test OKR", org_path=temp_org_dir)
+        run_qn("org", "okr", "set", "--title", "Test OKR", "--no-krs-needed", org_path=temp_org_dir)
 
         result = run_qn("org", "okr", "list", "--all", org_path=temp_org_dir)
         assert result.returncode == 0

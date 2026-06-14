@@ -50,6 +50,7 @@ def test_okr_set_creates_okr_in_beads_and_db(initialized_org, qn_runner):
         [
             "--org-path", str(initialized_org),
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", title,
             "--owner", "ceo",
         ],
@@ -85,6 +86,7 @@ def test_okr_close_updates_both_bead_and_sqlite_mirror(initialized_org, qn_runne
         [
             "--org-path", str(initialized_org),
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", title,
             "--owner", "ceo",
         ],
@@ -138,6 +140,7 @@ def test_okr_add_is_alias_for_set(initialized_org, qn_runner):
         [
             "--org-path", str(initialized_org),
             "org", "okr", "add",
+            "--no-krs-needed",
             "--title", title,
             "--owner", "ceo",
         ],
@@ -159,6 +162,7 @@ def test_okr_show_existing(initialized_org, qn_runner):
         [
             "--org-path", str(initialized_org),
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", title,
             "--owner", "ceo",
         ],
@@ -242,6 +246,7 @@ def test_okr_update_kr_adds_new_kr(initialized_org, qn_runner):
         [
             "--org-path", str(initialized_org),
             "org", "okr", "set",
+            "--no-krs-needed",
             "--title", "OKR for KR updates",
             "--owner", "ceo",
         ],
