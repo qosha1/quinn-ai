@@ -16,6 +16,10 @@ class ScenarioSpec:
     setup: dict[str, Any]
     ops: list[dict[str, Any]]
     assertions: list[dict[str, Any]]
+    # Optional correctness-scoring config (samples / pass_threshold /
+    # consistency_threshold). None => strict legacy gate (every assertion must
+    # pass, single run). See shared.testing.canary.scoring.ScoringPolicy.
+    scoring: dict[str, Any] | None = field(default=None)
     # Test-only escape hatch so unit tests can construct specs with op/assertion
     # kinds that aren't registered yet (or marker ops). Production YAML-loaded
     # specs always go through validation.
@@ -54,10 +58,52 @@ class ScenarioSpec:
                     f"{path}: assertions[{i}] unknown assertion kind "
                     f"{a['kind']!r} (known: {sorted(PREDICATES.keys())})"
                 )
+            if "weight" in a:
+                w = a["weight"]
+                if not isinstance(w, (int, float)) or isinstance(w, bool) or w < 0:
+                    raise ValueError(
+                        f"{path}: assertions[{i}] weight must be a number >= 0, "
+                        f"got {w!r}"
+                    )
+            if "critical" in a and not isinstance(a["critical"], bool):
+                raise ValueError(
+                    f"{path}: assertions[{i}] critical must be a bool, "
+                    f"got {a['critical']!r}"
+                )
+
+        scoring = cls._validate_scoring(path, data.get("scoring"))
 
         return cls(
             name=data["name"],
             setup=data.get("setup") or {},
             ops=list(data.get("ops") or []),
             assertions=list(data.get("assertions") or []),
+            scoring=scoring,
         )
+
+    @staticmethod
+    def _validate_scoring(path: Path, scoring: Any) -> dict[str, Any] | None:
+        """Validate the optional `scoring` block; returns it or None if absent.
+
+        Enforces known keys + value ranges up front so a malformed gate fails at
+        load time rather than mid-canary. Range validation is delegated to
+        ScoringPolicy so there is one source of truth.
+        """
+        if scoring is None:
+            return None
+        if not isinstance(scoring, dict):
+            raise ValueError(
+                f"{path}: scoring must be a mapping, got {type(scoring).__name__}"
+            )
+        allowed = {"samples", "pass_threshold", "consistency_threshold"}
+        unknown = set(scoring) - allowed
+        if unknown:
+            raise ValueError(
+                f"{path}: scoring has unknown key(s) {sorted(unknown)} "
+                f"(allowed: {sorted(allowed)})"
+            )
+        # Construct the policy to reuse its range validation (raises ValueError).
+        from shared.testing.canary.scoring import ScoringPolicy
+
+        ScoringPolicy.from_spec(scoring)
+        return dict(scoring)

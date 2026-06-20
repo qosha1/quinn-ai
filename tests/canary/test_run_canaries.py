@@ -25,8 +25,15 @@ def test_canary(canary_spec_path: Path):
                 f"canary {spec.name} aborted by budget guard "
                 f"(spend=${result.spend_usd:.4f}, elapsed={result.elapsed_seconds:.0f}s)"
             )
+        verdict_line = (
+            f"\nscoring: {result.verdict.summary()}"
+            if result.verdict is not None
+            else ""
+        )
         pytest.fail(
-            f"canary {spec.name} failed:\n"
+            f"canary {spec.name} failed the correctness bar "
+            f"(pass_rate={result.pass_rate:.2f}, mean_score={result.mean_score:.2f}, "
+            f"samples={result.samples}):{verdict_line}\n"
             + "\n".join(f"  - {v}" for v in result.violations)
             + f"\n\nTranscript:\n{result.transcript[:5000]}"
         )

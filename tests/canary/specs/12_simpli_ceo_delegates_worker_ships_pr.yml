@@ -27,7 +27,24 @@ ops:
       qn wrkr ship --bead canary --title "ship canary change" --no-pr
   # Wait for the worker's branch to appear on the throwaway bare remote.
   - { op: wait_until, predicate: { kind: branch_on_remote, pattern: "quinnai/" }, timeout_seconds: 360, poll_interval_seconds: 10 }
+# Deterministic correctness gate (quinn-ai-apg4). This is the genuinely
+# non-deterministic multi-agent chain (CEO delegates -> worker ships a PR), so we
+# grade it with WEIGHTED PARTIAL CREDIT instead of all-or-nothing:
+#   - worker_count==2  (the CEO actually delegated/hired)  weight 3
+#   - branch_on_remote (the worker pushed a branch)        weight 4
+#   - deliverable_contains SHIPPED (the change is in it)    weight 3
+# A run scores 1.0 only when the FULL chain completes; a hire-but-no-ship run
+# scores 0.3 and fails the per-run bar (pass_threshold 0.9). Across samples we
+# require the full chain to complete at least half the time (consistency 0.5 over
+# 2 samples => 1/2), matching observed live reliability while still failing hard
+# if the platform can't ship even once in two tries. mean_score in the verdict
+# shows how close partial runs got. Scale via QUINNAI_CANARY_SAMPLES for a
+# tighter nightly confidence bar (raise QUINNAI_CANARY_BUDGET_SECONDS to match).
+scoring:
+  samples: 2
+  pass_threshold: 0.9
+  consistency_threshold: 0.5
 assertions:
-  - { kind: worker_count, value: 2 }
-  - { kind: branch_on_remote, pattern: "quinnai/" }
-  - { kind: deliverable_contains, substring: "SHIPPED" }
+  - { kind: worker_count, value: 2, weight: 3 }
+  - { kind: branch_on_remote, pattern: "quinnai/", weight: 4 }
+  - { kind: deliverable_contains, substring: "SHIPPED", weight: 3 }

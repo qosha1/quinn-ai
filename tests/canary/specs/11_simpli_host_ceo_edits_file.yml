@@ -19,5 +19,14 @@ ops:
       then you are done. Do it yourself now.
   # Wait for the real change to land (deliverable path resolved from context).
   - { op: wait_until, predicate: { kind: deliverable_contains, substring: "CANARY_OK" }, timeout_seconds: 300, poll_interval_seconds: 10 }
+# Deterministic correctness gate (quinn-ai-apg4). The single deliverable is
+# critical, so a run scores 1.0 only if the CEO actually made the edit. samples=2
+# + consistency_threshold=0.9 demands BOTH runs land it (2/2) — a cheap, reliable
+# canary, so we hold it to a strict consistency bar. Operators can scale samples
+# with QUINNAI_CANARY_SAMPLES (raise QUINNAI_CANARY_BUDGET_SECONDS to match).
+scoring:
+  samples: 2
+  pass_threshold: 0.9
+  consistency_threshold: 0.9
 assertions:
-  - { kind: deliverable_contains, substring: "CANARY_OK" }
+  - { kind: deliverable_contains, substring: "CANARY_OK", weight: 1, critical: true }
