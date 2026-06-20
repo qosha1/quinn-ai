@@ -12,21 +12,10 @@ from cli.core.worker import Worker
 
 # Default worker kickstart prompt — quinn-ai-lja7. Sent to non-CEO workers'
 # tmux pane via send-keys after spawn so they don't idle waiting for input.
-# The CEO gets its own INITIAL_TASK.md via qn org start Phase 5; this is the
-# equivalent for hired workers.
-_WORKER_INITIAL_TASK_TEMPLATE = """You are {name}, a {role} on this team.
-
-CRITICAL: act autonomously now, do not wait for further instructions.
-
-1. Read your briefing: cat BRIEFING.md
-2. Check your inbox: msgr inbox --full
-3. Check assigned work: bd ready
-4. For any P0/P1 bead assigned to you, claim it (bd update <id> --status=in_progress) and complete the deliverable described in its description.
-5. Post status updates to #general as you make progress (msgr send #general 'status: ...').
-6. When finished with assigned beads, mark them closed (bd close <id> --reason '...') and post completion to #general.
-
-Do not stop early. Do not ask for confirmation. The org needs you to ship today.
-"""
+# The CEO gets its own INITIAL_TASK.md via qn org start Phase 5; the hired
+# worker's equivalent lives as a file under cli/config/templates/ and is
+# rendered via cli.core.prompts.render_initial_task (quinn-ai-58rw) — no
+# magic-string prompts in code.
 
 
 def spawn_worker_session(
@@ -118,10 +107,15 @@ def _send_worker_kickstart(worker: Worker, worker_dir: Path) -> None:
     except ImportError:
         return  # constants/helpers not importable in this context; silently skip
 
+    from cli.core.prompts import render_initial_task
+    from cli.core.constants.prompts import INITIAL_TASK_KIND_WORKER
+
     instructions = worker_dir / "INITIAL_TASK.md"
     try:
         instructions.write_text(
-            _WORKER_INITIAL_TASK_TEMPLATE.format(name=worker.name, role=worker.role)
+            render_initial_task(
+                INITIAL_TASK_KIND_WORKER, name=worker.name, role=worker.role
+            )
         )
     except OSError:
         return  # can't write the file; skip kickstart

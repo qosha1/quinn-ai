@@ -21,6 +21,7 @@ from .permissions import *  # noqa: F401, F403
 from .system import *  # noqa: F401, F403
 from .org_spec import *  # noqa: F401, F403
 from .git import *  # noqa: F401, F403
+from .prompts import *  # noqa: F401, F403
 
 
 # ===================

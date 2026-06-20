@@ -20,27 +20,37 @@ import pytest
 # INITIAL_TASK.md prompt includes work-loop instruction
 # ---------------------------------------------------------------------------
 
+def _ceo_initial_prompt() -> str:
+    """Render the CEO initial-task prompt from its template file."""
+    from cli.core.prompts import render_initial_task
+    from cli.core.constants.prompts import INITIAL_TASK_KIND_CEO
+
+    return render_initial_task(
+        INITIAL_TASK_KIND_CEO, self_intro="the CEO", chat_intro="I'm the CEO."
+    )
+
+
 def test_initial_prompt_contains_work_loop_instruction() -> None:
     """Workers must be told to cycle through inbox + ready work after setup."""
-    from cli.core.org_start_controller import _INITIAL_PROMPT_TEMPLATE
+    tpl = _ceo_initial_prompt()
 
     # Must tell workers to check inbox on every cycle
-    assert "msgr inbox" in _INITIAL_PROMPT_TEMPLATE
+    assert "msgr inbox" in tpl
     # Must tell workers to check for available work
-    assert "bd ready" in _INITIAL_PROMPT_TEMPLATE
+    assert "bd ready" in tpl
     # Must include explicit loop/cycle language
     loop_keywords = ["loop", "cycle", "continuously", "repeat", "every"]
-    assert any(kw in _INITIAL_PROMPT_TEMPLATE.lower() for kw in loop_keywords)
+    assert any(kw in tpl.lower() for kw in loop_keywords)
 
 
 def test_initial_prompt_work_loop_comes_after_setup() -> None:
     """Work loop instruction must come after the initial setup steps."""
-    from cli.core.org_start_controller import _INITIAL_PROMPT_TEMPLATE
+    tpl = _ceo_initial_prompt()
 
     # Loop instruction should appear in the lower half of the template
     # (after setup steps, not before them)
-    loop_pos = _INITIAL_PROMPT_TEMPLATE.lower().find("loop")
-    setup_pos = _INITIAL_PROMPT_TEMPLATE.find("CRITICAL INSTRUCTIONS")
+    loop_pos = tpl.lower().find("loop")
+    setup_pos = tpl.find("CRITICAL INSTRUCTIONS")
     assert loop_pos > setup_pos, (
         "Work loop instruction should appear after the CRITICAL INSTRUCTIONS setup block"
     )
@@ -166,12 +176,10 @@ def test_session_prompter_soft_check_uses_updated_template(tmp_path: Path) -> No
 
 def test_initial_prompt_work_loop_is_concrete_not_vague() -> None:
     """Work loop instruction must include actual commands, not just 'keep working'."""
-    from cli.core.org_start_controller import _INITIAL_PROMPT_TEMPLATE
+    tpl = _ceo_initial_prompt()
 
     # Find the section after CRITICAL INSTRUCTIONS
-    after_setup = _INITIAL_PROMPT_TEMPLATE[
-        _INITIAL_PROMPT_TEMPLATE.find("CRITICAL INSTRUCTIONS"):
-    ]
+    after_setup = tpl[tpl.find("CRITICAL INSTRUCTIONS"):]
 
     # Must have both concrete commands in the loop section
     assert "msgr inbox" in after_setup

@@ -62,13 +62,15 @@ class TestMsgrPrompting:
     def test_initial_task_prompt_includes_first_message(self):
         """INITIAL_TASK.md (CEO prompt) must require sending first message.
 
-        After REFACTOR-1 the prompt body lives in a module-level constant
-        _INITIAL_PROMPT_TEMPLATE inside cli.core.org_start_controller, not
-        embedded in _send_initial_prompt_to_ceo's source. Inspect that
-        constant directly.
+        The prompt body now lives as a file under cli/config/templates/ and is
+        rendered via cli.core.prompts.render_initial_task (quinn-ai-58rw).
+        Render it and inspect the result.
         """
-        from cli.core.org_start_controller import _INITIAL_PROMPT_TEMPLATE
-        source = _INITIAL_PROMPT_TEMPLATE
+        from cli.core.prompts import render_initial_task
+        from cli.core.constants.prompts import INITIAL_TASK_KIND_CEO
+        source = render_initial_task(
+            INITIAL_TASK_KIND_CEO, self_intro="the CEO", chat_intro="I'm the CEO."
+        )
 
         # Verify the prompt includes explicit msgr usage as FIRST step
         # Template uses '#general' (quoted) so bash doesn't strip it as a comment

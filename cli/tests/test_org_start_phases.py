@@ -432,18 +432,23 @@ class TestPhase5Kickstart:
         assert "Warning" in captured.err or "warning" in captured.err.lower()
 
     @patch('subprocess.run')
-    def test_kickstart_initial_task_has_unambiguous_framing(
+    def test_kickstart_initial_task_is_first_person_not_injection_shaped(
         self, mock_subprocess, initialized_org, temp_org_dir
     ):
-        """Regression (quinn-ai-hdd8): INITIAL_TASK.md must open with an
-        unambiguous "this is YOUR active prompt" framing block.
+        """Regression for quinn-ai-hdd8 AND quinn-ai-58rw — two opposite
+        failure modes that must both be avoided.
 
-        Pre-fix, the template started with "You are {self_intro}. You've
-        just been onboarded." — claude read the file as documentation
-        about a different worker (the kickstart was cat'd into an active
-        session, so the model interpreted it as 3rd-person reference
-        material) and refused to act. Result: 30-min canary, 0 hires,
-        0 messages.
+        - Too 3rd-person ("You are {self_intro}. You've just been
+          onboarded.") => the CEO read the cat'd file as documentation
+          about a DIFFERENT worker and refused to act (hdd8).
+        - Too emphatic ("=== EXECUTE THIS NOW ===", "You ARE the worker
+          described", "Do not summarize", "Execute now") => security-
+          conscious workers flag it as prompt injection / authority-
+          laundering and refuse (58rw, caught live in canary 12).
+
+        The balance: the file must read as the reader's OWN onboarding
+        brief and lead into a concrete first action, WITHOUT injection-
+        shaped framing.
         """
         from cli.commands.org.start import _send_initial_prompt_to_ceo
 
@@ -455,35 +460,39 @@ class TestPhase5Kickstart:
         _send_initial_prompt_to_ceo(initialized_org.ceo, worker_dir)
 
         content = (worker_dir / "INITIAL_TASK.md").read_text()
+        low = content.lower()
+        # Whitespace-flattened view so phrase checks survive line wrapping.
+        flat = " ".join(content.split()).lower()
 
-        # Must START with the framing — claude reads top-down, so a
-        # framing block buried mid-file would be too late.
-        assert content.startswith("=== EXECUTE THIS NOW"), (
-            "INITIAL_TASK.md must open with the '=== EXECUTE THIS NOW ===' "
-            "framing block (quinn-ai-hdd8). Got first line:\n"
-            + content.splitlines()[0]
+        # First-person: clearly the reader's OWN brief (counters hdd8
+        # 3rd-person dissociation).
+        assert "you've just been onboarded" in flat, (
+            "INITIAL_TASK.md must address the reader as the worker who was "
+            "just onboarded, not describe a third party (quinn-ai-hdd8)."
+        )
+        assert "this is your onboarding brief" in flat, (
+            "INITIAL_TASK.md must frame itself as the reader's own "
+            "onboarding brief (quinn-ai-hdd8)."
         )
 
-        # Must contain the explicit "you ARE that worker" disambiguation.
-        assert "You ARE the worker described" in content, (
-            "INITIAL_TASK.md must explicitly tell claude 'You ARE the "
-            "worker described below' to prevent 3rd-person dissociation "
-            "(quinn-ai-hdd8)."
+        # Leads into a concrete first action, not a passive document.
+        assert "msgr inbox" in content, (
+            "INITIAL_TASK.md must lead into a concrete first action."
         )
 
-        # Must contain the anti-summarization rule.
-        assert "Do not summarize" in content, (
-            "INITIAL_TASK.md must instruct claude NOT to summarize the "
-            "prompt — otherwise it returns a description instead of acting "
-            "(quinn-ai-hdd8)."
-        )
-
-        # Must counter the specific failure mode observed in the canary.
-        assert "script for another worker" in content, (
-            "INITIAL_TASK.md must explicitly counter the 'this is a "
-            "script for another worker, not for me' interpretation that "
-            "the canary CEO produced verbatim (quinn-ai-hdd8)."
-        )
+        # NOT injection-shaped (counters 58rw — these phrases make aligned
+        # models refuse).
+        for banned in (
+            "=== execute this now",
+            "you are the worker described",
+            "do not summarize",
+            "begin executing immediately",
+            "execute now",
+        ):
+            assert banned not in low, (
+                f"INITIAL_TASK.md must not use injection-shaped framing "
+                f"{banned!r} — aligned workers refuse it (quinn-ai-58rw)."
+            )
 
 
 class TestPhase5VerificationContentAware:
