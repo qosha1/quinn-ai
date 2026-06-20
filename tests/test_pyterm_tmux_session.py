@@ -208,6 +208,42 @@ class TestTmuxSessionLifecycle:
         assert "/tmp" in args
 
     @patch('subprocess.run')
+    def test_start_injects_env_into_new_session(self, mock_run):
+        """Env vars must be injected into the new-session command via -e KEY=VAL
+        so the launched shell/command (and its children, e.g. claude's Bash
+        tool) actually inherit them.
+
+        Regression for quinn-ai-l8cv: relying on `tmux set-environment` alone
+        leaves the already-running bash (and the command it launches) without
+        these vars — the host-mode CEO got an empty QUINN_ORG_PATH and could
+        not resolve its own org.
+        """
+        mock_run.return_value = Mock(returncode=0, stdout="123\n", stderr="")
+
+        config = PytermSessionConfig(
+            shell="/bin/bash",
+            cols=80,
+            rows=24,
+            env={
+                "QUINN_ORG_PATH": "/orgs/acme/.quinnai",
+                "QUINN_WORKER_ID": "wrkr-ceo",
+            },
+        )
+
+        session = TmuxSession(session_name="test")
+        session.start(config)
+
+        new_session_args = mock_run.call_args_list[0][0][0]
+        # Each env var is passed as a `-e KEY=VAL` option to new-session...
+        assert "-e" in new_session_args
+        assert "QUINN_ORG_PATH=/orgs/acme/.quinnai" in new_session_args
+        assert "QUINN_WORKER_ID=wrkr-ceo" in new_session_args
+        # ...and the shell remains the final positional arg (tmux treats the
+        # trailing arg as the command), so -e options precede it.
+        assert new_session_args[-1] == "/bin/bash"
+        assert new_session_args.index("-e") < new_session_args.index("/bin/bash")
+
+    @patch('subprocess.run')
     def test_start_when_already_running_raises(self, mock_run):
         """Test start() raises when already running."""
         mock_run.side_effect = [

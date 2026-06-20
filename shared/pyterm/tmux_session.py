@@ -238,13 +238,26 @@ class TmuxSession:
         if self._session_config.cwd:
             cmd_args.extend(["-c", self._session_config.cwd])
 
+        # Inject env vars into the session being created via `-e KEY=VAL` so the
+        # launched shell — and the command it runs, and that command's children
+        # (e.g. claude's Bash tool) — actually inherit them. The
+        # `tmux set-environment` calls below only populate the session env for
+        # FUTURE panes; they never reach the bash created here, so without `-e`
+        # the spawned command runs with these vars unset. (quinn-ai-l8cv: the
+        # host-mode CEO got an empty QUINN_ORG_PATH and could not resolve its
+        # own org, making `qn org hire` fail.)
+        for key, value in self._session_config.env.items():
+            cmd_args.extend(["-e", f"{key}={value}"])
+
         # Always use bash as the shell (tmux interprets last arg as shell)
         cmd_args.append("/bin/bash")
 
         # Create the tmux session with bash
         self._run_tmux(*cmd_args)
 
-        # Set environment variables AFTER session is created
+        # Also set the session environment so any future panes/windows created
+        # in this session inherit the same vars (the -e above only seeds the
+        # first shell).
         for key, value in self._session_config.env.items():
             self._run_tmux("set-environment", "-t", self._id, key, value)
 
