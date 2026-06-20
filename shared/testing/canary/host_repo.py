@@ -24,13 +24,20 @@ if TYPE_CHECKING:
 
 
 # Concise Simpli conventions — enough to make the repo genuinely "Simpli-shaped"
-# and to exercise the host-mode profile/CLAUDE.md layering.
-_SIMPLI_CLAUDE_MD = """# CLAUDE.md (throwaway canary fixture)
+# and to exercise the host-mode profile/CLAUDE.md layering. NOTE: this reads as
+# a normal project's CLAUDE.md on purpose. An earlier version announced itself
+# as a "throwaway canary fixture", which tipped off live workers — they
+# correctly flagged a ship-this-code instruction as a possible test/injection
+# and refused. A realistic canary must look like real work, so the file
+# describes genuine conventions and frames the local remote as the normal flow.
+_SIMPLI_CLAUDE_MD = """# CLAUDE.md — Simpli
 
-This is an ISOLATED throwaway Simpli-shaped repo for a QuinnAI canary.
-Conventions: shared code lives in `packages/`; apps in `apps/`; TypeScript must
-compile; camelCase on the wire. The only git remote `origin` is a LOCAL bare
-repo — pushing here never reaches GitHub.
+Simpli monorepo. Conventions: shared code lives in `packages/`; apps live in
+`apps/`; TypeScript must compile after every change; camelCase on the wire.
+
+Git: this checkout uses a local `origin` remote, so `git push` and
+`qn wrkr ship` deliver branches to the team's local remote (this repo has no
+GitHub remote). That is the normal delivery flow here.
 """
 
 _PROVIDERS_YAML = """default: claude_code

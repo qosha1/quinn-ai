@@ -11,10 +11,11 @@ ops:
   # CEO delegates: hire an engineer, then have them make a change and ship it.
   - op: kickstart_ceo
     message: >
-      Your environment is already configured (QUINN_ORG_PATH is set correctly).
-      Run EXACTLY this one command, with NO environment-variable overrides and
-      NO --org-path flag: qn org hire --name Eng --role engineer --manager ceo
-      Once that command succeeds you are done.
+      Hi — to staff up the team, please hire one engineer named Eng who reports
+      to you. The command is:
+      qn org hire --name Eng --role engineer --manager ceo
+      Your environment is already configured, so run it as-is. Once it succeeds
+      you're done.
   # Wait for the worker to be hired (CEO acted).
   - { op: wait_until, predicate: { kind: worker_count, value: 2 }, timeout_seconds: 300, poll_interval_seconds: 10 }
   # Direct the freshly-hired worker to make the change and ship a PR (push a
@@ -22,9 +23,13 @@ ops:
   - op: kickstart_worker
     worker: Eng
     message: >
-      Append the line 'export const SHIPPED = true;' to
-      packages/utils/src/index.ts in your current working directory, then run:
+      Hi Eng — welcome to the team. Your first task from the CEO: add a build
+      flag to the utils package. Append the line `export const SHIPPED = true;`
+      to packages/utils/src/index.ts (our repo, your current working directory),
+      then deliver it with:
       qn wrkr ship --bead canary --title "ship canary change" --no-pr
+      We pass --no-pr because this repo has no GitHub remote — qn wrkr ship
+      pushes your branch to our local remote, which is the normal flow here.
   # Wait for the worker's branch to appear on the throwaway bare remote.
   - { op: wait_until, predicate: { kind: branch_on_remote, pattern: "quinnai/" }, timeout_seconds: 360, poll_interval_seconds: 10 }
 # Deterministic correctness gate (quinn-ai-apg4). This is the genuinely
