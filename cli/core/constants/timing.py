@@ -66,6 +66,19 @@ INITIAL_PROMPT_VERIFICATION_POLL = 0.5
 """Polling interval inside INITIAL_PROMPT_VERIFICATION_WINDOW for
 checking whether the pane content has changed."""
 
+INITIAL_PROMPT_DELIVERY_ATTEMPTS = 3
+"""How many times to (re)send the CEO's 'cat INITIAL_TASK.md' kickstart,
+verifying after each that the prompt actually landed in the pane. A single
+send can race claude's still-booting TUI and vanish, leaving the CEO idle
+forever (quinn-ai-ns6t); re-sending until verification succeeds is robust
+even when pane-readiness detection is imperfect."""
+
+INITIAL_PROMPT_READY_TIMEOUT = 5.0
+"""Initial best-effort wait for the CEO TUI before the first kickstart send.
+Kept short because the verify-and-retry loop is the real delivery guarantee
+(quinn-ai-ns6t) — a too-early first send is simply re-sent, so we don't block
+long here."""
+
 GRACEFUL_SHUTDOWN_WAIT = 5.0
 """Wait time after graceful shutdown signal before force termination."""
 

@@ -373,12 +373,23 @@ class TestPhase4SessionSpawn:
             assert "already active" in captured.out
 
 
+@pytest.fixture
+def fast_kickstart_delivery():
+    """Make CEO-kickstart delivery confirm instantly (no real readiness/verify
+    polling) so tests that only care about file-write/send don't pay for the
+    verify-and-retry timing (quinn-ai-ns6t)."""
+    with patch("cli.core.org_start_controller._wait_for_pane_ready", return_value=True), \
+         patch("cli.core.org_start_controller._capture_pane", return_value="pane"), \
+         patch("cli.core.org_start_controller._pane_shows_prompt_landed", return_value=True):
+        yield
+
+
 class TestPhase5Kickstart:
     """Test Phase 5: Initial prompt delivery."""
 
     @patch('subprocess.run')
     def test_kickstart_writes_initial_task_file(
-        self, mock_subprocess, initialized_org, temp_org_dir
+        self, mock_subprocess, fast_kickstart_delivery, initialized_org, temp_org_dir
     ):
         """Kickstart should write INITIAL_TASK.md."""
         from cli.commands.org.start import _send_initial_prompt_to_ceo
@@ -398,7 +409,7 @@ class TestPhase5Kickstart:
 
     @patch('subprocess.run')
     def test_kickstart_sends_tmux_command(
-        self, mock_subprocess, initialized_org, temp_org_dir
+        self, mock_subprocess, fast_kickstart_delivery, initialized_org, temp_org_dir
     ):
         """Kickstart should send command to tmux session."""
         from cli.commands.org.start import _send_initial_prompt_to_ceo
@@ -431,9 +442,50 @@ class TestPhase5Kickstart:
         captured = capsys.readouterr()
         assert "Warning" in captured.err or "warning" in captured.err.lower()
 
+    @patch("cli.core.org_start_controller._tmux_send_keys_with_retry")
+    @patch("cli.core.org_start_controller._pane_shows_prompt_landed")
+    @patch("cli.core.org_start_controller._capture_pane")
+    @patch("cli.core.org_start_controller._wait_for_pane_ready")
+    def test_kickstart_retries_delivery_until_prompt_lands(
+        self, mock_ready, mock_capture, mock_landed, mock_send,
+        initialized_org, temp_org_dir, capsys,
+    ):
+        """quinn-ai-ns6t: a single 'cat INITIAL_TASK.md' send can vanish into
+        claude's still-booting TUI, leaving the CEO idle. Delivery must
+        RE-SEND and re-verify until the prompt actually lands — not just warn
+        once and give up.
+        """
+        from cli.commands.org.start import _send_initial_prompt_to_ceo
+
+        worker_dir = temp_org_dir / "storage" / "workers" / "ceo"
+        worker_dir.mkdir(parents=True, exist_ok=True)
+
+        mock_ready.return_value = True
+        mock_capture.return_value = "pane content"
+        mock_send.return_value = True
+        # Attempt 1: prompt never lands (all polls False). Attempt 2: lands.
+        mock_landed.side_effect = [False] * 10 + [True] * 30
+
+        _send_initial_prompt_to_ceo(initialized_org.ceo, worker_dir)
+
+        # The 'cat INITIAL_TASK.md' command must have been (re)sent on more
+        # than one attempt — proof that delivery retried rather than gave up.
+        cat_sends = [
+            c for c in mock_send.call_args_list
+            if len(c.args) >= 2 and "cat " in str(c.args[1]) and "INITIAL_TASK" in str(c.args[1])
+        ]
+        assert len(cat_sends) >= 2, (
+            f"kickstart must retry delivery; 'cat' was sent {len(cat_sends)}x"
+        )
+
+        captured = capsys.readouterr()
+        assert "delivered" in captured.out.lower(), (
+            "after a successful retry the success path must be reported"
+        )
+
     @patch('subprocess.run')
     def test_kickstart_initial_task_is_first_person_not_injection_shaped(
-        self, mock_subprocess, initialized_org, temp_org_dir
+        self, mock_subprocess, fast_kickstart_delivery, initialized_org, temp_org_dir
     ):
         """Regression for quinn-ai-hdd8 AND quinn-ai-58rw — two opposite
         failure modes that must both be avoided.
