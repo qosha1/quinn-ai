@@ -197,6 +197,62 @@ def test_hook_config_includes_qn_tool_guard_command(tmp_path: Path, org: Path) -
     assert "qn-tool-guard" in content
 
 
+def test_hook_command_is_path_resolvable_without_session_path(
+    tmp_path: Path, org: Path
+) -> None:
+    """The PreToolUse hook command must resolve without relying on the
+    spawned session's PATH (quinn-ai-8hh7).
+
+    The worker 'claude' session shell does not inherit the quinnai venv bin
+    on its PATH, so a bare 'qn-tool-guard' resolves to
+    '/bin/sh: qn-tool-guard: command not found' and every Bash tool call
+    emits 'Error: Exit code 1' noise. The command's executable token must be
+    an absolute path that actually exists on disk.
+    """
+    import os
+
+    from cli.core.session.tool_guard import write_tool_guard_hook_config
+
+    working_dir = tmp_path / "worker_cwd"
+    working_dir.mkdir()
+    write_tool_guard_hook_config(working_dir=working_dir, org_path=org, worker_id="wrkr-123")
+
+    settings = working_dir / ".claude" / "settings.json"
+    data = json.loads(settings.read_text())
+    command = data["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+
+    executable_token = command.split()[0]
+    assert os.path.isabs(executable_token), (
+        f"hook command must be an absolute path (session PATH lacks venv bin), "
+        f"got: {command!r}"
+    )
+    assert os.path.exists(executable_token), (
+        f"hook command does not exist on disk: {executable_token!r}"
+    )
+
+
+def test_hook_config_write_is_idempotent(tmp_path: Path, org: Path) -> None:
+    """Writing the hook twice must not register the guard twice — the dedup
+    matches on the executable basename so a re-spawn into the same cwd doesn't
+    accumulate duplicate PreToolUse hooks.
+    """
+    from cli.core.session.tool_guard import write_tool_guard_hook_config
+
+    working_dir = tmp_path / "worker_cwd"
+    working_dir.mkdir()
+    write_tool_guard_hook_config(working_dir=working_dir, org_path=org, worker_id="wrkr-123")
+    write_tool_guard_hook_config(working_dir=working_dir, org_path=org, worker_id="wrkr-123")
+
+    data = json.loads((working_dir / ".claude" / "settings.json").read_text())
+    guard_cmds = [
+        h.get("command")
+        for entry in data["hooks"]["PreToolUse"]
+        for h in entry.get("hooks", [])
+        if h.get("command", "").endswith("qn-tool-guard")
+    ]
+    assert len(guard_cmds) == 1, f"expected one guard hook, got {guard_cmds!r}"
+
+
 # ---------------------------------------------------------------------------
 # default_rules.yaml: ABSOLUTE rules include shell.bash
 # ---------------------------------------------------------------------------

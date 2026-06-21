@@ -12,7 +12,37 @@ Claude Code hook protocol:
 from __future__ import annotations
 
 import json
+import shutil
+import sys
 from pathlib import Path
+
+# Basename of the console-script installed by pyproject.toml [project.scripts].
+TOOL_GUARD_EXECUTABLE = "qn-tool-guard"
+
+
+def resolve_tool_guard_command() -> str:
+    """Return an invocation for the qn-tool-guard hook that does not depend on
+    the spawned session's PATH.
+
+    The worker 'claude' session shell is launched without the quinnai venv bin
+    on its PATH, so a bare 'qn-tool-guard' resolves to
+    '/bin/sh: qn-tool-guard: command not found' and every Bash tool call emits
+    'Error: Exit code 1' noise (quinn-ai-8hh7). The console-script is installed
+    alongside the running interpreter, so resolve it from there first;
+    shutil.which is unreliable because the venv bin is typically not on PATH
+    even inside the venv's own interpreter.
+    """
+    # Prefer the console-script next to the running interpreter (venv bin).
+    candidate = Path(sys.executable).parent / TOOL_GUARD_EXECUTABLE
+    if candidate.exists():
+        return str(candidate)
+    # Fall back to a PATH lookup (covers system-wide / non-venv installs).
+    found = shutil.which(TOOL_GUARD_EXECUTABLE)
+    if found:
+        return found
+    # Last resort: bare name (old behavior). No worse than before if the
+    # console-script can't be located by either method above.
+    return TOOL_GUARD_EXECUTABLE
 
 
 def write_tool_guard_hook_config(
@@ -46,6 +76,9 @@ def write_tool_guard_hook_config(
 
     # Build the hook command. The hook receives stdin JSON from Claude Code
     # and calls qn-tool-guard which reads ORG_PATH + WORKER_ID from env.
+    # Resolve to an absolute path so it works even though the session shell's
+    # PATH does not include the venv bin (quinn-ai-8hh7).
+    command = resolve_tool_guard_command()
     hook_entry = {
         "hooks": {
             "PreToolUse": [
@@ -54,7 +87,7 @@ def write_tool_guard_hook_config(
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "qn-tool-guard",
+                            "command": command,
                         }
                     ],
                 }
@@ -69,13 +102,19 @@ def write_tool_guard_hook_config(
         if event not in existing_hooks:
             existing_hooks[event] = entries
         else:
-            # Append if our command isn't already registered
+            # Append if our guard isn't already registered. Match on the
+            # executable basename so a previously-written bare or absolute
+            # command both count as "already present" (no duplicates).
             existing_cmds = {
                 h.get("command")
                 for entry in existing_hooks[event]
                 for h in entry.get("hooks", [])
             }
-            if "qn-tool-guard" not in existing_cmds:
+            already_present = any(
+                cmd and Path(str(cmd).split()[0]).name == TOOL_GUARD_EXECUTABLE
+                for cmd in existing_cmds
+            )
+            if not already_present:
                 existing_hooks[event].extend(entries)
     settings["hooks"] = existing_hooks
 
