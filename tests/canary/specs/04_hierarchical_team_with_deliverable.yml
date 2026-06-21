@@ -117,6 +117,12 @@ ops:
 
   - { op: wait_until, predicate: { kind: message_count_between, from: diana, to: alice, min: 1 }, timeout_seconds: 180, poll_interval_seconds: 2 }
 
+# Multi-agent deliverable canary: grade with partial credit (the LLM
+# supplies variance). Require >=80% of the deliverables/handoffs; a
+# non-forming org tanks the score naturally (quinn-ai-apg4 scoring).
+scoring:
+  pass_threshold: 0.8
+
 assertions:
   - { kind: worker_count, value: 4 }
   - { kind: org_chart_depth, value: 3 }

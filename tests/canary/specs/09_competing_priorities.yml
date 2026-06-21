@@ -192,6 +192,12 @@ ops:
   # Phase 4: handoff doc for the deferred P0.
   - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary09-deferred.md, substring: "" }, timeout_seconds: 240, poll_interval_seconds: 5 }
 
+# Multi-agent deliverable canary: grade with partial credit (the LLM
+# supplies variance). Require >=70% of the deliverables/handoffs; a
+# non-forming org tanks the score naturally (quinn-ai-apg4 scoring).
+scoring:
+  pass_threshold: 0.7
+
 assertions:
   # CEO hired a real team. The chosen P0 has 4 skillsets of work; solo
   # execution is the failure mode this canary catches. ≥4 workers means

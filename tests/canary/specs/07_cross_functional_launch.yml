@@ -76,6 +76,12 @@ ops:
   - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary07-docs.md, substring: "curl" }, timeout_seconds: 600, poll_interval_seconds: 10 }
   - { op: wait_until, predicate: { kind: file_contains_any, path: /tmp/canary07-changelog.md, substrings: ["launch", "introduce", "today", "we're", "we are"], case_insensitive: true }, timeout_seconds: 600, poll_interval_seconds: 10 }
 
+# Multi-agent deliverable canary: grade with partial credit (the LLM
+# supplies variance). Require >=75% of the deliverables/handoffs; a
+# non-forming org tanks the score naturally (quinn-ai-apg4 scoring).
+scoring:
+  pass_threshold: 0.75
+
 assertions:
   - { kind: worker_count, min: 3 }                     # CEO + at least 2 hires
   - { kind: org_chart_depth, value: 2 }                # CEO has direct reports (delegation actually happened)

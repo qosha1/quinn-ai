@@ -152,6 +152,12 @@ ops:
   # Phase 5: bead lifecycle.
   - { op: wait_until, predicate: { kind: bead_status_is, bead_var: feat_email_id, value: closed }, timeout_seconds: 240, poll_interval_seconds: 5 }
 
+# Multi-agent deliverable canary: grade with partial credit (the LLM
+# supplies variance). Require >=70% of the deliverables/handoffs; a
+# non-forming org tanks the score naturally (quinn-ai-apg4 scoring).
+scoring:
+  pass_threshold: 0.7
+
 assertions:
   # Org shape
   - { kind: worker_count, min: 3 }

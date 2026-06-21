@@ -62,6 +62,12 @@ ops:
   - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary06-strutil.py, substring: "def is_palindrome" }, timeout_seconds: 480, poll_interval_seconds: 10 }
   - { op: wait_until, predicate: { kind: file_contains, path: /tmp/canary06-test.py, substring: "is_palindrome" }, timeout_seconds: 480, poll_interval_seconds: 10 }
 
+# Multi-agent deliverable canary: grade with partial credit (the LLM
+# supplies variance). Require >=75% of the deliverables/handoffs; a
+# non-forming org tanks the score naturally (quinn-ai-apg4 scoring).
+scoring:
+  pass_threshold: 0.75
+
 assertions:
   # Outcome: required deliverables present.
   - { kind: file_contains, path: /tmp/canary06-strutil.py, substring: "def reverse" }

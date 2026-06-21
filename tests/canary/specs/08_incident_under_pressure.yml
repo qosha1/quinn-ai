@@ -118,6 +118,12 @@ ops:
   # Phase 4: incident bead closed.
   - { op: wait_until, predicate: { kind: bead_status_is, bead_var: incident_id, value: closed }, timeout_seconds: 240, poll_interval_seconds: 5 }
 
+# Multi-agent deliverable canary: grade with partial credit (the LLM
+# supplies variance). Require >=70% of the deliverables/handoffs; a
+# non-forming org tanks the score naturally (quinn-ai-apg4 scoring).
+scoring:
+  pass_threshold: 0.7
+
 assertions:
   # Org shape: CEO + ≥2 specialists. Authorship rules force diversity.
   - { kind: worker_count, min: 3 }
