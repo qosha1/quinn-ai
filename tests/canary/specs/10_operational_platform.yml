@@ -73,8 +73,8 @@ ops:
         3. Test file contains at least 4 `def test_` cases covering both
            functions, including at least one edge case (empty string,
            malformed input, missing @, etc.).
-        4. CHANGELOG.md contains a release note in customer voice
-           (no "TODO", no "PLACEHOLDER").
+        4. CHANGELOG.md contains a release note in finished customer voice
+           (no unfilled markers or stub text).
         5. FEAT-EMAIL bead closed with substantive close reason.
 
       Process constraints (compliance)
