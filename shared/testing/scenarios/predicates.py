@@ -111,22 +111,20 @@ def pred_kr_owner(run: "ScenarioRun", a: dict[str, Any]) -> str | None:
 
 
 def _qn_bd_show_json(run: "ScenarioRun", bead_id: str) -> dict | None:
-    """Read a bead's JSON via the bundled bd binary directly.
+    """Read a bead's JSON via bd directly (dolt-aware).
 
     Sidesteps the qn-bd Python wrapper because bd 0.43 swallows stdout when
     invoked through it under captured-stdout subprocess (qn-bd's
     permission/lifecycle pre-checks somehow break the fd plumbing). Going
-    direct gives us deterministic JSON.
+    direct gives us deterministic JSON. Routes through the shared dolt-aware
+    bd_exec so it reads the org's REAL backend (quinn-ai-k9ff / boov) — pinning
+    --db=beads.db against a dolt org reads an empty sqlite ("qn-bd show failed").
     """
     import json
-    import subprocess
 
-    from cli.core.bd_wrapper import get_bundled_bd_path, get_org_beads_dir
+    from .bd_exec import bd_exec
 
-    bd_path = get_bundled_bd_path()
-    beads_db = get_org_beads_dir(run.org_path) / "beads.db"
-    cmd = [str(bd_path), "--sandbox", f"--db={beads_db}", "show", bead_id, "--json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    result = bd_exec(run.org_path, ["show", bead_id, "--json"])
     if result.returncode != 0:
         return None
     try:
@@ -314,8 +312,9 @@ def pred_bead_count_closed_by(run: "ScenarioRun", a: dict[str, Any]) -> str | No
     """
     import json
     import shutil
-    import subprocess
-    from cli.core.bd_wrapper import get_bundled_bd_path, get_org_beads_dir
+    from cli.core.bd_wrapper import get_bundled_bd_path
+
+    from .bd_exec import bd_exec
 
     if not shutil.which("bd") and not get_bundled_bd_path().exists():
         return None  # cannot verify
@@ -326,15 +325,12 @@ def pred_bead_count_closed_by(run: "ScenarioRun", a: dict[str, Any]) -> str | No
     if worker is None:
         return f"bead_count_closed_by: no worker named {worker_name!r}"
 
-    bd_path = get_bundled_bd_path()
-    beads_db = get_org_beads_dir(run.org_path) / "beads.db"
-    cmd = [str(bd_path), "--sandbox", f"--db={beads_db}",
-           "list", "--status", "closed", "--assignee", worker["id"], "--json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    result = bd_exec(run.org_path, [
+        "list", "--status", "closed", "--assignee", worker["id"], "--json"
+    ], timeout=15)
     if result.returncode != 0:
         # bd may not support --status closed exactly; fall back to all-then-filter.
-        cmd2 = [str(bd_path), "--sandbox", f"--db={beads_db}", "list", "--all", "--json"]
-        result = subprocess.run(cmd2, capture_output=True, text=True, timeout=15)
+        result = bd_exec(run.org_path, ["list", "--all", "--json"], timeout=15)
         if result.returncode != 0:
             return f"bead_count_closed_by: bd list failed: {result.stderr[:200]}"
     try:
@@ -544,18 +540,16 @@ def pred_bead_does_not_exist(run: "ScenarioRun", a: dict[str, Any]) -> str | Non
     """
     import json
     import shutil
-    import subprocess
 
-    from cli.core.bd_wrapper import get_bundled_bd_path, get_org_beads_dir
+    from cli.core.bd_wrapper import get_bundled_bd_path
+
+    from .bd_exec import bd_exec
 
     if not shutil.which("bd") and not get_bundled_bd_path().exists():
         return None  # cannot verify
 
     needle = a["title_substring"]
-    bd_path = get_bundled_bd_path()
-    beads_db = get_org_beads_dir(run.org_path) / "beads.db"
-    cmd = [str(bd_path), "--sandbox", f"--db={beads_db}", "list", "--all", "--json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    result = bd_exec(run.org_path, ["list", "--all", "--json"], timeout=15)
     if result.returncode != 0:
         return (
             f"bead_does_not_exist: bd list failed (exit {result.returncode}): "

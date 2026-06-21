@@ -219,26 +219,18 @@ def test_audit_log_contains_requires_match(tmp_path: Path):
 def test_bead_does_not_exist_zero_matches(tmp_path: Path, monkeypatch):
     pred = PREDICATES["bead_does_not_exist"]
 
-    # Force the "bd is available" path so we exercise the subprocess shim.
-    import shared.testing.scenarios.predicates as predmod  # noqa
-
-    def fake_run(cmd, capture_output, text, timeout):
-        result = SimpleNamespace()
-        result.returncode = 0
-        result.stdout = json.dumps([{"id": "b1", "title": "unrelated work"}])
-        result.stderr = ""
-        return result
+    # Force the "bd is available" path so we exercise the bd_exec shim.
+    def fake_bd_exec(org_path, args, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([{"id": "b1", "title": "unrelated work"}]),
+            stderr="",
+        )
 
     # Make 'bd' appear available so the early-return short-circuit doesn't fire.
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/bd")
-    # Patch subprocess.run inside the predicates module's call site.
-    monkeypatch.setattr("subprocess.run", fake_run)
-
-    # Stub the bd_wrapper helpers so we don't depend on a real bundled binary.
-    import cli.core.bd_wrapper as bdw
-
-    monkeypatch.setattr(bdw, "get_bundled_bd_path", lambda: Path("/usr/bin/bd"))
-    monkeypatch.setattr(bdw, "get_org_beads_dir", lambda p: tmp_path / ".beads")
+    # The predicate routes bd reads through the shared dolt-aware helper.
+    monkeypatch.setattr("shared.testing.scenarios.bd_exec.bd_exec", fake_bd_exec)
 
     run = FakeRun(tmp_path)
     assert pred(run, {"title_substring": "schema migration"}) is None
@@ -247,24 +239,20 @@ def test_bead_does_not_exist_zero_matches(tmp_path: Path, monkeypatch):
 def test_bead_does_not_exist_match_returns_violation(tmp_path: Path, monkeypatch):
     pred = PREDICATES["bead_does_not_exist"]
 
-    def fake_run(cmd, capture_output, text, timeout):
-        result = SimpleNamespace()
-        result.returncode = 0
-        result.stdout = json.dumps(
-            [
-                {"id": "b1", "title": "schema migration v0 plan"},
-                {"id": "b2", "title": "irrelevant"},
-            ]
+    def fake_bd_exec(org_path, args, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {"id": "b1", "title": "schema migration v0 plan"},
+                    {"id": "b2", "title": "irrelevant"},
+                ]
+            ),
+            stderr="",
         )
-        result.stderr = ""
-        return result
 
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/bd")
-    monkeypatch.setattr("subprocess.run", fake_run)
-    import cli.core.bd_wrapper as bdw
-
-    monkeypatch.setattr(bdw, "get_bundled_bd_path", lambda: Path("/usr/bin/bd"))
-    monkeypatch.setattr(bdw, "get_org_beads_dir", lambda p: tmp_path / ".beads")
+    monkeypatch.setattr("shared.testing.scenarios.bd_exec.bd_exec", fake_bd_exec)
 
     run = FakeRun(tmp_path)
     msg = pred(run, {"title_substring": "schema migration v0"})

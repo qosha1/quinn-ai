@@ -230,19 +230,16 @@ def op_assign_kr(run: "ScenarioRun", op: dict[str, Any]) -> None:
 
 
 def _bd_direct(run: "ScenarioRun", bd_args: list[str]) -> "subprocess.CompletedProcess":
-    """Invoke the bundled bd binary directly with --sandbox + --db.
+    """Invoke bd directly (capturing stdout) against the org's beads backend.
 
     Sidesteps the qn-bd Python wrapper which has fd-plumbing issues that
-    swallow stdout under captured-subprocess invocation. Used for ops that
-    need to read bd's output (e.g. capturing a created bead id).
+    swallow stdout under captured-subprocess invocation. Routes through the
+    shared dolt-aware bd_exec so writes target the org's real backend
+    (quinn-ai-k9ff / boov), not an empty sqlite.
     """
-    import subprocess
-    from cli.core.bd_wrapper import get_bundled_bd_path, get_org_beads_dir
+    from .bd_exec import bd_exec
 
-    bd_path = get_bundled_bd_path()
-    beads_db = get_org_beads_dir(run.org_path) / "beads.db"
-    cmd = [str(bd_path), "--sandbox", f"--db={beads_db}"] + bd_args
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    return bd_exec(run.org_path, bd_args)
 
 
 def op_create_bead(run: "ScenarioRun", op: dict[str, Any]) -> None:
