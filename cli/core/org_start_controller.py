@@ -571,6 +571,43 @@ def _tmux_send_keys_with_retry(
     return False
 
 
+def deliver_initial_prompt(tmux_session: str, instructions_file) -> bool:
+    """Deliver 'cat <instructions_file>' to a freshly-spawned session, verifying
+    it landed and re-sending until it does. Returns True if confirmed.
+
+    A single send can race claude's still-booting TUI and vanish, leaving the
+    worker (CEO or hired) idle forever (quinn-ai-ns6t). This gates on the REAL
+    outcome — the pane showing the command — not on readiness detection, so it
+    works even when the TUI wasn't ready for an earlier send. Re-cat'ing an
+    already-delivered file is harmless (idempotent read). Shared by the CEO
+    kickstart and the hired-worker kickstart so both are equally robust.
+    """
+    cmd = f"cat {instructions_file}"
+    # Best-effort initial readiness; kept short because the retry loop below is
+    # the real guarantee.
+    _wait_for_pane_ready(tmux_session, timeout=INITIAL_PROMPT_READY_TIMEOUT)
+
+    for attempt in range(1, INITIAL_PROMPT_DELIVERY_ATTEMPTS + 1):
+        cmd_sent = _tmux_send_keys_with_retry(tmux_session, cmd)
+        time.sleep(TMUX_SEND_KEYS_INTERSTITIAL)
+        enter_sent = _tmux_send_keys_with_retry(tmux_session, "Enter")
+        # Second Enter (quinn-ai-moho): claude's TUI sometimes treats the first
+        # Enter after a long pasted line as newline-in-input, not submit.
+        time.sleep(TMUX_SEND_KEYS_INTERSTITIAL)
+        _tmux_send_keys_with_retry(tmux_session, "Enter")
+        if not (cmd_sent and enter_sent):
+            continue  # send-keys retries exhausted this round; try again
+
+        elapsed = 0.0
+        while elapsed < INITIAL_PROMPT_VERIFICATION_WINDOW:
+            time.sleep(INITIAL_PROMPT_VERIFICATION_POLL)
+            elapsed += INITIAL_PROMPT_VERIFICATION_POLL
+            pane = _capture_pane(tmux_session)
+            if pane and _pane_shows_prompt_landed(pane, cmd):
+                return True
+    return False
+
+
 def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
     """Phase 5 (Kickstart): Send initial prompt to CEO.
 
@@ -622,61 +659,12 @@ def _send_initial_prompt_to_ceo(ceo: Worker, worker_dir: Path) -> None:
         # worker's storage dir — so a bare 'cat INITIAL_TASK.md' fails.
         # The absolute path works in both greenfield and host-mode.
         # (quinn-ai-ltvl)
-        cmd = f"cat {instructions_file}"
 
         try:
-            # quinn-ai-k2cy: best-effort wait for the CEO TUI before the first
-            # send. Kept short (INITIAL_PROMPT_READY_TIMEOUT) because the
-            # verify-and-retry loop below — not this readiness check — is the
-            # real delivery guarantee (quinn-ai-ns6t).
-            _wait_for_pane_ready(tmux_session, timeout=INITIAL_PROMPT_READY_TIMEOUT)
-
-            # Deliver with verification + RETRY. A single send can race
-            # claude's still-booting TUI and vanish, leaving the CEO idle
-            # forever (quinn-ai-ns6t). So we re-send the whole sequence and
-            # re-verify until the pane shows the prompt actually landed. This
-            # gates on the REAL outcome, not on readiness detection, so it works
-            # even when the TUI wasn't ready for an earlier send. Re-cat'ing an
-            # already-delivered file is harmless (idempotent read).
-            verification_window = INITIAL_PROMPT_VERIFICATION_WINDOW
-            poll_interval = INITIAL_PROMPT_VERIFICATION_POLL
-            received = False
-            for attempt in range(1, INITIAL_PROMPT_DELIVERY_ATTEMPTS + 1):
-                cmd_sent = _tmux_send_keys_with_retry(tmux_session, cmd)
-                time.sleep(TMUX_SEND_KEYS_INTERSTITIAL)
-                enter_sent = _tmux_send_keys_with_retry(tmux_session, "Enter")
-                # Second Enter (quinn-ai-moho): claude-code's TUI sometimes
-                # treats the first Enter after a long pasted line as a
-                # newline-in-input rather than submit. A second Enter
-                # reliably submits whatever's in the input.
-                time.sleep(TMUX_SEND_KEYS_INTERSTITIAL)
-                _tmux_send_keys_with_retry(tmux_session, "Enter")
-                if not (cmd_sent and enter_sent):
-                    # send-keys retries exhausted this round; try the next.
-                    continue
-
-                # Poll for SPECIFIC evidence the prompt landed: the cat command
-                # text in the pane (keystrokes reached the TUI) or a claude
-                # processing indicator (message submitted). NOT "any pane diff"
-                # — the TUI redraws (cursor blink, status bar) even when nothing
-                # landed (quinn-ai-moho).
-                elapsed = 0.0
-                while elapsed < verification_window:
-                    time.sleep(poll_interval)
-                    elapsed += poll_interval
-                    pane_after = _capture_pane(tmux_session)
-                    if pane_after and _pane_shows_prompt_landed(pane_after, cmd):
-                        received = True
-                        break
-
-                if received:
-                    break
-                if attempt < INITIAL_PROMPT_DELIVERY_ATTEMPTS:
-                    click.echo(
-                        f"  ↻ CEO prompt not confirmed (attempt "
-                        f"{attempt}/{INITIAL_PROMPT_DELIVERY_ATTEMPTS}); re-sending…",
-                        err=True,
-                    )
+            # Verify-and-retry delivery (quinn-ai-ns6t) — shared with hired
+            # workers so both kickstart paths are equally robust against a send
+            # vanishing into a still-booting TUI.
+            received = deliver_initial_prompt(tmux_session, instructions_file)
 
             if received:
                 click.echo("✓ Initial task instructions delivered; CEO session is processing")

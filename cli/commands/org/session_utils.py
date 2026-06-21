@@ -97,13 +97,9 @@ def _send_worker_kickstart(worker: Worker, worker_dir: Path) -> None:
     try:
         from cli.core.constants import (
             INITIAL_PROMPT_FILESYSTEM_FLUSH,
-            TMUX_SEND_KEYS_INTERSTITIAL,
             TMUX_SESSION_PREFIX,
         )
-        from cli.core.org_start_controller import (
-            _tmux_send_keys_with_retry,
-            _wait_for_pane_ready,
-        )
+        from cli.core.org_start_controller import deliver_initial_prompt
     except ImportError:
         return  # constants/helpers not importable in this context; silently skip
 
@@ -124,12 +120,9 @@ def _send_worker_kickstart(worker: Worker, worker_dir: Path) -> None:
 
     tmux_session = f"{TMUX_SESSION_PREFIX}{worker.id}"
 
-    if not _wait_for_pane_ready(tmux_session, timeout=15.0):
-        # Pane never reported ready; still attempt delivery best-effort
-        # (matches CEO behavior — sometimes the pane is ready but the
-        # heuristic missed it).
-        pass
-
-    _tmux_send_keys_with_retry(tmux_session, "cat INITIAL_TASK.md")
-    time.sleep(TMUX_SEND_KEYS_INTERSTITIAL)
-    _tmux_send_keys_with_retry(tmux_session, "Enter")
+    # Verify-and-retry delivery, shared with the CEO kickstart (quinn-ai-ns6t):
+    # re-send until the pane confirms the prompt landed, so a hired worker
+    # never boots idle from a send that vanished into a still-booting TUI. Uses
+    # the ABSOLUTE path so it works whether the worker's cwd is its storage dir
+    # (greenfield) or the project root (host-mode) — quinn-ai-ltvl.
+    deliver_initial_prompt(tmux_session, instructions)

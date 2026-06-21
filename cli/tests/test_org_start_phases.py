@@ -483,6 +483,47 @@ class TestPhase5Kickstart:
             "after a successful retry the success path must be reported"
         )
 
+    @patch("cli.core.org_start_controller._tmux_send_keys_with_retry", return_value=True)
+    @patch("cli.core.org_start_controller._pane_shows_prompt_landed", return_value=False)
+    @patch("cli.core.org_start_controller._capture_pane", return_value="pane")
+    @patch("cli.core.org_start_controller._wait_for_pane_ready", return_value=True)
+    def test_deliver_initial_prompt_gives_up_after_max_attempts(
+        self, mock_ready, mock_capture, mock_landed, mock_send,
+    ):
+        """The shared delivery helper returns False (not infinite loop) when the
+        prompt never lands, having tried exactly DELIVERY_ATTEMPTS times."""
+        from cli.core.org_start_controller import deliver_initial_prompt
+        from cli.core.constants import INITIAL_PROMPT_DELIVERY_ATTEMPTS
+
+        ok = deliver_initial_prompt("qn-wrkr-x", "/tmp/INITIAL_TASK.md")
+
+        assert ok is False
+        cat_sends = [
+            c for c in mock_send.call_args_list
+            if len(c.args) >= 2 and "cat " in str(c.args[1]) and "INITIAL_TASK" in str(c.args[1])
+        ]
+        assert len(cat_sends) == INITIAL_PROMPT_DELIVERY_ATTEMPTS
+
+    @patch("cli.core.org_start_controller.deliver_initial_prompt")
+    def test_worker_kickstart_uses_verify_retry_delivery(self, mock_deliver, tmp_path):
+        """Hired-worker kickstart must go through the same verify-and-retry
+        delivery as the CEO (quinn-ai-ns6t), with the ABSOLUTE INITIAL_TASK.md
+        path so it works in host-mode too (quinn-ai-ltvl)."""
+        from cli.commands.org.session_utils import _send_worker_kickstart
+
+        worker = Mock()
+        worker.id = "wrkr-abc123"
+        worker.name = "Bob"
+        worker.role = "engineer"
+
+        _send_worker_kickstart(worker, tmp_path)
+
+        mock_deliver.assert_called_once()
+        args = mock_deliver.call_args.args
+        assert args[0] == "qn-wrkr-abc123"
+        # Absolute path to the worker's INITIAL_TASK.md.
+        assert str(args[1]) == str(tmp_path / "INITIAL_TASK.md")
+
     @patch('subprocess.run')
     def test_kickstart_initial_task_is_first_person_not_injection_shaped(
         self, mock_subprocess, fast_kickstart_delivery, initialized_org, temp_org_dir
