@@ -200,6 +200,8 @@ class BudgetService:
         source_worker_id: str,
         target_worker_id: str,
         amount: float,
+        *,
+        _system_source: bool = False,
     ) -> str:
         """Delegate budget from manager to subordinate.
 
@@ -210,6 +212,13 @@ class BudgetService:
             source_worker_id: Manager delegating budget
             target_worker_id: Subordinate receiving budget
             amount: Credits to delegate
+            _system_source: Internal flag for SYSTEM funding (e.g. the auto-
+                allocation behind `qn org hire`). When True the peer-delegation
+                policy checks — target-reports-to-source, can_delegate, and
+                delegation_limit — are skipped, because the org budget root
+                (CEO) is funding a worker directly rather than a manager
+                delegating to a report. The available-balance check still
+                applies, so the source can't overspend. (quinn-ai-dkhs)
 
         Returns:
             New allocation ID for target
@@ -225,12 +234,13 @@ class BudgetService:
                 f"Delegation amount must be positive, got {amount:.2f}"
             )
 
-        # Verify hierarchy: target must report to source
+        # Verify hierarchy: target must report to source (skipped for system
+        # funding, which allocates from the org root regardless of chain).
         target = get_worker(self.db, target_worker_id)
         if not target:
             raise BudgetAllocationError(f"Worker {target_worker_id} not found")
 
-        if target.manager_id != source_worker_id:
+        if not _system_source and target.manager_id != source_worker_id:
             raise BudgetAllocationError(
                 f"Worker {target_worker_id} does not report to {source_worker_id}"
             )
@@ -242,13 +252,17 @@ class BudgetService:
                 f"Worker {source_worker_id} has no budget allocation"
             )
 
-        if not source_alloc.can_delegate:
+        if not _system_source and not source_alloc.can_delegate:
             raise BudgetAllocationError(
                 f"Worker {source_worker_id} cannot delegate budget"
             )
 
-        # Check delegation limit
-        if source_alloc.delegation_limit and amount > source_alloc.delegation_limit:
+        # Check delegation limit (peer-delegation policy; skipped for system).
+        if (
+            not _system_source
+            and source_alloc.delegation_limit
+            and amount > source_alloc.delegation_limit
+        ):
             raise BudgetAllocationError(
                 f"Amount {amount:.2f} exceeds delegation limit "
                 f"{source_alloc.delegation_limit:.2f}"
@@ -330,6 +344,35 @@ class BudgetService:
             )
 
         return allocation_id
+
+    def ensure_worker_funded(
+        self, worker_id: str, amount: float, *, ceo_id: str
+    ) -> None:
+        """Guarantee `worker_id` has >= `amount` available budget so it can start.
+
+        Funds the worker directly from the org budget root (the CEO) as a SYSTEM
+        allocation, bypassing the peer-delegation policy checks. Idempotent: a
+        no-op when the worker already has enough.
+
+        This is the system funding path behind `qn org hire`. A plain
+        delegate_budget(CEO, worker) is rejected for any worker that doesn't
+        report DIRECTLY to the CEO, so manager-hired workers were left unfunded
+        and idle, and a manager hiring several reports exhausted its own small
+        pool (quinn-ai-dkhs). Funding from the CEO root — which holds the org
+        pool — avoids both: it works regardless of report depth and isn't
+        bounded by an intermediate manager's balance. Deliberate per-manager
+        budget limits remain a separate, explicit `qn org budget` concern.
+        """
+        bal = self.get_balance(worker_id)
+        available = bal.available if bal else 0.0
+        if available >= amount:
+            return
+        self.delegate_budget(
+            source_worker_id=ceo_id,
+            target_worker_id=worker_id,
+            amount=amount - available,
+            _system_source=True,
+        )
 
     def get_balance(self, worker_id: str) -> Optional[BudgetBalance]:
         """Get current budget balance for a worker.

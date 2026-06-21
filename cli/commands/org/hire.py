@@ -200,7 +200,11 @@ def hire_cmd(
             _start_workday_for_hire(ctx, new_worker)
             click.echo(f"Session started for {new_worker.name}")
         except NoBudgetAllocationError:
-            # Auto-allocate a default budget from CEO so the worker can start.
+            # Auto-allocate a default budget so the worker can start. Fund via
+            # the worker's actual manager (topping the manager up from the CEO
+            # chain as needed) — NOT directly from the CEO, which delegate_budget
+            # rejects for any worker that doesn't report to the CEO, leaving
+            # manager-hired workers unfunded and idle (quinn-ai-dkhs).
             try:
                 from cli.core.budget import BudgetService
                 from cli.core.org import Org
@@ -208,10 +212,10 @@ def hire_cmd(
                 try:
                     org = Org.load(db)
                     budget_service = BudgetService(db)
-                    budget_service.delegate_budget(
-                        source_worker_id=org.ceo.id,
-                        target_worker_id=new_worker.id,
-                        amount=DEFAULT_WORKER_BUDGET_ALLOCATION,
+                    budget_service.ensure_worker_funded(
+                        new_worker.id,
+                        DEFAULT_WORKER_BUDGET_ALLOCATION,
+                        ceo_id=org.ceo.id,
                     )
                     click.echo(
                         f"Auto-allocated {DEFAULT_WORKER_BUDGET_ALLOCATION} credits to {new_worker.name}"

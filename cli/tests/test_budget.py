@@ -1034,6 +1034,33 @@ class TestBudgetServiceDelegation:
         assert target_balance is not None
         assert target_balance.allocated == 10000.0
 
+    def test_ensure_worker_funded_funds_outside_report_chain(
+        self, db, ceo, ceo_with_allocation, manager, developer
+    ):
+        """quinn-ai-dkhs: the hire auto-fund path must fund a worker directly
+        from the CEO root even when the worker reports to a MANAGER, not the
+        CEO — otherwise manager-hired workers (and later hires that exhaust a
+        manager's small pool) boot unfunded and idle."""
+        from cli.core.budget import BudgetService, BudgetAllocationError
+
+        service = BudgetService(db)
+        # developer reports to manager, NOT the CEO.
+        assert developer.manager_id == manager.id
+
+        # Plain peer delegation from the CEO is (correctly) rejected because
+        # developer isn't a direct report.
+        with pytest.raises(BudgetAllocationError, match="does not report"):
+            service.delegate_budget(ceo.id, developer.id, 100.0)
+
+        # The system funding path allocates from the CEO root regardless.
+        service.ensure_worker_funded(developer.id, 100.0, ceo_id=ceo.id)
+        bal = service.get_balance(developer.id)
+        assert bal is not None and bal.available >= 100.0
+
+        # Idempotent: a second call is a no-op (already funded), not a double-grant.
+        service.ensure_worker_funded(developer.id, 100.0, ceo_id=ceo.id)
+        assert service.get_balance(developer.id).available >= 100.0
+
     def test_delegate_budget_negative_amount(self, db, ceo_with_allocation, manager):
         """Should reject negative delegation amount."""
         from cli.core.budget import BudgetService, BudgetAllocationError
